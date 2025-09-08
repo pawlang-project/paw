@@ -1,115 +1,135 @@
-use std::collections::HashMap;
 use anyhow::{bail, Result};
+use std::collections::HashMap;
 
 use crate::ast::*;
 
-#[derive(Default)]
+#[derive(Clone, Debug)]
 pub struct FnSig {
     pub params: Vec<Ty>,
     pub ret: Ty,
 }
 
+/// fns: 函数签名；globals: 顶层 let/const 的类型；scopes: 局部作用域栈
 pub struct TyCk<'a> {
     fns: &'a HashMap<String, FnSig>,
+    globals: HashMap<String, Ty>,
     scopes: Vec<HashMap<String, Ty>>,
 }
 
 impl<'a> TyCk<'a> {
-    pub fn new(fns: &'a HashMap<String, FnSig>) -> Self {
-        Self { fns, scopes: vec![HashMap::new()] }
+    pub fn new(fns: &'a HashMap<String, FnSig>, globals: HashMap<String, Ty>) -> Self {
+        Self { fns, globals, scopes: vec![HashMap::new()] }
     }
 
-    fn push(&mut self) { self.scopes.push(HashMap::new()); }
-    fn pop(&mut self) { self.scopes.pop(); }
-    fn insert(&mut self, n:&str, t:Ty) { self.scopes.last_mut().unwrap().insert(n.to_string(), t); }
-    fn lookup(&self, n:&str) -> Option<Ty> {
-        for m in self.scopes.iter().rev() {
-            if let Some(t) = m.get(n) { return Some(t.clone()); }
-        }
-        None
+    fn push_scope(&mut self) { self.scopes.push(HashMap::new()); }
+    fn pop_scope(&mut self)  { self.scopes.pop(); }
+
+    fn define_local(&mut self, name: &str, ty: Ty) {
+        self.scopes.last_mut().unwrap().insert(name.to_string(), ty);
     }
 
-    pub fn check_fun(&mut self, f:&FunDecl) -> Result<()> {
-        self.push();
-        for (name, ty) in &f.params {
-            self.insert(name, ty.clone());
+    /// 先查局部作用域，再查全局（关键）
+    fn lookup_var(&self, name: &str) -> Option<Ty> {
+        for s in self.scopes.iter().rev() {
+            if let Some(t) = s.get(name) { return Some(t.clone()); }
         }
-        let bt = self.block(&f.body)?;
-        // 约定：块尾表达式类型必须与返回类型一致
-        if bt != f.ret { bail!("function `{}` returns {:?}, but block tail has {:?}", f.name, f.ret, bt); }
-        self.pop();
+        self.globals.get(name).cloned()
+    }
+
+    pub fn check_fun(&mut self, f: &FunDecl) -> Result<()> {
+        self.push_scope();
+        for (n, t) in &f.params { self.define_local(n, t.clone()); }
+        let body_ty = self.block(&f.body)?;
+        self.ensure_ty(&body_ty, &f.ret, "function return type mismatch")?;
+        self.pop_scope();
         Ok(())
     }
 
-    fn block(&mut self, b:&Block) -> Result<Ty> {
-        self.push();
-        for s in &b.stmts {
-            match s {
-                Stmt::Let { name, ty, init, .. } => {
-                    let et = self.expr(init)?;
-                    if &et != ty { bail!("`let {name}: {:?}` but init has {:?}", ty, et); }
-                    self.insert(name, ty.clone());
-                }
-                Stmt::Expr(e) => { let _ = self.expr(e)?; }
-                Stmt::Return(opt) => {
-                    // 对于 MVP：return 只允许出现在函数尾块；这里先允许并返回其类型
-                    if let Some(e) = opt { let t = self.expr(e)?; self.pop(); return Ok(t); }
-                    else { self.pop(); return Ok(Ty::Int); }
-                }
-                Stmt::While { cond, body } => {
-                    let ct = self.expr(cond)?;
-                    if ct != Ty::Bool { bail!("while condition must be Bool, got {:?}", ct); }
-                    let _ = self.block(body)?;
-                }
-            }
-        }
-        let t = match &b.tail {
-            Some(e) => self.expr(e)?,
-            None => Ty::Int, // 约定无尾表达式的块值为 Int（0）
-        };
-        self.pop();
-        Ok(t)
+    pub fn block(&mut self, b: &Block) -> Result<Ty> {
+        self.push_scope();
+        for s in &b.stmts { self.stmt(s)?; }
+        let ty = if let Some(tail) = &b.tail { self.expr(tail)? } else { Ty::Int };
+        self.pop_scope();
+        Ok(ty)
     }
 
-    fn expr(&mut self, e:&Expr) -> Result<Ty> {
+    pub fn stmt(&mut self, s: &Stmt) -> Result<()> {
+        match s {
+            Stmt::Let { name, ty, init, .. } => {
+                let t = self.expr(init)?;
+                self.ensure_ty(&t, ty, &format!("let `{name}` type mismatch"))?;
+                self.define_local(name, ty.clone());
+                Ok(())
+            }
+            Stmt::Expr(e) => { let _ = self.expr(e)?; Ok(()) }
+            Stmt::Return(opt) => { if let Some(e) = opt { let _ = self.expr(e)?; } Ok(()) }
+            Stmt::While { cond, body } => {
+                let tc = self.expr(cond)?;
+                self.ensure_bool(&tc, "while condition must be Bool")?;
+                let _ = self.block(body)?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn expr(&mut self, e: &Expr) -> Result<Ty> {
         use BinOp::*;
         Ok(match e {
-            Expr::Int(_) => Ty::Int,
+            Expr::Int(_)  => Ty::Int,
             Expr::Bool(_) => Ty::Bool,
-            Expr::Var(n) => self.lookup(n).ok_or_else(|| anyhow::anyhow!("unknown var `{n}`"))?,
-            Expr::Unary{ op, rhs } => {
-                let rt = self.expr(rhs)?;
-                match (op, rt) {
-                    (UnOp::Neg, Ty::Int) => Ty::Int,
-                    (UnOp::Not, Ty::Bool) => Ty::Bool,
-                    _ => bail!("bad unary operand"),
+            Expr::Var(n)  => self.lookup_var(n)
+                .ok_or_else(|| anyhow::anyhow!(format!("unknown var `{n}`")))?,
+            Expr::Unary { op, rhs } => {
+                let t = self.expr(rhs)?;
+                match op {
+                    UnOp::Neg => { self.ensure_int(&t, "unary `-` expects Int")?; Ty::Int }
+                    UnOp::Not => { self.ensure_bool(&t, "unary `!` expects Bool")?; Ty::Bool }
                 }
             }
-            Expr::Binary{ op, lhs, rhs } => {
+            Expr::Binary { op, lhs, rhs } => {
                 let lt = self.expr(lhs)?; let rt = self.expr(rhs)?;
                 match op {
-                    Add|Sub|Mul|Div => { if lt==Ty::Int && rt==Ty::Int { Ty::Int } else { bail!("int binop needs Int") } }
-                    Lt|Le|Gt|Ge     => { if lt==Ty::Int && rt==Ty::Int { Ty::Bool } else { bail!("cmp needs Int") } }
-                    Eq|Ne           => { if lt==rt { Ty::Bool } else { bail!("==/!= need same types") } }
-                    And|Or          => { if lt==Ty::Bool && rt==Ty::Bool { Ty::Bool } else { bail!("&&/|| need Bool") } }
+                    Add|Sub|Mul|Div => { self.ensure_int(&lt,"arith expects Int")?;
+                        self.ensure_int(&rt,"arith expects Int")?; Ty::Int }
+                    Lt|Le|Gt|Ge    => { self.ensure_int(&lt,"cmp expects Int")?;
+                        self.ensure_int(&rt,"cmp expects Int")?; Ty::Bool }
+                    Eq|Ne          => { self.ensure_same(&lt,&rt,"==/!= require same types")?; Ty::Bool }
+                    And|Or         => { self.ensure_bool(&lt,"&&/|| expect Bool")?;
+                        self.ensure_bool(&rt,"&&/|| expect Bool")?; Ty::Bool }
                 }
             }
-            Expr::If{ cond, then_b, else_b } => {
-                if self.expr(cond)? != Ty::Bool { bail!("if condition must be Bool"); }
-                let t = self.block(then_b)?; let e = self.block(else_b)?;
-                if t != e { bail!("if branches must have same type: {t:?} vs {e:?}") }
-                t
+            Expr::If { cond, then_b, else_b } => {
+                let ct = self.expr(cond)?; self.ensure_bool(&ct, "`if` cond must be Bool")?;
+                let tt = self.block(then_b)?; let et = self.block(else_b)?;
+                self.ensure_same(&tt, &et, "`if` branches must have same type")?;
+                tt
             }
-            Expr::Call{ callee, args } => {
-                let sig = self.fns.get(callee).ok_or_else(|| anyhow::anyhow!("unknown fn `{callee}`"))?;
-                if sig.params.len() != args.len() { bail!("fn `{callee}` arity mismatch"); }
-                for (i,a) in args.iter().enumerate() {
-                    let at = self.expr(a)?;
-                    if at != sig.params[i] { bail!("fn `{callee}` arg#{i} type mismatch: expect {:?}, got {:?}", sig.params[i], at); }
+            Expr::Call { callee, args } => {
+                let sig = self.fns.get(callee)
+                    .ok_or_else(|| anyhow::anyhow!(format!("unknown function `{callee}`")))?;
+                if sig.params.len() != args.len() {
+                    bail!("function `{callee}` expects {} args, got {}", sig.params.len(), args.len());
+                }
+                for (i, (pt, ae)) in sig.params.iter().zip(args.iter()).enumerate() {
+                    let at = self.expr(ae)?;
+                    self.ensure_ty(&at, pt, &format!("arg #{i} type mismatch in call `{callee}`"))?;
                 }
                 sig.ret.clone()
             }
             Expr::Block(b) => self.block(b)?,
         })
+    }
+
+    fn ensure_int(&self, t: &Ty, msg: &str) -> Result<()> {
+        if matches!(t, Ty::Int) { Ok(()) } else { bail!("{msg}: got {t:?}") }
+    }
+    fn ensure_bool(&self, t: &Ty, msg: &str) -> Result<()> {
+        if matches!(t, Ty::Bool){ Ok(()) } else { bail!("{msg}: got {t:?}") }
+    }
+    fn ensure_same(&self, a: &Ty, b: &Ty, msg: &str) -> Result<()> {
+        if a==b { Ok(()) } else { bail!("{msg}: {a:?} vs {b:?}") }
+    }
+    fn ensure_ty(&self, got: &Ty, expect: &Ty, msg: &str) -> Result<()> {
+        if got==expect { Ok(()) } else { bail!("{msg}: expect {expect:?}, got {got:?}") }
     }
 }

@@ -6,6 +6,7 @@ mod codegen;
 use std::collections::HashMap;
 use anyhow::Result;
 use typecheck::{TyCk, FnSig};
+use crate::ast::{Expr, Stmt, Ty};
 use crate::codegen::CLBackend;
 
 fn main() -> Result<()> {
@@ -29,19 +30,37 @@ fn main() -> Result<()> {
         println!("fn {}(...) -> {:?}\n{:#?}", f.name, f.ret, f.body);
     }
 
-    // 函数签名表 + 类型检查
+    // 1) 函数签名表
     let mut fnsig = HashMap::<String, FnSig>::new();
     for f in &funs {
-        fnsig.insert(f.name.clone(), FnSig {
-            params: f.params.iter().map(|(_,t)| t.clone()).collect(),
-            ret: f.ret.clone(),
-        });
+        fnsig.insert(
+            f.name.clone(),
+            FnSig {
+                params: f.params.iter().map(|(_, t)| t.clone()).collect(),
+                ret: f.ret.clone(),
+            },
+        );
     }
-    let mut ck = TyCk::new(&fnsig);
-    for f in &funs { ck.check_fun(f)?; }
+
+    // 2) 全局符号（仅把顶层 let/const 的类型加入）
+    let mut globals = HashMap::<String, Ty>::new();
+    for s in &tops {
+        if let Stmt::Let { name, ty, .. } = s {
+            globals.insert(name.clone(), ty.clone());
+        }
+    }
+
+    println!("globals: {globals:#?}");
+
+    // 3) 运行类型检查（可先检查全局 init 的表达式类型是否与声明一致——看你是否需要）
+    let mut ck = TyCk::new(&fnsig, globals);
+    for f in &funs {
+        ck.check_fun(f)?;
+    }
 
     // Cranelift 生成 .obj
     let mut cl = CLBackend::new()?;
+    cl.set_globals_from_tops(&tops);
     let ids = cl.declare_fns(&funs)?;
     for f in &funs { cl.define_fn(f, &ids)?; }
     let obj = cl.finish()?;
