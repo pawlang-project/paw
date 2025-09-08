@@ -1,0 +1,87 @@
+// src/grammar.pest
+
+WHITESPACE = _{ ( " " | "\t" | "\r" | "\n" | COMMENT )+ }
+COMMENT    = _{ LINE_COMMENT | BLOCK_COMMENT }
+LINE_COMMENT  = _{ "//" ~ (!NEWLINE ~ ANY)* }
+BLOCK_COMMENT = _{ "/*" ~ (BLOCK_COMMENT | (!"*/" ~ ANY))* ~ "*/" }
+
+program = { SOI ~ item* ~ EOI }
+
+item = { fun_decl | let_decl }
+
+fun_decl = { KW_FNs ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ block }
+
+param_list = { param ~ ("," ~ param)* }
+param = { ident ~ ":" ~ ty }
+
+let_decl = {
+    ( KW_LET | KW_CONST ) ~ ident ~ ":" ~ ty ~ "=" ~ expr ~ ";"
+}
+
+ty = { KW_Int | KW_Bool }
+
+block = { "{" ~ stmt* ~ tail_expr? ~ "}" }
+stmt  = { let_decl | while_stmt | return_stmt | expr_stmt }
+
+while_stmt  = { "while" ~ "(" ~ expr ~ ")" ~ block }
+return_stmt = { "return" ~ expr? ~ ";" }
+expr_stmt   = { expr ~ ";" }
+
+tail_expr = { expr }  // 块尾表达式（无分号）
+
+// ====== 表达式优先级（自上而下：低→高） ======
+expr        = { logic_or }
+logic_or    = { logic_and ~ (OP_OR  ~ logic_and)* }
+logic_and   = { equality  ~ (OP_AND ~ equality )* }
+equality    = { compare   ~ ((OP_EQ | OP_NE) ~ compare)* }
+compare     = { add       ~ ((OP_LT | OP_LE | OP_GT | OP_GE) ~ add)* }
+add         = { mult      ~ ((OP_ADD | OP_SUB) ~ mult)* }
+mult        = { unary     ~ ((OP_MUL | OP_DIV) ~ unary)* }
+unary       = { (OP_NOT | OP_SUB) ~ unary | postfix }
+postfix     = { primary ~ ( call_suffix )* }
+call_suffix = { "(" ~ arg_list? ~ ")" }
+arg_list    = { expr ~ ("," ~ expr)* }
+
+primary     = { int_lit | bool_lit | if_expr | ident | group | block }
+group       = { "(" ~ expr ~ ")" }
+
+if_expr = {
+    "if" ~ "(" ~ expr ~ ")" ~ block ~ "else" ~ block
+}
+
+// ====== 词法单元 ======
+int_lit  = @{ "-"? ~ ASCII_DIGIT+ }
+bool_lit = { KW_true | KW_false }
+
+ident = @{
+    !keyword ~ (ASCII_ALPHANUMERIC | "_")+
+}
+
+// 关键字（排除在 ident 之外）
+keyword = { KW_FNs | KW_LET | KW_CONST | KW_IF | KW_ELSE | KW_WHILE | KW_RETURN | KW_Int | KW_Bool | KW_true | KW_false }
+KW_FNs   = { "fn" }
+KW_LET   = { "let" }
+KW_CONST = { "const" }
+KW_IF    = { "if" }
+KW_ELSE  = { "else" }
+KW_WHILE = { "while" }
+KW_RETURN= { "return" }
+KW_Int   = { "Int" }
+KW_Bool  = { "Bool" }
+KW_true  = { "true" }
+KW_false = { "false" }
+
+// 运算符
+OP_OR  = { "||" }
+OP_AND = { "&&" }
+OP_EQ  = { "==" }
+OP_NE  = { "!=" }
+OP_LT  = { "<"  }
+OP_LE  = { "<=" }
+OP_GT  = { ">"  }
+OP_GE  = { ">=" }
+OP_ADD = { "+"  }
+OP_SUB = { "-"  }
+OP_MUL = { "*"  }
+OP_DIV = { "/"  }
+OP_NOT = { "!"  }
