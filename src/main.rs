@@ -2,8 +2,10 @@ mod ast;
 mod parse;
 mod typecheck;
 mod codegen;
+mod link;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use anyhow::Result;
 use typecheck::{TyCk, FnSig};
 use crate::ast::{Expr, Stmt, Ty};
@@ -63,16 +65,16 @@ fn main() -> Result<()> {
     cl.set_globals_from_tops(&tops);
     let ids = cl.declare_fns(&funs)?;
     for f in &funs { cl.define_fn(f, &ids)?; }
-    let obj = cl.finish()?;
-    std::fs::write("out.obj", obj)?;
+    let obj_bytes = cl.finish()?;
 
-    // 调 clang 链接成可执行文件（Windows）
-    std::process::Command::new("clang")
-        .args(["out.obj", "-o", "a.exe"])
-        .status()?
-        .success()
-        .then_some(())
-        .expect("clang link failed");
-    println!("✅ built a.exe  （退出码可用 %ERRORLEVEL% 查看）");
+    let out_obj = PathBuf::from("build/out.o");   // macOS/Linux 为 .o；Windows 用 .obj 也没关系
+    let out_exe = if cfg!(target_os = "windows") {
+        PathBuf::from("build/pawlang.exe")
+    } else {
+        PathBuf::from("build/pawlang")
+    };
+
+    link::link_object_bytes(&obj_bytes, &out_obj, &out_exe)?;
+    println!("✅ built executable: {}", out_exe.display());
     Ok(())
 }
