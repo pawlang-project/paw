@@ -2,7 +2,7 @@ mod ast;
 mod parse;
 mod typecheck;
 mod codegen;
-mod link;
+mod link_zig;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -74,7 +74,8 @@ fn main() -> Result<()> {
         PathBuf::from("build/pawlang")
     };
 
-    link::link_object_bytes(&obj_bytes, &out_obj, &out_exe)?;
+    let (obj_path, exe_path) = link_zig::default_paths("build", "pawlang");
+    link_zig::link_with_zig_cc(&obj_bytes, &obj_path, &exe_path, None, &[])?;
     println!("✅ built executable: {}", out_exe.display());
     Ok(())
 }
