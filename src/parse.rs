@@ -320,39 +320,73 @@ fn build_for(p: Pair<Rule>) -> Result<Stmt> {
 }
 
 fn build_for_init(p: Pair<Rule>) -> Result<ForInit> {
-    // for_init = { let_decl | ( ident ~ "=" ~ expr ) | expr }
+    // for_init = {
+    //   (KW_LET | KW_CONST) ~ ident ~ ":" ~ ty ~ "=" ~ expr
+    // | ident ~ "=" ~ expr
+    // | expr
+    // }
     let mut it = p.into_inner();
-    let first = it.next().ok_or_else(|| anyhow::anyhow!("empty for_init"))?;
+    let first = it.next().ok_or_else(|| anyhow!("empty for_init"))?;
+
     Ok(match first.as_rule() {
-        Rule::let_decl => {
-            if let Stmt::Let { name, ty, init, is_const } = build_stmt(first)? {
-                ForInit::Let { name, ty, init, is_const }
-            } else {
-                unreachable!()
+        // 1) let/const 形式（注意：这里不会出现分号）
+        Rule::KW_LET | Rule::KW_CONST => {
+            let is_const = first.as_rule() == Rule::KW_CONST;
+
+            let name = it
+                .next()
+                .ok_or_else(|| anyhow!("for_init let: missing name"))?;
+            if name.as_rule() != Rule::ident {
+                return Err(anyhow!("for_init let: expect ident, got {:?}", name.as_rule()));
             }
+            let name = name.as_str().to_string();
+
+            let ty_pair = it
+                .next()
+                .ok_or_else(|| anyhow!("for_init let: missing type"))?;
+            let ty = build_ty(ty_pair)?;
+
+            let init_pair = it
+                .next()
+                .ok_or_else(|| anyhow!("for_init let: missing init expr"))?;
+            let init = build_expr(init_pair)?;
+
+            ForInit::Let { name, ty, init, is_const }
         }
+
+        // 2) 赋值（ident "=" expr）
+        // 注意：字面量 '=' 不会出现在 into_inner() 中，这里会拿到 [ident, expr]
         Rule::ident => {
             let name = first.as_str().to_string();
-            let expr = build_expr(it.next().ok_or_else(|| anyhow::anyhow!("for_init assign: missing expr"))?)?;
+            let expr_pair = it
+                .next()
+                .ok_or_else(|| anyhow!("for_init assign: missing expr"))?;
+            let expr = build_expr(expr_pair)?;
             ForInit::Assign { name, expr }
         }
+
+        // 3) 纯表达式
         Rule::expr => ForInit::Expr(build_expr(first)?),
-        r => return Err(anyhow::anyhow!("unexpected for_init node: {:?}", r)),
+
+        other => return Err(anyhow!("unexpected for_init node: {:?}", other)),
     })
 }
 
 fn build_for_step(p: Pair<Rule>) -> Result<ForStep> {
-    // for_step = { ( ident ~ "=" ~ expr ) | expr }
+    // for_step = { ident ~ "=" ~ expr | expr }
     let mut it = p.into_inner();
-    let first = it.next().ok_or_else(|| anyhow::anyhow!("empty for_step"))?;
+    let first = it.next().ok_or_else(|| anyhow!("empty for_step"))?;
     Ok(match first.as_rule() {
         Rule::ident => {
             let name = first.as_str().to_string();
-            let expr = build_expr(it.next().ok_or_else(|| anyhow::anyhow!("for_step assign: missing expr"))?)?;
+            let expr_pair = it
+                .next()
+                .ok_or_else(|| anyhow!("for_step assign: missing expr"))?;
+            let expr = build_expr(expr_pair)?;
             ForStep::Assign { name, expr }
         }
         Rule::expr => ForStep::Expr(build_expr(first)?),
-        r => return Err(anyhow::anyhow!("unexpected for_step node: {:?}", r)),
+        other => return Err(anyhow!("unexpected for_step node: {:?}", other)),
     })
 }
 
