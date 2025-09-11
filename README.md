@@ -1,120 +1,89 @@
-# PawLang
+# PawLang 自举计划
 
-PawLang 是一个用 **Rust** 开发的实验性静态类型语言，最初通过 **Cranelift** 后端生成机器码，支持跨平台链接（使用 **Zig cc** 统一构建）。本项目目标是逐步实现一个能 **自举** 的编译器。
-
----
-
-## 阶段目标
-
-### 🔹 M0 — 基础设施
-
-* ✅ 选择 **Rust** 作为实现语言
-* ✅ 使用 **pest** 实现语法解析
-* ✅ 定义抽象语法树（AST）
-* ✅ 实现最小类型系统（Int / Bool）
-* ✅ 错误处理框架（anyhow）
-
-### 🔹 M1 — 足以写编译器的最小能力
-
-> **目标**：语言具备“能实现编译器本身”的核心表达能力
-
-* ✅ 全局变量（`const` / `let`）
-* ✅ 函数定义与调用（`fn`）
-* ✅ 基础类型：`Int`, `Bool`, `String`（字符串字面量先支持最简单形式）
-* ✅ 表达式运算：算术、比较、逻辑
-* ✅ 控制流：`if-else`, `while`
-* ✅ 返回语句：`return`
-* ✅ 语法块（block）与块尾表达式
-
-### 🔹 M2 — 语言运行时支持
-
-> **目标**：能写更复杂的程序
-
-* ⬜ 内置运行时函数（打印、退出等）
-* ⬜ 字符串常量和运行时管理
-* ⬜ Zig cc 跨平台链接（Windows/macOS/Linux 一套流程）
-
-### 🔹 M3 — 开始自举
-
-> **目标**：用 PawLang 本身写编译器的部分逻辑
-
-* ⬜ 用 PawLang 实现基础数据结构（字符串处理、符号表雏形）
-* ⬜ 实现最简解释器或 IR 打印器
-* ⬜ 通过 Zig cc 链接 runtime + PawLang 生成的对象文件，跑出第一个“自编译”产物
-
-### 🔹 M4 — 完整前端
-
-> **目标**：支持 PawLang 自举
-
-* ⬜ 扩展类型系统（数组、结构体、指针/引用）
-* ⬜ 文件 I/O、字符串拼接
-* ⬜ 模块/包系统
-
-### 🔹 M5 — 优化与生态
-
-> **目标**：让 PawLang 能用于中小规模项目
-
-* ⬜ 优化器（常量折叠、死代码消除）
-* ⬜ 标准库（字符串、容器、文件、网络）
-* ⬜ 更丰富的错误提示（源码位置、hint）
+PawLang 是一个实验性编程语言，当前使用 Rust 编写前端（AST、Parser、TypeChecker）和后端（Cranelift → 对象文件 → Zig CC 链接）。
+我们的目标是 **实现自举** —— 用 PawLang 自己实现自己的编译器。
 
 ---
 
-## 构建与运行
+## 🎯 总体路线
 
-### 依赖
+自举过程分为 **两阶段三步走**：
 
-* Rust (>= 1.77)
-* Zig (>= 0.13) — 用作跨平台链接器
-* Cranelift crates
+1. **阶段 0（现状）**
 
-### 构建
+    * 编译器完全用 Rust 实现，依赖 Zig CC 进行链接。
+    * 运行时 `pawrt` 使用 `no_std`，跨平台支持（Windows / Linux / macOS）。
 
-```bash
-cargo build
-```
+2. **阶段 1（半自举）**
 
-### 运行示例
+    * 抽取后端为一个 C ABI 静态库（`libpawbackend.a`）。
+    * 在 PawLang 中实现前端（lexer、parser、typecheck、IR 降级）。
+    * Paw 前端通过 FFI 调用 Rust 后端，生成目标文件并链接运行时。
 
-```bash
-cargo run -- examples/hello.paw build hello
-```
+3. **阶段 2（完全自举）**
 
-### 跨平台编译
-
-使用 Zig cc 内置工具链：
-
-```bash
-# Linux 上编译 Windows 可执行
-PAW_TARGET=x86_64-windows-gnu cargo run --release -- examples/hello.paw build hello
-```
+    * 逐步用 PawLang 实现后端（例如先做 Paw → C，再到 Paw → 对象文件）。
+    * 编译器完全脱离 Rust，仅用 PawLang 和运行时库构建。
 
 ---
 
-## 示例
+## 📦 阶段规划
 
-```paw
-const N: Int = 10;
+### 阶段 0：准备与稳定化
 
-fn add(a: Int, b: Int) -> Int {
-    a + b
-}
+* [x] 运行时 `pawrt`：提供基本 IO、文件读取、字符串、退出。
+* [x] 新增内存分配接口：`paw_malloc` / `paw_realloc` / `paw_free_raw`。
+* [x] 使用 Zig CC / LLD 进行跨平台链接。
+* [ ] 增加简单的容器库（`string.paw`, `vec.paw`）。
 
-fn main() -> Int {
-    let x: Int = 32;
-    let y: Int = add(x, N);
-    if (y > 40) {
-        0
-    } else {
-        1
-    }
-}
-```
+### 阶段 1：半自举
+
+* [ ] 抽取 Rust 后端为 `libpawbackend.a`，导出 C ABI 接口：
+
+    * `paw_backend_new`
+    * `paw_backend_declare_fn`
+    * `paw_backend_define_fn_ir`
+    * `paw_backend_finalize_to_path`
+    * `paw_backend_free`
+* [ ] 定义最小 Paw IR（文本形式，先易实现）：
+
+    * 支持函数定义、变量、常量、加减乘除、条件分支、return。
+* [ ] 用 PawLang 实现前端：
+
+    * 词法分析器（lexer.paw）
+    * 语法分析器（parser.paw）
+    * 抽象语法树（ast.paw）
+    * 类型检查（typecheck.paw，简化）
+    * IR 降级（lower\_ir.paw → 文本 IR）
+* [ ] 使用 `pawc0` 编译 `paw_frontend.paw` → 产出 `pawc1`。
+* [ ] 使用 `pawc1` 编译 `paw_frontend.paw` → 产出 `pawc2`。
+* [ ] 验证：
+
+    * 功能一致：用同一组示例程序测试。
+    * （可选）二进制可重复性：尽量稳定输出。
+
+### 阶段 2：完全自举
+
+* [ ] 实现 Paw → C 的后端（最简单方案）。
+* [ ] 使用系统 C 编译器（clang / gcc / zig cc）链接运行时。
+* [ ] 逐步扩展为 Paw → 目标文件（COFF/ELF/Mach-O）。
+* [ ] 移除 Rust 后端，仅保留运行时 `pawrt`（Rust 写的，但可长期沿用）。
+* [ ] PawLang 编译器完全用 PawLang 自身实现。
 
 ---
 
-## 未来计划
+## 🔄 迭代与验证
 
-* 自举：用 PawLang 实现 PawLang 编译器
-* 支持更多后端（LLVM IR / WASM）
-* 丰富标准库与生态工具
+* 每完成一个阶段，必须验证 **pawc 能编译自己**。
+* 保留 `examples/` 测试用例，保证输出结果一致。
+* 可以使用 CI（GitHub Actions）跑跨平台测试。
+
+---
+
+## 📌 下一步
+
+当前建议优先完成：
+
+1. 在运行时增加 `paw_malloc/paw_free_raw`（支持容器）。
+2. 抽出后端到 `libpawbackend.a`。
+3. 在 PawLang 中实现最小前端，跑通第一个“半自举”。

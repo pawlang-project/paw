@@ -1,0 +1,14 @@
+[package]
+name = "pawrt"
+version = "0.0.1"
+edition = "2024"
+
+[lib]
+# 产出静态库，供你的“编译器产物”链接
+crate-type = ["staticlib"]
+
+[profile.release]
+# 避免生成额外的栈回溯/依赖，减少原生库链接复杂度
+panic = "abort"
+lto = "thin"
+codegen-units = 1
