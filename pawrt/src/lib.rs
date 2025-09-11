@@ -1,12 +1,6 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use std::{
-    ffi::{CStr, CString},
-    fs,
-    io::{self, Write},
-    os::raw::{c_char, c_int, c_uchar},
-    ptr,
-};
+use std::{ffi::CStr, io::{self, Write}, mem, os::raw::{c_char, c_int}};
 
 #[inline]
 fn write_bytes_no_nl(buf: &[u8]) {
@@ -80,49 +74,204 @@ pub extern "C" fn println_str(s: *const c_char) -> i64 {
     0
 }
 
-/// 读取整个文件，返回一个以 '\0' 结尾的堆分配字节串指针（C 字符串）。
-/// 返回值：非空指针；失败时返回 NULL。
-/// 所有权：调用方负责调用 `paw_free(ptr, len)` 释放（len 可传 0）。
 #[unsafe(no_mangle)]
-pub extern "C" fn paw_read_file_cstr(path: *const c_char) -> *mut c_uchar {
-    if path.is_null() {
-        return ptr::null_mut();
-    }
-    // 读取路径
-    let p = unsafe { CStr::from_ptr(path) };
-    let path_str = match p.to_str() {
-        Ok(s) => s,
-        Err(_) => return ptr::null_mut(),
-    };
+pub extern "C" fn paw_malloc(size: u64) -> u64 {
+    // Vec<u8> 分配一块堆内存并泄漏，返回裸指针
+    let mut v = Vec::<u8>::with_capacity(size as usize);
+    let ptr = v.as_mut_ptr();
+    mem::forget(v);
+    ptr as u64
+}
 
-    match fs::read(path_str) {
-        Ok(mut bytes) => {
-            // 追加 '\0'，让它可作为 C 字符串使用
-            bytes.push(0);
-            let mut boxed = bytes.into_boxed_slice();
-            let ptr = boxed.as_mut_ptr();
-            std::mem::forget(boxed); // 将所有权交给 FFI 调用方
-            ptr
-        }
-        Err(_) => ptr::null_mut(),
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_free(ptr_u: u64, size: u64) {
+    if ptr_u == 0 { return; }
+    unsafe {
+        // 尽可能回收（需要容量信息；这里至少不会泄漏）
+        let _ = Vec::from_raw_parts(ptr_u as *mut u8, 0, size as usize);
     }
 }
 
-/// 释放由 `paw_read_file_cstr`（或其他 paw_* 分配函数）返回的缓冲区。
 #[unsafe(no_mangle)]
-pub extern "C" fn paw_free(ptr_: *mut c_uchar, _len: usize) {
-    if ptr_.is_null() {
-        return;
-    }
+pub extern "C" fn paw_realloc(ptr_u: u64, old_cap: u64, new_cap: u64) -> u64 {
     unsafe {
-        // 因为不知道原长度（我们在 read_file_cstr 追加过 '\0'），
-        // 这里退而求其次：按 C 字符串重新计算长度再回收。
-        // 若你在语言层能保存长度，建议把 _len 真实传入，再用 Vec::from_raw_parts 回收。
-        let c_str = CStr::from_ptr(ptr_ as *const c_char);
-        let bytes = c_str.to_bytes_with_nul();
-        let len = bytes.len();
-        let _ = Vec::from_raw_parts(ptr_, len, len); // 交还给 Rust 分配器
+        if ptr_u == 0 {
+            return paw_malloc(new_cap);
+        }
+        let mut v = Vec::<u8>::from_raw_parts(ptr_u as *mut u8, 0, old_cap as usize);
+        v.reserve_exact((new_cap as usize).saturating_sub(old_cap as usize));
+        let new_ptr = v.as_mut_ptr();
+        mem::forget(v);
+        new_ptr as u64
     }
+}
+
+// ---------- 可变 String（UTF-8），句柄为 *mut Vec<u8> ----------
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_string_new() -> u64 {
+    let buf: Box<Vec<u8>> = Box::new(Vec::new());
+    Box::into_raw(buf) as u64
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_string_from_cstr(c_ptr: u64) -> u64 {
+    if c_ptr == 0 { return 0; }
+    unsafe {
+        let s = CStr::from_ptr(c_ptr as *const c_char);
+        let mut v = s.to_bytes().to_vec();
+        // 不带结尾 0，内部保持纯字节；导出 cstr 时再补 0
+        let buf: Box<Vec<u8>> = Box::new(v.drain(..).collect());
+        Box::into_raw(buf) as u64
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_string_push_cstr(handle: u64, c_ptr: u64) -> u64 {
+    if handle == 0 || c_ptr == 0 { return 0; }
+    unsafe {
+        let v = &mut *(handle as *mut Vec<u8>);
+        let s = CStr::from_ptr(c_ptr as *const c_char);
+        v.extend_from_slice(s.to_bytes());
+        v.len() as u64
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_string_push_char(handle: u64, ch: i64) -> u64 {
+    if handle == 0 { return 0; }
+    unsafe {
+        let v = &mut *(handle as *mut Vec<u8>);
+        // ch 视为 Unicode Scalar Value（基础先支持 ASCII）
+        let c = char::from_u32(ch as u32).unwrap_or('\u{FFFD}');
+        let mut buf = [0u8; 4];
+        let s = c.encode_utf8(&mut buf);
+        v.extend_from_slice(s.as_bytes());
+        v.len() as u64
+    }
+}
+
+/// 确保末尾有 '\0'，返回可直接给 print_str 使用的 C 字符串指针
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_string_as_cstr(handle: u64) -> u64 {
+    if handle == 0 { return 0; }
+    unsafe {
+        let v = &mut *(handle as *mut Vec<u8>);
+        if v.last().copied() != Some(0) {
+            v.push(0);
+        }
+        v.as_ptr() as u64
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_string_len(handle: u64) -> u64 {
+    if handle == 0 { return 0; }
+    unsafe { (&*(handle as *const Vec<u8>)).len() as u64 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_string_clear(handle: u64) {
+    if handle == 0 { return; }
+    unsafe { (&mut *(handle as *mut Vec<u8>)).clear(); }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_string_free(handle: u64) {
+    if handle == 0 { return; }
+    unsafe {
+        drop(Box::from_raw(handle as *mut Vec<u8>));
+    }
+}
+
+// ---------- Vec<u8>：词法缓冲区 ----------
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_u8_new() -> u64 {
+    Box::into_raw(Box::new(Vec::<u8>::new())) as u64
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_u8_push(handle: u64, byte_: i64) -> u64 {
+    if handle == 0 { return 0; }
+    unsafe {
+        let v = &mut *(handle as *mut Vec<u8>);
+        v.push((byte_ & 0xFF) as u8);
+        v.len() as u64
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_u8_len(handle: u64) -> u64 {
+    if handle == 0 { return 0; }
+    unsafe { (&*(handle as *const Vec<u8>)).len() as u64 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_u8_data_ptr(handle: u64) -> u64 {
+    if handle == 0 { return 0; }
+    unsafe { (&*(handle as *const Vec<u8>)).as_ptr() as u64 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_u8_free(handle: u64) {
+    if handle == 0 { return; }
+    unsafe { drop(Box::from_raw(handle as *mut Vec<u8>)); }
+}
+
+// ---------- Vec<i64>：通用栈/表 ----------
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_i64_new() -> u64 {
+    Box::into_raw(Box::new(Vec::<i64>::new())) as u64
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_i64_push(handle: u64, v: i64) -> u64 {
+    if handle == 0 { return 0; }
+    unsafe {
+        let vec = &mut *(handle as *mut Vec<i64>);
+        vec.push(v);
+        vec.len() as u64
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_i64_pop(handle: u64, out_ok: *mut i64) -> i64 {
+    if handle == 0 { return 0; }
+    unsafe {
+        let vec = &mut *(handle as *mut Vec<i64>);
+        if let Some(x) = vec.pop() {
+            if !out_ok.is_null() { *out_ok = x; }
+            1 // true
+        } else {
+            0 // false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_i64_len(handle: u64) -> u64 {
+    if handle == 0 { return 0; }
+    unsafe { (&*(handle as *const Vec<i64>)).len() as u64 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_i64_get(handle: u64, idx: u64, out_ok: *mut i64) -> i64 {
+    if handle == 0 { return 0; }
+    unsafe {
+        let vec = &*(handle as *const Vec<i64>);
+        if let Some(x) = vec.get(idx as usize) {
+            if !out_ok.is_null() { *out_ok = *x; }
+            1
+        } else { 0 }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn paw_vec_i64_free(handle: u64) {
+    if handle == 0 { return; }
+    unsafe { drop(Box::from_raw(handle as *mut Vec<i64>)); }
 }
 
 #[unsafe(no_mangle)]

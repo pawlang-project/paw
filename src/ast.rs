@@ -20,8 +20,9 @@ pub enum Stmt {
     // let/const 声明
     Let { name: String, ty: Ty, init: Expr, is_const: bool },
 
-    // 新增：赋值语句  name = expr;
-    Assign { name: String, expr: Expr },
+    Assign { name: String, expr: Expr },           // NEW
+    Break,                                          // NEW
+    Continue,                                       // NEW
 
     // 普通表达式语句
     Expr(Expr),
@@ -31,10 +32,25 @@ pub enum Stmt {
 
     // while (cond) { body }
     While { cond: Expr, body: Block },
+    For {                                           // NEW（仅做 parse 时承载，反糖后不再出现）
+        init: Option<ForInit>,
+        cond: Option<Expr>,
+        step: Option<ForStep>,
+        body: Block,
+    },
+}
 
-    // 新增：循环控制
-    Break,
-    Continue,
+#[derive(Clone, Debug)]
+pub enum ForInit {                                  // NEW
+    Let { name: String, ty: Ty, init: Expr, is_const: bool },
+    Assign { name: String, expr: Expr },
+    Expr(Expr),
+}
+
+#[derive(Clone, Debug)]
+pub enum ForStep {                                  // NEW
+    Assign { name: String, expr: Expr },
+    Expr(Expr),
 }
 
 #[derive(Clone, Debug)]
@@ -48,6 +64,18 @@ pub enum Expr {
     If { cond: Box<Expr>, then_b: Block, else_b: Block },
     Call { callee: String, args: Vec<Expr> },
     Block(Block),
+    Match {                                         // NEW（仅做 parse 时承载，反糖后不再出现）
+        scrut: Box<Expr>,
+        arms: Vec<(Pattern, Block)>,   // (字面量, block)
+        default: Option<Block>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum Pattern {                                  // NEW
+    Int(i64),
+    Bool(bool),
+    Wild, // 不会出现在 arms 里，这里仅为了将来扩展；当前 _ 进 default
 }
 
 #[derive(Clone, Debug)]

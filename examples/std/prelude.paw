@@ -1,8 +1,0 @@
-extern fn print_int(x: Int) -> Int;
-extern fn println_int(x: Int) -> Int;
-
-extern fn print_bool(b: Bool) -> Int;
-extern fn println_bool(b: Bool) -> Int;
-
-extern fn print_str(s: String) -> Int;
-extern fn println_str(s: String) -> Int;

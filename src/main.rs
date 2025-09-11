@@ -4,6 +4,7 @@ mod codegen;
 mod link_zig;
 mod parse;
 mod typecheck;
+mod desugar;
 
 use anyhow::{anyhow, Context, Result};
 use ast::{FunDecl, Item, Program};
@@ -27,7 +28,8 @@ fn expand_file(path: &Path, visited: &mut HashSet<PathBuf>) -> Result<Vec<Item>>
         return Err(anyhow!("cyclic import detected at {}", path.display()));
     }
 
-    let prog = parse_file(path)?;
+    let prog0 = parse_file(path)?;
+    let prog = desugar::desugar_program(prog0);
     println!("{:#?}", prog);
     let mut out = Vec::new();
     for it in prog.items {
@@ -38,7 +40,6 @@ fn expand_file(path: &Path, visited: &mut HashSet<PathBuf>) -> Result<Vec<Item>>
                     let p = Path::new(&spec);
                     if p.is_absolute() { p.to_path_buf() } else { base.join(p) }
                 };
-                println!("{}", target.display());
                 let mut sub = expand_file(&target, visited)
                     .with_context(|| format!("while importing `{}` from {}", spec, path.display()))?;
                 out.append(&mut sub);
@@ -82,7 +83,7 @@ fn parse_target_from_args(rest: &[String]) -> PawTarget {
 fn main() -> Result<()> {
     // 兼容原来的三个位置参数：<src.paw> [out_dir] [exe_name]，并额外支持 --target <triple>
     let mut it = env::args().skip(1);
-    let src_path = it.next().unwrap_or_else(|| "examples/main.paw".to_string());
+    let src_path = it.next().unwrap_or_else(|| "paw/main.paw".to_string());
     let out_dir = it.next().unwrap_or_else(|| "build".to_string());
     let exe_name = it.next().unwrap_or_else(|| "pawlang".to_string());
     let rest = it.collect::<Vec<_>>();

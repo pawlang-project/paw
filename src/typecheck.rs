@@ -205,6 +205,7 @@ impl<'a> TyCk<'a> {
                 if self.in_loop == 0 { return Err(anyhow!("`continue` outside of loop")); }
                 Ok(())
             }
+            _ => unreachable!()
         }
     }
 
@@ -272,6 +273,7 @@ impl<'a> TyCk<'a> {
             }
 
             Expr::Block(b) => self.block(b)?,
+            _ => unreachable!()
         })
     }
 }
