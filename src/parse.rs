@@ -209,7 +209,6 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
             Stmt::Let { name, ty, init, is_const: kw.as_rule() == Rule::KW_CONST }
         }
 
-        // x = expr ;
         Rule::assign_stmt => {
             let mut it = p.into_inner(); // ident "=" expr
             let name = it.next().unwrap().as_str().to_string();
@@ -227,7 +226,90 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
             Stmt::While { cond, body }
         }
 
-        Rule::for_stmt => build_for(p)?,      // for (...) block
+        Rule::if_stmt => {
+            let mut it = p.into_inner();
+
+            // KW_IF
+            let kw_if = it.next().ok_or_else(|| anyhow!("if_stmt: missing `if`"))?;
+            if kw_if.as_rule() != Rule::KW_IF {
+                return Err(anyhow!("if_stmt: expected `if`, got {:?}", kw_if.as_rule()));
+            }
+
+            // 条件 expr
+            let cond_p = it.next().ok_or_else(|| anyhow!("if_stmt: missing condition expr"))?;
+            if cond_p.as_rule() != Rule::expr {
+                return Err(anyhow!("if_stmt: expected expr after `if`, got {:?}", cond_p.as_rule()));
+            }
+            let cond = build_expr(cond_p)?;
+
+            // then 块
+            let then_p = it.next().ok_or_else(|| anyhow!("if_stmt: missing then block"))?;
+            if then_p.as_rule() != Rule::block {
+                return Err(anyhow!("if_stmt: expected then block, got {:?}", then_p.as_rule()));
+            }
+            let then_b = build_block(then_p)?;
+
+            // 可选 else
+            let mut else_b = Block { stmts: vec![], tail: None };
+            if let Some(next) = it.next() {
+                if next.as_rule() == Rule::KW_ELSE {
+                    let blk = it.next().ok_or_else(|| anyhow!("if_stmt: missing else block"))?;
+                    if blk.as_rule() != Rule::block {
+                        return Err(anyhow!("if_stmt: expected else block, got {:?}", blk.as_rule()));
+                    }
+                    else_b = build_block(blk)?;
+                } else {
+                    // 若 grammar 把多余节点放进来，给出提示
+                    return Err(anyhow!("if_stmt: unexpected trailing node {:?}", next.as_rule()));
+                }
+            }
+
+            Stmt::Expr(Expr::If {
+                cond: Box::new(cond),
+                then_b,
+                else_b,
+            })
+        }
+
+        // ✅ 新增：for_stmt
+        // 语法：for "(" for_init? ";" expr? ";" for_step? ")" block
+        // 注意：分号/括号是否出现在 into_inner() 里取决于你的 grammar，
+        // 这里不依赖它们，按顺序尝试消费 for_init / expr / for_step，最后拿 block。
+        Rule::for_stmt => {
+            let mut it = p.into_inner();
+            let _kw = it.next(); // KW_FOR（可能存在）
+            let _lp = it.next(); // "("（可能存在）
+
+            let init = match it.peek().map(|x| x.as_rule()) {
+                Some(Rule::for_init) => { let v = build_for_init(it.next().unwrap())?; v.into() }
+                _ => None,
+            };
+
+            let cond = match it.peek().map(|x| x.as_rule()) {
+                Some(Rule::expr) => { let v = build_expr(it.next().unwrap())?; v.into() }
+                _ => None,
+            };
+
+            let step = match it.peek().map(|x| x.as_rule()) {
+                Some(Rule::for_step) => { let v = build_for_step(it.next().unwrap())?; v.into() }
+                _ => None,
+            };
+
+            // 现在应到达 body（如果 grammar 把 ")" 也作为节点，你可能需要再 it.next() 丢弃一次）
+            let maybe = it.next().ok_or_else(|| anyhow!("for_stmt: missing body block"))?;
+            let body = if maybe.as_rule() == Rule::block {
+                build_block(maybe)?
+            } else {
+                // 尝试再取一个（兼容出现 RPAREN 的情况）
+                let body_pair = it.next().ok_or_else(|| anyhow!("for_stmt: missing body block"))?;
+                if body_pair.as_rule() != Rule::block {
+                    return Err(anyhow!("for_stmt: expected block, got {:?}", body_pair.as_rule()));
+                }
+                build_block(body_pair)?
+            };
+
+            Stmt::For { init, cond, step, body }
+        }
 
         Rule::return_stmt => {
             let mut it = p.into_inner();
@@ -248,9 +330,11 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
             let e = build_expr(p.into_inner().next().unwrap())?;
             Stmt::Expr(e)
         }
-        _ => unreachable!(),
+
+        other => return Err(anyhow!("build_stmt: unexpected rule {:?}", other)),
     })
 }
+
 
 /* ---------------- if / for / match helpers ---------------- */
 
@@ -440,7 +524,6 @@ fn build_pattern(p: Pair<Rule>) -> Result<Pattern> {
 fn build_expr(p: Pair<Rule>) -> Result<Expr> {
     Ok(match p.as_rule() {
         Rule::expr => build_expr(p.into_inner().next().unwrap())?,
-
         Rule::logic_or
         | Rule::logic_and
         | Rule::equality
@@ -452,14 +535,8 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
             let mut it = p.into_inner();
             let first = it.next().unwrap();
             match first.as_rule() {
-                Rule::OP_NOT => Expr::Unary {
-                    op: UnOp::Not,
-                    rhs: Box::new(build_expr(it.next().unwrap())?),
-                },
-                Rule::OP_SUB => Expr::Unary {
-                    op: UnOp::Neg,
-                    rhs: Box::new(build_expr(it.next().unwrap())?),
-                },
+                Rule::OP_NOT => Expr::Unary { op: UnOp::Not, rhs: Box::new(build_expr(it.next().unwrap())?) },
+                Rule::OP_SUB => Expr::Unary { op: UnOp::Neg, rhs: Box::new(build_expr(it.next().unwrap())?) },
                 _ => build_expr(first)?,
             }
         }
@@ -482,25 +559,29 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
                             _ => return Err(anyhow!("call on non-ident")),
                         }
                     }
-                    _ => unreachable!(),
+                    other => return Err(anyhow!("postfix: unexpected suffix {:?}", other)),
                 }
             }
             e
         }
 
         Rule::primary => build_expr(p.into_inner().next().unwrap())?,
-        Rule::group => build_expr(p.into_inner().next().unwrap())?,
+        Rule::group   => build_expr(p.into_inner().next().unwrap())?,
         Rule::if_expr => build_if(p)?,
+
+        // ✅ 新增：match_expr
         Rule::match_expr => build_match(p)?,
 
-        Rule::int_lit => Expr::Int(p.as_str().parse::<i64>()?),
-        Rule::bool_lit => Expr::Bool(p.as_str() == "true"),
+        Rule::int_lit    => Expr::Int(p.as_str().parse::<i64>()?),
+        Rule::bool_lit   => Expr::Bool(p.as_str() == "true"),
         Rule::string_lit => Expr::Str(unescape_string(p.as_str())),
-        Rule::ident => Expr::Var(p.as_str().to_string()),
-        Rule::block => Expr::Block(build_block(p)?),
-        r => return Err(anyhow!("unexpected expr rule: {:?}", r)),
+        Rule::ident      => Expr::Var(p.as_str().to_string()),
+        Rule::block      => Expr::Block(build_block(p)?),
+
+        other => return Err(anyhow!("unexpected expr rule: {:?}", other)),
     })
 }
+
 
 fn fold_binary(p: Pair<Rule>) -> Result<Expr> {
     use BinOp::*;
