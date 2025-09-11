@@ -19,14 +19,25 @@ let_decl = { ( KW_LET | KW_CONST ) ~ ident ~ ":" ~ ty ~ "=" ~ expr ~ ";" }
 ty = { KW_Int | KW_Bool | KW_String }
 
 block = { "{" ~ stmt* ~ tail_expr? ~ "}" }
-stmt  = { let_decl | assign_stmt | while_stmt | break_stmt | continue_stmt | return_stmt | expr_stmt }
+stmt  = { let_decl | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | return_stmt | assign_stmt | expr_stmt }
+if_stmt = { KW_IF ~ "(" ~ expr ~ ")" ~ block ~ (KW_ELSE ~ block)? }
 
 while_stmt  = { KW_WHILE ~ "(" ~ expr ~ ")" ~ block }
 return_stmt = { KW_RETURN ~ expr? ~ ";" }
 expr_stmt   = { expr ~ ";" }
-assign_stmt   = { ident ~ "=" ~ expr ~ ";" }
+assign_stmt = { ident ~ "=" ~ expr ~ ";" }
 break_stmt    = { KW_BREAK ~ ";" }
 continue_stmt = { KW_CONTINUE ~ ";" }
+
+for_stmt = { KW_FOR ~ "(" ~ for_init? ~ ";" ~ expr? ~ ";" ~ for_step? ~ ")" ~ block }
+for_init = { ( KW_LET | KW_CONST ) ~ ident ~ ":" ~ ty ~ "=" ~ expr | ident ~ "=" ~ expr | expr }
+for_step = { ident ~ "=" ~ expr | expr }
+
+match_expr  = { KW_MATCH ~ "(" ~ expr ~ ")" ~ "{" ~ match_arm* ~ match_default? ~ "}" }
+match_arm   = { pattern ~ "=>" ~ block ~ ","? }
+match_default = { KW_DEFAULT ~ "=>" ~ block }
+pattern       = { int_lit | bool_lit | wild_pat }
+wild_pat      = { "_" }
 
 tail_expr = { expr }
 
@@ -34,7 +45,7 @@ expr        = { logic_or }
 logic_or    = { logic_and ~ (OP_OR  ~ logic_and)* }
 logic_and   = { equality  ~ (OP_AND ~ equality )* }
 equality    = { compare   ~ ((OP_EQ | OP_NE) ~ compare)* }
-compare     = { add       ~ ((OP_LT | OP_LE | OP_GT | OP_GE) ~ add)* }
+compare = { add ~ ((OP_LE | OP_LT | OP_GE | OP_GT) ~ add)* }
 add         = { mult      ~ ((OP_ADD | OP_SUB) ~ mult)* }
 mult        = { unary     ~ ((OP_MUL | OP_DIV) ~ unary)* }
 unary       = { (OP_NOT | OP_SUB) ~ unary | postfix }
@@ -42,7 +53,7 @@ postfix     = { primary ~ ( call_suffix )* }
 call_suffix = { "(" ~ arg_list? ~ ")" }
 arg_list    = { expr ~ ("," ~ expr)* }
 
-primary     = { int_lit | bool_lit | string_lit | if_expr | ident | group | block }
+primary     = { int_lit | bool_lit | string_lit | if_expr | match_expr | ident | group | block }
 group       = { "(" ~ expr ~ ")" }
 
 if_expr = { KW_IF ~ "(" ~ expr ~ ")" ~ block ~ KW_ELSE ~ block }
@@ -55,7 +66,8 @@ ident = @{ !keyword ~ (ASCII_ALPHANUMERIC | "_")+ }
 
 keyword   = { KW_FNs | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST | KW_IF | KW_ELSE
             | KW_WHILE | KW_RETURN | KW_BREAK | KW_CONTINUE
-            | KW_Int | KW_Bool | KW_String | KW_true | KW_false }
+            | KW_Int | KW_Bool | KW_String | KW_true | KW_false
+            | KW_FOR | KW_MATCH | KW_DEFAULT }
 KW_FNs    = { "fn" }
 KW_EXTERN = { "extern" }
 KW_IMPORT = { "import" }
@@ -72,15 +84,21 @@ KW_true   = { "true" }
 KW_false  = { "false" }
 KW_BREAK    = { "break" }
 KW_CONTINUE = { "continue" }
+KW_FOR      = { "for" }
+KW_DEFAULT= { "default" }
+KW_MATCH    = { "match" }
 
 OP_OR  = { "||" }
 OP_AND = { "&&" }
+
 OP_EQ  = { "==" }
-OP_NE  = { "!=" }
+OP_NE  = { "!=" }   // 放在 OP_NOT 之前，避免把 '!=' 的 '!' 吃掉
+
+OP_LE  = { "<=" }   // 多字符在前
 OP_LT  = { "<"  }
-OP_LE  = { "<=" }
-OP_GT  = { ">"  }
 OP_GE  = { ">=" }
+OP_GT  = { ">"  }
+
 OP_ADD = { "+"  }
 OP_SUB = { "-"  }
 OP_MUL = { "*"  }

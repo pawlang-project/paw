@@ -1,0 +1,65 @@
+import "std/prelude.paw";
+
+fn sum_to(n: Int) -> Int {
+    let s: Int = 0;
+    // C 风格 for: init; cond; step
+    for (let i: Int = 0; i < n; i = i + 1) {
+        s = s + i;
+    }
+    s
+}
+
+fn test_break() -> Int {
+    let s: Int = 0;
+    for (let i: Int = 0; i < 10; i = i + 1) {
+        if (i == 5) { break; }
+        s = s + 1;
+    }
+    s // 期望: 5
+}
+
+fn test_continue() -> Int {
+    let s: Int = 0;
+    for (let i: Int = 0; i < 10; i = i + 1) {
+        if (i == 5) { continue; } // 继续时应先执行 step，再进入下一轮
+        s = s + 1;
+    }
+    s // 期望: 9
+}
+
+fn classify_int(n: Int) -> Int {
+    match (n) {
+        0 => { 100 },
+        1 => { 200 },
+        _ => { 999 },
+    }
+}
+
+fn classify_bool(b: Bool) -> Int {
+    match (b) {
+        true  => { 1 },
+        false => { 0 },
+    }
+}
+
+fn main() -> Int {
+    println_str("== for/sum_to ==");
+    println_int(sum_to(5));       // 10
+
+    println_str("== for/break ==");
+    println_int(test_break());    // 5
+
+    println_str("== for/continue ==");
+    println_int(test_continue()); // 9
+
+    println_str("== match/int ==");
+    println_int(classify_int(0)); // 100
+    println_int(classify_int(1)); // 200
+    println_int(classify_int(2)); // 999
+
+    println_str("== match/bool ==");
+    println_int(classify_bool(true));  // 1
+    println_int(classify_bool(false)); // 0
+
+    0
+}

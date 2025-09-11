@@ -305,6 +305,7 @@ impl<'a> ExprGen<'a> {
                     b.switch_to_block(cont);
                     b.seal_block(cont);
                 }
+                _ => {}
             }
         }
         let out = match &blk.tail {
@@ -427,6 +428,7 @@ impl<'a> ExprGen<'a> {
                 b.inst_results(call)[0]
             }
             Expr::Block(blk) => self.emit_block(b, blk)?,
+            _ => unreachable!()
         })
     }
 }
