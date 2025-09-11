@@ -1,7 +1,7 @@
 use crate::ast::*;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use pest::iterators::Pair;
 use pest::Parser;
-use pest::iterators::{Pair, Pairs};
 
 #[derive(pest_derive::Parser)]
 #[grammar = "grammar/grammar.pest"]
@@ -92,7 +92,7 @@ fn build_item(p: Pair<Rule>) -> Result<Item> {
     Ok(match p.as_rule() {
         Rule::let_decl => {
             let mut it = p.into_inner();
-            let kw = it.next().unwrap(); // KW_LET | KW_CONST（这两个是命名规则）
+            let kw = it.next().unwrap(); // KW_LET | KW_CONST
             let name = it.next().unwrap().as_str().to_string();
             let ty = build_ty(it.next().unwrap())?;
             let init = build_expr(it.next().unwrap())?;
@@ -104,9 +104,9 @@ fn build_item(p: Pair<Rule>) -> Result<Item> {
             }
         }
         Rule::fun_decl => Item::Fun(build_fun(p)?),
+
         Rule::extern_fun => {
             let mut it = p.into_inner();
-
             // extern fn
             match it.next().map(|x| x.as_rule()) {
                 Some(Rule::KW_EXTERN) => {}
@@ -116,57 +116,57 @@ fn build_item(p: Pair<Rule>) -> Result<Item> {
                 Some(Rule::KW_FNs) => {}
                 other => return Err(anyhow!("extern_fun: expect `fn`, got {:?}", other)),
             }
-
             // 名称
-            let name = it
-                .next()
-                .ok_or_else(|| anyhow!("extern_fun: missing name"))?;
+            let name = it.next().ok_or_else(|| anyhow!("extern_fun: missing name"))?;
             if name.as_rule() != Rule::ident {
-                return Err(anyhow!(
-                    "extern_fun: expect ident, got {:?}",
-                    name.as_rule()
-                ));
+                return Err(anyhow!("extern_fun: expect ident, got {:?}", name.as_rule()));
             }
             let name = name.as_str().to_string();
 
             // 可选参数列表
             let mut params = Vec::new();
-            let next = it
-                .next()
-                .ok_or_else(|| anyhow!("extern_fun: missing return type or params"))?;
+            let next = it.next().ok_or_else(|| anyhow!("extern_fun: missing return type or params"))?;
             let after_params = if next.as_rule() == Rule::param_list {
                 params = build_params(next)?;
-                it.next()
-                    .ok_or_else(|| anyhow!("extern_fun: missing return type after params"))?
-            } else {
-                next
-            };
+                it.next().ok_or_else(|| anyhow!("extern_fun: missing return type after params"))?
+            } else { next };
 
             // 返回类型
             if after_params.as_rule() != Rule::ty {
-                return Err(anyhow!(
-                    "extern_fun: expect return type, got {:?}",
-                    after_params.as_rule()
-                ));
+                return Err(anyhow!("extern_fun: expect return type, got {:?}", after_params.as_rule()));
             }
             let ret = build_ty(after_params)?;
-
-            // 末尾有 `;` 作为字面量，不会出现在 into_inner()，因此不消费
 
             Item::Fun(FunDecl {
                 name,
                 params,
                 ret,
-                body: Block {
-                    stmts: vec![],
-                    tail: None,
-                },
+                body: Block { stmts: vec![], tail: None },
                 is_extern: true,
             })
         }
+
+        Rule::import_decl => {
+            let mut it = p.into_inner();
+
+            let kw = it.next().ok_or_else(|| anyhow!("import_decl: missing `import`"))?;
+            if kw.as_rule() != Rule::KW_IMPORT {
+                return Err(anyhow!("import_decl: expected `import`, got {:?}", kw.as_rule()));
+            }
+
+            let lit = it.next().ok_or_else(|| anyhow!("import_decl: missing string literal"))?;
+            if lit.as_rule() != Rule::string_lit {
+                return Err(anyhow!("import_decl: expected string_lit, got {:?}", lit.as_rule()));
+            }
+
+            let spec = unescape_string(lit.as_str());
+            Item::Import(spec)
+        }
+
         _ => unreachable!(),
     })
 }
+
 
 fn build_params(p: Pair<Rule>) -> Result<Vec<(String, Ty)>> {
     let mut v = Vec::new();
@@ -214,13 +214,17 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
             let name = it.next().unwrap().as_str().to_string();
             let ty = build_ty(it.next().unwrap())?;
             let init = build_expr(it.next().unwrap())?;
-            Stmt::Let {
-                name,
-                ty,
-                init,
-                is_const: kw.as_rule() == Rule::KW_CONST,
-            }
+            Stmt::Let { name, ty, init, is_const: kw.as_rule() == Rule::KW_CONST }
         }
+
+        // x = expr ;
+        Rule::assign_stmt => {
+            let mut it = p.into_inner(); // ident "=" expr
+            let name = it.next().unwrap().as_str().to_string();
+            let expr = build_expr(it.next().unwrap())?;
+            Stmt::Assign { name, expr }
+        }
+
         Rule::while_stmt => {
             let mut it = p.into_inner();
             let _kw = it.next().unwrap();
@@ -230,6 +234,7 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
             let body = build_block(it.next().unwrap())?;
             Stmt::While { cond, body }
         }
+
         Rule::return_stmt => {
             let mut it = p.into_inner();
             let _kw = it.next().unwrap();
@@ -241,6 +246,10 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
             };
             Stmt::Return(expr)
         }
+
+        Rule::break_stmt => Stmt::Break,
+        Rule::continue_stmt => Stmt::Continue,
+
         Rule::expr_stmt => {
             let e = build_expr(p.into_inner().next().unwrap())?;
             Stmt::Expr(e)
@@ -248,6 +257,7 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
         _ => unreachable!(),
     })
 }
+
 
 fn build_if(p: Pair<Rule>) -> Result<Expr> {
     let mut it = p.into_inner();

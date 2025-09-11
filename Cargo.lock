@@ -14,7 +14,6 @@ dependencies = [
  "pest",
  "pest_derive",
  "target-lexicon",
- "thiserror",
 ]
 
 [[package]]

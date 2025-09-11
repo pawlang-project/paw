@@ -198,7 +198,8 @@ fn canon<P: AsRef<Path>>(p: P) -> Result<OsString> {
 /// 优先级：
 /// 1) 环境变量 PAWRT_LIB 指定的绝对路径
 /// 2) ./build/<zig-triple>/libpawrt.a
-/// 3) ./pawrt/target/<rust-triple>/release/libpawrt.a
+/// 3) ./deps/<zig-triple>/libpawrt.a
+/// 4) ./pawrt/target/<rust-triple>/release/libpawrt.a
 fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
     if let Ok(p) = env::var("PAWRT_LIB") {
         let pb = PathBuf::from(p);
@@ -217,14 +218,22 @@ fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
         return Ok(cand);
     }
 
-    // 3) pawrt/target/<rust-triple>/release/libpawrt.a
-    let mut cand2 = PathBuf::from("pawrt");
-    cand2.push("target");
-    cand2.push(target.rust_triple());
-    cand2.push("release");
+    // 3) deps/<triple>/libpawrt.a
+    let mut cand2 = PathBuf::from("deps");
+    cand2.push(target.triple_dir());
     cand2.push("libpawrt.a");
     if cand2.is_file() {
         return Ok(cand2);
+    }
+
+    // 3) pawrt/target/<rust-triple>/release/libpawrt.a
+    let mut cand3 = PathBuf::from("pawrt");
+    cand3.push("target");
+    cand3.push(target.rust_triple());
+    cand3.push("release");
+    cand3.push("libpawrt.a");
+    if cand3.is_file() {
+        return Ok(cand3);
     }
 
     anyhow::bail!(

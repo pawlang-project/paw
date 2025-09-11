@@ -5,10 +5,11 @@ BLOCK_COMMENT = _{ "/*" ~ (BLOCK_COMMENT | (!"*/" ~ ANY))* ~ "*/" }
 
 program = { SOI ~ item* ~ EOI }
 
-item = { extern_fun | fun_decl | let_decl }
+item = { extern_fun | fun_decl | let_decl | import_decl }
 
 fun_decl   = { KW_FNs ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ block }
 extern_fun = { KW_EXTERN ~ KW_FNs ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ ";" }
+import_decl = { KW_IMPORT ~ string_lit ~ ";" }
 
 param_list = { param ~ ("," ~ param)* }
 param = { ident ~ ":" ~ ty }
@@ -18,11 +19,14 @@ let_decl = { ( KW_LET | KW_CONST ) ~ ident ~ ":" ~ ty ~ "=" ~ expr ~ ";" }
 ty = { KW_Int | KW_Bool | KW_String }
 
 block = { "{" ~ stmt* ~ tail_expr? ~ "}" }
-stmt  = { let_decl | while_stmt | return_stmt | expr_stmt }
+stmt  = { let_decl | assign_stmt | while_stmt | break_stmt | continue_stmt | return_stmt | expr_stmt }
 
 while_stmt  = { KW_WHILE ~ "(" ~ expr ~ ")" ~ block }
 return_stmt = { KW_RETURN ~ expr? ~ ";" }
 expr_stmt   = { expr ~ ";" }
+assign_stmt   = { ident ~ "=" ~ expr ~ ";" }
+break_stmt    = { KW_BREAK ~ ";" }
+continue_stmt = { KW_CONTINUE ~ ";" }
 
 tail_expr = { expr }
 
@@ -49,9 +53,12 @@ string_lit = @{ "\"" ~ ( "\\\"" | "\\\\" | "\\n" | "\\t" | (!"\"" ~ ANY) )* ~ "\
 
 ident = @{ !keyword ~ (ASCII_ALPHANUMERIC | "_")+ }
 
-keyword   = { KW_FNs | KW_EXTERN | KW_LET | KW_CONST | KW_IF | KW_ELSE | KW_WHILE | KW_RETURN | KW_Int | KW_Bool | KW_String | KW_true | KW_false }
+keyword   = { KW_FNs | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST | KW_IF | KW_ELSE
+            | KW_WHILE | KW_RETURN | KW_BREAK | KW_CONTINUE
+            | KW_Int | KW_Bool | KW_String | KW_true | KW_false }
 KW_FNs    = { "fn" }
 KW_EXTERN = { "extern" }
+KW_IMPORT = { "import" }
 KW_LET    = { "let" }
 KW_CONST  = { "const" }
 KW_IF     = { "if" }
@@ -63,6 +70,8 @@ KW_Bool   = { "Bool" }
 KW_String = { "String" }
 KW_true   = { "true" }
 KW_false  = { "false" }
+KW_BREAK    = { "break" }
+KW_CONTINUE = { "continue" }
 
 OP_OR  = { "||" }
 OP_AND = { "&&" }

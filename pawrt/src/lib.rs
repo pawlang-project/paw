@@ -8,24 +8,72 @@ use std::{
     ptr,
 };
 
+#[inline]
+fn write_bytes_no_nl(buf: &[u8]) {
+    let _ = io::stdout().write_all(buf);
+    let _ = io::stdout().flush();
+}
+
+#[inline]
+fn write_str_no_nl(s: &str) {
+    let _ = io::stdout().write_all(s.as_bytes());
+    let _ = io::stdout().flush();
+}
+
+#[inline]
+fn write_line(s: &str) {
+    let _ = io::stdout().write_all(s.as_bytes());
+    let _ = io::stdout().write_all(b"\n");
+    let _ = io::stdout().flush();
+}
+
 #[unsafe(no_mangle)]
-pub extern "C" fn paw_print_cstr(s: *const c_char) -> i64 {
-    if s.is_null() {
-        return 0;
-    }
-    // 打印不带换行（保持与很多 C 运行时例子的习惯一致）
+pub extern "C" fn print_int(v: i64) -> i64 {
+    write_str_no_nl(&format!("{}", v));
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn println_int(v: i64) -> i64 {
+    write_line(&format!("{}", v));
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn print_bool(v: i8) -> i8 {
+    let b = (v & 1) != 0;
+    write_str_no_nl(if b { "true" } else { "false" });
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn println_bool(v: i8) -> i8 {
+    let b = (v & 1) != 0;
+    write_line(if b { "true" } else { "false" });
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn print_str(s: *const c_char) -> i64 {
+    if s.is_null() { return 0; }
     unsafe {
         match CStr::from_ptr(s).to_str() {
-            Ok(text) => {
-                // stdout 不加锁 flush 太频繁可能影响性能，这里主动 flush
-                let _ = io::stdout().write_all(text.as_bytes());
-                let _ = io::stdout().flush();
-            }
+            Ok(text) => write_str_no_nl(text),
+            Err(_) => write_bytes_no_nl(CStr::from_ptr(s).to_bytes()),
+        }
+    }
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn println_str(s: *const c_char) -> i64 {
+    if s.is_null() { return 0; }
+    unsafe {
+        match CStr::from_ptr(s).to_str() {
+            Ok(text) => write_line(text),
             Err(_) => {
-                // 非 UTF-8：按字节打印
-                let bytes = CStr::from_ptr(s).to_bytes();
-                let _ = io::stdout().write_all(bytes);
-                let _ = io::stdout().flush();
+                write_bytes_no_nl(CStr::from_ptr(s).to_bytes());
+                write_bytes_no_nl(b"\n");
             }
         }
     }
