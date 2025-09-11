@@ -1,135 +1,144 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
-
 use crate::ast::*;
 
-#[derive(Clone, Debug)]
-pub struct FnSig {
-    pub params: Vec<Ty>,
-    pub ret: Ty,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FnSig { pub params: Vec<Ty>, pub ret: Ty }
+
+pub fn typecheck_program(p: &Program) -> Result<(HashMap<String, FnSig>, HashMap<String, Ty>)> {
+    let mut fnsig = HashMap::<String, FnSig>::new();
+    for it in &p.items {
+        if let Item::Fun(f) = it {
+            if fnsig.contains_key(&f.name) { return Err(anyhow!("duplicate function `{}`", f.name)); }
+            fnsig.insert(f.name.clone(), FnSig { params: f.params.iter().map(|(_,t)|t.clone()).collect(), ret: f.ret.clone() });
+        }
+    }
+    let mut globals = HashMap::<String, Ty>::new();
+    for it in &p.items {
+        if let Item::Global { name, ty, .. } = it {
+            if globals.contains_key(name) { return Err(anyhow!("duplicate global `{}`", name)); }
+            globals.insert(name.clone(), ty.clone());
+        }
+    }
+    let mut ck = TyCk::new(&fnsig, globals.clone());
+    for it in &p.items {
+        if let Item::Global { name, ty, init, .. } = it {
+            let t = ck.expr(init)?;
+            ck.require_assignable(&t, ty).map_err(|e|anyhow!("global `{}` init: {}", name, e))?;
+        }
+    }
+    for it in &p.items {
+        if let Item::Fun(f) = it {
+            if !f.is_extern { ck.check_fun(f)?; }
+        }
+    }
+    Ok((fnsig, globals))
 }
 
-/// fns: 函数签名；globals: 顶层 let/const 的类型；scopes: 局部作用域栈
 pub struct TyCk<'a> {
-    fns: &'a HashMap<String, FnSig>,
+    fnsig: &'a HashMap<String, FnSig>,
     globals: HashMap<String, Ty>,
     scopes: Vec<HashMap<String, Ty>>,
+    current_ret: Option<Ty>,
 }
 
 impl<'a> TyCk<'a> {
-    pub fn new(fns: &'a HashMap<String, FnSig>, globals: HashMap<String, Ty>) -> Self {
-        Self { fns, globals, scopes: vec![HashMap::new()] }
+    fn new(fnsig: &'a HashMap<String, FnSig>, globals: HashMap<String, Ty>) -> Self {
+        Self { fnsig, globals, scopes: vec![], current_ret: None }
+    }
+    fn push(&mut self){ self.scopes.push(HashMap::new()); }
+    fn pop(&mut self){ self.scopes.pop(); }
+    fn lookup(&self, n:&str)->Option<Ty>{
+        for s in self.scopes.iter().rev(){ if let Some(t)=s.get(n){ return Some(t.clone()); } }
+        self.globals.get(n).cloned()
+    }
+    fn require_assignable(&self, src:&Ty, dst:&Ty)->Result<()>{
+        if src==dst { Ok(()) } else { Err(anyhow!("expect `{}`, got `{}`", dst, src)) }
     }
 
-    fn push_scope(&mut self) { self.scopes.push(HashMap::new()); }
-    fn pop_scope(&mut self)  { self.scopes.pop(); }
-
-    fn define_local(&mut self, name: &str, ty: Ty) {
-        self.scopes.last_mut().unwrap().insert(name.to_string(), ty);
-    }
-
-    /// 先查局部作用域，再查全局（关键）
-    fn lookup_var(&self, name: &str) -> Option<Ty> {
-        for s in self.scopes.iter().rev() {
-            if let Some(t) = s.get(name) { return Some(t.clone()); }
+    fn check_fun(&mut self, f:&FunDecl)->Result<()>{
+        self.current_ret = Some(f.ret.clone());
+        self.push();
+        for (n,t) in &f.params {
+            if self.scopes.last().unwrap().contains_key(n) { return Err(anyhow!("dup param `{}`", n)); }
+            self.scopes.last_mut().unwrap().insert(n.clone(), t.clone());
         }
-        self.globals.get(name).cloned()
-    }
-
-    pub fn check_fun(&mut self, f: &FunDecl) -> Result<()> {
-        self.push_scope();
-        for (n, t) in &f.params { self.define_local(n, t.clone()); }
-        let body_ty = self.block(&f.body)?;
-        self.ensure_ty(&body_ty, &f.ret, "function return type mismatch")?;
-        self.pop_scope();
+        let _ = self.block(&f.body)?;
+        self.pop();
+        self.current_ret = None;
         Ok(())
     }
 
-    pub fn block(&mut self, b: &Block) -> Result<Ty> {
-        self.push_scope();
+    fn block(&mut self, b:&Block)->Result<Ty>{
+        self.push();
         for s in &b.stmts { self.stmt(s)?; }
-        let ty = if let Some(tail) = &b.tail { self.expr(tail)? } else { Ty::Int };
-        self.pop_scope();
+        let ty = if let Some(e)=&b.tail { self.expr(e)? } else { Ty::Int };
+        self.pop();
         Ok(ty)
     }
 
-    pub fn stmt(&mut self, s: &Stmt) -> Result<()> {
+    fn stmt(&mut self, s:&Stmt)->Result<()>{
         match s {
             Stmt::Let { name, ty, init, .. } => {
                 let t = self.expr(init)?;
-                self.ensure_ty(&t, ty, &format!("let `{name}` type mismatch"))?;
-                self.define_local(name, ty.clone());
+                self.require_assignable(&t, ty).map_err(|e|anyhow!("let `{}`: {}", name, e))?;
+                if self.scopes.last().unwrap().contains_key(name) { return Err(anyhow!("dup local `{}`", name)); }
+                self.scopes.last_mut().unwrap().insert(name.clone(), ty.clone());
                 Ok(())
             }
-            Stmt::Expr(e) => { let _ = self.expr(e)?; Ok(()) }
-            Stmt::Return(opt) => { if let Some(e) = opt { let _ = self.expr(e)?; } Ok(()) }
-            Stmt::While { cond, body } => {
-                let tc = self.expr(cond)?;
-                self.ensure_bool(&tc, "while condition must be Bool")?;
-                let _ = self.block(body)?;
+            Stmt::Expr(e) => { let _=self.expr(e)?; Ok(()) }
+            Stmt::Return(opt) => {
+                let ret_ty = self
+                    .current_ret
+                    .clone()
+                    .ok_or_else(|| anyhow!("return outside function"))?;
+
+                if let Some(e) = opt {
+                    let t = self.expr(e)?;
+                    self.require_assignable(&t, &ret_ty)?;
+                }
                 Ok(())
+            }
+            Stmt::While{cond, body} => {
+                let t = self.expr(cond)?; self.require_assignable(&t, &Ty::Bool).map_err(|e|anyhow!("while cond: {}", e))?;
+                let _ = self.block(body)?; Ok(())
             }
         }
     }
 
-    pub fn expr(&mut self, e: &Expr) -> Result<Ty> {
-        use BinOp::*;
+    fn expr(&mut self, e:&Expr)->Result<Ty>{
+        use BinOp::*; use UnOp::*;
         Ok(match e {
-            Expr::Int(_)  => Ty::Int,
-            Expr::Bool(_) => Ty::Bool,
-            Expr::Var(n)  => self.lookup_var(n)
-                .ok_or_else(|| anyhow::anyhow!(format!("unknown var `{n}`")))?,
-            Expr::Unary { op, rhs } => {
-                let t = self.expr(rhs)?;
+            Expr::Int(_)=>Ty::Int, Expr::Bool(_)=>Ty::Bool, Expr::Str(_)=>Ty::String,
+            Expr::Var(n)=> self.lookup(n).ok_or_else(||anyhow!("unknown var `{n}`"))?,
+            Expr::Unary{op,rhs} => {
+                let t=self.expr(rhs)?;
+                match op { Neg=>{ self.require_assignable(&t,&Ty::Int)?; Ty::Int },
+                    Not=>{ self.require_assignable(&t,&Ty::Bool)?; Ty::Bool } }
+            }
+            Expr::Binary{op,lhs,rhs}=>{
+                let lt=self.expr(lhs)?; let rt=self.expr(rhs)?;
                 match op {
-                    UnOp::Neg => { self.ensure_int(&t, "unary `-` expects Int")?; Ty::Int }
-                    UnOp::Not => { self.ensure_bool(&t, "unary `!` expects Bool")?; Ty::Bool }
+                    Add|Sub|Mul|Div => { self.require_assignable(&lt,&Ty::Int)?; self.require_assignable(&rt,&Ty::Int)?; Ty::Int }
+                    Lt|Le|Gt|Ge|Eq|Ne => { if lt!=rt { return Err(anyhow!("comparison requires same types")); } Ty::Bool }
+                    And|Or => { self.require_assignable(&lt,&Ty::Bool)?; self.require_assignable(&rt,&Ty::Bool)?; Ty::Bool }
                 }
             }
-            Expr::Binary { op, lhs, rhs } => {
-                let lt = self.expr(lhs)?; let rt = self.expr(rhs)?;
-                match op {
-                    Add|Sub|Mul|Div => { self.ensure_int(&lt,"arith expects Int")?;
-                        self.ensure_int(&rt,"arith expects Int")?; Ty::Int }
-                    Lt|Le|Gt|Ge    => { self.ensure_int(&lt,"cmp expects Int")?;
-                        self.ensure_int(&rt,"cmp expects Int")?; Ty::Bool }
-                    Eq|Ne          => { self.ensure_same(&lt,&rt,"==/!= require same types")?; Ty::Bool }
-                    And|Or         => { self.ensure_bool(&lt,"&&/|| expect Bool")?;
-                        self.ensure_bool(&rt,"&&/|| expect Bool")?; Ty::Bool }
-                }
-            }
-            Expr::If { cond, then_b, else_b } => {
-                let ct = self.expr(cond)?; self.ensure_bool(&ct, "`if` cond must be Bool")?;
-                let tt = self.block(then_b)?; let et = self.block(else_b)?;
-                self.ensure_same(&tt, &et, "`if` branches must have same type")?;
+            Expr::If{cond,then_b,else_b}=>{
+                let ct=self.expr(cond)?; self.require_assignable(&ct,&Ty::Bool).map_err(|e|anyhow!("if cond: {}", e))?;
+                let tt=self.block(then_b)?; let et=self.block(else_b)?;
+                if tt!=et { return Err(anyhow!("if branches type mismatch: then `{}`, else `{}`", tt, et)); }
                 tt
             }
-            Expr::Call { callee, args } => {
-                let sig = self.fns.get(callee)
-                    .ok_or_else(|| anyhow::anyhow!(format!("unknown function `{callee}`")))?;
-                if sig.params.len() != args.len() {
-                    bail!("function `{callee}` expects {} args, got {}", sig.params.len(), args.len());
-                }
-                for (i, (pt, ae)) in sig.params.iter().zip(args.iter()).enumerate() {
-                    let at = self.expr(ae)?;
-                    self.ensure_ty(&at, pt, &format!("arg #{i} type mismatch in call `{callee}`"))?;
+            Expr::Call{callee,args}=>{
+                let sig=self.fnsig.get(callee).ok_or_else(||anyhow!("unknown function `{callee}`"))?;
+                if sig.params.len()!=args.len(){ return Err(anyhow!("function `{}` expects {} args, got {}", callee, sig.params.len(), args.len())); }
+                for (i,(a,pt)) in args.iter().zip(sig.params.iter()).enumerate() {
+                    let at=self.expr(a)?; self.require_assignable(&at, pt).map_err(|e|anyhow!("arg#{i}: {e}"))?;
                 }
                 sig.ret.clone()
             }
-            Expr::Block(b) => self.block(b)?,
+            Expr::Block(b)=> self.block(b)?,
         })
-    }
-
-    fn ensure_int(&self, t: &Ty, msg: &str) -> Result<()> {
-        if matches!(t, Ty::Int) { Ok(()) } else { bail!("{msg}: got {t:?}") }
-    }
-    fn ensure_bool(&self, t: &Ty, msg: &str) -> Result<()> {
-        if matches!(t, Ty::Bool){ Ok(()) } else { bail!("{msg}: got {t:?}") }
-    }
-    fn ensure_same(&self, a: &Ty, b: &Ty, msg: &str) -> Result<()> {
-        if a==b { Ok(()) } else { bail!("{msg}: {a:?} vs {b:?}") }
-    }
-    fn ensure_ty(&self, got: &Ty, expect: &Ty, msg: &str) -> Result<()> {
-        if got==expect { Ok(()) } else { bail!("{msg}: expect {expect:?}, got {got:?}") }
     }
 }

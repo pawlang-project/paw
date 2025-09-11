@@ -1,0 +1,14 @@
+extern fn paw_print_cstr(s: String) -> Int;
+
+const N: Int = 10;
+
+fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+fn main() -> Int {
+    paw_print_cstr("Hello, Paw!\n");
+    let x: Int = 32;
+    let y: Int = add(x, N);
+    if (y > 40) { 0 } else { 1 }
+}

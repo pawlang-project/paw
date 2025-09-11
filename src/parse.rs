@@ -1,110 +1,82 @@
-use anyhow::{Result, bail};
-use pest::Parser;
-use pest::iterators::Pair;
-use pest_derive::Parser;
-
 use crate::ast::*;
+use anyhow::{Result, anyhow};
+use pest::Parser;
+use pest::iterators::{Pair, Pairs};
 
-#[derive(Parser)]
+#[derive(pest_derive::Parser)]
 #[grammar = "grammar/grammar.pest"]
-struct PawLangParser;
+pub struct PawParser;
 
-#[derive(thiserror::Error, Debug)]
-pub enum ParseError {
-    #[error("unexpected rule: {0:?}")]
-    UnexpectedRule(Rule),
-    #[error("message: {0}")]
-    Msg(String),
-}
-
-pub fn parse_program(src: &str) -> Result<(Vec<FunDecl>, Vec<Stmt>)> {
-    let mut pairs = PawLangParser::parse(Rule::program, src)?;
-    let program = pairs.next().unwrap();
-    let mut funs = Vec::new();
-    let mut top_stmts = Vec::new();
-
-    for item in program.into_inner() {
-        match item.as_rule() {
-            Rule::item => {
-                let mut inner = item.into_inner();
-                let first = inner.next().unwrap();
-                match first.as_rule() {
-                    Rule::fun_decl => funs.push(build_fun(first)?),
-                    Rule::let_decl => top_stmts.push(build_let(first)?),
-                    _ => unreachable!(),
+pub fn parse_program(src: &str) -> Result<Program> {
+    let pairs = PawParser::parse(Rule::program, src)?;
+    let mut items = Vec::new();
+    for p in pairs {
+        match p.as_rule() {
+            Rule::program => {
+                for it in p.into_inner() {
+                    if it.as_rule() == Rule::item {
+                        items.push(build_item(it.into_inner().next().unwrap())?);
+                    }
                 }
             }
             _ => {}
         }
     }
-    Ok((funs, top_stmts))
+    Ok(Program { items })
 }
 
-// ---- builders ----
 fn build_fun(p: Pair<Rule>) -> Result<FunDecl> {
-    let mut it = p.into_inner().peekable();
+    let mut it = p.into_inner();
 
-    // 先吃掉 fn 关键字（因为 KW_FNs 是可见节点）
-    if let Some(peek) = it.peek() {
-        if peek.as_rule() == Rule::KW_FNs {
-            it.next();
-        }
+    // 1) fn 关键字
+    match it.next().map(|x| x.as_rule()) {
+        Some(Rule::KW_FNs) => {}
+        other => return Err(anyhow!("fun_decl: expect `fn`, got {:?}", other)),
     }
 
-    // 函数名
-    let name = match it.next() {
-        Some(pair) if pair.as_rule() == Rule::ident => pair.as_str().to_string(),
-        other => bail!(
-            "fun_decl: expect ident after 'fn', got {:?}",
-            other.map(|x| x.as_rule())
-        ),
+    // 2) 标识符
+    let name = it
+        .next()
+        .ok_or_else(|| anyhow!("fun_decl: missing function name"))?;
+    if name.as_rule() != Rule::ident {
+        return Err(anyhow!("fun_decl: expect ident, got {:?}", name.as_rule()));
+    }
+    let name = name.as_str().to_string();
+
+    // 3) 可选参数列表（注意：括号不会出现）
+    let mut params = Vec::new();
+    let next = it
+        .next()
+        .ok_or_else(|| anyhow!("fun_decl: missing return type or params"))?;
+    let after_params = if next.as_rule() == Rule::param_list {
+        params = build_params(next)?;
+        // 读下一个：应该是 ty
+        it.next()
+            .ok_or_else(|| anyhow!("fun_decl: missing return type after params"))?
+    } else {
+        // 没有参数列表，则 next 就是 ty
+        next
     };
 
-    // 读取参数：可能是 param_list，可能是一串 param，或者无参直接到返回类型
-    let mut params: Vec<(String, Ty)> = Vec::new();
-    match it.peek().map(|q| q.as_rule()) {
-        Some(Rule::param_list) => {
-            params = build_params(it.next().unwrap())?;
-        }
-        Some(Rule::param) => {
-            while let Some(peek) = it.peek() {
-                if peek.as_rule() != Rule::param {
-                    break;
-                }
-                let pr = it.next().unwrap();
-                let mut ip = pr.into_inner();
-                let pname = ip.next().unwrap().as_str().to_string();
-                let pty = build_ty(ip.next().unwrap())?;
-                params.push((pname, pty));
-            }
-        }
-        _ => { /* 无参 */ }
-    }
-
-    // 返回类型（兼容 ty 或直接 KW_Int/KW_Bool）
-    let ret_ty_pair = match it.next() {
-        Some(pair)
-            if pair.as_rule() == Rule::ty
-                || pair.as_rule() == Rule::KW_Int
-                || pair.as_rule() == Rule::KW_Bool =>
-        {
-            pair
-        }
-        other => bail!(
+    // 4) 返回类型
+    if after_params.as_rule() != Rule::ty {
+        return Err(anyhow!(
             "fun_decl: expect return type, got {:?}",
-            other.map(|x| x.as_rule())
-        ),
-    };
-    let ret = build_ty(ret_ty_pair)?;
+            after_params.as_rule()
+        ));
+    }
+    let ret = build_ty(after_params)?;
 
-    // 函数体 block
-    let body_pair = match it.next() {
-        Some(pair) if pair.as_rule() == Rule::block => pair,
-        other => bail!(
-            "fun_decl: expect block after return type, got {:?}",
-            other.map(|x| x.as_rule())
-        ),
-    };
+    // 5) 函数体
+    let body_pair = it
+        .next()
+        .ok_or_else(|| anyhow!("fun_decl: missing function body block"))?;
+    if body_pair.as_rule() != Rule::block {
+        return Err(anyhow!(
+            "fun_decl: expect block, got {:?}",
+            body_pair.as_rule()
+        ));
+    }
     let body = build_block(body_pair)?;
 
     Ok(FunDecl {
@@ -112,18 +84,98 @@ fn build_fun(p: Pair<Rule>) -> Result<FunDecl> {
         params,
         ret,
         body,
+        is_extern: false,
+    })
+}
+
+fn build_item(p: Pair<Rule>) -> Result<Item> {
+    Ok(match p.as_rule() {
+        Rule::let_decl => {
+            let mut it = p.into_inner();
+            let kw = it.next().unwrap(); // KW_LET | KW_CONST（这两个是命名规则）
+            let name = it.next().unwrap().as_str().to_string();
+            let ty = build_ty(it.next().unwrap())?;
+            let init = build_expr(it.next().unwrap())?;
+            Item::Global {
+                name,
+                ty,
+                init,
+                is_const: kw.as_rule() == Rule::KW_CONST,
+            }
+        }
+        Rule::fun_decl => Item::Fun(build_fun(p)?),
+        Rule::extern_fun => {
+            let mut it = p.into_inner();
+
+            // extern fn
+            match it.next().map(|x| x.as_rule()) {
+                Some(Rule::KW_EXTERN) => {}
+                other => return Err(anyhow!("extern_fun: expect `extern`, got {:?}", other)),
+            }
+            match it.next().map(|x| x.as_rule()) {
+                Some(Rule::KW_FNs) => {}
+                other => return Err(anyhow!("extern_fun: expect `fn`, got {:?}", other)),
+            }
+
+            // 名称
+            let name = it
+                .next()
+                .ok_or_else(|| anyhow!("extern_fun: missing name"))?;
+            if name.as_rule() != Rule::ident {
+                return Err(anyhow!(
+                    "extern_fun: expect ident, got {:?}",
+                    name.as_rule()
+                ));
+            }
+            let name = name.as_str().to_string();
+
+            // 可选参数列表
+            let mut params = Vec::new();
+            let next = it
+                .next()
+                .ok_or_else(|| anyhow!("extern_fun: missing return type or params"))?;
+            let after_params = if next.as_rule() == Rule::param_list {
+                params = build_params(next)?;
+                it.next()
+                    .ok_or_else(|| anyhow!("extern_fun: missing return type after params"))?
+            } else {
+                next
+            };
+
+            // 返回类型
+            if after_params.as_rule() != Rule::ty {
+                return Err(anyhow!(
+                    "extern_fun: expect return type, got {:?}",
+                    after_params.as_rule()
+                ));
+            }
+            let ret = build_ty(after_params)?;
+
+            // 末尾有 `;` 作为字面量，不会出现在 into_inner()，因此不消费
+
+            Item::Fun(FunDecl {
+                name,
+                params,
+                ret,
+                body: Block {
+                    stmts: vec![],
+                    tail: None,
+                },
+                is_extern: true,
+            })
+        }
+        _ => unreachable!(),
     })
 }
 
 fn build_params(p: Pair<Rule>) -> Result<Vec<(String, Ty)>> {
     let mut v = Vec::new();
-    for pr in p.into_inner() {
-        if pr.as_rule() == Rule::param {
-            let mut it = pr.into_inner();
-            let name = it.next().unwrap().as_str().to_string();
-            let ty = build_ty(it.next().unwrap())?;
-            v.push((name, ty));
-        }
+    for x in p.into_inner() {
+        // x: param
+        let mut it = x.into_inner(); // ident ":" ty
+        let name = it.next().unwrap().as_str().to_string();
+        let ty = build_ty(it.next().unwrap())?;
+        v.push((name, ty));
     }
     Ok(v)
 }
@@ -132,39 +184,21 @@ fn build_ty(p: Pair<Rule>) -> Result<Ty> {
     Ok(match p.as_rule() {
         Rule::KW_Int => Ty::Int,
         Rule::KW_Bool => Ty::Bool,
-        Rule::ty => {
-            // ty = { KW_Int | KW_Bool } —— 里面会有一个可见的 KW_*
-            let kw = p.into_inner().next().unwrap().as_rule();
-            match kw {
-                Rule::KW_Int => Ty::Int,
-                Rule::KW_Bool => Ty::Bool,
-                other => bail!("unknown type token in ty: {:?}", other),
-            }
-        }
-        other => bail!("expect type, got {:?}", other),
+        Rule::KW_String => Ty::String,
+        Rule::ty => build_ty(p.into_inner().next().unwrap())?,
+        r => return Err(anyhow!("unexpected ty rule: {:?}", r)),
     })
 }
 
 fn build_block(p: Pair<Rule>) -> Result<Block> {
     let mut stmts = Vec::new();
     let mut tail = None;
-    for it in p.into_inner() {
-        match it.as_rule() {
-            Rule::stmt => {
-                let inner = it.into_inner().next().unwrap();
-                match inner.as_rule() {
-                    Rule::let_decl => stmts.push(build_let(inner)?),
-                    Rule::while_stmt => stmts.push(build_while(inner)?),
-                    Rule::return_stmt => stmts.push(build_return(inner)?),
-                    Rule::expr_stmt => {
-                        stmts.push(Stmt::Expr(build_expr(inner.into_inner().next().unwrap())?))
-                    }
-                    _ => unreachable!(),
-                }
-            }
+    for x in p.into_inner() {
+        match x.as_rule() {
+            Rule::stmt => stmts.push(build_stmt(x.into_inner().next().unwrap())?),
             Rule::tail_expr => {
-                let expr_pair = it.into_inner().next().unwrap();
-                tail = Some(Box::new(build_expr(expr_pair)?));
+                let e = build_expr(x.into_inner().next().unwrap())?;
+                tail = Some(Box::new(e));
             }
             _ => {}
         }
@@ -172,196 +206,201 @@ fn build_block(p: Pair<Rule>) -> Result<Block> {
     Ok(Block { stmts, tail })
 }
 
-fn build_let(p: Pair<Rule>) -> Result<Stmt> {
-    // ( KW_LET | KW_CONST ) ~ ident ~ ":" ~ ty ~ "=" ~ expr ~ ";"
-    let mut it = p.into_inner();
-
-    let kw_rule = it.next().unwrap().as_rule(); // KW_LET or KW_CONST
-    let is_const = matches!(kw_rule, Rule::KW_CONST);
-
-    let name = it.next().unwrap().as_str().to_string();
-    let ty = build_ty(it.next().unwrap())?;
-    let init = build_expr(it.next().unwrap())?;
-
-    Ok(Stmt::Let {
-        name,
-        ty,
-        init,
-        is_const,
+fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
+    Ok(match p.as_rule() {
+        Rule::let_decl => {
+            let mut it = p.into_inner();
+            let kw = it.next().unwrap();
+            let name = it.next().unwrap().as_str().to_string();
+            let ty = build_ty(it.next().unwrap())?;
+            let init = build_expr(it.next().unwrap())?;
+            Stmt::Let {
+                name,
+                ty,
+                init,
+                is_const: kw.as_rule() == Rule::KW_CONST,
+            }
+        }
+        Rule::while_stmt => {
+            let mut it = p.into_inner();
+            let _kw = it.next().unwrap();
+            let _lp = it.next().unwrap();
+            let cond = build_expr(it.next().unwrap())?;
+            let _rp = it.next().unwrap();
+            let body = build_block(it.next().unwrap())?;
+            Stmt::While { cond, body }
+        }
+        Rule::return_stmt => {
+            let mut it = p.into_inner();
+            let _kw = it.next().unwrap();
+            let maybe = it.next();
+            let expr = if let Some(pe) = maybe.filter(|x| x.as_rule() == Rule::expr) {
+                Some(build_expr(pe)?)
+            } else {
+                None
+            };
+            Stmt::Return(expr)
+        }
+        Rule::expr_stmt => {
+            let e = build_expr(p.into_inner().next().unwrap())?;
+            Stmt::Expr(e)
+        }
+        _ => unreachable!(),
     })
 }
 
-fn build_return(p: Pair<Rule>) -> Result<Stmt> {
+fn build_if(p: Pair<Rule>) -> Result<Expr> {
     let mut it = p.into_inner();
-    let e = it.next().map(build_expr).transpose()?;
-    Ok(Stmt::Return(e))
-}
 
-fn build_while(p: Pair<Rule>) -> Result<Stmt> {
-    // while "(" expr ")" block
-    let mut it = p.into_inner();
-    let cond = build_expr(it.next().unwrap())?;
-    let body = build_block(it.next().unwrap())?;
-    Ok(Stmt::While { cond, body })
+    // KW_IF
+    let kw_if = it.next().ok_or_else(|| anyhow!("if_expr: missing `if`"))?;
+    if kw_if.as_rule() != Rule::KW_IF {
+        return Err(anyhow!("if_expr: expected `if`, got {:?}", kw_if.as_rule()));
+    }
+
+    // 条件 expr（注意没有括号节点）
+    let cond_p = it.next().ok_or_else(|| anyhow!("if_expr: missing condition expr"))?;
+    if cond_p.as_rule() != Rule::expr {
+        return Err(anyhow!("if_expr: expected expr after `if`, got {:?}", cond_p.as_rule()));
+    }
+    let cond = build_expr(cond_p)?;
+
+    // then 块
+    let then_p = it.next().ok_or_else(|| anyhow!("if_expr: missing then block"))?;
+    if then_p.as_rule() != Rule::block {
+        return Err(anyhow!("if_expr: expected then block, got {:?}", then_p.as_rule()));
+    }
+    let then_b = build_block(then_p)?;
+
+    // KW_ELSE
+    let kw_else = it.next().ok_or_else(|| anyhow!("if_expr: missing `else`"))?;
+    if kw_else.as_rule() != Rule::KW_ELSE {
+        return Err(anyhow!("if_expr: expected `else`, got {:?}", kw_else.as_rule()));
+    }
+
+    // else 块
+    let else_p = it.next().ok_or_else(|| anyhow!("if_expr: missing else block"))?;
+    if else_p.as_rule() != Rule::block {
+        return Err(anyhow!("if_expr: expected else block, got {:?}", else_p.as_rule()));
+    }
+    let else_b = build_block(else_p)?;
+
+    Ok(Expr::If { cond: Box::new(cond), then_b, else_b })
 }
 
 fn build_expr(p: Pair<Rule>) -> Result<Expr> {
-    match p.as_rule() {
-        Rule::expr => build_expr(p.into_inner().next().unwrap()),
+    Ok(match p.as_rule() {
+        Rule::expr => build_expr(p.into_inner().next().unwrap())?,
         Rule::logic_or
         | Rule::logic_and
         | Rule::equality
         | Rule::compare
         | Rule::add
-        | Rule::mult => fold_binary(p),
-        Rule::unary => build_unary(p),
-        Rule::postfix => build_postfix(p),
-        Rule::primary => build_primary(p),
-        _ => bail!("unexpected expr node: {:?}", p.as_rule()),
-    }
-}
-
-fn build_unary(p: Pair<Rule>) -> Result<Expr> {
-    let mut it = p.into_inner();
-    let first = it.next().unwrap();
-    match first.as_rule() {
-        Rule::OP_NOT => Ok(Expr::Unary {
-            op: UnOp::Not,
-            rhs: Box::new(build_expr(it.next().unwrap())?),
-        }),
-        Rule::OP_SUB => Ok(Expr::Unary {
-            op: UnOp::Neg,
-            rhs: Box::new(build_expr(it.next().unwrap())?),
-        }),
-        _ => build_postfix(first),
-    }
-}
-
-fn build_postfix(p: Pair<Rule>) -> Result<Expr> {
-    // primary ( "(" args? ")" )*
-    let mut it = p.into_inner();
-    let mut node = build_primary(it.next().unwrap())?;
-    for suf in it {
-        match suf.as_rule() {
-            Rule::call_suffix => {
-                let mut args = Vec::new();
-                if let Some(al) = suf.into_inner().next() {
-                    // arg_list?
-                    for e in al.into_inner() {
-                        args.push(build_expr(e)?);
-                    }
-                }
-                node = match node {
-                    Expr::Var(name) => Expr::Call { callee: name, args },
-                    _ => bail!("call target must be an identifier for now"),
-                };
+        | Rule::mult => fold_binary(p)?,
+        Rule::unary => {
+            let mut it = p.into_inner();
+            let first = it.next().unwrap();
+            match first.as_rule() {
+                Rule::OP_NOT => Expr::Unary {
+                    op: UnOp::Not,
+                    rhs: Box::new(build_expr(it.next().unwrap())?),
+                },
+                Rule::OP_SUB => Expr::Unary {
+                    op: UnOp::Neg,
+                    rhs: Box::new(build_expr(it.next().unwrap())?),
+                },
+                _ => build_expr(first)?,
             }
-            _ => {}
         }
-    }
-    Ok(node)
-}
-
-fn build_primary(p: Pair<Rule>) -> Result<Expr> {
-    let mut it = p.clone().into_inner();
-    match p.as_rule() {
-        Rule::primary => build_primary(it.next().unwrap()),
-        Rule::int_lit => Ok(Expr::Int(p.as_str().parse::<i64>()?)),
-        Rule::bool_lit => Ok(Expr::Bool(matches!(p.as_str(), "true"))),
-        Rule::ident => Ok(Expr::Var(p.as_str().to_string())),
-        Rule::group => build_expr(it.next().unwrap()),
-        Rule::block => Ok(Expr::Block(build_block(p)?)),
-        Rule::if_expr => {
-            // if "(" cond ")" block else block
-            let mut ii = p.into_inner();
-            let cond = build_expr(ii.next().unwrap())?;
-            let then_b = build_block(ii.next().unwrap())?;
-            let else_b = build_block(ii.next().unwrap())?;
-            Ok(Expr::If {
-                cond: Box::new(cond),
-                then_b: Box::new(then_b),
-                else_b,
-            })
+        Rule::postfix => {
+            let mut it = p.into_inner();
+            let mut e = build_expr(it.next().unwrap())?;
+            for suf in it {
+                match suf.as_rule() {
+                    Rule::call_suffix => {
+                        let mut args = Vec::new();
+                        let mut ii = suf.into_inner();
+                        if let Some(al) = ii.next() {
+                            for ae in al.into_inner() {
+                                args.push(build_expr(ae)?);
+                            }
+                        }
+                        match e {
+                            Expr::Var(name) => e = Expr::Call { callee: name, args },
+                            _ => return Err(anyhow!("call on non-ident")),
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            e
         }
-        _ => bail!("unexpected primary: {:?}", p.as_rule()),
-    }
-}
-
-fn binop_of(rule: Rule) -> BinOp {
-    match rule {
-        Rule::OP_OR => BinOp::Or,
-        Rule::OP_AND => BinOp::And,
-        Rule::OP_EQ => BinOp::Eq,
-        Rule::OP_NE => BinOp::Ne,
-        Rule::OP_LT => BinOp::Lt,
-        Rule::OP_LE => BinOp::Le,
-        Rule::OP_GT => BinOp::Gt,
-        Rule::OP_GE => BinOp::Ge,
-        Rule::OP_ADD => BinOp::Add,
-        Rule::OP_SUB => BinOp::Sub,
-        Rule::OP_MUL => BinOp::Mul,
-        Rule::OP_DIV => BinOp::Div,
-        _ => unreachable!(),
-    }
+        Rule::primary => build_expr(p.into_inner().next().unwrap())?,
+        Rule::group => build_expr(p.into_inner().next().unwrap())?,
+        Rule::if_expr => build_if(p)?,
+        Rule::int_lit => Expr::Int(p.as_str().parse::<i64>()?),
+        Rule::bool_lit => Expr::Bool(p.as_str() == "true"),
+        Rule::string_lit => Expr::Str(unescape_string(p.as_str())),
+        Rule::ident => Expr::Var(p.as_str().to_string()),
+        Rule::block => Expr::Block(build_block(p)?),
+        r => return Err(anyhow!("unexpected expr rule: {:?}", r)),
+    })
 }
 
 fn fold_binary(p: Pair<Rule>) -> Result<Expr> {
-    // 规则形如: level = lower ~ (op ~ lower)*
-    let mut it = p.clone().into_inner();
-    let first = it.next().ok_or_else(|| {
-        anyhow::anyhow!(
-            "empty expression at {:?}",
-            p.as_span().start_pos().line_col()
-        )
-    })?;
-    let mut node = build_expr(first)?;
-
-    while let Some(op_or) = it.next() {
-        // 取 rhs，如果没有就报错（而不是 unwrap panic）
-        let rhs_pair = match it.next() {
-            Some(r) => r,
-            None => {
-                let (line, col) = op_or.as_span().start_pos().line_col();
-                bail!(
-                    "binary operator {:?} missing rhs at {}:{}",
-                    op_or.as_rule(),
-                    line,
-                    col
-                );
-            }
+    use BinOp::*;
+    let mut it = p.into_inner();
+    let mut lhs = build_expr(it.next().unwrap())?;
+    while let Some(op) = it.next() {
+        let rhs = build_expr(it.next().unwrap())?;
+        let bop = match op.as_rule() {
+            Rule::OP_ADD => Add,
+            Rule::OP_SUB => Sub,
+            Rule::OP_MUL => Mul,
+            Rule::OP_DIV => Div,
+            Rule::OP_LT => Lt,
+            Rule::OP_LE => Le,
+            Rule::OP_GT => Gt,
+            Rule::OP_GE => Ge,
+            Rule::OP_EQ => Eq,
+            Rule::OP_NE => Ne,
+            Rule::OP_AND => And,
+            Rule::OP_OR => Or,
+            r => return Err(anyhow!("binary op {:?} not expected", r)),
         };
-
-        // 只有这些规则才是合法的二元运算符
-        let op = match op_or.as_rule() {
-            Rule::OP_OR
-            | Rule::OP_AND
-            | Rule::OP_EQ
-            | Rule::OP_NE
-            | Rule::OP_LT
-            | Rule::OP_LE
-            | Rule::OP_GT
-            | Rule::OP_GE
-            | Rule::OP_ADD
-            | Rule::OP_SUB
-            | Rule::OP_MUL
-            | Rule::OP_DIV => binop_of(op_or.as_rule()),
-            other => {
-                let (line, col) = op_or.as_span().start_pos().line_col();
-                bail!(
-                    "unexpected token in binary sequence: {:?} at {}:{}",
-                    other,
-                    line,
-                    col
-                );
-            }
-        };
-
-        let rhs = build_expr(rhs_pair)?;
-        node = Expr::Binary {
-            op,
-            lhs: Box::new(node),
+        lhs = Expr::Binary {
+            op: bop,
+            lhs: Box::new(lhs),
             rhs: Box::new(rhs),
         };
     }
-    Ok(node)
+    Ok(lhs)
+}
+
+fn unescape_string(s: &str) -> String {
+    // 输入形如 "...."
+    let bytes = s.as_bytes();
+    let mut out = String::new();
+    let mut i = 1; // 跳过开头 "
+    while i + 1 < bytes.len() {
+        let c = bytes[i] as char;
+        if c == '"' {
+            break;
+        }
+        if c == '\\' {
+            i += 1;
+            let e = bytes[i] as char;
+            match e {
+                'n' => out.push('\n'),
+                't' => out.push('\t'),
+                '\\' => out.push('\\'),
+                '"' => out.push('"'),
+                _ => out.push(e),
+            }
+        } else {
+            out.push(c);
+        }
+        i += 1;
+    }
+    out
 }
