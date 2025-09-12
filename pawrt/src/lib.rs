@@ -34,14 +34,14 @@ pub extern "C" fn println_int(v: i64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn print_bool(v: i8) -> i8 {
+pub extern "C" fn print_bool(v: i64) -> i64 {
     let b = (v & 1) != 0;
     write_str_no_nl(if b { "true" } else { "false" });
     0
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn println_bool(v: i8) -> i8 {
+pub extern "C" fn println_bool(v: i64) -> i64 {
     let b = (v & 1) != 0;
     write_line(if b { "true" } else { "false" });
     0
