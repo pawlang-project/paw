@@ -605,28 +605,86 @@ impl<'a> ExprGen<'a> {
 
             // 二元
             Expr::Binary{op,lhs,rhs}=>{
-                let l0 = self.emit_expr(b, lhs)?;
-                let r0 = self.emit_expr(b, rhs)?;
                 match op {
+                    // ---- 短路 AND ----
                     And => {
-                        let l1 = self.bool_i8_to_b1(b, l0);
-                        let r1 = self.bool_i8_to_b1(b, r0);
-                        let both = b.ins().band(l1, r1);
-                        self.bool_b1_to_i8(b, both)
+                        let l  = self.emit_expr(b, lhs)?;          // i8
+                        let l1 = self.bool_i8_to_b1(b, l);         // b1
+
+                        let rhsb   = b.create_block();  // 需要计算 rhs 的路径
+                        let falseb = b.create_block();  // 短路为 false
+                        let out    = b.create_block();  // 合流
+
+                        let res = b.declare_var(types::I8);
+
+                        b.ins().brif(l1, rhsb, &[], falseb, &[]);
+
+                        // false 路径：直接 0
+                        b.switch_to_block(falseb);
+                        b.seal_block(falseb);
+                        let zero = b.ins().iconst(types::I8, 0);
+                        b.def_var(res, zero);
+                        b.ins().jump(out, &[]);
+
+                        // rhs 路径：计算 rhs，再归一为 i8
+                        b.switch_to_block(rhsb);
+                        b.seal_block(rhsb);
+                        let r  = self.emit_expr(b, rhs)?;          // i8
+                        let r1 = self.bool_i8_to_b1(b, r);         // b1
+                        let ri = self.bool_b1_to_i8(b, r1);        // i8
+                        b.def_var(res, ri);
+                        b.ins().jump(out, &[]);
+
+                        // 合流
+                        b.switch_to_block(out);
+                        b.seal_block(out);
+                        b.use_var(res)
                     }
+
+                    // ---- 短路 OR ----
                     Or => {
-                        let l1 = self.bool_i8_to_b1(b, l0);
-                        let r1 = self.bool_i8_to_b1(b, r0);
-                        let any = b.ins().bor(l1, r1);
-                        self.bool_b1_to_i8(b, any)
+                        let l  = self.emit_expr(b, lhs)?;          // i8
+                        let l1 = self.bool_i8_to_b1(b, l);         // b1
+
+                        let trueb = b.create_block();  // 短路为 true
+                        let rhsb  = b.create_block();  // 需要计算 rhs
+                        let out   = b.create_block();  // 合流
+
+                        let res = b.declare_var(types::I8);
+
+                        b.ins().brif(l1, trueb, &[], rhsb, &[]);
+
+                        // true 路径：直接 1
+                        b.switch_to_block(trueb);
+                        b.seal_block(trueb);
+                        let one = b.ins().iconst(types::I8, 1);
+                        b.def_var(res, one);
+                        b.ins().jump(out, &[]);
+
+                        // rhs 路径：计算 rhs，再归一为 i8
+                        b.switch_to_block(rhsb);
+                        b.seal_block(rhsb);
+                        let r  = self.emit_expr(b, rhs)?;          // i8
+                        let r1 = self.bool_i8_to_b1(b, r);         // b1
+                        let ri = self.bool_b1_to_i8(b, r1);        // i8
+                        b.def_var(res, ri);
+                        b.ins().jump(out, &[]);
+
+                        b.switch_to_block(out);
+                        b.seal_block(out);
+                        b.use_var(res)
                     }
-                    Add | Sub | Mul | Div | Lt | Le | Gt | Ge | Eq | Ne => {
-                        let (l, r, ty) = self.unify_values_for_numeric(b, l0, r0);
+
+                    // 其他二元运算：仍然是“左右都算”，再数值统一
+                    _ => {
+                        let l = self.emit_expr(b, lhs)?;
+                        let r = self.emit_expr(b, rhs)?;
+                        let (l, r, ty) = self.unify_values_for_numeric(b, l, r);
                         match op {
-                            Add => if ty.is_int() { b.ins().iadd(l,r) } else { b.ins().fadd(l,r) },
-                            Sub => if ty.is_int() { b.ins().isub(l,r) } else { b.ins().fsub(l,r) },
-                            Mul => if ty.is_int() { b.ins().imul(l,r) } else { b.ins().fmul(l,r) },
-                            Div => if ty.is_int() { b.ins().sdiv(l,r) } else { b.ins().fdiv(l,r) },
+                            Add => if ty.is_int() { b.ins().iadd(l, r) } else { b.ins().fadd(l, r) },
+                            Sub => if ty.is_int() { b.ins().isub(l, r) } else { b.ins().fsub(l, r) },
+                            Mul => if ty.is_int() { b.ins().imul(l, r) } else { b.ins().fmul(l, r) },
+                            Div => if ty.is_int() { b.ins().sdiv(l, r) } else { b.ins().fdiv(l, r) },
                             Lt | Le | Gt | Ge => {
                                 let b1 = if ty.is_int() {
                                     let cc = match op {
@@ -634,7 +692,7 @@ impl<'a> ExprGen<'a> {
                                         Le => IntCC::SignedLessThanOrEqual,
                                         Gt => IntCC::SignedGreaterThan,
                                         Ge => IntCC::SignedGreaterThanOrEqual,
-                                        _ => unreachable!(),
+                                        _  => unreachable!(),
                                     };
                                     b.ins().icmp(cc, l, r)
                                 } else {
@@ -643,7 +701,7 @@ impl<'a> ExprGen<'a> {
                                         Le => FloatCC::LessThanOrEqual,
                                         Gt => FloatCC::GreaterThan,
                                         Ge => FloatCC::GreaterThanOrEqual,
-                                        _ => unreachable!(),
+                                        _  => unreachable!(),
                                     };
                                     b.ins().fcmp(cc, l, r)
                                 };
@@ -659,7 +717,7 @@ impl<'a> ExprGen<'a> {
                                 };
                                 self.bool_b1_to_i8(b, b1)
                             }
-                            _ => unreachable!(),
+                            And | Or => unreachable!(), // 已在上面处理
                         }
                     }
                 }
