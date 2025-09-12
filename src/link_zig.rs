@@ -212,7 +212,6 @@ fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
     let mut cand = PathBuf::from("deps");
     cand.push(target.rust_triple());
     cand.push("libpawrt.a");
-    println!("{:?}", cand);
     if cand.is_file() {
         return Ok(cand);
     }
@@ -253,6 +252,8 @@ pub fn link_with_zig(inp: &LinkInput) -> Result<()> {
         }
         PawTarget::MacosX64 | PawTarget::MacosArm64 => {
             cmd.arg("-mmacosx-version-min=11.0");
+            // cmd.arg("-Wl,-adhoc_codesign");
+            // cmd.arg("-Wl,-no_fixup_chains");
         }
     }
 
