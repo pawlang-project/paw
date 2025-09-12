@@ -1,3 +1,4 @@
+// src/codegen.rs
 use crate::ast::*;
 use anyhow::{anyhow, Result};
 use cranelift_codegen::{
@@ -5,12 +6,12 @@ use cranelift_codegen::{
     ir::condcodes::{FloatCC, IntCC},
     isa, settings,
 };
-use cranelift_codegen::settings::Configurable;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{default_libcall_names, DataDescription as DataContext, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use std::collections::HashMap;
-use target_lexicon::Triple;
+use cranelift_native;
+use std::collections::{HashMap, HashSet};
+use cranelift_codegen::settings::Configurable;
 
 // ---------- 可内联注入的全局常量 ----------
 #[derive(Clone, Debug)]
@@ -24,25 +25,51 @@ pub enum GConst {
 
 pub struct CLBackend {
     pub module: ObjectModule,
+
     // name -> (Ty, const)
     pub globals_val: HashMap<String, (Ty, GConst)>,
     str_pool: HashMap<String, DataId>,
-    // 函数完整签名：参数类型 + 返回类型（用于 call 做形参与返回）
+
+    // 符号名 -> (参数类型列表, 返回类型)
     fn_sig: HashMap<String, (Vec<Ty>, Ty)>,
+
+    // —— 单态化管理 —— //
+    templates: HashMap<String, FunDecl>,              // 基名 -> 模板
+    mono_declared: HashSet<String>,                   // 已声明专门化符号
+    mono_defined: HashSet<String>,                    // 已定义专门化符号
+    mono_func_ids: HashMap<String, FuncId>,           // 专门化名 -> FuncId
+    mono_specs: HashMap<String, (String, Vec<Ty>)>,   // 专门化名 -> (基名, 类型实参)
+
+    // —— 基名函数缓存（修复调用处重新声明的问题） —— //
+    base_func_ids: HashMap<String, FuncId>,           // 基名 -> FuncId
 }
 
 impl CLBackend {
     pub fn new() -> Result<Self> {
+        // Flags
         let mut fb = settings::builder();
         fb.set("is_pic", "true")?;
         let flags = settings::Flags::new(fb);
-        let isa = isa::lookup(Triple::host())?.finish(flags)?;
+
+        // ISA - 使用本机
+        let isa = cranelift_native::builder()
+            .map_err(|e| anyhow!("cranelift_native::builder(): {e}"))?
+            .finish(flags)
+            .map_err(|e| anyhow!("finish ISA: {e}"))?;
+
+        // 模块
         let obj = ObjectBuilder::new(isa, "paw_obj".to_string(), default_libcall_names())?;
         Ok(Self {
             module: ObjectModule::new(obj),
             globals_val: HashMap::new(),
             str_pool: HashMap::new(),
             fn_sig: HashMap::new(),
+            templates: HashMap::new(),
+            mono_declared: HashSet::new(),
+            mono_defined: HashSet::new(),
+            mono_func_ids: HashMap::new(),
+            mono_specs: HashMap::new(),
+            base_func_ids: HashMap::new(),
         })
     }
 
@@ -52,22 +79,45 @@ impl CLBackend {
             if let Item::Global { name, ty, init, is_const } = it {
                 if !*is_const { continue; }
                 match (ty, init) {
-                    (Ty::Int,    Expr::Int(n))    => { self.globals_val.insert(name.clone(), (Ty::Int,    GConst::I32(*n))); }
-                    (Ty::Long,   Expr::Long(n))   => { self.globals_val.insert(name.clone(), (Ty::Long,   GConst::I64(*n))); }
-                    (Ty::Bool,   Expr::Bool(b))   => { self.globals_val.insert(name.clone(), (Ty::Bool,   GConst::I8(if *b {1} else {0}))); }
-                    (Ty::Char,   Expr::Char(u))   => { self.globals_val.insert(name.clone(), (Ty::Char,   GConst::I32(*u as i32))); }
-                    (Ty::Float,  Expr::Float(x))  => { self.globals_val.insert(name.clone(), (Ty::Float,  GConst::F32(*x))); }
-                    (Ty::Double, Expr::Double(x)) => { self.globals_val.insert(name.clone(), (Ty::Double, GConst::F64(*x))); }
-                    // String/Void 或非常量初始化不内联
-                    _ => {}
+                    (&Ty::Int,    &Expr::Int(n))    => {
+                        self.globals_val.insert(name.clone(), (Ty::Int,    GConst::I32(n)));
+                    }
+                    (&Ty::Long,   &Expr::Long(n))   => {
+                        self.globals_val.insert(name.clone(), (Ty::Long,   GConst::I64(n)));
+                    }
+                    (&Ty::Bool,   &Expr::Bool(b))   => {
+                        self.globals_val.insert(name.clone(), (Ty::Bool,   GConst::I8(if b { 1 } else { 0 })));
+                    }
+                    (&Ty::Char,   &Expr::Char(u))   => {
+                        self.globals_val.insert(name.clone(), (Ty::Char,   GConst::I32(u as i32)));
+                    }
+                    (&Ty::Float,  &Expr::Float(x))  => {
+                        self.globals_val.insert(name.clone(), (Ty::Float,  GConst::F32(x)));
+                    }
+                    (&Ty::Double, &Expr::Double(x)) => {
+                        self.globals_val.insert(name.clone(), (Ty::Double, GConst::F64(x)));
+                    }
+                    (&Ty::String, &Expr::Str(_))    => {
+                        // 字符串常量若要内联为数据段 + 句柄，可在此扩展；当前跳过
+                    }
+                    _ => {
+                        // 非字面量或不支持的常量初始化，不内联
+                    }
                 }
             }
         }
     }
 
+    /// 声明**非泛型/extern**函数；保存**泛型模板**
     pub fn declare_fns(&mut self, funs: &[FunDecl]) -> Result<HashMap<String, FuncId>> {
         let mut ids = HashMap::new();
         for f in funs {
+            if !f.type_params.is_empty() {
+                // 泛型：不直接声明符号，保存模板
+                self.templates.insert(f.name.clone(), f.clone());
+                continue;
+            }
+            // 非泛型（包含 extern）
             let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
             for (_, ty) in &f.params {
                 let t = cl_ty(ty).ok_or_else(|| anyhow!("param type `{:?}` cannot be used in ABI", ty))?;
@@ -79,7 +129,9 @@ impl CLBackend {
             let linkage = if f.is_extern { Linkage::Import } else { Linkage::Export };
             let id = self.module.declare_function(&f.name, linkage, &sig)?;
             ids.insert(f.name.clone(), id);
-            // 记录完整签名（参数 + 返回）
+            self.base_func_ids.insert(f.name.clone(), id); // 关键：缓存基名 FuncId
+
+            // 记录签名（基名）
             self.fn_sig.insert(
                 f.name.clone(),
                 (f.params.iter().map(|(_, t)| t.clone()).collect(), f.ret.clone())
@@ -88,10 +140,90 @@ impl CLBackend {
         Ok(ids)
     }
 
+    /// 扫描程序并声明所有**带显式类型实参**的专门化符号
+    pub fn declare_mono_from_program(&mut self, prog: &Program) -> Result<()> {
+        let mut calls: Vec<(String, Vec<Ty>)> = Vec::new();
+        collect_calls_with_generics_in_program(prog, &mut calls);
+
+        for (base, targs) in calls {
+            if targs.is_empty() { continue; }
+            let templ = self.templates.get(&base)
+                .ok_or_else(|| anyhow!("call `{}`<...> but no generic template found", base))?;
+            if templ.type_params.len() != targs.len() {
+                return Err(anyhow!(
+                    "function `{}` expects {} type args, got {}",
+                    base, templ.type_params.len(), targs.len()
+                ));
+            }
+
+            let mname = mangle_name(&base, &targs);
+            if !self.mono_declared.insert(mname.clone()) {
+                continue; // 已声明
+            }
+
+            // 计算专门化后的 ABI 类型
+            let subst = build_subst_map(&templ.type_params, &targs);
+            let mut param_tys = Vec::<Ty>::new();
+            for (_, pty) in &templ.params {
+                param_tys.push(subst_ty(pty, &subst));
+            }
+            let ret_ty = subst_ty(&templ.ret, &subst);
+
+            let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
+            for t in &param_tys {
+                let ct = cl_ty(t).ok_or_else(|| anyhow!("monomorph param type not ABI-legal: {:?}", t))?;
+                sig.params.push(AbiParam::new(ct));
+            }
+            if let Some(rt) = cl_ty(&ret_ty) {
+                sig.returns.push(AbiParam::new(rt));
+            }
+
+            let fid = self.module.declare_function(&mname, Linkage::Local, &sig)?;
+            self.fn_sig.insert(mname.clone(), (param_tys.clone(), ret_ty.clone()));
+            self.mono_func_ids.insert(mname.clone(), fid);
+            self.mono_specs.insert(mname.clone(), (base.clone(), targs.clone()));
+        }
+        Ok(())
+    }
+
+    /// 定义**非泛型**函数体
     pub fn define_fn(&mut self, f: &FunDecl, ids: &HashMap<String, FuncId>) -> Result<()> {
         if f.is_extern { return Ok(()); }
+        if !f.type_params.is_empty() {
+            // 模板不在这里定义
+            return Ok(());
+        }
+        let fid = *ids.get(&f.name).ok_or_else(|| anyhow!("missing FuncId for `{}`", f.name))?;
+        self.define_fn_core(fid, f)
+    }
 
-        // ---- 函数签名 ----
+    /// 定义所有已声明的**专门化**函数体
+    pub fn define_mono_from_program(&mut self, _prog: &Program, _base_ids: &HashMap<String, FuncId>) -> Result<()> {
+        let specs: Vec<(String, (String, Vec<Ty>))> =
+            self.mono_specs.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
+        for (mname, (base, targs)) in specs {
+            if !self.mono_defined.insert(mname.clone()) {
+                continue; // 已定义
+            }
+            let templ = self.templates.get(&base)
+                .ok_or_else(|| anyhow!("monomorph define: template `{}` not found", base))?;
+            if templ.type_params.len() != targs.len() {
+                return Err(anyhow!("template `{}` type params mismatch for `{}`", base, mname));
+            }
+            let fid = *self.mono_func_ids.get(&mname)
+                .ok_or_else(|| anyhow!("monomorph define: missing FuncId for `{}`", mname))?;
+
+            let subst = build_subst_map(&templ.type_params, &targs);
+            let mono_fun = specialize_fun(templ, &subst, &mname)?;
+            self.define_fn_core(fid, &mono_fun)?;
+        }
+        Ok(())
+    }
+
+    /// 核心定义：根据 FunDecl 生成 CLIF 并 define
+    fn define_fn_core(&mut self, fid: FuncId, f: &FunDecl) -> Result<()> {
+        // 签名
         let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
         for (_, ty) in &f.params {
             sig.params.push(AbiParam::new(cl_ty(ty).ok_or_else(|| anyhow!("invalid param ty {:?}", ty))?));
@@ -100,7 +232,7 @@ impl CLBackend {
             sig.returns.push(AbiParam::new(ret_t));
         }
 
-        // ---- 构建 IR ----
+        // 构建 IR
         let mut ctx = self.module.make_context();
         ctx.func.signature = sig;
         let mut fb_ctx = FunctionBuilderContext::new();
@@ -124,7 +256,7 @@ impl CLBackend {
             scopes_ty.last_mut().unwrap().insert(name.clone(), ty.clone());
         }
 
-        // 编译期“可内联全局常量”注入
+        // 可内联全局常量注入
         {
             let scope_vars  = scopes.last_mut().unwrap();
             let scope_types = scopes_ty.last_mut().unwrap();
@@ -149,7 +281,6 @@ impl CLBackend {
         // 生成函数体
         let mut cg = ExprGen {
             be: self,
-            ids,
             scopes,
             scopes_ty,
             loop_stack: Vec::new(),
@@ -159,21 +290,19 @@ impl CLBackend {
         // emit body：函数最后兜底 return
         let ret_val = cg.emit_block(&mut b, &f.body)?;
 
-        match f.ret {
-            Ty::Void => {
-                b.ins().return_(&[]);
-            }
-            _ => {
-                let v = cg.coerce_to_ty(&mut b, ret_val, &f.ret);
-                b.ins().return_(&[v]);
-            }
+        // 结束 return（避免 borrow 冲突，先克隆 ret_ty）
+        let ret_ty = cg.fun_ret.clone();
+        if matches!(ret_ty, Ty::Void) {
+            b.ins().return_(&[]);
+        } else {
+            let v = cg.coerce_to_ty(&mut b, ret_val, &ret_ty);
+            b.ins().return_(&[v]);
         }
 
         b.finalize();
 
         // 写回模块
-        let id = *ids.get(&f.name).ok_or_else(|| anyhow!("missing FuncId for `{}`", f.name))?;
-        self.module.define_function(id, &mut ctx)?;
+        self.module.define_function(fid, &mut ctx)?;
         self.module.clear_context(&mut ctx);
         Ok(())
     }
@@ -208,12 +337,16 @@ fn cl_ty(t: &Ty) -> Option<ir::Type> {
         Ty::Double => Some(types::F64),
         Ty::String => Some(types::I64),  // 句柄/指针
         Ty::Void   => None,
+        // 泛型/类型应用不应落到后端（需单态化后替换干净）
+        Ty::Var(_) | Ty::App { .. } => None,
     }
 }
 
+// ---------------------------
+// ------ Expr 生成器 --------
+// ---------------------------
 struct ExprGen<'a> {
     be: &'a mut CLBackend,
-    ids: &'a HashMap<String, FuncId>,
     scopes: Vec<HashMap<String, Variable>>,
     scopes_ty: Vec<HashMap<String, Ty>>,
     // (continue_target, break_target)
@@ -271,7 +404,6 @@ impl<'a> ExprGen<'a> {
         let src = b.func.dfg.value_type(v);
         if src == dst { return v; }
 
-        // 同为整数：按位宽扩展/截断（有符号）
         if src.is_int() && dst.is_int() {
             return if src.bits() < dst.bits() {
                 b.ins().sextend(dst, v)
@@ -279,8 +411,6 @@ impl<'a> ExprGen<'a> {
                 b.ins().ireduce(dst, v)
             }
         }
-
-        // 同为浮点：提升/降级精度
         if src.is_float() && dst.is_float() {
             return if src.bits() < dst.bits() {
                 b.ins().fpromote(dst, v)
@@ -289,16 +419,15 @@ impl<'a> ExprGen<'a> {
             }
         }
 
-        // 其他跨族：按目标补“零值”
         if dst == types::I8  { return b.ins().iconst(types::I8,  0); }
         if dst == types::I32 { return b.ins().iconst(types::I32, 0); }
         if dst == types::I64 { return b.ins().iconst(types::I64, 0); }
         if dst == types::F32 { return b.ins().f32const(0.0); }
         if dst == types::F64 { return b.ins().f64const(0.0); }
-        v // 兜底（通常用不到）
+        v
     }
 
-    // 仅做位宽/精度统一（整型统一到“更宽”的那一边；浮点统一到 f64）
+    // 仅做位宽/精度统一
     fn unify_values_for_numeric(
         &mut self,
         b:&mut FunctionBuilder,
@@ -309,7 +438,6 @@ impl<'a> ExprGen<'a> {
         let rt = self.val_ty(b, r);
         if lt == rt { return (l, r, lt); }
 
-        // 整型统一：扩展较窄的一侧
         if lt.is_int() && rt.is_int() {
             let target = if lt.bits() >= rt.bits() { lt } else { rt };
             if lt.bits() < target.bits() { l = b.ins().sextend(target, l); }
@@ -317,7 +445,6 @@ impl<'a> ExprGen<'a> {
             return (l, r, target);
         }
 
-        // 浮点统一：统一到 f64（若有一侧是 f64）
         if lt.is_float() && rt.is_float() {
             if lt == types::F64 || rt == types::F64 {
                 if lt == types::F32 { l = b.ins().fpromote(types::F64, l); }
@@ -328,7 +455,6 @@ impl<'a> ExprGen<'a> {
             }
         }
 
-        // 其他组合（不应出现）：保持原样
         (l, r, lt)
     }
 
@@ -338,7 +464,6 @@ impl<'a> ExprGen<'a> {
             match s {
                 Stmt::Let { name, ty, init, .. } => {
                     let v0 = self.emit_expr(b, init)?;
-                    // Bool 归一 0/1；其他按目标类型收敛
                     let v  = match ty {
                         Ty::Bool => {
                             let b1 = self.bool_i8_to_b1(b, v0);
@@ -351,12 +476,8 @@ impl<'a> ExprGen<'a> {
                 }
 
                 Stmt::Assign { name, expr } => {
-                    let var = self
-                        .lookup(name)
-                        .ok_or_else(|| anyhow!("unknown var `{name}`"))?;
-                    let ty = self
-                        .lookup_ty(name)
-                        .ok_or_else(|| anyhow!("no type for `{name}`"))?;
+                    let var = self.lookup(name).ok_or_else(|| anyhow!("unknown var `{name}`"))?;
+                    let ty = self.lookup_ty(name).ok_or_else(|| anyhow!("no type for `{name}`"))?;
                     let rhs = self.emit_expr(b, expr)?;
                     let v = self.coerce_to_ty(b, rhs, &ty);
                     b.def_var(var, v);
@@ -510,19 +631,18 @@ impl<'a> ExprGen<'a> {
                 }
 
                 Stmt::Return(opt) => {
-                    match (&self.fun_ret, opt) {
+                    match (self.fun_ret.clone(), opt) {
                         (Ty::Void, Some(e)) => {
                             let _ = self.emit_expr(b, e)?;
                             b.ins().return_(&[]);
                         }
-                        (_ret, Some(e)) => {
-                            let ret_ty = self.fun_ret.clone();
-                            let raw    = self.emit_expr(b, e)?;
-                            let v      = self.coerce_to_ty(b, raw, &ret_ty);
+                        (ret_ty, Some(e)) => {
+                            let raw = self.emit_expr(b, e)?;
+                            let v   = self.coerce_to_ty(b, raw, &ret_ty);
                             b.ins().return_(&[v]);
                         }
-                        (_ret, None) => {
-                            match self.fun_ret {
+                        (ret_ty, None) => {
+                            match ret_ty {
                                 Ty::Bool => {
                                     let z = b.ins().iconst(types::I8, 0);
                                     b.ins().return_(&[z]);
@@ -545,6 +665,12 @@ impl<'a> ExprGen<'a> {
                                 }
                                 Ty::Void => {
                                     b.ins().return_(&[]);
+                                }
+                                other => {
+                                    return Err(anyhow!(
+                                        "codegen: `return` without value but function has non-void/unsupported return type: {:?}",
+                                        other
+                                    ));
                                 }
                             }
                         }
@@ -732,7 +858,7 @@ impl<'a> ExprGen<'a> {
                 b.seal_block(tbb);
                 let tv0   = self.emit_block(b, then_b)?;
                 let tv_ty = self.val_ty(b, tv0);        // 以 then 的 IR 类型作为 φ 的目标类型
-                let phi   = b.declare_var(tv_ty);       // 声明“φ变量”
+                let phi   = b.declare_var(tv_ty);
                 b.def_var(phi, tv0);
                 b.ins().jump(mb, &[]);
 
@@ -740,7 +866,7 @@ impl<'a> ExprGen<'a> {
                 b.switch_to_block(ebb);
                 b.seal_block(ebb);
                 let ev0 = self.emit_block(b, else_b)?;
-                let ev  = self.coerce_value_to_irtype(b, ev0, tv_ty); // else -> then 的类型
+                let ev  = self.coerce_value_to_irtype(b, ev0, tv_ty); // else -> then
                 b.def_var(phi, ev);
                 b.ins().jump(mb, &[]);
 
@@ -827,7 +953,6 @@ impl<'a> ExprGen<'a> {
                         b.def_var(phi.unwrap(), v);
                         b.ins().jump(out, &[]);
                     } else {
-                        // 无 default：补 i32 0（与 typecheck 约定一致）
                         if phi.is_none() { phi = Some(b.declare_var(types::I32)); }
                         let z = b.ins().iconst(types::I32, 0);
                         b.def_var(phi.unwrap(), z);
@@ -841,18 +966,32 @@ impl<'a> ExprGen<'a> {
             }
 
             // —— 调用 —— //
-            Expr::Call { callee, args } => {
-                let fid  = *self.ids.get(callee).ok_or_else(|| anyhow!("unknown fn `{callee}`"))?;
-                let fref = self.be.module.declare_func_in_func(fid, b.func);
+            Expr::Call { callee, generics, args } => {
+                // 选择符号名与 FuncId
+                let (sym, fid) = if !generics.is_empty() {
+                    let mname = mangle_name(callee, generics);
+                    let fid  = *self.be.mono_func_ids.get(&mname)
+                        .ok_or_else(|| anyhow!("unknown monomorph function `{}`", mname))?;
+                    (mname, fid)
+                } else {
+                    // 非泛型：使用声明阶段缓存的基名 FuncId
+                    let _ = self.be.fn_sig.get(callee)
+                        .ok_or_else(|| anyhow!("unknown function `{}`", callee))?;
+                    let fid = *self.be.base_func_ids.get(callee)
+                        .ok_or_else(|| anyhow!("missing FuncId for base `{}`; did you call declare_fns()?", callee))?;
+                    (callee.clone(), fid)
+                };
 
-                let (param_tys, ret_ty) = self.be.fn_sig.get(callee)
-                    .ok_or_else(|| anyhow!("missing signature for `{callee}`"))?
+                // 取签名
+                let (param_tys, ret_ty) = self.be.fn_sig.get(&sym)
+                    .ok_or_else(|| anyhow!("missing signature for `{sym}`"))?
                     .clone();
 
                 if param_tys.len() != args.len() {
-                    return Err(anyhow!("function `{}` expects {} args, got {}", callee, param_tys.len(), args.len()));
+                    return Err(anyhow!("function `{}` expects {} args, got {}", sym, param_tys.len(), args.len()));
                 }
 
+                // 实参生成与收敛
                 let mut av = Vec::with_capacity(args.len());
                 for (a, pt) in args.iter().zip(param_tys.iter()) {
                     let v0 = self.emit_expr(b, a)?;
@@ -860,10 +999,12 @@ impl<'a> ExprGen<'a> {
                     av.push(v);
                 }
 
+                // 发起调用
+                let fref = self.be.module.declare_func_in_func(fid, b.func);
                 let call = b.ins().call(fref, &av);
+
                 if matches!(ret_ty, Ty::Void) {
-                    // 容错：表达式位置不应调用 void；给个 0（i32）
-                    b.ins().iconst(types::I32, 0)
+                    b.ins().iconst(types::I32, 0) // 表达式位置容错
                 } else {
                     b.inst_results(call)[0]
                 }
@@ -872,5 +1013,249 @@ impl<'a> ExprGen<'a> {
             // —— 块表达式 —— //
             Expr::Block(blk) => self.emit_block(b, blk)?,
         })
+    }
+}
+
+// ----------------------------------
+// ----- 单态化：名字 & 替换工具 -----
+// ----------------------------------
+
+fn mangle_ty(t: &Ty) -> String {
+    match t {
+        Ty::Int    => "Int".into(),
+        Ty::Long   => "Long".into(),
+        Ty::Bool   => "Bool".into(),
+        Ty::String => "String".into(),
+        Ty::Double => "Double".into(),
+        Ty::Float  => "Float".into(),
+        Ty::Char   => "Char".into(),
+        Ty::Void   => "Void".into(),
+        Ty::Var(n) => format!("Var({})", n),
+        Ty::App { name, args } => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                let parts: Vec<String> = args.iter().map(mangle_ty).collect();
+                format!("{}<{}>", name, parts.join(","))
+            }
+        }
+    }
+}
+
+fn mangle_name(base: &str, args: &[Ty]) -> String {
+    if args.is_empty() {
+        base.to_string()
+    } else {
+        let parts: Vec<String> = args.iter().map(mangle_ty).collect();
+        format!("{}${}", base, parts.join(","))
+    }
+}
+
+fn build_subst_map(params: &[String], args: &[Ty]) -> HashMap<String, Ty> {
+    let mut m = HashMap::new();
+    for (p, a) in params.iter().zip(args.iter()) {
+        m.insert(p.clone(), a.clone());
+    }
+    m
+}
+
+fn subst_ty(t: &Ty, s: &HashMap<String, Ty>) -> Ty {
+    match t {
+        Ty::Var(n) => s.get(n).cloned().unwrap_or_else(|| Ty::Var(n.clone())),
+        Ty::App { name, args } => Ty::App { name: name.clone(), args: args.iter().map(|x| subst_ty(x, s)).collect() },
+        _ => t.clone(),
+    }
+}
+
+fn subst_expr(e: &Expr, s: &HashMap<String, Ty>) -> Expr {
+    match e {
+        Expr::Call { callee, generics, args } => Expr::Call {
+            callee: callee.clone(),
+            generics: generics.iter().map(|t| subst_ty(t, s)).collect(),
+            args: args.iter().map(|a| subst_expr(a, s)).collect(),
+        },
+        Expr::Unary { op, rhs } => Expr::Unary { op: *op, rhs: Box::new(subst_expr(rhs, s)) },
+        Expr::Binary { op, lhs, rhs } => Expr::Binary {
+            op: *op,
+            lhs: Box::new(subst_expr(lhs, s)),
+            rhs: Box::new(subst_expr(rhs, s)),
+        },
+        Expr::If { cond, then_b, else_b } => Expr::If {
+            cond: Box::new(subst_expr(cond, s)),
+            then_b: subst_block(then_b, s),
+            else_b: subst_block(else_b, s),
+        },
+        Expr::Match { scrut, arms, default } => {
+            let scr = Box::new(subst_expr(scrut, s));
+            let mut new_arms = Vec::with_capacity(arms.len());
+            for (pat, blk) in arms {
+                new_arms.push((pat.clone(), subst_block(blk, s)));
+            }
+            let def = default.as_ref().map(|b| subst_block(b, s));
+            Expr::Match { scrut: scr, arms: new_arms, default: def }
+        }
+        Expr::Block(b) => Expr::Block(subst_block(b, s)),
+        _ => e.clone(),
+    }
+}
+
+fn subst_stmt(st: &Stmt, s: &HashMap<String, Ty>) -> Stmt {
+    match st {
+        Stmt::Let { name, ty, init, is_const } => Stmt::Let {
+            name: name.clone(),
+            ty: subst_ty(ty, s),
+            init: subst_expr(init, s),
+            is_const: *is_const,
+        },
+        Stmt::Assign { name, expr } => Stmt::Assign {
+            name: name.clone(),
+            expr: subst_expr(expr, s),
+        },
+        Stmt::While { cond, body } => Stmt::While {
+            cond: subst_expr(cond, s),
+            body: subst_block(body, s),
+        },
+        Stmt::For { init, cond, step, body } => Stmt::For {
+            init: init.as_ref().map(|fi| match fi {
+                ForInit::Let { name, ty, init, is_const } => ForInit::Let {
+                    name: name.clone(),
+                    ty: subst_ty(ty, s),
+                    init: subst_expr(init, s),
+                    is_const: *is_const,
+                },
+                ForInit::Assign { name, expr } => ForInit::Assign {
+                    name: name.clone(),
+                    expr: subst_expr(expr, s),
+                },
+                ForInit::Expr(e) => ForInit::Expr(subst_expr(e, s)),
+            }),
+            cond: cond.as_ref().map(|c| subst_expr(c, s)),
+            step: step.as_ref().map(|stp| match stp {
+                ForStep::Assign { name, expr } => ForStep::Assign { name: name.clone(), expr: subst_expr(expr, s) },
+                ForStep::Expr(e) => ForStep::Expr(subst_expr(e, s)),
+            }),
+            body: subst_block(body, s),
+        },
+        Stmt::If { cond, then_b, else_b } => Stmt::If {
+            cond: subst_expr(cond, s),
+            then_b: subst_block(then_b, s),
+            else_b: else_b.as_ref().map(|b| subst_block(b, s)),
+        },
+        Stmt::Expr(e) => Stmt::Expr(subst_expr(e, s)),
+        Stmt::Return(e) => Stmt::Return(e.as_ref().map(|x| subst_expr(x, s))),
+        Stmt::Break | Stmt::Continue => st.clone(),
+    }
+}
+
+fn subst_block(b: &Block, s: &HashMap<String, Ty>) -> Block {
+    Block {
+        stmts: b.stmts.iter().map(|st| subst_stmt(st, s)).collect(),
+        tail: b.tail.as_ref().map(|e| Box::new(subst_expr(e, s))),
+    }
+}
+
+fn specialize_fun(tpl: &FunDecl, subst: &HashMap<String, Ty>, mono_name: &str) -> Result<FunDecl> {
+    let mut params = Vec::with_capacity(tpl.params.len());
+    for (n, t) in &tpl.params {
+        let nt = subst_ty(t, subst);
+        if cl_ty(&nt).is_none() {
+            return Err(anyhow!("monomorph param type not concrete/ABI-legal in `{}`: {:?}", mono_name, nt));
+        }
+        params.push((n.clone(), nt));
+    }
+    let ret = subst_ty(&tpl.ret, subst);
+    if !matches!(ret, Ty::Void) && cl_ty(&ret).is_none() {
+        return Err(anyhow!("monomorph return type not concrete/ABI-legal in `{}`: {:?}", mono_name, ret));
+    }
+    let body = subst_block(&tpl.body, subst);
+    Ok(FunDecl {
+        name: mono_name.to_string(),
+        type_params: vec![],
+        params,
+        ret,
+        where_bounds: vec![],
+        body,
+        is_extern: false,
+    })
+}
+
+// ----------------------------------
+// ----- 遍历：收集泛型调用 -----
+// ----------------------------------
+
+fn collect_calls_with_generics_in_program(p: &Program, out: &mut Vec<(String, Vec<Ty>)>) {
+    for it in &p.items {
+        match it {
+            Item::Fun(f) => collect_calls_in_block(&f.body, out),
+            Item::Global { init, .. } => collect_calls_in_expr(init, out),
+            Item::Import(_) => {}
+            _ => {}
+        }
+    }
+}
+
+fn collect_calls_in_block(b: &Block, out: &mut Vec<(String, Vec<Ty>)>) {
+    for s in &b.stmts {
+        match s {
+            Stmt::Let { init, .. } => collect_calls_in_expr(init, out),
+            Stmt::Assign { expr, .. } => collect_calls_in_expr(expr, out),
+            Stmt::While { cond, body } => { collect_calls_in_expr(cond, out); collect_calls_in_block(body, out); }
+            Stmt::For { init, cond, step, body } => {
+                if let Some(fi) = init {
+                    match fi {
+                        ForInit::Let { init, .. } => collect_calls_in_expr(init, out),
+                        ForInit::Assign { expr, .. } => collect_calls_in_expr(expr, out),
+                        ForInit::Expr(e) => collect_calls_in_expr(e, out),
+                    }
+                }
+                if let Some(c) = cond { collect_calls_in_expr(c, out); }
+                if let Some(st) = step {
+                    match st {
+                        ForStep::Assign { expr, .. } => collect_calls_in_expr(expr, out),
+                        ForStep::Expr(e) => collect_calls_in_expr(e, out),
+                    }
+                }
+                collect_calls_in_block(body, out);
+            }
+            Stmt::If { cond, then_b, else_b } => {
+                collect_calls_in_expr(cond, out);
+                collect_calls_in_block(then_b, out);
+                if let Some(b) = else_b { collect_calls_in_block(b, out); }
+            }
+            Stmt::Expr(e) => collect_calls_in_expr(e, out),
+            Stmt::Return(opt) => if let Some(e) = opt { collect_calls_in_expr(e, out); },
+            Stmt::Break | Stmt::Continue => {}
+        }
+    }
+    if let Some(t) = &b.tail { collect_calls_in_expr(t, out); }
+}
+
+fn collect_calls_in_expr(e: &Expr, out: &mut Vec<(String, Vec<Ty>)>) {
+    match e {
+        Expr::Call { callee, generics, args } => {
+            if !generics.is_empty() {
+                out.push((callee.clone(), generics.clone()));
+            }
+            for a in args {
+                collect_calls_in_expr(a, out);
+            }
+        }
+        Expr::Unary { rhs, .. } => collect_calls_in_expr(rhs, out),
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_calls_in_expr(lhs, out);
+            collect_calls_in_expr(rhs, out);
+        }
+        Expr::If { cond, then_b, else_b } => {
+            collect_calls_in_expr(cond, out);
+            collect_calls_in_block(then_b, out);
+            collect_calls_in_block(else_b, out);
+        }
+        Expr::Match { scrut, arms, default } => {
+            collect_calls_in_expr(scrut, out);
+            for (_, b) in arms { collect_calls_in_block(b, out); }
+            if let Some(b) = default { collect_calls_in_block(b, out); }
+        }
+        Expr::Block(b) => collect_calls_in_block(b, out),
+        _ => {}
     }
 }
