@@ -132,7 +132,7 @@ fn main() -> Void {
 
   println_str("== long/op ==");
   let la: Long = 3000000000;
-  let lb: Long = 2L;
+  let lb: Long = 2;
   let lc: Long = long_add_demo(la, lb);
   println_long(lc);                // 3000000002
   println_int(match_long_one());   // 1

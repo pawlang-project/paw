@@ -1,11 +1,14 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use std::collections::{HashMap, HashSet};
 use crate::ast::*;
 
+/// 函数字面签名（仅参数类型与返回类型）
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FnSig { pub params: Vec<Ty>, pub ret: Ty }
 
+/// 条目级类型检查：收集签名与全局变量表，并逐函数检查
 pub fn typecheck_program(p: &Program) -> Result<(HashMap<String, FnSig>, HashMap<String, Ty>)> {
+    // 1) 收集函数签名（包含 extern）
     let mut fnsig = HashMap::<String, FnSig>::new();
     for it in &p.items {
         if let Item::Fun(f) = it {
@@ -22,6 +25,7 @@ pub fn typecheck_program(p: &Program) -> Result<(HashMap<String, FnSig>, HashMap
         }
     }
 
+    // 2) 收集全局变量
     let mut globals = HashMap::<String, Ty>::new();
     let mut globals_const = HashSet::<String>::new();
     for it in &p.items {
@@ -34,6 +38,7 @@ pub fn typecheck_program(p: &Program) -> Result<(HashMap<String, FnSig>, HashMap
         }
     }
 
+    // 3) 检查全局初始化
     let mut ck = TyCk::new(&fnsig, globals.clone(), globals_const.clone());
     for it in &p.items {
         if let Item::Global { name, ty, init, .. } = it {
@@ -43,6 +48,7 @@ pub fn typecheck_program(p: &Program) -> Result<(HashMap<String, FnSig>, HashMap
         }
     }
 
+    // 4) 检查函数（忽略 extern 的函数体）
     for it in &p.items {
         if let Item::Fun(f) = it {
             if !f.is_extern {
@@ -64,7 +70,7 @@ pub struct TyCk<'a> {
 }
 
 impl<'a> TyCk<'a> {
-    fn new(
+    pub fn new(
         fnsig: &'a HashMap<String, FnSig>,
         globals: HashMap<String, Ty>,
         globals_const: HashSet<String>,
@@ -99,34 +105,53 @@ impl<'a> TyCk<'a> {
         self.globals_const.contains(n)
     }
 
-    fn require_assignable(&self, src:&Ty, dst:&Ty)->Result<()>{
-        if src==dst { Ok(()) } else { Err(anyhow!("expect `{}`, got `{}`", dst, src)) }
-    }
+    // ---------- 数值与共同类型/提升规则 ----------
 
-    // ---- 辅助：类型家族与合一 ----
-    fn is_integer_like(t:&Ty)->bool {
+    #[inline] fn is_intish(&self, t: &Ty) -> bool {
         matches!(t, Ty::Int | Ty::Long | Ty::Char)
     }
-    fn is_float_like(t:&Ty)->bool {
+    #[inline] fn is_floatish(&self, t: &Ty) -> bool {
         matches!(t, Ty::Float | Ty::Double)
     }
-    fn is_numeric(t:&Ty)->bool { Self::is_integer_like(t) || Self::is_float_like(t) }
+    /// Char 参与算术时按 Int 看待
+    #[inline] fn as_intish(&self, t: &Ty) -> Ty {
+        if *t == Ty::Char { Ty::Int } else { t.clone() }
+    }
 
-    fn unify_integer(lhs:&Ty, rhs:&Ty) -> Ty {
-        // 有 Long 则 Long，否则 Int（Char+Char 也算 Int）
-        if matches!(lhs, Ty::Long) || matches!(rhs, Ty::Long) { Ty::Long } else { Ty::Int }
+    /// 两个数值类型的共同类型（浮点优先，再整数）
+    fn common_numeric(&self, l:&Ty, r:&Ty) -> Result<Ty> {
+        use Ty::*;
+        let l = self.as_intish(l);
+        let r = self.as_intish(r);
+        if l==Double || r==Double { return Ok(Double); }
+        if l==Float  || r==Float  { return Ok(Float); }
+        if l==Long   || r==Long   { return Ok(Long); }
+        if l==Int && r==Int { return Ok(Int); }
+        Err(anyhow!("numeric types expected, got `{}` and `{}`", l, r))
     }
-    fn unify_float(lhs:&Ty, rhs:&Ty) -> Ty {
-        // 有 Double 则 Double，否则 Float
-        if matches!(lhs, Ty::Double) || matches!(rhs, Ty::Double) { Ty::Double } else { Ty::Float }
-    }
-    fn unify_numeric(&self, lt:&Ty, rt:&Ty) -> Result<Ty> {
-        match (Self::is_integer_like(lt), Self::is_integer_like(rt), Self::is_float_like(lt), Self::is_float_like(rt)) {
-            (true,  true,  _,     _    ) => Ok(Self::unify_integer(lt, rt)),
-            (false, false, true,  true ) => Ok(Self::unify_float(lt, rt)),
-            _ => bail!("integer and floating types cannot be mixed without explicit cast"),
+
+    /// 赋值/参数/返回的“可赋值”关系（窄→宽）
+    fn require_assignable(&self, src:&Ty, dst:&Ty)->Result<()>{
+        use Ty::*;
+        if src==dst { return Ok(()); }
+        // Char 视为 Int 的语义——只对数值提升生效，原地比较显示仍打印 Char
+        let src_n = self.as_intish(src);
+        let dst_n = self.as_intish(dst);
+
+        match (src_n, dst_n) {
+            // 整数提升
+            (Int, Long) => Ok(()),
+
+            // 向浮点提升
+            (Int, Float) | (Long, Float) => Ok(()),
+            (Int, Double) | (Long, Double) | (Float, Double) => Ok(()),
+
+            // 其余不允许
+            (s, d) => Err(anyhow!("expect `{}`, got `{}`", d, s)),
         }
     }
+
+    // ---------- 顶层与语句/表达式 ----------
 
     fn check_fun(&mut self, f: &FunDecl) -> Result<()> {
         self.current_ret = Some(f.ret.clone());
@@ -137,6 +162,7 @@ impl<'a> TyCk<'a> {
             }
             self.scopes.last_mut().unwrap().insert(n.clone(), t.clone());
         }
+        // 按原有逻辑：block 返回值类型仅用于 if-expr/match 等表达式位置
         let _ = self.block(&f.body)?;
         self.pop();
         self.current_ret = None;
@@ -146,7 +172,8 @@ impl<'a> TyCk<'a> {
     fn block(&mut self, b:&Block)->Result<Ty>{
         self.push();
         for s in &b.stmts { self.stmt(s)?; }
-        let ty = if let Some(e)=&b.tail { self.expr(e)? } else { Ty::Int }; // 保持原逻辑：无尾表达式时视作 Int
+        // 为保持你原逻辑：无尾表达式时返回 Int（而非 Void），避免改变既有语义
+        let ty = if let Some(e)=&b.tail { self.expr(e)? } else { Ty::Int };
         self.pop();
         Ok(ty)
     }
@@ -227,7 +254,7 @@ impl<'a> TyCk<'a> {
                             let et = self.expr(expr)?;
                             self.require_assignable(&et, &vt)?;
                         }
-                        ForStep::Expr(e) => { let _= self.expr(e)?; }
+                        ForStep::Expr(e) => { let _ = self.expr(e)?; }
                     }
                 }
                 self.in_loop += 1;
@@ -253,7 +280,10 @@ impl<'a> TyCk<'a> {
                 if let Some(e) = opt {
                     let t = self.expr(e)?; self.require_assignable(&t, &ret_ty)?;
                 } else {
-                    // 无返回值：若函数声明为非 Void，依旧允许（保持原行为）
+                    // 无返回值：只有声明为 Void 才允许
+                    if ret_ty != Ty::Void {
+                        return Err(anyhow!("function expects `{}`, but return without value", ret_ty));
+                    }
                 }
                 Ok(())
             }
@@ -263,74 +293,73 @@ impl<'a> TyCk<'a> {
     fn expr(&mut self, e:&Expr)->Result<Ty>{
         use BinOp::*; use UnOp::*;
         Ok(match e {
-            // —— 字面量 —— //
+            // 字面量/变量
             Expr::Int(_)=>Ty::Int,
             Expr::Long(_)=>Ty::Long,
-            Expr::Float(_)=>Ty::Float,
-            Expr::Double(_)=>Ty::Double,
-            Expr::Char(_)=>Ty::Char,
             Expr::Bool(_)=>Ty::Bool,
             Expr::Str(_)=>Ty::String,
-
-            // —— 变量 —— //
+            Expr::Char(_)=>Ty::Char,
+            Expr::Float(_)=>Ty::Float,   // 如果你暂未有 Float 字面量，可以保留此分支
+            Expr::Double(_)=>Ty::Double,
             Expr::Var(n)=> self.lookup(n).ok_or_else(||anyhow!("unknown var `{n}`"))?,
 
-            // —— 一元运算 —— //
+            // 一元运算
             Expr::Unary{op,rhs} => {
                 let t=self.expr(rhs)?;
                 match op {
                     Neg=>{
-                        if Self::is_integer_like(&t) {
-                            // Char 上的负号，结果提升到 Int
-                            if matches!(t, Ty::Char) { Ty::Int } else { t }
-                        } else if Self::is_float_like(&t) {
-                            t
+                        let t = self.expr(rhs)?;
+                        if self.is_floatish(&t) || self.is_intish(&t) {
+                            self.as_intish(&t)
                         } else {
-                            bail!("unary '-' expects numeric, got `{}`", t);
+                            return Err(anyhow!("unary `-` expects numeric, got `{}`", t));
                         }
                     }
-                    Not=>{ self.require_assignable(&t,&Ty::Bool)?; Ty::Bool },
+                    Not=>{
+                        self.require_assignable(&t,&Ty::Bool)?;
+                        Ty::Bool
+                    }
                 }
             }
 
-            // —— 二元运算 —— //
+            // 二元运算（混合数值）
             Expr::Binary{op,lhs,rhs}=>{
                 let lt=self.expr(lhs)?; let rt=self.expr(rhs)?;
                 match op {
                     Add|Sub|Mul|Div => {
-                        self.unify_numeric(&lt,&rt)?
+                        let ct = self.common_numeric(&lt, &rt)?;
+                        ct
                     }
-                    Lt|Le|Gt|Ge => {
-                        let _ = self.unify_numeric(&lt,&rt)?; // 仅验证可比较
-                        Ty::Bool
-                    }
+                    Lt|Le|Gt|Ge => { let _ = self.common_numeric(&lt, &rt)?; Ty::Bool }
                     Eq|Ne => {
-                        if Self::is_numeric(&lt) && Self::is_numeric(&rt) {
-                            let _ = self.unify_numeric(&lt,&rt)?; // 允许数值跨型比较
-                            Ty::Bool
-                        } else if lt == rt && matches!(lt, Ty::Bool | Ty::String | Ty::Char) {
+                        if (self.is_intish(&lt) || self.is_floatish(&lt)) &&
+                            (self.is_intish(&rt) || self.is_floatish(&rt)) {
+                            let _ = self.common_numeric(&lt, &rt)?; Ty::Bool
+                        } else if lt == Ty::Bool && rt == Ty::Bool {
                             Ty::Bool
                         } else {
-                            bail!("`==`/`!=` requires comparable types, got `{}` and `{}`", lt, rt);
+                            if lt != rt { return Err(anyhow!("comparison requires same types: `{}` vs `{}`", lt, rt)); }
+                            Ty::Bool
                         }
                     }
                     And|Or => {
-                        self.require_assignable(&lt,&Ty::Bool)?; self.require_assignable(&rt,&Ty::Bool)?;
+                        self.require_assignable(&lt,&Ty::Bool)?;
+                        self.require_assignable(&rt,&Ty::Bool)?;
                         Ty::Bool
                     }
                 }
             }
 
-            // —— 表达式 if —— //
+            // 表达式 if
             Expr::If{cond,then_b,else_b}=>{
-                let ct=self.expr(cond)?;
-                self.require_assignable(&ct,&Ty::Bool).map_err(|e|anyhow!("if cond: {}", e))?;
+                let ct=self.expr(cond)?; self.require_assignable(&ct,&Ty::Bool)
+                    .map_err(|e|anyhow!("if cond: {}", e))?;
                 let tt=self.block(then_b)?; let et=self.block(else_b)?;
                 if tt!=et { return Err(anyhow!("if branches type mismatch: then `{}`, else `{}`", tt, et)); }
                 tt
             }
 
-            // —— match —— //
+            // match 表达式
             Expr::Match { scrut, arms, default } => {
                 let st = self.expr(scrut)?;
                 let mut out_ty: Option<Ty> = None;
@@ -339,13 +368,13 @@ impl<'a> TyCk<'a> {
                     match (pat, &st) {
                         (Pattern::Int(_),  Ty::Int)  => {}
                         (Pattern::Long(_), Ty::Long) => {}
-                        (Pattern::Char(_), Ty::Char) => {}
                         (Pattern::Bool(_), Ty::Bool) => {}
-                        (Pattern::Wild,   _        ) => {}
+                        (Pattern::Char(_),  Ty::Char)  => {}
+                        (Pattern::Wild,   _)         => {}
                         (Pattern::Int(_),  other) => return Err(anyhow!("match pattern Int but scrut is `{}`", other)),
                         (Pattern::Long(_), other) => return Err(anyhow!("match pattern Long but scrut is `{}`", other)),
-                        (Pattern::Char(_), other) => return Err(anyhow!("match pattern Char but scrut is `{}`", other)),
                         (Pattern::Bool(_), other) => return Err(anyhow!("match pattern Bool but scrut is `{}`", other)),
+                        (Pattern::Char(_),  other) => return Err(anyhow!("match pattern Char but scrut is `{}`", other)),
                     }
                     let bt = self.block(blk)?;
                     match &mut out_ty {
@@ -358,10 +387,10 @@ impl<'a> TyCk<'a> {
                     if let Some(t) = &out_ty { if *t != dt { return Err(anyhow!("match default type mismatch")); } }
                     out_ty.get_or_insert(dt);
                 }
-                out_ty.unwrap_or(Ty::Int) // 保持原逻辑
+                out_ty.unwrap_or(Ty::Int) // 保持原逻辑：无臂时默认 Int
             }
 
-            // —— 调用 —— //
+            // 调用
             Expr::Call{callee,args}=>{
                 let sig=self.fnsig.get(callee).ok_or_else(||anyhow!("unknown function `{callee}`"))?;
                 if sig.params.len()!=args.len(){ return Err(anyhow!("function `{}` expects {} args, got {}", callee, sig.params.len(), args.len())); }
@@ -372,7 +401,7 @@ impl<'a> TyCk<'a> {
                 sig.ret.clone()
             }
 
-            // —— 块表达式 —— //
+            // 块表达式
             Expr::Block(b)=> self.block(b)?,
         })
     }
