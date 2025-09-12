@@ -22,46 +22,83 @@ fn write_line(s: &str) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn print_int(v: i64) -> i64 {
+pub extern "C" fn print_int(v: i32) -> () {
     write_str_no_nl(&format!("{}", v));
-    0
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn println_int(v: i64) -> i64 {
+pub extern "C" fn println_int(v: i32) -> () {
     write_line(&format!("{}", v));
-    0
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn print_bool(v: i64) -> i64 {
-    let b = (v & 1) != 0;
+pub extern "C" fn print_long(v: i64) -> () {
+    write_str_no_nl(&format!("{}", v));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn println_long(v: i64) -> () {
+    write_line(&format!("{}", v));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn print_bool(v: i8) -> () {
+    let b = v != 0;
     write_str_no_nl(if b { "true" } else { "false" });
-    0
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn println_bool(v: i64) -> i64 {
-    let b = (v & 1) != 0;
+pub extern "C" fn println_bool(v: i8) -> () {
+    let b = v != 0;
     write_line(if b { "true" } else { "false" });
-    0
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn print_str(s: *const c_char) -> i64 {
-    if s.is_null() { return 0; }
+pub extern "C" fn print_char(ch: i32) -> () {
+    let c = char::from_u32(ch as u32).unwrap_or('\u{FFFD}');
+    write_str_no_nl(&c.to_string());
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn println_char(ch: i32) -> () {
+    let c = char::from_u32(ch as u32).unwrap_or('\u{FFFD}');
+    write_line(&c.to_string());
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn print_float(v: f32) -> () {
+    write_str_no_nl(&format!("{}", v));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn println_float(v: f32) -> () {
+    write_line(&format!("{}", v));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn print_double(v: f64) -> () {
+    write_str_no_nl(&format!("{}", v));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn println_double(v: f64) -> () {
+    write_line(&format!("{}", v));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn print_str(s: *const c_char) -> () {
+    if s.is_null() { return; }
     unsafe {
         match CStr::from_ptr(s).to_str() {
             Ok(text) => write_str_no_nl(text),
             Err(_) => write_bytes_no_nl(CStr::from_ptr(s).to_bytes()),
         }
     }
-    0
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn println_str(s: *const c_char) -> i64 {
-    if s.is_null() { return 0; }
+pub extern "C" fn println_str(s: *const c_char) -> () {
+    if s.is_null() { return; }
     unsafe {
         match CStr::from_ptr(s).to_str() {
             Ok(text) => write_line(text),
@@ -71,7 +108,6 @@ pub extern "C" fn println_str(s: *const c_char) -> i64 {
             }
         }
     }
-    0
 }
 
 #[unsafe(no_mangle)]

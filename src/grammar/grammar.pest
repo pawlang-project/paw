@@ -16,7 +16,7 @@ param      = { ident ~ ":" ~ ty }
 
 let_decl = { ( KW_LET | KW_CONST ) ~ ident ~ ":" ~ ty ~ "=" ~ expr ~ ";" }
 
-ty = { KW_Int | KW_Bool | KW_String }
+ty = { KW_Int | KW_Long | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void }
 
 block = { "{" ~ stmt* ~ tail_expr? ~ "}" }
 
@@ -59,7 +59,7 @@ expr        = { logic_or }
 logic_or    = { logic_and ~ (OP_OR  ~ logic_and)* }
 logic_and   = { equality  ~ (OP_AND ~ equality )* }
 equality    = { compare   ~ ((OP_EQ | OP_NE) ~ compare)* }
-compare     = { add       ~ ((OP_LT | OP_LE | OP_GT | OP_GE) ~ add)* }
+compare = { add ~ ((OP_LE | OP_GE | OP_LT | OP_GT) ~ add)* }
 add         = { mult      ~ ((OP_ADD | OP_SUB) ~ mult)* }
 mult        = { unary     ~ ((OP_MUL | OP_DIV) ~ unary)* }
 unary       = { (OP_NOT | OP_SUB) ~ unary | postfix }
@@ -67,7 +67,8 @@ postfix     = { primary ~ ( call_suffix )* }
 call_suffix = { "(" ~ arg_list? ~ ")" }
 arg_list    = { expr ~ ("," ~ expr)* }
 
-primary     = { int_lit | bool_lit | string_lit | if_expr | match_expr | ident | group | block }
+primary = { float_lit | long_lit | int_lit | bool_lit | string_lit
+          | if_expr | match_expr | ident | group | block | char_lit }
 group       = { "(" ~ expr ~ ")" }
 
 if_expr     = { KW_IF ~ "(" ~ expr ~ ")" ~ block ~ KW_ELSE ~ block }
@@ -82,18 +83,32 @@ match_arms  = {
 match_arm     = { pattern ~ "=>" ~ block }
 match_default = { "_" ~ "=>" ~ block }
 
-pattern     = { int_lit | bool_lit | "_" }
+pattern = { int_lit | bool_lit | char_lit | "_" }
 
 int_lit    = @{ "-"? ~ ASCII_DIGIT+ }
+long_lit = @{ "-"? ~ ASCII_DIGIT+ ~ ("L" | "l") }
 bool_lit   = { KW_true | KW_false }
+float_lit = @{
+  "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)?
+}
+char_lit = @{
+  "'" ~ (
+      ( !("'" | "\\") ~ ANY )
+    | ("\\" ~ ( "'" | "\\" | "n" | "r" | "t" | "0" | ( "u{" ~ ASCII_HEX_DIGIT{1,6} ~ "}" ) ))
+  ) ~ "'"
+}
 string_lit = @{ "\"" ~ ( "\\\"" | "\\\\" | "\\n" | "\\t" | (!"\"" ~ ANY) )* ~ "\"" }
 
 ident = @{ !keyword ~ (ASCII_ALPHANUMERIC | "_")+ }
 
-keyword   = {
-    KW_FNs | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST
-  | KW_IF | KW_ELSE | KW_WHILE | KW_FOR | KW_BREAK | KW_CONTINUE | KW_MATCH
-  | KW_RETURN | KW_Int | KW_Bool | KW_String | KW_true | KW_false
+keyword = {
+  (
+      KW_FNs | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST
+    | KW_IF | KW_ELSE | KW_WHILE | KW_FOR | KW_BREAK | KW_CONTINUE | KW_MATCH
+    | KW_RETURN
+    | KW_Int | KW_Long | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void
+    | KW_true | KW_false
+  ) ~ !(ASCII_ALPHANUMERIC | "_")
 }
 KW_FNs    = { "fn" }
 KW_EXTERN = { "extern" }
@@ -111,6 +126,11 @@ KW_RETURN = { "return" }
 KW_Int    = { "Int" }
 KW_Bool   = { "Bool" }
 KW_String = { "String" }
+KW_Long   = { "Long" }    // i64
+KW_Double = { "Double" }  // f64
+KW_Float  = { "Float" }   // f32
+KW_Char   = { "Char" }    // u32（ABI 用 i32）
+KW_Void   = { "Void" }
 KW_true   = { "true" }
 KW_false  = { "false" }
 

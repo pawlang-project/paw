@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use std::collections::{HashMap, HashSet};
 use crate::ast::*;
 
@@ -103,6 +103,31 @@ impl<'a> TyCk<'a> {
         if src==dst { Ok(()) } else { Err(anyhow!("expect `{}`, got `{}`", dst, src)) }
     }
 
+    // ---- 辅助：类型家族与合一 ----
+    fn is_integer_like(t:&Ty)->bool {
+        matches!(t, Ty::Int | Ty::Long | Ty::Char)
+    }
+    fn is_float_like(t:&Ty)->bool {
+        matches!(t, Ty::Float | Ty::Double)
+    }
+    fn is_numeric(t:&Ty)->bool { Self::is_integer_like(t) || Self::is_float_like(t) }
+
+    fn unify_integer(lhs:&Ty, rhs:&Ty) -> Ty {
+        // 有 Long 则 Long，否则 Int（Char+Char 也算 Int）
+        if matches!(lhs, Ty::Long) || matches!(rhs, Ty::Long) { Ty::Long } else { Ty::Int }
+    }
+    fn unify_float(lhs:&Ty, rhs:&Ty) -> Ty {
+        // 有 Double 则 Double，否则 Float
+        if matches!(lhs, Ty::Double) || matches!(rhs, Ty::Double) { Ty::Double } else { Ty::Float }
+    }
+    fn unify_numeric(&self, lt:&Ty, rt:&Ty) -> Result<Ty> {
+        match (Self::is_integer_like(lt), Self::is_integer_like(rt), Self::is_float_like(lt), Self::is_float_like(rt)) {
+            (true,  true,  _,     _    ) => Ok(Self::unify_integer(lt, rt)),
+            (false, false, true,  true ) => Ok(Self::unify_float(lt, rt)),
+            _ => bail!("integer and floating types cannot be mixed without explicit cast"),
+        }
+    }
+
     fn check_fun(&mut self, f: &FunDecl) -> Result<()> {
         self.current_ret = Some(f.ret.clone());
         self.push();
@@ -121,7 +146,7 @@ impl<'a> TyCk<'a> {
     fn block(&mut self, b:&Block)->Result<Ty>{
         self.push();
         for s in &b.stmts { self.stmt(s)?; }
-        let ty = if let Some(e)=&b.tail { self.expr(e)? } else { Ty::Int };
+        let ty = if let Some(e)=&b.tail { self.expr(e)? } else { Ty::Int }; // 保持原逻辑：无尾表达式时视作 Int
         self.pop();
         Ok(ty)
     }
@@ -227,6 +252,8 @@ impl<'a> TyCk<'a> {
                     .clone().ok_or_else(||anyhow!("return outside function"))?;
                 if let Some(e) = opt {
                     let t = self.expr(e)?; self.require_assignable(&t, &ret_ty)?;
+                } else {
+                    // 无返回值：若函数声明为非 Void，依旧允许（保持原行为）
                 }
                 Ok(())
             }
@@ -236,42 +263,88 @@ impl<'a> TyCk<'a> {
     fn expr(&mut self, e:&Expr)->Result<Ty>{
         use BinOp::*; use UnOp::*;
         Ok(match e {
-            Expr::Int(_)=>Ty::Int, Expr::Bool(_)=>Ty::Bool, Expr::Str(_)=>Ty::String,
+            // —— 字面量 —— //
+            Expr::Int(_)=>Ty::Int,
+            Expr::Long(_)=>Ty::Long,
+            Expr::Float(_)=>Ty::Float,
+            Expr::Double(_)=>Ty::Double,
+            Expr::Char(_)=>Ty::Char,
+            Expr::Bool(_)=>Ty::Bool,
+            Expr::Str(_)=>Ty::String,
+
+            // —— 变量 —— //
             Expr::Var(n)=> self.lookup(n).ok_or_else(||anyhow!("unknown var `{n}`"))?,
 
+            // —— 一元运算 —— //
             Expr::Unary{op,rhs} => {
                 let t=self.expr(rhs)?;
                 match op {
-                    Neg=>{ self.require_assignable(&t,&Ty::Int)?; Ty::Int },
+                    Neg=>{
+                        if Self::is_integer_like(&t) {
+                            // Char 上的负号，结果提升到 Int
+                            if matches!(t, Ty::Char) { Ty::Int } else { t }
+                        } else if Self::is_float_like(&t) {
+                            t
+                        } else {
+                            bail!("unary '-' expects numeric, got `{}`", t);
+                        }
+                    }
                     Not=>{ self.require_assignable(&t,&Ty::Bool)?; Ty::Bool },
                 }
             }
 
+            // —— 二元运算 —— //
             Expr::Binary{op,lhs,rhs}=>{
                 let lt=self.expr(lhs)?; let rt=self.expr(rhs)?;
                 match op {
-                    Add|Sub|Mul|Div => { self.require_assignable(&lt,&Ty::Int)?; self.require_assignable(&rt,&Ty::Int)?; Ty::Int }
-                    Lt|Le|Gt|Ge|Eq|Ne => { if lt!=rt { return Err(anyhow!("comparison requires same types")); } Ty::Bool }
-                    And|Or => { self.require_assignable(&lt,&Ty::Bool)?; self.require_assignable(&rt,&Ty::Bool)?; Ty::Bool }
+                    Add|Sub|Mul|Div => {
+                        self.unify_numeric(&lt,&rt)?
+                    }
+                    Lt|Le|Gt|Ge => {
+                        let _ = self.unify_numeric(&lt,&rt)?; // 仅验证可比较
+                        Ty::Bool
+                    }
+                    Eq|Ne => {
+                        if Self::is_numeric(&lt) && Self::is_numeric(&rt) {
+                            let _ = self.unify_numeric(&lt,&rt)?; // 允许数值跨型比较
+                            Ty::Bool
+                        } else if lt == rt && matches!(lt, Ty::Bool | Ty::String | Ty::Char) {
+                            Ty::Bool
+                        } else {
+                            bail!("`==`/`!=` requires comparable types, got `{}` and `{}`", lt, rt);
+                        }
+                    }
+                    And|Or => {
+                        self.require_assignable(&lt,&Ty::Bool)?; self.require_assignable(&rt,&Ty::Bool)?;
+                        Ty::Bool
+                    }
                 }
             }
 
+            // —— 表达式 if —— //
             Expr::If{cond,then_b,else_b}=>{
-                let ct=self.expr(cond)?; self.require_assignable(&ct,&Ty::Bool).map_err(|e|anyhow!("if cond: {}", e))?;
-                let tt=self.block(then_b)?; let et=self.block(else_b)?; if tt!=et { return Err(anyhow!("if branches type mismatch: then `{}`, else `{}`", tt, et)); }
+                let ct=self.expr(cond)?;
+                self.require_assignable(&ct,&Ty::Bool).map_err(|e|anyhow!("if cond: {}", e))?;
+                let tt=self.block(then_b)?; let et=self.block(else_b)?;
+                if tt!=et { return Err(anyhow!("if branches type mismatch: then `{}`, else `{}`", tt, et)); }
                 tt
             }
 
+            // —— match —— //
             Expr::Match { scrut, arms, default } => {
                 let st = self.expr(scrut)?;
                 let mut out_ty: Option<Ty> = None;
 
                 for (pat, blk) in arms {
                     match (pat, &st) {
-                        (Pattern::Int(_), Ty::Int) => {}
+                        (Pattern::Int(_),  Ty::Int)  => {}
+                        (Pattern::Long(_), Ty::Long) => {}
+                        (Pattern::Char(_), Ty::Char) => {}
                         (Pattern::Bool(_), Ty::Bool) => {}
-                        (Pattern::Wild, _) => {}
-                        (Pattern::Int(_), other) => return Err(anyhow!("match pattern Int but scrut is `{}`", other)),
+                        (Pattern::Wild,   _        ) => {}
+                        (Pattern::Int(_),  other) => return Err(anyhow!("match pattern Int but scrut is `{}`", other)),
+                        (Pattern::Long(_), other) => return Err(anyhow!("match pattern Long but scrut is `{}`", other)),
+                        (Pattern::Char(_), other) => return Err(anyhow!("match pattern Char but scrut is `{}`", other)),
                         (Pattern::Bool(_), other) => return Err(anyhow!("match pattern Bool but scrut is `{}`", other)),
                     }
                     let bt = self.block(blk)?;
@@ -285,18 +358,21 @@ impl<'a> TyCk<'a> {
                     if let Some(t) = &out_ty { if *t != dt { return Err(anyhow!("match default type mismatch")); } }
                     out_ty.get_or_insert(dt);
                 }
-                out_ty.unwrap_or(Ty::Int)
+                out_ty.unwrap_or(Ty::Int) // 保持原逻辑
             }
 
+            // —— 调用 —— //
             Expr::Call{callee,args}=>{
                 let sig=self.fnsig.get(callee).ok_or_else(||anyhow!("unknown function `{callee}`"))?;
                 if sig.params.len()!=args.len(){ return Err(anyhow!("function `{}` expects {} args, got {}", callee, sig.params.len(), args.len())); }
                 for (i,(a,pt)) in args.iter().zip(sig.params.iter()).enumerate() {
-                    let at=self.expr(a)?; self.require_assignable(&at, pt).map_err(|e|anyhow!("arg#{i}: {e}"))?;
+                    let at=self.expr(a)?;
+                    self.require_assignable(&at, pt).map_err(|e|anyhow!("arg#{i}: {e}"))?;
                 }
                 sig.ret.clone()
             }
 
+            // —— 块表达式 —— //
             Expr::Block(b)=> self.block(b)?,
         })
     }
