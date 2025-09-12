@@ -4,7 +4,6 @@ mod codegen;
 mod link_zig;
 mod parse;
 mod typecheck;
-mod desugar;
 
 use anyhow::{anyhow, Context, Result};
 use ast::{FunDecl, Item, Program};
@@ -15,7 +14,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-// -------------------- 新增：import 递归展开 --------------------
+
 fn parse_file(path: &Path) -> Result<Program> {
     let src = fs::read_to_string(path)
         .with_context(|| format!("read_to_string({})", path.display()))?;
@@ -28,8 +27,7 @@ fn expand_file(path: &Path, visited: &mut HashSet<PathBuf>) -> Result<Vec<Item>>
         return Err(anyhow!("cyclic import detected at {}", path.display()));
     }
 
-    let prog0 = parse_file(path)?;
-    let prog = desugar::desugar_program(prog0);
+    let prog = parse_file(path)?;
     println!("{:#?}", prog);
     let mut out = Vec::new();
     for it in prog.items {
@@ -93,7 +91,6 @@ fn main() -> Result<()> {
     // —— 改动点：用“带 import 展开”的加载函数 —— //
     let src_pathbuf = PathBuf::from(&src_path);
     let prog = load_program_with_imports(&src_pathbuf)?;
-    println!("{:#?}", prog);
 
     // 类型检查
     let (_fnsig, _globals) = typecheck::typecheck_program(&prog)?;

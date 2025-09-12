@@ -173,7 +173,7 @@ fn find_zig_path() -> Result<PathBuf> {
 
 fn zig_cmd() -> Result<Command> {
     let zig = find_zig_path()?;
-    let mut cmd = Command::new(zig);
+    let cmd = Command::new(zig);
     Ok(cmd)
 }
 
@@ -197,9 +197,7 @@ fn canon<P: AsRef<Path>>(p: P) -> Result<OsString> {
 /// 在若干候选位置查找 libpawrt.a：
 /// 优先级：
 /// 1) 环境变量 PAWRT_LIB 指定的绝对路径
-/// 2) ./build/<zig-triple>/libpawrt.a
-/// 3) ./deps/<zig-triple>/libpawrt.a
-/// 4) ./pawrt/target/<rust-triple>/release/libpawrt.a
+/// 2) ./deps/<zig-triple>/libpawrt.a
 fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
     if let Ok(p) = env::var("PAWRT_LIB") {
         let pb = PathBuf::from(p);
@@ -210,38 +208,16 @@ fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
         }
     }
 
-    // 2) build/<triple>/libpawrt.a
-    let mut cand = PathBuf::from("build");
-    cand.push(target.triple_dir());
+    // 2) deps/<triple>/libpawrt.a
+    let mut cand = PathBuf::from("deps");
+    cand.push(target.rust_triple());
     cand.push("libpawrt.a");
+    println!("{:?}", cand);
     if cand.is_file() {
         return Ok(cand);
     }
 
-    // 3) deps/<triple>/libpawrt.a
-    let mut cand2 = PathBuf::from("deps");
-    cand2.push(target.triple_dir());
-    cand2.push("libpawrt.a");
-    if cand2.is_file() {
-        return Ok(cand2);
-    }
-
-    // 3) pawrt/target/<rust-triple>/release/libpawrt.a
-    let mut cand3 = PathBuf::from("pawrt");
-    cand3.push("target");
-    cand3.push(target.rust_triple());
-    cand3.push("release");
-    cand3.push("libpawrt.a");
-    if cand3.is_file() {
-        return Ok(cand3);
-    }
-
-    anyhow::bail!(
-        "未找到 libpawrt.a。请先构建运行时静态库，或设置环境变量 PAWRT_LIB 指向它。\n\
-         期望位置之一：\n  1) build/{}/libpawrt.a\n  2) pawrt/target/{}/release/libpawrt.a",
-        target.triple_dir(),
-        target.rust_triple()
-    )
+    anyhow::bail!("未找到 libpawrt.a。请先构建运行时静态库，或设置环境变量 PAWRT_LIB 指向它")
 }
 
 /// ===== 对外：链接函数 =====
