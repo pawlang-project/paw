@@ -354,7 +354,7 @@ fn build_match_expr(p: Pair<Rule>) -> Result<Expr> {
 
 fn build_pattern(p: Pair<Rule>) -> Result<Pattern> {
     Ok(match p.as_rule() {
-        // pattern 是一个包装规则：里面可能是 int_lit / bool_lit / char_lit； "_" 则无 inner
+        // 最外层 wrapper：把里面真正的字面量/下划线取出来递归处理
         Rule::pattern => {
             let mut inner = p.into_inner();
             if let Some(q) = inner.next() {
@@ -363,10 +363,17 @@ fn build_pattern(p: Pair<Rule>) -> Result<Pattern> {
                 Pattern::Wild
             }
         }
+
+        // 新增：长整型字面量（形如 3000000000L / 2l）
+        Rule::long_lit => Pattern::Long(parse_long_lit(p.as_str())?),
+
+        // 现有：普通十进制整型字面量（允许负号）
         Rule::int_lit => parse_int_pattern(p.as_str())?,
+
         Rule::char_lit => Pattern::Char(parse_char_lit(p.as_str())?),
         Rule::bool_lit => Pattern::Bool(p.as_str() == "true"),
-        // 其他都不该出现
+
+        // "_" 已在 Rule::pattern 分支里返回了 Wild；其它都不该出现
         r => return Err(anyhow!("unexpected pattern node: {:?}", r)),
     })
 }
@@ -496,6 +503,13 @@ fn parse_float_lit(s: &str) -> Result<f64> {
     // 允许前缀 '-'、小数点、科学计数；grammar 已保证形状
     let v = s.parse::<f64>()?;
     Ok(v)
+}
+
+fn parse_long_lit(s: &str) -> Result<i64> {
+    let ns = s.strip_suffix('L')
+        .or_else(|| s.strip_suffix('l'))
+        .ok_or_else(|| anyhow!("invalid long literal suffix: {}", s))?;
+    Ok(ns.parse::<i64>()?)
 }
 
 fn parse_char_lit(s: &str) -> Result<u32> {

@@ -12,7 +12,7 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
 use target_lexicon::Triple;
 
-// ---------- 承载可内联注入的全局常量 ----------
+// ---------- 可内联注入的全局常量 ----------
 #[derive(Clone, Debug)]
 pub enum GConst {
     I8(u8),
@@ -27,7 +27,7 @@ pub struct CLBackend {
     // name -> (Ty, const)
     pub globals_val: HashMap<String, (Ty, GConst)>,
     str_pool: HashMap<String, DataId>,
-    // 函数签名：便于 call 时做形参与返回值处理
+    // 函数完整签名：参数类型 + 返回类型（用于 call 做形参与返回）
     fn_sig: HashMap<String, (Vec<Ty>, Ty)>,
 }
 
@@ -58,7 +58,7 @@ impl CLBackend {
                     (Ty::Char,   Expr::Char(u))   => { self.globals_val.insert(name.clone(), (Ty::Char,   GConst::I32(*u as i32))); }
                     (Ty::Float,  Expr::Float(x))  => { self.globals_val.insert(name.clone(), (Ty::Float,  GConst::F32(*x))); }
                     (Ty::Double, Expr::Double(x)) => { self.globals_val.insert(name.clone(), (Ty::Double, GConst::F64(*x))); }
-                    // String/Void 或者非常量初始化都不内联
+                    // String/Void 或非常量初始化不内联
                     _ => {}
                 }
             }
@@ -80,7 +80,10 @@ impl CLBackend {
             let id = self.module.declare_function(&f.name, linkage, &sig)?;
             ids.insert(f.name.clone(), id);
             // 记录完整签名（参数 + 返回）
-            self.fn_sig.insert(f.name.clone(), (f.params.iter().map(|(_, t)| t.clone()).collect(), f.ret.clone()));
+            self.fn_sig.insert(
+                f.name.clone(),
+                (f.params.iter().map(|(_, t)| t.clone()).collect(), f.ret.clone())
+            );
         }
         Ok(ids)
     }
@@ -97,7 +100,7 @@ impl CLBackend {
             sig.returns.push(AbiParam::new(ret_t));
         }
 
-        // ---- 建 IR ----
+        // ---- 构建 IR ----
         let mut ctx = self.module.make_context();
         ctx.func.signature = sig;
         let mut fb_ctx = FunctionBuilderContext::new();
@@ -121,7 +124,7 @@ impl CLBackend {
             scopes_ty.last_mut().unwrap().insert(name.clone(), ty.clone());
         }
 
-        // 编译期全局常量注入
+        // 编译期“可内联全局常量”注入
         {
             let scope_vars  = scopes.last_mut().unwrap();
             let scope_types = scopes_ty.last_mut().unwrap();
@@ -153,7 +156,7 @@ impl CLBackend {
             fun_ret: f.ret.clone(),
         };
 
-        // emit body，函数末尾兜底 return
+        // emit body：函数最后兜底 return
         let ret_val = cg.emit_block(&mut b, &f.body)?;
 
         match f.ret {
@@ -168,7 +171,7 @@ impl CLBackend {
 
         b.finalize();
 
-        // 回写模块
+        // 写回模块
         let id = *ids.get(&f.name).ok_or_else(|| anyhow!("missing FuncId for `{}`", f.name))?;
         self.module.define_function(id, &mut ctx)?;
         self.module.clear_context(&mut ctx);
@@ -194,12 +197,12 @@ impl CLBackend {
     }
 }
 
-// Ty → CLIF Type（Void -> None）
+// Paw Ty → CLIF Type（Void -> None）
 fn cl_ty(t: &Ty) -> Option<ir::Type> {
     match t {
         Ty::Int    => Some(types::I32),
         Ty::Long   => Some(types::I64),
-        Ty::Bool   => Some(types::I8),   // 表达式值/ABI 都用 i8
+        Ty::Bool   => Some(types::I8),   // 表达式值/ABI 均用 i8 承载布尔
         Ty::Char   => Some(types::I32),  // u32 语义，ABI 用 i32
         Ty::Float  => Some(types::F32),
         Ty::Double => Some(types::F64),
@@ -237,7 +240,7 @@ impl<'a> ExprGen<'a> {
         None
     }
 
-    // i8 -> b1
+    // i8 -> b1（比较 != 0）
     fn bool_i8_to_b1(&mut self, b:&mut FunctionBuilder, v_i8: ir::Value)->ir::Value{
         let zero = b.ins().iconst(types::I8, 0);
         b.ins().icmp(IntCC::NotEqual, v_i8, zero)
@@ -252,39 +255,19 @@ impl<'a> ExprGen<'a> {
     #[inline]
     fn val_ty(&self, b:&FunctionBuilder, v:ir::Value)->ir::Type { b.func.dfg.value_type(v) }
 
-    // 把 IR value 转成目标 Paw 类型
+    // 统一 Paw 目标类型（通过 IR Type）
     fn coerce_to_ty(&mut self, b:&mut FunctionBuilder, v: ir::Value, dst:&Ty)->ir::Value {
-        use cranelift_codegen::ir::types::*;
         let want = cl_ty(dst).expect("no void here");
-        let have = self.val_ty(b, v);
-        if have == want { return v; }
-        match (have, want) {
-            (B1, I8) => self.bool_b1_to_i8(b, v),
-            (I8, B1) => self.bool_i8_to_b1(b, v),
-
-            (I32, I64) => b.ins().sextend(I64, v),
-            (I64, I32) => b.ins().ireduce(I32, v),
-
-            (F32, F64) => b.ins().fpromote(F64, v),
-            (F64, F32) => b.ins().fdemote(F32, v),
-
-            // 其他（跨数值族等）——保守给 0/0.0，避免崩
-            (_, I8)  => b.ins().iconst(I8,  0),
-            (_, I32) => b.ins().iconst(I32, 0),
-            (_, I64) => b.ins().iconst(I64, 0),
-            (_, F32) => b.ins().f32const(0.0),
-            (_, F64) => b.ins().f64const(0.0),
-            _ => v,
-        }
+        self.coerce_value_to_irtype(b, v, want)
     }
 
+    // 借 IR Type 做收敛；整型/浮点族内做位宽/精度变换；跨族给“零值”
     fn coerce_value_to_irtype(
         &mut self,
         b: &mut FunctionBuilder,
         v: ir::Value,
         dst: ir::Type,
     ) -> ir::Value {
-        use cranelift_codegen::ir::types::*;
         let src = b.func.dfg.value_type(v);
         if src == dst { return v; }
 
@@ -306,19 +289,16 @@ impl<'a> ExprGen<'a> {
             }
         }
 
-        // 其他跨族或不期望的组合：按目标类型补“零值”
-        match dst {
-            I8  => b.ins().iconst(I8,  0),
-            I32 => b.ins().iconst(I32, 0),
-            I64 => b.ins().iconst(I64, 0),
-            F32 => b.ins().f32const(0.0),
-            F64 => b.ins().f64const(0.0),
-            _   => v, // 兜底（通常用不到）
-        }
+        // 其他跨族：按目标补“零值”
+        if dst == types::I8  { return b.ins().iconst(types::I8,  0); }
+        if dst == types::I32 { return b.ins().iconst(types::I32, 0); }
+        if dst == types::I64 { return b.ins().iconst(types::I64, 0); }
+        if dst == types::F32 { return b.ins().f32const(0.0); }
+        if dst == types::F64 { return b.ins().f64const(0.0); }
+        v // 兜底（通常用不到）
     }
 
-
-    // 仅做位宽/精度统一（整型宽化到 i64；浮点宽化到 f64）
+    // 仅做位宽/精度统一（整型统一到“更宽”的那一边；浮点统一到 f64）
     fn unify_values_for_numeric(
         &mut self,
         b:&mut FunctionBuilder,
@@ -328,13 +308,28 @@ impl<'a> ExprGen<'a> {
         let lt = self.val_ty(b, l);
         let rt = self.val_ty(b, r);
         if lt == rt { return (l, r, lt); }
-        match (lt, rt) {
-            (types::I32, types::I64) => { l = b.ins().sextend(types::I64, l); (l, r, types::I64) }
-            (types::I64, types::I32) => { r = b.ins().sextend(types::I64, r); (l, r, types::I64) }
-            (types::F32, types::F64) => { l = b.ins().fpromote(types::F64, l); (l, r, types::F64) }
-            (types::F64, types::F32) => { r = b.ins().fpromote(types::F64, r); (l, r, types::F64) }
-            _ => (l, r, lt), // 其他组合按 typecheck 不应出现
+
+        // 整型统一：扩展较窄的一侧
+        if lt.is_int() && rt.is_int() {
+            let target = if lt.bits() >= rt.bits() { lt } else { rt };
+            if lt.bits() < target.bits() { l = b.ins().sextend(target, l); }
+            if rt.bits() < target.bits() { r = b.ins().sextend(target, r); }
+            return (l, r, target);
         }
+
+        // 浮点统一：统一到 f64（若有一侧是 f64）
+        if lt.is_float() && rt.is_float() {
+            if lt == types::F64 || rt == types::F64 {
+                if lt == types::F32 { l = b.ins().fpromote(types::F64, l); }
+                if rt == types::F32 { r = b.ins().fpromote(types::F64, r); }
+                return (l, r, types::F64);
+            } else {
+                return (l, r, lt); // 两边都是 f32
+            }
+        }
+
+        // 其他组合（不应出现）：保持原样
+        (l, r, lt)
     }
 
     fn emit_block(&mut self, b:&mut FunctionBuilder, blk:&Block)->Result<ir::Value>{
@@ -343,8 +338,9 @@ impl<'a> ExprGen<'a> {
             match s {
                 Stmt::Let { name, ty, init, .. } => {
                     let v0 = self.emit_expr(b, init)?;
+                    // Bool 归一 0/1；其他按目标类型收敛
                     let v  = match ty {
-                        Ty::Bool => { // 归一 0/1
+                        Ty::Bool => {
                             let b1 = self.bool_i8_to_b1(b, v0);
                             self.bool_b1_to_i8(b, b1)
                         }
@@ -363,7 +359,6 @@ impl<'a> ExprGen<'a> {
                         .ok_or_else(|| anyhow!("no type for `{name}`"))?;
                     let rhs = self.emit_expr(b, expr)?;
                     let v = self.coerce_to_ty(b, rhs, &ty);
-
                     b.def_var(var, v);
                 }
 
@@ -518,7 +513,7 @@ impl<'a> ExprGen<'a> {
                     match (&self.fun_ret, opt) {
                         (Ty::Void, Some(e)) => {
                             let _ = self.emit_expr(b, e)?;
-                            let _ = b.ins().return_(&[]);
+                            b.ins().return_(&[]);
                         }
                         (_ret, Some(e)) => {
                             let ret_ty = self.fun_ret.clone();
@@ -554,7 +549,7 @@ impl<'a> ExprGen<'a> {
                             }
                         }
                     }
-                    // return 后开新块，容忍死代码
+                    // return 后开新块，容忍死代码继续生成
                     let cont = b.create_block();
                     b.switch_to_block(cont);
                     b.seal_block(cont);
@@ -570,7 +565,7 @@ impl<'a> ExprGen<'a> {
     fn emit_expr(&mut self, b:&mut FunctionBuilder, e:&Expr)->Result<ir::Value>{
         use BinOp::*; use UnOp::*;
         Ok(match e {
-            // 字面量
+            // —— 字面量 —— //
             Expr::Int(n)    => b.ins().iconst(types::I32, *n as i64),
             Expr::Long(n)   => b.ins().iconst(types::I64, *n),
             Expr::Float(x)  => b.ins().f32const(*x),
@@ -583,13 +578,13 @@ impl<'a> ExprGen<'a> {
                 b.ins().global_value(types::I64, gv)
             }
 
-            // 变量
+            // —— 变量 —— //
             Expr::Var(name) => {
                 let v = self.lookup(name).ok_or_else(|| anyhow!("unknown var in codegen `{name}`"))?;
                 b.use_var(v)
             }
 
-            // 一元
+            // —— 一元 —— //
             Expr::Unary{op, rhs} => {
                 let r = self.emit_expr(b, rhs)?;
                 let rt = self.val_ty(b, r);
@@ -603,10 +598,10 @@ impl<'a> ExprGen<'a> {
                 }
             }
 
-            // 二元
+            // —— 二元（含短路） —— //
             Expr::Binary{op,lhs,rhs}=>{
                 match op {
-                    // ---- 短路 AND ----
+                    // 短路 AND
                     And => {
                         let l  = self.emit_expr(b, lhs)?;          // i8
                         let l1 = self.bool_i8_to_b1(b, l);         // b1
@@ -614,24 +609,23 @@ impl<'a> ExprGen<'a> {
                         let rhsb   = b.create_block();  // 需要计算 rhs 的路径
                         let falseb = b.create_block();  // 短路为 false
                         let out    = b.create_block();  // 合流
-
                         let res = b.declare_var(types::I8);
 
                         b.ins().brif(l1, rhsb, &[], falseb, &[]);
 
-                        // false 路径：直接 0
+                        // false：直接 0
                         b.switch_to_block(falseb);
                         b.seal_block(falseb);
                         let zero = b.ins().iconst(types::I8, 0);
                         b.def_var(res, zero);
                         b.ins().jump(out, &[]);
 
-                        // rhs 路径：计算 rhs，再归一为 i8
+                        // rhs：计算 rhs，再归一到 i8
                         b.switch_to_block(rhsb);
                         b.seal_block(rhsb);
-                        let r  = self.emit_expr(b, rhs)?;          // i8
-                        let r1 = self.bool_i8_to_b1(b, r);         // b1
-                        let ri = self.bool_b1_to_i8(b, r1);        // i8
+                        let r  = self.emit_expr(b, rhs)?;
+                        let r1 = self.bool_i8_to_b1(b, r);
+                        let ri = self.bool_b1_to_i8(b, r1);
                         b.def_var(res, ri);
                         b.ins().jump(out, &[]);
 
@@ -641,7 +635,7 @@ impl<'a> ExprGen<'a> {
                         b.use_var(res)
                     }
 
-                    // ---- 短路 OR ----
+                    // 短路 OR
                     Or => {
                         let l  = self.emit_expr(b, lhs)?;          // i8
                         let l1 = self.bool_i8_to_b1(b, l);         // b1
@@ -649,24 +643,23 @@ impl<'a> ExprGen<'a> {
                         let trueb = b.create_block();  // 短路为 true
                         let rhsb  = b.create_block();  // 需要计算 rhs
                         let out   = b.create_block();  // 合流
-
                         let res = b.declare_var(types::I8);
 
                         b.ins().brif(l1, trueb, &[], rhsb, &[]);
 
-                        // true 路径：直接 1
+                        // true：直接 1
                         b.switch_to_block(trueb);
                         b.seal_block(trueb);
                         let one = b.ins().iconst(types::I8, 1);
                         b.def_var(res, one);
                         b.ins().jump(out, &[]);
 
-                        // rhs 路径：计算 rhs，再归一为 i8
+                        // rhs：计算 rhs，再归一到 i8
                         b.switch_to_block(rhsb);
                         b.seal_block(rhsb);
-                        let r  = self.emit_expr(b, rhs)?;          // i8
-                        let r1 = self.bool_i8_to_b1(b, r);         // b1
-                        let ri = self.bool_b1_to_i8(b, r1);        // i8
+                        let r  = self.emit_expr(b, rhs)?;
+                        let r1 = self.bool_i8_to_b1(b, r);
+                        let ri = self.bool_b1_to_i8(b, r1);
                         b.def_var(res, ri);
                         b.ins().jump(out, &[]);
 
@@ -675,7 +668,7 @@ impl<'a> ExprGen<'a> {
                         b.use_var(res)
                     }
 
-                    // 其他二元运算：仍然是“左右都算”，再数值统一
+                    // 其他二元：两边都算，然后统一数值位宽/精度
                     _ => {
                         let l = self.emit_expr(b, lhs)?;
                         let r = self.emit_expr(b, rhs)?;
@@ -723,9 +716,8 @@ impl<'a> ExprGen<'a> {
                 }
             }
 
-            // 表达式 if
+            // —— 表达式 if（带 φ 合并） —— //
             Expr::If { cond, then_b, else_b } => {
-                // 条件 i8 -> b1
                 let cv = self.emit_expr(b, cond)?;
                 let c1 = self.bool_i8_to_b1(b, cv);
 
@@ -758,7 +750,7 @@ impl<'a> ExprGen<'a> {
                 b.use_var(phi)
             }
 
-            // match
+            // —— match —— //
             Expr::Match { scrut, arms, default } => {
                 let sv = self.emit_expr(b, scrut)?;
                 let out = b.create_block();
@@ -835,6 +827,7 @@ impl<'a> ExprGen<'a> {
                         b.def_var(phi.unwrap(), v);
                         b.ins().jump(out, &[]);
                     } else {
+                        // 无 default：补 i32 0（与 typecheck 约定一致）
                         if phi.is_none() { phi = Some(b.declare_var(types::I32)); }
                         let z = b.ins().iconst(types::I32, 0);
                         b.def_var(phi.unwrap(), z);
@@ -847,7 +840,7 @@ impl<'a> ExprGen<'a> {
                 b.use_var(phi.unwrap())
             }
 
-            // 调用
+            // —— 调用 —— //
             Expr::Call { callee, args } => {
                 let fid  = *self.ids.get(callee).ok_or_else(|| anyhow!("unknown fn `{callee}`"))?;
                 let fref = self.be.module.declare_func_in_func(fid, b.func);
@@ -876,7 +869,7 @@ impl<'a> ExprGen<'a> {
                 }
             }
 
-            // 块表达式
+            // —— 块表达式 —— //
             Expr::Block(blk) => self.emit_block(b, blk)?,
         })
     }
