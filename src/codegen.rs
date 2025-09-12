@@ -10,6 +10,7 @@ use cranelift_module::{
 };
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::HashMap;
+use cranelift_codegen::settings::Configurable;
 use target_lexicon::Triple;
 
 pub struct CLBackend {
@@ -20,7 +21,9 @@ pub struct CLBackend {
 
 impl CLBackend {
     pub fn new() -> Result<Self> {
-        let flags = settings::Flags::new(settings::builder());
+        let mut fb = settings::builder();
+        fb.set("is_pic", "true")?;
+        let flags = settings::Flags::new(fb);
         let isa = isa::lookup(Triple::host())?.finish(flags)?;
         let obj = ObjectBuilder::new(isa, "paw_obj".to_string(), default_libcall_names())?;
         Ok(Self {
