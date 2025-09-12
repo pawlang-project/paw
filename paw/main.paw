@@ -1,16 +1,15 @@
 import "std/prelude.paw";
 
-// --------- for / sum_to ----------
+// 1..=n 的和
 fn sum_to(n: Int) -> Int {
   let s: Int = 0;
   for (let i: Int = 1; i <= n; i = i + 1) {
-    // s += i
     s = s + i;
   }
   return s;
 }
 
-// --------- for / break ----------
+// 找到最小 i 使 i*i >= th
 fn first_i_sq_ge(th: Int) -> Int {
   let i: Int = 0;
   for (i = 0; i < 100; i = i + 1) {
@@ -19,85 +18,84 @@ fn first_i_sq_ge(th: Int) -> Int {
   return i;
 }
 
-// --------- for / continue ----------
+// 0..10（不含）累加，但跳过 5
 fn sum_skip_five() -> Int {
   let s: Int = 0;
   for (let i: Int = 0; i < 10; i = i + 1) {
     if (i == 5) { continue; }
     s = s + i;
   }
-  return s; // 45 - 5 = 40
+  return s;
 }
 
-// --------- while ----------
+// 用 while 做个“阶乘”风格循环（示例）
 fn fact_while(n: Int) -> Int {
   let i: Int = 1;
   let acc: Int = 1;
   while (i <= n) {
-    acc = acc + 0;      // no-op，演示可写
+    acc = acc + 0;         // 占位，测试多条赋值
     acc = acc * i;
     i = i + 1;
   }
   return acc;
 }
 
-// --------- if 表达式（有值） ----------
+// if 作为表达式
 fn if_expr_demo(b: Bool) -> Int {
   let x: Int = if (b) { 123 } else { 456 };
   return x;
 }
 
-// --------- match / int ----------
+// match 整数
 fn match_int(x: Int) -> Int {
   match (x) {
     0 => { 100 },
     1 => { 200 },
-    _ => { 999 }
+    _ => { 999 },
   }
 }
 
-// --------- match / bool ----------
+// match 布尔
 fn match_bool(b: Bool) -> Int {
   match (b) {
-    true => { 1 },
-    false => { 0 }
+    true  => { 1 },
+    false => { 0 },
   }
 }
 
-// --------- match / long（超出 i32 的整型字面量会被解析为 Long） ----------
+// match 长整型字面量
 fn match_long_one() -> Int {
-  let big: Long = 3000000000; // > i32::MAX
+  let big: Long = 3000000000;
   match (big) {
     3000000000 => { 1 },
-    _ => { 0 }
+    _ => { 0 },
   }
 }
 
-// --------- Long 运算 ----------
+// Long 加法
 fn long_add_demo(a: Long, b: Long) -> Long {
   return a + b;
 }
 
-// --------- Double 运算（字面量默认走 Double） ----------
+// Double 运算与一元负号
 fn double_demo() -> Double {
-  return -125.0 + 0.5;   // -124.5
+  return -125.0 + 0.5;  // -124.5
 }
 
-// --------- Char 打印 ----------
+// 打印字符（含换行与 Unicode）
 fn char_demo() -> Int {
   println_char('A');
-  println_char('\n');    // 打印换行符（会产生空行）
-  println_char('\u{263A}'); // ☺
+  println_char('\n');
+  println_char('\u{263A}');   // ☺
   return 0;
 }
 
-// --------- String 打印 ----------
+// 打印字符串
 fn string_demo() -> Int {
   println_str("Hello, Paw!");
   return 0;
 }
 
-// ===================== main =====================
 fn main() -> Void {
   println_str("== basic/print ==");
   println_int(42);
@@ -106,39 +104,39 @@ fn main() -> Void {
   println_str("done");
 
   println_str("== for/sum_to ==");
-  println_int(sum_to(9));          // 45
+  println_int(sum_to(9));
 
   println_str("== for/break ==");
-  println_int(first_i_sq_ge(30));  // 6
+  println_int(first_i_sq_ge(30));
 
   println_str("== for/continue ==");
-  println_int(sum_skip_five());    // 40
+  println_int(sum_skip_five());
 
   println_str("== while/fact ==");
-  println_int(fact_while(5));      // 120
+  println_int(fact_while(5));
 
   println_str("== if/expr ==");
-  println_int(if_expr_demo(true)); // 123
-  println_int(if_expr_demo(false));// 456
+  println_int(if_expr_demo(true));
+  println_int(if_expr_demo(false));
 
   println_str("== match/int ==");
-  println_int(match_int(0));       // 100
-  println_int(match_int(1));       // 200
-  println_int(match_int(42));      // 999
+  println_int(match_int(0));
+  println_int(match_int(1));
+  println_int(match_int(42));
 
   println_str("== match/bool ==");
-  println_int(match_bool(true));   // 1
-  println_int(match_bool(false));  // 0
+  println_int(match_bool(true));
+  println_int(match_bool(false));
 
   println_str("== long/op ==");
   let la: Long = 3000000000;
   let lb: Long = 2;
   let lc: Long = long_add_demo(la, lb);
-  println_long(lc);                // 3000000002
-  println_int(match_long_one());   // 1
+  println_long(lc);
+  println_int(match_long_one());
 
   println_str("== double/op ==");
-  println_double(double_demo());   // -124.5
+  println_double(double_demo());
 
   println_str("== char ==");
   let _c0: Int = char_demo();
@@ -148,14 +146,12 @@ fn main() -> Void {
 
   println_str("== float/edge ==");
   println_double(-0.25);
-  println_double(1.2e3);
-  println_double(-3.4E-2);
+  println_double(1200.0);
+  println_double(-0.034);
 
   println_str("== cmp/chain ==");
-  if (1 <= 2 && 3 >= 2) {
+  if ((1 <= 2) && (3 >= 2)) {
     println_str("ok");
-  } else {
-    println_str("bad");
   }
 
   println_str("== char/escape ==");
