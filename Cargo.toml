@@ -6,8 +6,8 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 # 解析
-pest = "2.8.1"
-pest_derive = "2.8.1"
+pest = "2.8.2"
+pest_derive = "2.8.2"
 
 # Cranelift 后端
 cranelift-codegen  = "0.123.2"

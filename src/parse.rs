@@ -1,5 +1,5 @@
 use crate::ast::*;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use pest::iterators::Pair;
 use pest::Parser;
 
@@ -31,7 +31,9 @@ fn build_item(p: Pair<Rule>) -> Result<Item> {
             let ty = build_ty(it.next().unwrap())?;
             let init = build_expr(it.next().unwrap())?;
             Item::Global {
-                name, ty, init,
+                name,
+                ty,
+                init,
                 is_const: kw.as_rule() == Rule::KW_CONST,
             }
         }
@@ -39,10 +41,17 @@ fn build_item(p: Pair<Rule>) -> Result<Item> {
         Rule::extern_fun => build_extern_fun_item(p)?,
         Rule::import_decl => {
             let mut it = p.into_inner();
-            let _kw = it.next().ok_or_else(|| anyhow!("import_decl missing `import`"))?;
-            let lit = it.next().ok_or_else(|| anyhow!("import_decl missing string"))?;
+            let _kw = it
+                .next()
+                .ok_or_else(|| anyhow!("import_decl missing `import`"))?;
+            let lit = it
+                .next()
+                .ok_or_else(|| anyhow!("import_decl missing string"))?;
             if lit.as_rule() != Rule::string_lit {
-                return Err(anyhow!("import_decl: expected string_lit, got {:?}", lit.as_rule()));
+                return Err(anyhow!(
+                    "import_decl: expected string_lit, got {:?}",
+                    lit.as_rule()
+                ));
             }
             Item::Import(unescape_string(lit.as_str()))
         }
@@ -68,7 +77,7 @@ fn build_fun_item(p: Pair<Rule>) -> Result<Item> {
     }
 
     let name = name.ok_or_else(|| anyhow!("fun_decl: missing name"))?;
-    let ret  = ret.ok_or_else(|| anyhow!("fun_decl: missing return ty for `{}`", name))?;
+    let ret = ret.ok_or_else(|| anyhow!("fun_decl: missing return ty for `{}`", name))?;
     let body = body.ok_or_else(|| anyhow!("fun_decl: missing body for `{}`", name))?;
 
     Ok(Item::Fun(FunDecl {
@@ -79,7 +88,6 @@ fn build_fun_item(p: Pair<Rule>) -> Result<Item> {
         is_extern: false,
     }))
 }
-
 
 fn build_extern_fun_item(p: Pair<Rule>) -> Result<Item> {
     let mut name: Option<String> = None;
@@ -97,21 +105,24 @@ fn build_extern_fun_item(p: Pair<Rule>) -> Result<Item> {
     }
 
     let name = name.ok_or_else(|| anyhow!("extern_fun: missing name"))?;
-    let ret  = ret.ok_or_else(|| anyhow!("extern_fun: missing return ty for `{}`", name))?;
+    let ret = ret.ok_or_else(|| anyhow!("extern_fun: missing return ty for `{}`", name))?;
 
     Ok(Item::Fun(FunDecl {
         name,
         params,
         ret,
-        body: Block { stmts: vec![], tail: None },
+        body: Block {
+            stmts: vec![],
+            tail: None,
+        },
         is_extern: true,
     }))
 }
 
-
 fn build_params(p: Pair<Rule>) -> Result<Vec<(String, Ty)>> {
     let mut v = Vec::new();
-    for x in p.into_inner() { // x: param
+    for x in p.into_inner() {
+        // x: param
         let mut it = x.into_inner(); // ident ":" ty
         let name = it.next().unwrap().as_str().to_string();
         let ty = build_ty(it.next().unwrap())?;
@@ -123,8 +134,13 @@ fn build_params(p: Pair<Rule>) -> Result<Vec<(String, Ty)>> {
 fn build_ty(p: Pair<Rule>) -> Result<Ty> {
     Ok(match p.as_rule() {
         Rule::KW_Int => Ty::Int,
+        Rule::KW_Long => Ty::Long,
         Rule::KW_Bool => Ty::Bool,
         Rule::KW_String => Ty::String,
+        Rule::KW_Double => Ty::Double,
+        Rule::KW_Float => Ty::Float,
+        Rule::KW_Char => Ty::Char,
+        Rule::KW_Void => Ty::Void,
         Rule::ty => build_ty(p.into_inner().next().unwrap())?,
         r => return Err(anyhow!("unexpected ty rule: {:?}", r)),
     })
@@ -154,7 +170,12 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
             let name = it.next().unwrap().as_str().to_string();
             let ty = build_ty(it.next().unwrap())?;
             let init = build_expr(it.next().unwrap())?;
-            Stmt::Let { name, ty, init, is_const: kw.as_rule() == Rule::KW_CONST }
+            Stmt::Let {
+                name,
+                ty,
+                init,
+                is_const: kw.as_rule() == Rule::KW_CONST,
+            }
         }
 
         Rule::assign_stmt => {
@@ -166,7 +187,7 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
 
         Rule::while_stmt => {
             let mut it = p.into_inner();
-            let _kw  = it.next();                   // KW_WHILE
+            let _kw = it.next(); // KW_WHILE
             let cond = build_expr(it.next().unwrap())?; // expr
             let body = build_block(it.next().unwrap())?; // block
             Stmt::While { cond, body }
@@ -176,11 +197,15 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
 
         Rule::if_stmt => {
             let mut it = p.into_inner();
-            let _kw    = it.next();                     // KW_IF
-            let cond   = build_expr(it.next().unwrap())?;   // expr
-            let then_b = build_block(it.next().unwrap())?;  // block
+            let _kw = it.next(); // KW_IF
+            let cond = build_expr(it.next().unwrap())?; // expr
+            let then_b = build_block(it.next().unwrap())?; // block
             let else_b = it.next().map(build_block).transpose()?; // 可能有一个 block
-            Stmt::If { cond, then_b, else_b }
+            Stmt::If {
+                cond,
+                then_b,
+                else_b,
+            }
         }
 
         Rule::break_stmt => Stmt::Break,
@@ -204,21 +229,26 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
 fn build_for_stmt(p: Pair<Rule>) -> Result<Stmt> {
     // for "(" for_init? ";" expr? ";" for_step? ")" block
     let mut init: Option<ForInit> = None;
-    let mut cond: Option<Expr>    = None;
+    let mut cond: Option<Expr> = None;
     let mut step: Option<ForStep> = None;
-    let mut body: Option<Block>   = None;
+    let mut body: Option<Block> = None;
 
     for x in p.into_inner() {
         match x.as_rule() {
             Rule::for_init => init = Some(build_for_init(x)?),
             Rule::for_step => step = Some(build_for_step(x)?),
-            Rule::expr     => cond = Some(build_expr(x)?),
-            Rule::block    => body = Some(build_block(x)?),
+            Rule::expr => cond = Some(build_expr(x)?),
+            Rule::block => body = Some(build_block(x)?),
             _ => { /* 忽略 "(" , ";" , ")" 等字面量 */ }
         }
     }
     let body = body.ok_or_else(|| anyhow!("for_stmt: missing body block"))?;
-    Ok(Stmt::For { init, cond, step, body })
+    Ok(Stmt::For {
+        init,
+        cond,
+        step,
+        body,
+    })
 }
 
 fn build_for_init(p: Pair<Rule>) -> Result<ForInit> {
@@ -233,9 +263,14 @@ fn build_for_init(p: Pair<Rule>) -> Result<ForInit> {
         Rule::KW_LET | Rule::KW_CONST => {
             let is_const = first.as_rule() == Rule::KW_CONST;
             let name = it.next().unwrap().as_str().to_string();
-            let ty   = build_ty(it.next().unwrap())?;
+            let ty = build_ty(it.next().unwrap())?;
             let init = build_expr(it.next().unwrap())?;
-            ForInit::Let { name, ty, init, is_const }
+            ForInit::Let {
+                name,
+                ty,
+                init,
+                is_const,
+            }
         }
         Rule::ident => {
             let name = first.as_str().to_string();
@@ -246,7 +281,6 @@ fn build_for_init(p: Pair<Rule>) -> Result<ForInit> {
         r => return Err(anyhow!("unexpected for_init node: {:?}", r)),
     })
 }
-
 
 fn build_for_step(p: Pair<Rule>) -> Result<ForStep> {
     // for_step 可能是：
@@ -268,14 +302,17 @@ fn build_for_step(p: Pair<Rule>) -> Result<ForStep> {
 
 fn build_if_expr(p: Pair<Rule>) -> Result<Expr> {
     let mut it = p.into_inner();
-    let _if   = it.next();                         // KW_IF
-    let cond  = build_expr(it.next().unwrap())?;   // expr
-    let then_b= build_block(it.next().unwrap())?;  // block
-    let _else = it.next();                         // KW_ELSE
-    let else_b= build_block(it.next().unwrap())?;  // block
-    Ok(Expr::If { cond: Box::new(cond), then_b, else_b })
+    let _if = it.next(); // KW_IF
+    let cond = build_expr(it.next().unwrap())?; // expr
+    let then_b = build_block(it.next().unwrap())?; // block
+    let _else = it.next(); // KW_ELSE
+    let else_b = build_block(it.next().unwrap())?; // block
+    Ok(Expr::If {
+        cond: Box::new(cond),
+        then_b,
+        else_b,
+    })
 }
-
 
 fn build_match_expr(p: Pair<Rule>) -> Result<Expr> {
     // match (expr) { arms? }
@@ -308,24 +345,28 @@ fn build_match_expr(p: Pair<Rule>) -> Result<Expr> {
         }
     }
     let scrut = scrut.ok_or_else(|| anyhow!("match: missing scrutinee expr"))?;
-    Ok(Expr::Match { scrut: Box::new(scrut), arms, default })
+    Ok(Expr::Match {
+        scrut: Box::new(scrut),
+        arms,
+        default,
+    })
 }
 
 fn build_pattern(p: Pair<Rule>) -> Result<Pattern> {
     Ok(match p.as_rule() {
-        // pattern 是一个包装规则：可能包着 int_lit / bool_lit，或者为空（当写成 "_"）
+        // pattern 是一个包装规则：里面可能是 int_lit / bool_lit / char_lit； "_" 则无 inner
         Rule::pattern => {
             let mut inner = p.into_inner();
             if let Some(q) = inner.next() {
                 build_pattern(q)?
             } else {
-                Pattern::Wild // "_" 的情况
+                Pattern::Wild
             }
         }
-        Rule::int_lit  => Pattern::Int(p.as_str().parse::<i64>()?),
+        Rule::int_lit => parse_int_pattern(p.as_str())?,
+        Rule::char_lit => Pattern::Char(parse_char_lit(p.as_str())?),
         Rule::bool_lit => Pattern::Bool(p.as_str() == "true"),
-        // 其他都不该出现；如果 grammar 将 "_" 单独设成 rule，这里也可以匹配它：
-        // Rule::wild_pat => Pattern::Wild,
+        // 其他都不该出现
         r => return Err(anyhow!("unexpected pattern node: {:?}", r)),
     })
 }
@@ -333,12 +374,9 @@ fn build_pattern(p: Pair<Rule>) -> Result<Pattern> {
 fn build_expr(p: Pair<Rule>) -> Result<Expr> {
     Ok(match p.as_rule() {
         Rule::expr => build_expr(p.into_inner().next().unwrap())?,
-        Rule::logic_or
-        | Rule::logic_and
-        | Rule::equality
-        | Rule::compare
-        | Rule::add
-        | Rule::mult => fold_binary(p)?,
+        Rule::logic_or | Rule::logic_and | Rule::equality | Rule::compare | Rule::add | Rule::mult => {
+            fold_binary(p)?
+        }
         Rule::unary => {
             let mut it = p.into_inner();
             let first = it.next().unwrap();
@@ -363,7 +401,9 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
                         let mut args = Vec::new();
                         let mut ii = suf.into_inner();
                         if let Some(al) = ii.next() {
-                            for ae in al.into_inner() { args.push(build_expr(ae)?); }
+                            for ae in al.into_inner() {
+                                args.push(build_expr(ae)?);
+                            }
                         }
                         match e {
                             Expr::Var(name) => e = Expr::Call { callee: name, args },
@@ -375,15 +415,22 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
             }
             e
         }
-        Rule::primary    => build_expr(p.into_inner().next().unwrap())?,
-        Rule::group      => build_expr(p.into_inner().next().unwrap())?,
-        Rule::if_expr    => build_if_expr(p)?,
+        Rule::primary => build_expr(p.into_inner().next().unwrap())?,
+        Rule::group => build_expr(p.into_inner().next().unwrap())?,
+        Rule::if_expr => build_if_expr(p)?,
         Rule::match_expr => build_match_expr(p)?,
-        Rule::int_lit    => Expr::Int(p.as_str().parse::<i64>()?),
-        Rule::bool_lit   => Expr::Bool(p.as_str() == "true"),
+        Rule::int_lit => parse_int_expr(p.as_str())?,
+        Rule::long_lit => {
+            let s = p.as_str();
+            let n: i64 = s[..s.len()-1].parse()?;
+            Expr::Long(n)
+        }
+        Rule::float_lit => Expr::Double(parse_float_lit(p.as_str())?),
+        Rule::char_lit => Expr::Char(parse_char_lit(p.as_str())?),
+        Rule::bool_lit => Expr::Bool(p.as_str() == "true"),
         Rule::string_lit => Expr::Str(unescape_string(p.as_str())),
-        Rule::ident      => Expr::Var(p.as_str().to_string()),
-        Rule::block      => Expr::Block(build_block(p)?),
+        Rule::ident => Expr::Var(p.as_str().to_string()),
+        Rule::block => Expr::Block(build_block(p)?),
         r => return Err(anyhow!("unexpected expr rule: {:?}", r)),
     })
 }
@@ -406,12 +453,84 @@ fn fold_binary(p: Pair<Rule>) -> Result<Expr> {
             Rule::OP_EQ => Eq,
             Rule::OP_NE => Ne,
             Rule::OP_AND => And,
-            Rule::OP_OR  => Or,
+            Rule::OP_OR => Or,
             r => return Err(anyhow!("binary op {:?} not expected", r)),
         };
-        lhs = Expr::Binary { op: bop, lhs: Box::new(lhs), rhs: Box::new(rhs) };
+        lhs = Expr::Binary {
+            op: bop,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        };
     }
     Ok(lhs)
+}
+
+// ------------------------
+// 辅助：字面量解析
+// ------------------------
+
+fn parse_int_expr(s: &str) -> Result<Expr> {
+    // 10 进制，支持前缀 '-'
+    let v = s.parse::<i128>()?;
+    if v >= i32::MIN as i128 && v <= i32::MAX as i128 {
+        Ok(Expr::Int(v as i32))
+    } else if v >= i64::MIN as i128 && v <= i64::MAX as i128 {
+        Ok(Expr::Long(v as i64))
+    } else {
+        bail!("integer literal out of i64 range: {}", s);
+    }
+}
+
+fn parse_int_pattern(s: &str) -> Result<Pattern> {
+    let v = s.parse::<i128>()?;
+    if v >= i32::MIN as i128 && v <= i32::MAX as i128 {
+        Ok(Pattern::Int(v as i32))
+    } else if v >= i64::MIN as i128 && v <= i64::MAX as i128 {
+        Ok(Pattern::Long(v as i64))
+    } else {
+        bail!("pattern integer out of i64 range: {}", s);
+    }
+}
+
+fn parse_float_lit(s: &str) -> Result<f64> {
+    // 允许前缀 '-'、小数点、科学计数；grammar 已保证形状
+    let v = s.parse::<f64>()?;
+    Ok(v)
+}
+
+fn parse_char_lit(s: &str) -> Result<u32> {
+    // 输入形如：'a'、'\n'、'\\'、'\u{1F600}'
+    let bytes = s.as_bytes();
+    if bytes.len() < 3 || bytes[0] != b'\'' || bytes[bytes.len() - 1] != b'\'' {
+        bail!("invalid char literal: {}", s);
+    }
+    // 去掉首尾单引号
+    let inner = &s[1..s.len() - 1];
+    let ch = if inner.starts_with('\\') {
+        let rest = &inner[1..];
+        match rest {
+            "'" => '\'',
+            "\\" => '\\',
+            "n" => '\n',
+            "r" => '\r',
+            "t" => '\t',
+            "0" => '\0',
+            _ => {
+                if let Some(hex) = rest.strip_prefix("u{").and_then(|t| t.strip_suffix('}')) {
+                    let v = u32::from_str_radix(hex, 16)
+                        .map_err(|_| anyhow!("invalid unicode escape in char: {}", s))?;
+                    char::from_u32(v).unwrap_or('\u{FFFD}')
+                } else {
+                    // 未知转义：按字面收下第一个字符
+                    rest.chars().next().unwrap_or('\u{FFFD}')
+                }
+            }
+        }
+    } else {
+        // 非转义：取第一个 Unicode 标量值
+        inner.chars().next().ok_or_else(|| anyhow!("empty char"))?
+    };
+    Ok(ch as u32)
 }
 
 fn unescape_string(s: &str) -> String {
@@ -421,7 +540,9 @@ fn unescape_string(s: &str) -> String {
     let mut i = 1; // 跳过开头 "
     while i + 1 < bytes.len() {
         let c = bytes[i] as char;
-        if c == '"' { break; }
+        if c == '"' {
+            break;
+        }
         if c == '\\' {
             i += 1;
             let e = bytes[i] as char;
@@ -430,6 +551,8 @@ fn unescape_string(s: &str) -> String {
                 't' => out.push('\t'),
                 '\\' => out.push('\\'),
                 '"' => out.push('"'),
+                'r' => out.push('\r'),
+                '0' => out.push('\0'),
                 _ => out.push(e),
             }
         } else {
