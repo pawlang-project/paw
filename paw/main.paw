@@ -1,160 +1,59 @@
-import "std/prelude.paw";
+import  "std/prelude.paw";
+import "generic.paw";
 
-// 1..=n 的和
-fn sum_to(n: Int) -> Int {
-  let s: Int = 0;
-  for (let i: Int = 1; i <= n; i = i + 1) {
-    s = s + i;
-  }
-  return s;
-}
+// 一些全局常量（会被后端内联）
+const KInt  : Int  = 10;
+const KLong : Long = 7L;
 
-// 找到最小 i 使 i*i >= th
-fn first_i_sq_ge(th: Int) -> Int {
-  let i: Int = 0;
-  for (i = 0; i < 100; i = i + 1) {
-    if ((i * i) >= th) { break; }
-  }
-  return i;
-}
-
-// 0..10（不含）累加，但跳过 5
-fn sum_skip_five() -> Int {
-  let s: Int = 0;
-  for (let i: Int = 0; i < 10; i = i + 1) {
-    if (i == 5) { continue; }
-    s = s + i;
-  }
-  return s;
-}
-
-// 用 while 做个“阶乘”风格循环（示例）
-fn fact_while(n: Int) -> Int {
-  let i: Int = 1;
-  let acc: Int = 1;
-  while (i <= n) {
-    acc = acc + 0;         // 占位，测试多条赋值
-    acc = acc * i;
-    i = i + 1;
-  }
-  return acc;
-}
-
-// if 作为表达式
-fn if_expr_demo(b: Bool) -> Int {
-  let x: Int = if (b) { 123 } else { 456 };
-  return x;
-}
-
-// match 整数
-fn match_int(x: Int) -> Int {
-  match (x) {
-    0 => { 100 },
-    1 => { 200 },
-    _ => { 999 },
-  }
-}
-
-// match 布尔
-fn match_bool(b: Bool) -> Int {
-  match (b) {
-    true  => { 1 },
-    false => { 0 },
-  }
-}
-
-// match 长整型字面量
-fn match_long_one() -> Int {
-  let big: Long = 3000000000;
-  match (big) {
-    3000000000 => { 1 },
-    _ => { 0 },
-  }
-}
-
-// Long 加法
-fn long_add_demo(a: Long, b: Long) -> Long {
+fn add(a: Int, b: Int) -> Int {
   return a + b;
 }
 
-// Double 运算与一元负号
-fn double_demo() -> Double {
-  return -125.0 + 0.5;  // -124.5
-}
+fn main() -> Int {
+  // 基础：显式类型实参的单态化
+  let a: Int  = id<Int>(41);
+  let b: Long = id<Long>(KLong);
+  let c: Int  = first<Int, Long>(a, b);          // -> Int 专门化
+  let d: Int  = choose<Int>(true, c, 0);         // 表达式 if + 泛型返回
+  let e: Int  = id<Int>(id<Int>(id<Int>(1)));    // 多层嵌套调用
 
-// 打印字符（含换行与 Unicode）
-fn char_demo() -> Int {
-  println_char('A');
-  println_char('\n');
-  println_char('\u{263A}');   // ☺
-  return 0;
-}
-
-// 打印字符串
-fn string_demo() -> Int {
-  println_str("Hello, Paw!");
-  return 0;
-}
-
-fn main() -> Void {
-  println_str("== basic/print ==");
-  println_int(42);
-  println_bool(true);
-  println_double(3.14159);
-  println_str("done");
-
-  println_str("== for/sum_to ==");
-  println_int(sum_to(9));
-
-  println_str("== for/break ==");
-  println_int(first_i_sq_ge(30));
-
-  println_str("== for/continue ==");
-  println_int(sum_skip_five());
-
-  println_str("== while/fact ==");
-  println_int(fact_while(5));
-
-  println_str("== if/expr ==");
-  println_int(if_expr_demo(true));
-  println_int(if_expr_demo(false));
-
-  println_str("== match/int ==");
-  println_int(match_int(0));
-  println_int(match_int(1));
-  println_int(match_int(42));
-
-  println_str("== match/bool ==");
-  println_int(match_bool(true));
-  println_int(match_bool(false));
-
-  println_str("== long/op ==");
-  let la: Long = 3000000000;
-  let lb: Long = 2;
-  let lc: Long = long_add_demo(la, lb);
-  println_long(lc);
-  println_int(match_long_one());
-
-  println_str("== double/op ==");
-  println_double(double_demo());
-
-  println_str("== char ==");
-  let _c0: Int = char_demo();
-
-  println_str("== string ==");
-  let _s0: Int = string_demo();
-
-  println_str("== float/edge ==");
-  println_double(-0.25);
-  println_double(1200.0);
-  println_double(-0.034);
-
-  println_str("== cmp/chain ==");
-  if ((1 <= 2) && (3 >= 2)) {
-    println_str("ok");
+  // while / 赋值
+  let i: Int = 0;
+  while (i < 3) {
+    i = i + 1;
   }
 
-  println_str("== char/escape ==");
-  println_char('\t');
-  println_char('\u{1F600}'); // 😀
+  // for(init; cond; step)
+  for (let j: Int = 0; j < 2; j = j + 1) {
+    // 空循环体
+  }
+
+  // match on Int / Char / Bool
+  let m1: Int = match (a) {
+      40 => { 1 },
+      41 => { 2 },
+      _  => { 3 },
+  };
+
+  let ch: Char = 'A';
+  let m2: Int = match (ch) {
+      'A' => { 10 },
+      _   => { 0 },
+  };
+
+  let flag: Bool = false;
+  let m3: Int = match (flag) {
+      true  => { 1 },
+      false => { 0 },
+  };
+
+  // 两参泛型：swap<Int, Long> 专门化应生成 swap$Int,Long
+  let y: Long = swap<Int, Long>(a, b);
+
+  // 简单算术与返回
+  let sum: Int = add(d, e) + m1 + m2 + m3 + i + KInt;
+  println_int(sum);
+
+  // 结束：返回一个稳定的非零值，方便在 CI 里断言
+  return sum; // 期望：41->2, m2=10, m3=0, i=3, KInt=10, e=1, d=c=41 => sum = 2+1+10+0+3+10 = 26，再加 add(41,1)=42 -> 68
 }

@@ -14,7 +14,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-
 fn parse_file(path: &Path) -> Result<Program> {
     let src = fs::read_to_string(path)
         .with_context(|| format!("read_to_string({})", path.display()))?;
@@ -88,21 +87,34 @@ fn main() -> Result<()> {
 
     let target = parse_target_from_args(&rest);
 
-    // —— 改动点：用“带 import 展开”的加载函数 —— //
+    // —— 用“带 import 展开”的加载函数 —— //
     let src_pathbuf = PathBuf::from(&src_path);
     let prog = load_program_with_imports(&src_pathbuf)?;
 
-    // 类型检查
-    let (_fnsig, _globals) = typecheck::typecheck_program(&prog)?;
+    // 类型检查（此处已要求：泛型调用必须显式类型实参）
+    let (_schemes, _globals, _trait_env, _impl_env) = typecheck::typecheck_program(&prog)?;
 
-    // 后端生成对象字节
+    // 后端生成对象字节（接入单态化）
     let mut be = codegen::CLBackend::new()?;
     be.set_globals_from_program(&prog);
+
     let funs = collect_fun_decls(&prog);
+
+    // 1) 声明“非泛型/extern”基名函数
     let ids = be.declare_fns(&funs)?;
+
+    // 2) 根据程序中的 `<...>` 调用，声明所有需要的专门化函数符号
+    be.declare_mono_from_program(&prog)?;
+
+    // 3) 先定义所有“非泛型”函数体
     for f in &funs {
         be.define_fn(f, &ids)?;
     }
+
+    // 4) 再定义根据调用收集到的所有“专门化”函数体
+    be.define_mono_from_program(&prog, &ids)?;
+
+    // 5) 结束，得到目标平台对象文件字节
     let obj_bytes = be.finish()?; // 已按 target 产出匹配格式（COFF/ELF/Mach-O）
 
     // 输出路径：对象文件路径 + 可执行路径
