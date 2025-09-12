@@ -59,7 +59,7 @@ expr        = { logic_or }
 logic_or    = { logic_and ~ (OP_OR  ~ logic_and)* }
 logic_and   = { equality  ~ (OP_AND ~ equality )* }
 equality    = { compare   ~ ((OP_EQ | OP_NE) ~ compare)* }
-compare = { add ~ ((OP_LE | OP_GE | OP_LT | OP_GT) ~ add)* }
+compare     = { add       ~ ((OP_LE | OP_GE | OP_LT | OP_GT) ~ add)* }
 add         = { mult      ~ ((OP_ADD | OP_SUB) ~ mult)* }
 mult        = { unary     ~ ((OP_MUL | OP_DIV) ~ unary)* }
 unary       = { (OP_NOT | OP_SUB) ~ unary | postfix }
@@ -67,28 +67,31 @@ postfix     = { primary ~ ( call_suffix )* }
 call_suffix = { "(" ~ arg_list? ~ ")" }
 arg_list    = { expr ~ ("," ~ expr)* }
 
-primary = { float_lit | long_lit | int_lit | bool_lit | string_lit
-          | if_expr | match_expr | ident | group | block | char_lit }
+
+primary = {
+    float_lit | long_lit | int_lit | bool_lit | string_lit
+  | if_expr | match_expr | ident | group | block | char_lit
+}
 group       = { "(" ~ expr ~ ")" }
 
 if_expr     = { KW_IF ~ "(" ~ expr ~ ")" ~ block ~ KW_ELSE ~ block }
 
-match_expr  = {
-    KW_MATCH ~ "(" ~ expr ~ ")" ~ "{" ~ match_arms? ~ "}"
-}
+match_expr  = { KW_MATCH ~ "(" ~ expr ~ ")" ~ "{" ~ match_arms? ~ "}" }
 match_arms  = {
-  (match_arm ~ ("," ~ match_arm)*) ~ ("," ~ match_default)? ~ (",")?
-    | match_default ~ (",")?
+    (match_arm ~ ("," ~ match_arm)*) ~ ("," ~ match_default)? ~ (",")?
+  | match_default ~ (",")?
 }
 match_arm     = { pattern ~ "=>" ~ block }
 match_default = { "_" ~ "=>" ~ block }
 
-pattern = { int_lit | bool_lit | char_lit | "_" }
+
+pattern = { long_lit | int_lit | bool_lit | char_lit | "_" }
+
 
 int_lit    = @{ "-"? ~ ASCII_DIGIT+ }
-long_lit = @{ "-"? ~ ASCII_DIGIT+ ~ ("L" | "l") }
+long_lit   = @{ "-"? ~ ASCII_DIGIT+ ~ ("L" | "l") }
 bool_lit   = { KW_true | KW_false }
-float_lit = @{
+float_lit  = @{
   "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)?
 }
 char_lit = @{
@@ -99,7 +102,9 @@ char_lit = @{
 }
 string_lit = @{ "\"" ~ ( "\\\"" | "\\\\" | "\\n" | "\\t" | (!"\"" ~ ANY) )* ~ "\"" }
 
-ident = @{ !keyword ~ (ASCII_ALPHANUMERIC | "_")+ }
+
+ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+
 
 keyword = {
   (
@@ -110,6 +115,7 @@ keyword = {
     | KW_true | KW_false
   ) ~ !(ASCII_ALPHANUMERIC | "_")
 }
+
 KW_FNs    = { "fn" }
 KW_EXTERN = { "extern" }
 KW_IMPORT = { "import" }
