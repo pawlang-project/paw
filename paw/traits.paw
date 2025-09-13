@@ -1,0 +1,17 @@
+trait Eq<T> {
+    fn eq(a: T, b: T) -> Bool;
+}
+
+// 注意：impl 后面 **必须** 带尖括号的具体类型参数，不能写成 `impl Eq { ... }`。
+impl Eq<Int> {
+    fn eq(a: Int, b: Int) -> Bool { return a == b; }
+}
+
+impl Eq<Long> {
+    fn eq(a: Long, b: Long) -> Bool { return a == b; }
+}
+
+// 示例：where 约束（类型检查阶段只验证存在 impl，不强制真正调用）
+fn needEq<T>(x: T, y: T) -> Int where T: Eq<T> {
+    return 1;
+}

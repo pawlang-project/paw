@@ -4,13 +4,12 @@ use pest::iterators::Pair;
 use pest::Parser;
 
 #[derive(pest_derive::Parser)]
-#[grammar = "grammar/grammar.pest"]
+#[grammar = "grammar/grammar.pest"] // 若文件在 grammar/ 目录，请改为 "grammar/grammar.pest"
 pub struct PawParser;
 
-// ------------------------
-// 入口
-// ------------------------
-
+/* ================================
+ * 入口
+ * ================================ */
 pub fn parse_program(src: &str) -> Result<Program> {
     let pairs = PawParser::parse(Rule::program, src)?;
     let mut items = Vec::new();
@@ -26,10 +25,9 @@ pub fn parse_program(src: &str) -> Result<Program> {
     Ok(Program { items })
 }
 
-// ------------------------
-// item / 顶层
-// ------------------------
-
+/* ================================
+ * item
+ * ================================ */
 fn build_item(p: Pair<Rule>) -> Result<Item> {
     Ok(match p.as_rule() {
         Rule::let_decl => {
@@ -49,30 +47,22 @@ fn build_item(p: Pair<Rule>) -> Result<Item> {
         Rule::extern_fun => build_extern_fun_item(p)?,
         Rule::import_decl => {
             let mut it = p.into_inner();
-            let _kw = it
-                .next()
-                .ok_or_else(|| anyhow!("import_decl missing `import`"))?;
-            let lit = it
-                .next()
-                .ok_or_else(|| anyhow!("import_decl missing string"))?;
+            let _kw = it.next().ok_or_else(|| anyhow!("import_decl missing `import`"))?;
+            let lit = it.next().ok_or_else(|| anyhow!("import_decl missing string"))?;
             if lit.as_rule() != Rule::string_lit {
-                return Err(anyhow!(
-                    "import_decl: expected string_lit, got {:?}",
-                    lit.as_rule()
-                ));
+                bail!("import_decl: expect string_lit");
             }
             Item::Import(unescape_string(lit.as_str()))
         }
         Rule::trait_decl => build_trait_decl(p)?,
         Rule::impl_decl => build_impl_decl(p)?,
-        r => return Err(anyhow!("unexpected item: {:?}", r)),
+        other => return Err(anyhow!("unexpected item: {:?}", other)),
     })
 }
 
-// ------------------------
-// 函数声明 / 外部函数
-// ------------------------
-
+/* ================================
+ * fun / extern
+ * ================================ */
 fn build_fun_item(p: Pair<Rule>) -> Result<Item> {
     let mut name: Option<String> = None;
     let mut type_params: Vec<String> = Vec::new();
@@ -83,20 +73,20 @@ fn build_fun_item(p: Pair<Rule>) -> Result<Item> {
 
     for child in p.into_inner() {
         match child.as_rule() {
-            Rule::KW_FNs => { /* ignore */ }
+            Rule::KW_FNs => {}
             Rule::ident => name = Some(child.as_str().to_string()),
             Rule::ty_params => type_params = build_ty_params(child)?,
             Rule::param_list => params = build_params(child)?,
             Rule::ty => ret = Some(build_ty(child)?),
             Rule::where_clause => where_bounds = build_where_clause(child)?,
             Rule::block => body = Some(build_block(child)?),
-            _ => { /* 忽略符号 */ }
+            _ => {}
         }
     }
 
     let name = name.ok_or_else(|| anyhow!("fun_decl: missing name"))?;
-    let ret = ret.ok_or_else(|| anyhow!("fun_decl: missing return ty for `{}`", name))?;
-    let body = body.ok_or_else(|| anyhow!("fun_decl: missing body for `{}`", name))?;
+    let ret = ret.ok_or_else(|| anyhow!("fun_decl `{}` missing return type", &name))?;
+    let body = body.ok_or_else(|| anyhow!("fun_decl `{}` missing body", &name))?;
 
     Ok(Item::Fun(FunDecl {
         name,
@@ -116,51 +106,61 @@ fn build_extern_fun_item(p: Pair<Rule>) -> Result<Item> {
 
     for child in p.into_inner() {
         match child.as_rule() {
-            Rule::KW_EXTERN | Rule::KW_FNs => { /* ignore */ }
+            Rule::KW_EXTERN | Rule::KW_FNs => {}
             Rule::ident => name = Some(child.as_str().to_string()),
             Rule::param_list => params = build_params(child)?,
             Rule::ty => ret = Some(build_ty(child)?),
-            _ => { /* ignore */ }
+            _ => {}
         }
     }
 
     let name = name.ok_or_else(|| anyhow!("extern_fun: missing name"))?;
-    let ret = ret.ok_or_else(|| anyhow!("extern_fun: missing return ty for `{}`", name))?;
+    let ret = ret.ok_or_else(|| anyhow!("extern_fun `{}` missing return type", &name))?;
 
     Ok(Item::Fun(FunDecl {
         name,
-        type_params: Vec::new(),
+        type_params: vec![],
         params,
         ret,
-        where_bounds: Vec::new(),
+        where_bounds: vec![],
         body: Block { stmts: vec![], tail: None },
         is_extern: true,
     }))
 }
 
-// ------------------------
-// trait / impl / where
-// ------------------------
-
+/* ================================
+ * trait / impl / where
+ * ================================ */
 fn build_trait_decl(p: Pair<Rule>) -> Result<Item> {
-    // trait_decl = { KW_TRAIT ~ ident ~ ty_params? ~ "{" ~ trait_item* ~ "}" }
     let mut name: Option<String> = None;
-    let mut tparams: Vec<String> = Vec::new();
+    let mut type_params: Vec<String> = Vec::new();
     let mut items: Vec<TraitMethodSig> = Vec::new();
 
     for child in p.into_inner() {
         match child.as_rule() {
             Rule::KW_TRAIT => {}
-            Rule::ident => { if name.is_none() { name = Some(child.as_str().to_string()); } }
-            Rule::ty_params => tparams = build_ty_params(child)?,
+            Rule::ident => {
+                if name.is_none() {
+                    name = Some(child.as_str().to_string());
+                }
+            }
+            // 关键：从 ty_params 里枚举 ty_ident
+            Rule::ty_params => {
+                for id in child.into_inner() {
+                    if id.as_rule() == Rule::ty_ident {
+                        type_params.push(id.as_str().to_string());
+                    }
+                }
+            }
             Rule::trait_item => items.push(build_trait_item(child)?),
             _ => {}
         }
     }
 
     let name = name.ok_or_else(|| anyhow!("trait_decl: missing name"))?;
-    Ok(Item::Trait(TraitDecl { name, type_params: tparams, items }))
+    Ok(Item::Trait(TraitDecl { name, type_params, items }))
 }
+
 
 fn build_trait_item(p: Pair<Rule>) -> Result<TraitMethodSig> {
     let mut name: Option<String> = None;
@@ -178,12 +178,11 @@ fn build_trait_item(p: Pair<Rule>) -> Result<TraitMethodSig> {
     }
 
     let name = name.ok_or_else(|| anyhow!("trait_item: missing name"))?;
-    let ret = ret.ok_or_else(|| anyhow!("trait_item: missing return ty for `{}`", name))?;
+    let ret = ret.ok_or_else(|| anyhow!("trait_item `{}` missing return type", &name))?;
     Ok(TraitMethodSig { name, params, ret })
 }
 
 fn build_impl_decl(p: Pair<Rule>) -> Result<Item> {
-    // impl_decl = { KW_IMPL ~ ident ~ ty_args ~ "{" ~ impl_item* ~ "}" }
     let mut trait_name: Option<String> = None;
     let mut trait_args: Vec<Ty> = Vec::new();
     let mut items: Vec<ImplMethod> = Vec::new();
@@ -196,7 +195,14 @@ fn build_impl_decl(p: Pair<Rule>) -> Result<Item> {
                     trait_name = Some(child.as_str().to_string());
                 }
             }
-            Rule::ty_args => trait_args = build_ty_args(child)?,
+            // 关键：从 ty_args 里把所有 ty 都取出来
+            Rule::ty_args => {
+                for t in child.into_inner() {
+                    if t.as_rule() == Rule::ty {
+                        trait_args.push(build_ty(t)?);
+                    }
+                }
+            }
             Rule::impl_item => items.push(build_impl_item(child)?),
             _ => {}
         }
@@ -204,7 +210,8 @@ fn build_impl_decl(p: Pair<Rule>) -> Result<Item> {
 
     let trait_name = trait_name.ok_or_else(|| anyhow!("impl_decl: missing trait name"))?;
     if trait_args.is_empty() {
-        return Err(anyhow!("impl_decl: missing trait type arguments"));
+        // 之前报错就是走到这里
+        bail!("impl `{}` missing type arguments", trait_name);
     }
     Ok(Item::Impl(ImplDecl { trait_name, trait_args, items }))
 }
@@ -227,9 +234,8 @@ fn build_impl_item(p: Pair<Rule>) -> Result<ImplMethod> {
     }
 
     let name = name.ok_or_else(|| anyhow!("impl_item: missing name"))?;
-    let ret = ret.ok_or_else(|| anyhow!("impl_item: missing return ty for `{}`", name))?;
-    let body = body.ok_or_else(|| anyhow!("impl_item: missing body for `{}`", name))?;
-
+    let ret = ret.ok_or_else(|| anyhow!("impl_item `{}` missing return type", &name))?;
+    let body = body.ok_or_else(|| anyhow!("impl_item `{}` missing body", &name))?;
     Ok(ImplMethod { name, params, ret, body })
 }
 
@@ -244,7 +250,6 @@ fn build_where_clause(p: Pair<Rule>) -> Result<Vec<WherePred>> {
 }
 
 fn build_where_pred(p: Pair<Rule>) -> Result<WherePred> {
-    // where_pred = ty ":" bound ("+" ~ bound)*
     let mut it = p.into_inner();
     let ty = build_ty(it.next().ok_or_else(|| anyhow!("where_pred: missing ty"))?)?;
     let mut bounds = Vec::new();
@@ -257,7 +262,6 @@ fn build_where_pred(p: Pair<Rule>) -> Result<WherePred> {
 }
 
 fn build_bound_as_traitref(p: Pair<Rule>) -> Result<TraitRef> {
-    // bound = ident ("<" ty ("," ty)* ">")?
     let mut it = p.into_inner();
     let name = it
         .next()
@@ -273,10 +277,9 @@ fn build_bound_as_traitref(p: Pair<Rule>) -> Result<TraitRef> {
     Ok(TraitRef { name, args })
 }
 
-// ------------------------
-// 参数列表 / 类型
-// ------------------------
-
+/* ================================
+ * 参数与类型
+ * ================================ */
 fn build_params(p: Pair<Rule>) -> Result<Vec<(String, Ty)>> {
     let mut v = Vec::new();
     for x in p.into_inner() {
@@ -310,33 +313,26 @@ fn build_ty_args(p: Pair<Rule>) -> Result<Vec<Ty>> {
 
 fn build_ty(p: Pair<Rule>) -> Result<Ty> {
     Ok(match p.as_rule() {
-        // 解开一层 wrapper
         Rule::ty | Rule::ty_prim => {
             let inner = p.into_inner().next().ok_or_else(|| anyhow!("empty type node"))?;
             build_ty(inner)?
         }
-
-        // 类型变量
         Rule::ty_var => Ty::Var(p.as_str().to_string()),
-
-        // 泛型类型应用：ident 后面若干 ty
         Rule::ty_app => {
-            let mut name: Option<String> = None;
-            let mut args: Vec<Ty> = Vec::new();
-            for ch in p.into_inner() {
-                match ch.as_rule() {
-                    Rule::ident => {
-                        if name.is_none() { name = Some(ch.as_str().to_string()); }
-                    }
-                    Rule::ty => args.push(build_ty(ch)?),
-                    _ => {}
+            let mut it = p.into_inner();
+            let head = it.next().ok_or_else(|| anyhow!("ty_app: missing head"))?;
+            let name = match head.as_rule() {
+                Rule::ident => head.as_str().to_string(),
+                other => return Err(anyhow!("ty_app head not ident: {:?}", other)),
+            };
+            let mut args = Vec::<Ty>::new();
+            if let Some(list) = it.next() {
+                for a in list.into_inner() {
+                    args.push(build_ty(a)?);
                 }
             }
-            let name = name.ok_or_else(|| anyhow!("ty_app missing head ident"))?;
             Ty::App { name, args }
         }
-
-        // 原生关键字类型
         Rule::KW_Int    => Ty::Int,
         Rule::KW_Long   => Ty::Long,
         Rule::KW_Bool   => Ty::Bool,
@@ -345,10 +341,7 @@ fn build_ty(p: Pair<Rule>) -> Result<Ty> {
         Rule::KW_Float  => Ty::Float,
         Rule::KW_Char   => Ty::Char,
         Rule::KW_Void   => Ty::Void,
-
-        // 兜底：有些场景可能出现简单 ident 当类型构造（0 实参）
         Rule::ident => Ty::App { name: p.as_str().to_string(), args: vec![] },
-
         other => {
             let mut it = p.into_inner();
             if let Some(q) = it.next() {
@@ -360,10 +353,9 @@ fn build_ty(p: Pair<Rule>) -> Result<Ty> {
     })
 }
 
-// ------------------------
-// block / stmt
-// ------------------------
-
+/* ================================
+ * block / stmt
+ * ================================ */
 fn build_block(p: Pair<Rule>) -> Result<Block> {
     let mut stmts = Vec::new();
     let mut tail = None;
@@ -395,43 +387,36 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
                 is_const: kw.as_rule() == Rule::KW_CONST,
             }
         }
-
         Rule::assign_stmt => {
             let mut it = p.into_inner();
             let name = it.next().unwrap().as_str().to_string();
             let expr = build_expr(it.next().unwrap())?;
             Stmt::Assign { name, expr }
         }
-
         Rule::while_stmt => {
             let mut it = p.into_inner();
-            let _kw = it.next(); // KW_WHILE
+            let _kw = it.next();
             let cond = build_expr(it.next().unwrap())?;
             let body = build_block(it.next().unwrap())?;
             Stmt::While { cond, body }
         }
-
         Rule::for_stmt => build_for_stmt(p)?,
-
         Rule::if_stmt => {
             let mut it = p.into_inner();
-            let _kw = it.next(); // KW_IF
+            let _kw = it.next();
             let cond = build_expr(it.next().unwrap())?;
             let then_b = build_block(it.next().unwrap())?;
             let else_b = it.next().map(build_block).transpose()?;
             Stmt::If { cond, then_b, else_b }
         }
-
         Rule::break_stmt => Stmt::Break,
         Rule::continue_stmt => Stmt::Continue,
-
         Rule::return_stmt => {
             let mut it = p.into_inner();
             let _kw = it.next();
             let expr = it.next().map(build_expr).transpose()?;
             Stmt::Return(expr)
         }
-
         Rule::expr_stmt => {
             let e = build_expr(p.into_inner().next().unwrap())?;
             Stmt::Expr(e)
@@ -441,7 +426,6 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
 }
 
 fn build_for_stmt(p: Pair<Rule>) -> Result<Stmt> {
-    // for "(" for_init? ";" expr? ";" for_step? ")" block
     let mut init: Option<ForInit> = None;
     let mut cond: Option<Expr> = None;
     let mut step: Option<ForStep> = None;
@@ -453,17 +437,16 @@ fn build_for_stmt(p: Pair<Rule>) -> Result<Stmt> {
             Rule::for_step => step = Some(build_for_step(x)?),
             Rule::expr => cond = Some(build_expr(x)?),
             Rule::block => body = Some(build_block(x)?),
-            _ => { /* 忽略符号 */ }
+            _ => {}
         }
     }
-    let body = body.ok_or_else(|| anyhow!("for_stmt: missing body block"))?;
+    let body = body.ok_or_else(|| anyhow!("for_stmt: missing body"))?;
     Ok(Stmt::For { init, cond, step, body })
 }
 
 fn build_for_init(p: Pair<Rule>) -> Result<ForInit> {
     let mut it = p.into_inner();
     let first = it.next().unwrap();
-
     Ok(match first.as_rule() {
         Rule::KW_LET | Rule::KW_CONST => {
             let is_const = first.as_rule() == Rule::KW_CONST;
@@ -478,14 +461,13 @@ fn build_for_init(p: Pair<Rule>) -> Result<ForInit> {
             ForInit::Assign { name, expr }
         }
         Rule::expr => ForInit::Expr(build_expr(first)?),
-        r => return Err(anyhow!("unexpected for_init node: {:?}", r)),
+        r => return Err(anyhow!("unexpected for_init: {:?}", r)),
     })
 }
 
 fn build_for_step(p: Pair<Rule>) -> Result<ForStep> {
     let mut it = p.into_inner();
     let first = it.next().unwrap();
-
     Ok(match first.as_rule() {
         Rule::ident => {
             let name = first.as_str().to_string();
@@ -493,20 +475,20 @@ fn build_for_step(p: Pair<Rule>) -> Result<ForStep> {
             ForStep::Assign { name, expr }
         }
         Rule::expr => ForStep::Expr(build_expr(first)?),
-        r => return Err(anyhow!("unexpected for_step node: {:?}", r)),
+        r => return Err(anyhow!("unexpected for_step: {:?}", r)),
     })
 }
 
-// ------------------------
-// 表达式
-// ------------------------
+/* ================================
+ * 表达式（含限定名调用）
+ * ================================ */
 
 fn build_if_expr(p: Pair<Rule>) -> Result<Expr> {
     let mut it = p.into_inner();
-    let _if = it.next(); // KW_IF
+    let _if = it.next();
     let cond = build_expr(it.next().unwrap())?;
     let then_b = build_block(it.next().unwrap())?;
-    let _else = it.next(); // KW_ELSE
+    let _else = it.next();
     let else_b = build_block(it.next().unwrap())?;
     Ok(Expr::If { cond: Box::new(cond), then_b, else_b })
 }
@@ -523,13 +505,13 @@ fn build_match_expr(p: Pair<Rule>) -> Result<Expr> {
                 for a in x.into_inner() {
                     match a.as_rule() {
                         Rule::match_arm => {
-                            let mut ii = a.into_inner(); // pattern, block
+                            let mut ii = a.into_inner();
                             let pat = build_pattern(ii.next().unwrap())?;
                             let blk = build_block(ii.next().unwrap())?;
                             arms.push((pat, blk));
                         }
                         Rule::match_default => {
-                            let mut ii = a.into_inner(); // block
+                            let mut ii = a.into_inner();
                             let blk = build_block(ii.next().unwrap())?;
                             default = Some(blk);
                         }
@@ -540,7 +522,7 @@ fn build_match_expr(p: Pair<Rule>) -> Result<Expr> {
             _ => {}
         }
     }
-    let scrut = scrut.ok_or_else(|| anyhow!("match: missing scrutinee expr"))?;
+    let scrut = scrut.ok_or_else(|| anyhow!("match: missing scrutinee"))?;
     Ok(Expr::Match { scrut: Box::new(scrut), arms, default })
 }
 
@@ -555,19 +537,21 @@ fn build_pattern(p: Pair<Rule>) -> Result<Pattern> {
             }
         }
         Rule::long_lit => Pattern::Long(parse_long_lit(p.as_str())?),
-        Rule::int_lit  => parse_int_pattern(p.as_str())?,
+        Rule::int_lit => parse_int_pattern(p.as_str())?,
         Rule::char_lit => Pattern::Char(parse_char_lit(p.as_str())?),
         Rule::bool_lit => Pattern::Bool(p.as_str() == "true"),
-        r => return Err(anyhow!("unexpected pattern node: {:?}", r)),
+        r => return Err(anyhow!("unexpected pattern: {:?}", r)),
     })
 }
 
 fn build_expr(p: Pair<Rule>) -> Result<Expr> {
     Ok(match p.as_rule() {
         Rule::expr => build_expr(p.into_inner().next().unwrap())?,
+
         Rule::logic_or | Rule::logic_and | Rule::equality | Rule::compare | Rule::add | Rule::mult => {
             fold_binary(p)?
         }
+
         Rule::unary => {
             let mut it = p.into_inner();
             let first = it.next().unwrap();
@@ -578,106 +562,127 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
             }
         }
 
-        // 核心：安全调用后缀 + 限定名 callee
+        // 核心：后缀（函数调用），支持 qident（Trait::method）
         Rule::postfix => {
             let mut it = p.into_inner();
-            let head = it.next().unwrap(); // primary_head 的某个备选
-            // 如果是 name_ref，提取 Callee；否则当作普通表达式
-            let mut pending_callee: Option<Callee> = None;
-            let mut e_opt: Option<Expr> = None;
 
-            if head.as_rule() == Rule::name_ref {
-                pending_callee = Some(build_callee_from_name_ref(head)?);
-            } else {
-                e_opt = Some(build_expr(head)?);
+            // 读取头
+            let head = it.next().unwrap();
+            let mut callee_opt: Option<Callee> = None;
+            let mut base_expr: Option<Expr> = None;
+
+            match head.as_rule() {
+                // name_ref 统一了 ident 和 qident
+                Rule::name_ref => {
+                    let node = head.into_inner().next().unwrap();
+                    match node.as_rule() {
+                        Rule::ident => {
+                            // 普通标识符：既可以后接调用，也可以单独作为变量引用
+                            callee_opt = Some(Callee::Name(node.as_str().to_string()));
+                        }
+                        Rule::qident => {
+                            // 限定名（Trait::method）只允许出现在调用位置
+                            // 如果后面没有 call_suffix，会在下面做专门的报错
+                            let s = node.as_str(); // e.g. "Eq::eq"
+                            let mut parts = s.split("::");
+                            let trait_name = parts.next().unwrap_or("").to_string();
+                            let method = parts.last().unwrap_or("").to_string();
+                            callee_opt = Some(Callee::Qualified { trait_name, method });
+                        }
+                        other => return Err(anyhow!("name_ref unexpected: {:?}", other)),
+                    }
+                }
+                // 其他原子表达式（group/block/字面量/又一个 postfix 等）
+                _ => {
+                    base_expr = Some(build_expr(head)?);
+                }
             }
 
-            let mut did_call = false;
+            // 依次消费零个或多个 call_suffix
+            let mut out_call: Option<Expr> = None;
             for suf in it {
-                match suf.as_rule() {
-                    Rule::call_suffix => {
-                        let mut generics: Vec<Ty> = Vec::new();
-                        let mut args: Vec<Expr> = Vec::new();
-                        let mut ii = suf.into_inner();
-                        if let Some(first) = ii.next() {
-                            match first.as_rule() {
-                                Rule::ty_args => {
-                                    generics = build_ty_args(first)?;
-                                    if let Some(maybe_args) = ii.next() {
-                                        if maybe_args.as_rule() == Rule::arg_list {
-                                            args = build_arg_list(maybe_args)?;
-                                        }
-                                    }
-                                }
-                                Rule::arg_list => {
-                                    args = build_arg_list(first)?;
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        if let Some(callee) = pending_callee.take() {
-                            // name_ref 后紧跟一次调用；不允许再链式追加
-                            if did_call {
-                                return Err(anyhow!("chained calls after qualified/name callee are not supported"));
-                            }
-                            did_call = true;
-                            e_opt = Some(Expr::Call { callee, generics, args });
-                        } else if let Some(Expr::Var(name)) = e_opt.take() {
-                            // 兼容旧语义：ident(...)，按自由函数调用
-                            let callee = Callee::Name(name);
-                            if did_call {
-                                return Err(anyhow!("chained calls after value are not supported"));
-                            }
-                            did_call = true;
-                            e_opt = Some(Expr::Call { callee, generics, args });
-                        } else {
-                            return Err(anyhow!("call on non-name (only ident or Trait::method allowed)"));
-                        }
-                    }
-                    _ => unreachable!(),
+                if suf.as_rule() != Rule::call_suffix {
+                    return Err(anyhow!("postfix: unexpected suffix {:?}", suf.as_rule()));
                 }
+                // call_suffix = ty_args? "(" arg_list? ")"
+                let mut generics: Vec<Ty> = Vec::new();
+                let mut args: Vec<Expr> = Vec::new();
+
+                let mut ii = suf.into_inner();
+                if let Some(first) = ii.next() {
+                    match first.as_rule() {
+                        Rule::ty_args => {
+                            generics = build_ty_args(first)?;
+                            if let Some(maybe_args) = ii.next() {
+                                if maybe_args.as_rule() == Rule::arg_list {
+                                    args = build_arg_list(maybe_args)?;
+                                }
+                            }
+                        }
+                        Rule::arg_list => {
+                            args = build_arg_list(first)?;
+                        }
+                        r => return Err(anyhow!("call_suffix: unexpected {:?}", r)),
+                    }
+                }
+
+                // 组装本次“调用”表达式
+                let callee = if let Some(c) = &callee_opt {
+                    c.clone()
+                } else {
+                    // 不是 name_ref 开头：只允许之前的 head 被解析为 Var(name)
+                    match base_expr.take() {
+                        Some(Expr::Var(name)) => Callee::Name(name),
+                        _ => return Err(anyhow!("call on non-ident expression")),
+                    }
+                };
+
+                out_call = Some(Expr::Call { callee, generics, args });
+                // 一旦形成调用，后续再接的后缀都必须基于这次调用（不再允许把上一个结果当“函数名”）
+                callee_opt = None;
             }
 
-            // 没有任何调用后缀：
-            // - 如果是 ident：作为变量名返回
-            // - 如果是限定名（Trait::method）：不允许裸出现
-            if let Some(callee) = pending_callee {
-                match callee {
-                    Callee::Name(n) => Expr::Var(n),
+            // —— 无任何 call_suffix 的情况：把“头部”直接作为表达式返回 —— //
+            if let Some(e) = out_call {
+                e
+            } else if let Some(c) = callee_opt {
+                match c {
+                    Callee::Name(n) => Expr::Var(n), // 变量引用（例如 `x`）
                     Callee::Qualified { .. } => {
-                        return Err(anyhow!("bare qualified name like `Trait::method` is not an expression; call it with `(...)`"))
+                        return Err(anyhow!(
+                    "qualified path cannot be used as a value; call it like `Trait::method<...>(...)`"
+                ));
                     }
                 }
+            } else if let Some(be) = base_expr {
+                be // 比如 `(a+b)` / `{ ... }` / 字面量 等
             } else {
-                e_opt.expect("postfix head should produce an expression")
+                return Err(anyhow!("postfix head missing"));
             }
         }
 
-        Rule::group   => build_expr(p.into_inner().next().unwrap())?,
-        Rule::if_expr => build_if_expr(p)?,
+        // 其它原子
+        Rule::group      => build_expr(p.into_inner().next().unwrap())?,
+        Rule::if_expr    => build_if_expr(p)?,
         Rule::match_expr => build_match_expr(p)?,
+        Rule::int_lit    => parse_int_expr(p.as_str())?,
+        Rule::long_lit   => { let n: i64 = parse_long_lit(p.as_str())?; Expr::Long(n) }
+        Rule::float_lit  => Expr::Double(parse_float_lit(p.as_str())?),
+        Rule::char_lit   => Expr::Char(parse_char_lit(p.as_str())?),
+        Rule::bool_lit   => Expr::Bool(p.as_str() == "true"),
+        Rule::string_lit => Expr::Str(unescape_string(p.as_str())),
+        Rule::ident      => Expr::Var(p.as_str().to_string()),
+        Rule::block      => Expr::Block(build_block(p)?),
 
-        // 字面量
-        Rule::int_lit   => parse_int_expr(p.as_str())?,
-        Rule::long_lit  => Expr::Long(parse_long_lit(p.as_str())?),
-        Rule::float_lit => Expr::Double(parse_float_lit(p.as_str())?),
-        Rule::char_lit  => Expr::Char(parse_char_lit(p.as_str())?),
-        Rule::bool_lit  => Expr::Bool(p.as_str() == "true"),
-        Rule::string_lit=> Expr::Str(unescape_string(p.as_str())),
-
-        // 其它原子（出现在非 name_ref 的场合）
-        Rule::ident => Expr::Var(p.as_str().to_string()),
-        Rule::block => Expr::Block(build_block(p)?),
-
-        r => {
-            let mut it = p.into_inner();
+        // 包装层兜底：继续向里钻
+        other => {
+            let mut it = p.clone().into_inner();
             if let Some(q) = it.next() {
                 build_expr(q)?
             } else {
-                return Err(anyhow!("unexpected expr rule: {:?}", r));
+                return Err(anyhow!("unexpected expr rule: {:?}", other));
             }
-        },
+        }
     })
 }
 
@@ -700,14 +705,14 @@ fn fold_binary(p: Pair<Rule>) -> Result<Expr> {
             Rule::OP_SUB => Sub,
             Rule::OP_MUL => Mul,
             Rule::OP_DIV => Div,
-            Rule::OP_LT  => Lt,
-            Rule::OP_LE  => Le,
-            Rule::OP_GT  => Gt,
-            Rule::OP_GE  => Ge,
-            Rule::OP_EQ  => Eq,
-            Rule::OP_NE  => Ne,
+            Rule::OP_LT => Lt,
+            Rule::OP_LE => Le,
+            Rule::OP_GT => Gt,
+            Rule::OP_GE => Ge,
+            Rule::OP_EQ => Eq,
+            Rule::OP_NE => Ne,
             Rule::OP_AND => And,
-            Rule::OP_OR  => Or,
+            Rule::OP_OR => Or,
             r => return Err(anyhow!("binary op {:?} not expected", r)),
         };
         lhs = Expr::Binary { op: bop, lhs: Box::new(lhs), rhs: Box::new(rhs) };
@@ -715,36 +720,9 @@ fn fold_binary(p: Pair<Rule>) -> Result<Expr> {
     Ok(lhs)
 }
 
-// ------------------------
-// name_ref / callee
-// ------------------------
-
-fn build_callee_from_name_ref(p: Pair<Rule>) -> Result<Callee> {
-    debug_assert_eq!(p.as_rule(), Rule::name_ref);
-    // name_ref = qident | ident
-    let inner = p.into_inner().next().ok_or_else(|| anyhow!("empty name_ref"))?;
-    match inner.as_rule() {
-        Rule::ident => Ok(Callee::Name(inner.as_str().to_string())),
-        Rule::qident => {
-            // qident 是原子 (@)，没有子节点；用字符串按 "::" 拆
-            let s = inner.as_str();
-            let parts: Vec<&str> = s.split("::").collect();
-            if parts.len() != 2 {
-                return Err(anyhow!("qualified name must be `Trait::method`, got `{}`", s));
-            }
-            Ok(Callee::Qualified {
-                trait_name: parts[0].to_string(),
-                method: parts[1].to_string(),
-            })
-        }
-        _ => Err(anyhow!("invalid name_ref inner {:?}", inner.as_rule())),
-    }
-}
-
-// ------------------------
-// 辅助：字面量解析
-// ------------------------
-
+/* ================================
+ * 字面量解析
+ * ================================ */
 fn parse_int_expr(s: &str) -> Result<Expr> {
     let v = s.parse::<i128>()?;
     if v >= i32::MIN as i128 && v <= i32::MAX as i128 {
@@ -767,10 +745,7 @@ fn parse_int_pattern(s: &str) -> Result<Pattern> {
     }
 }
 
-fn parse_float_lit(s: &str) -> Result<f64> {
-    let v = s.parse::<f64>()?;
-    Ok(v)
-}
+fn parse_float_lit(s: &str) -> Result<f64> { Ok(s.parse::<f64>()?) }
 
 fn parse_long_lit(s: &str) -> Result<i64> {
     let ns = s.strip_suffix('L')
@@ -816,9 +791,7 @@ fn unescape_string(s: &str) -> String {
     let mut i = 1; // skip opening "
     while i + 1 < bytes.len() {
         let c = bytes[i] as char;
-        if c == '"' {
-            break;
-        }
+        if c == '"' { break; }
         if c == '\\' {
             i += 1;
             let e = bytes[i] as char;

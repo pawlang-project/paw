@@ -2,8 +2,7 @@ use anyhow::{anyhow, bail, Result};
 use std::collections::{HashMap, HashSet};
 use crate::ast::*;
 
-/* ---------- 多态函数签名 ---------- */
-
+/* ========= 多态函数签名 ========= */
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scheme {
     pub tparams: Vec<String>,
@@ -12,30 +11,40 @@ pub struct Scheme {
     pub where_bounds: Vec<WherePred>,
 }
 
-/* ---------- trait / impl 环境 ---------- */
-
+/* ========= trait / impl 环境（用于 where 校验） ========= */
 #[derive(Default, Clone)]
 pub struct TraitEnv {
-    pub decls: HashMap<String, TraitDecl>,
+    pub decls: HashMap<String, TraitDecl>, // 名 -> 声明（包含形参个数/方法原型）
 }
 
 #[derive(Default, Clone)]
 pub struct ImplEnv {
-    // (trait_name, key_of_tylist(args)) -> true
+    // key: (trait_name, "ArgKey1,ArgKey2,...")
     map: HashMap<(String, String), bool>,
+}
+
+fn key_of_ty(t: &Ty) -> String {
+    match t {
+        Ty::App { name, args } => format!("{}<{}>", name, args.iter().map(key_of_ty).collect::<Vec<_>>().join(",")),
+        Ty::Var(v) => format!("Var({})", v),
+        _ => format!("{}", t),
+    }
+}
+
+fn trait_inst_key(tr: &str, args: &[Ty]) -> (String, String) {
+    (tr.to_string(), args.iter().map(key_of_ty).collect::<Vec<_>>().join(","))
 }
 
 impl ImplEnv {
     fn insert(&mut self, tr: &str, args: &[Ty]) {
-        self.map.insert((tr.to_string(), key_of_tylist(args)), true);
+        self.map.insert(trait_inst_key(tr, args), true);
     }
     fn has_impl(&self, tr: &str, args: &[Ty]) -> bool {
-        self.map.contains_key(&(tr.to_string(), key_of_tylist(args)))
+        self.map.contains_key(&trait_inst_key(tr, args))
     }
 }
 
-/* ---------- 入口：收集/检查 ---------- */
-
+/* ========= 对外入口：返回 (函数方案, 全局类型, TraitEnv, ImplEnv) ========= */
 pub fn typecheck_program(
     p: &Program
 ) -> Result<(HashMap<String, Scheme>, HashMap<String, Ty>, TraitEnv, ImplEnv)> {
@@ -52,15 +61,18 @@ pub fn typecheck_program(
                 tenv.decls.insert(td.name.clone(), td.clone());
             }
             Item::Impl(id) => {
-                // 记录“impl Trait<args...>”
+                // impl 的实参必须全为具体类型
+                for ta in &id.trait_args { ensure_no_free_tyvar(ta)?; }
                 ienv.insert(&id.trait_name, &id.trait_args);
             }
             _ => {}
         }
     }
 
-    // 1) 收集函数方案（包含 extern）
+    // 1) 收集函数方案（FunDecl + impl 方法映射为普通函数）
     let mut fnscheme = HashMap::<String, Scheme>::new();
+
+    // 普通/extern 函数
     for it in &p.items {
         if let Item::Fun(f) = it {
             if fnscheme.contains_key(&f.name) {
@@ -75,6 +87,26 @@ pub fn typecheck_program(
                     where_bounds: f.where_bounds.clone(),
                 },
             );
+        }
+    }
+    // impl 方法 -> 具体符号
+    for it in &p.items {
+        if let Item::Impl(id) = it {
+            for m in &id.items {
+                let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
+                if fnscheme.contains_key(&sym) {
+                    bail!("duplicate impl method symbol `{}`", sym);
+                }
+                // 方法在 impl 中已是具体类型（不再包含 trait 的形参）
+                for (_, t) in &m.params { ensure_no_free_tyvar(t)?; }
+                ensure_no_free_tyvar(&m.ret)?;
+                fnscheme.insert(sym.clone(), Scheme {
+                    tparams: vec![],
+                    params: m.params.iter().map(|(_, t)| t.clone()).collect(),
+                    ret: m.ret.clone(),
+                    where_bounds: vec![],
+                });
+            }
         }
     }
 
@@ -111,11 +143,58 @@ pub fn typecheck_program(
             }
         }
     }
+    // impl 方法体：按普通函数检查一遍
+    for it in &p.items {
+        if let Item::Impl(id) = it {
+            for m in &id.items {
+                let fdecl = FunDecl {
+                    name: mangle_impl_method(&id.trait_name, &id.trait_args, &m.name),
+                    type_params: vec![],
+                    params: m.params.clone(),
+                    ret: m.ret.clone(),
+                    where_bounds: vec![],
+                    body: m.body.clone(),
+                    is_extern: false,
+                };
+                ck.check_fun(&fdecl)?;
+            }
+        }
+    }
+
     Ok((fnscheme, globals, tenv, ienv))
 }
 
-/* ====== 代换 / 统一 ====== */
+/* ====== 辅助：名搅拌（与 codegen 对应） ====== */
+fn mangle_ty(t: &Ty) -> String {
+    match t {
+        Ty::Int    => "Int".into(),
+        Ty::Long   => "Long".into(),
+        Ty::Bool   => "Bool".into(),
+        Ty::String => "String".into(),
+        Ty::Double => "Double".into(),
+        Ty::Float  => "Float".into(),
+        Ty::Char   => "Char".into(),
+        Ty::Void   => "Void".into(),
+        Ty::Var(n) => format!("Var({})", n),
+        Ty::App { name, args } => {
+            if args.is_empty() { name.clone() }
+            else {
+                let parts: Vec<String> = args.iter().map(mangle_ty).collect();
+                format!("{}<{}>", name, parts.join(","))
+            }
+        }
+    }
+}
+fn mangle_impl_method(trait_name: &str, trait_args: &[Ty], method: &str) -> String {
+    if trait_args.is_empty() {
+        format!("__impl_{}__{}", trait_name, method)
+    } else {
+        let parts: Vec<String> = trait_args.iter().map(mangle_ty).collect();
+        format!("__impl_{}${}__{}", trait_name, parts.join(","), method)
+    }
+}
 
+/* ====== 代换 / 统一 ====== */
 type Subst = HashMap<String, Ty>;
 
 fn apply_subst(ty: &Ty, s: &Subst) -> Ty {
@@ -144,22 +223,14 @@ fn unify(lhs: &Ty, rhs: &Ty, s: &mut Subst) -> Result<()> {
     match (&l, &r) {
         (a, b) if a == b => Ok(()),
         (Var(v), t) | (t, Var(v)) => {
-            if occurs(v, t) {
-                bail!("occurs check failed: `{}` in `{}`", v, show_ty(t));
-            }
-            if has_free_tyvar(t) {
-                bail!("cannot bind type variable `{}` to generic `{}`", v, show_ty(t));
-            }
+            if occurs(v, t) { bail!("occurs check failed: `{}` in `{}`", v, show_ty(t)); }
+            if has_free_tyvar(t) { bail!("cannot bind type variable `{}` to generic `{}`", v, show_ty(t)); }
             s.insert(v.clone(), t.clone());
             Ok(())
         }
         (App { name: ln, args: la }, App { name: rn, args: ra }) => {
-            if ln != rn || la.len() != ra.len() {
-                bail!("type constructor mismatch: `{}` vs `{}`", show_ty(&l), show_ty(&r));
-            }
-            for (a, b) in la.iter().zip(ra.iter()) {
-                unify(a, b, s)?;
-            }
+            if ln != rn || la.len() != ra.len() { bail!("type constructor mismatch: `{}` vs `{}`", show_ty(&l), show_ty(&r)); }
+            for (a, b) in la.iter().zip(ra.iter()) { unify(a, b, s)?; }
             Ok(())
         }
         _ => bail!("type mismatch: `{}` vs `{}`", show_ty(&l), show_ty(&r)),
@@ -186,35 +257,7 @@ fn show_ty(t: &Ty) -> String {
     s
 }
 
-fn key_of_ty(t: &Ty) -> String {
-    match t {
-        Ty::App { name, args } => format!("{}<{}>", name, args.iter().map(key_of_ty).collect::<Vec<_>>().join(",")),
-        Ty::Var(v) => format!("Var({})", v),
-        _ => format!("{}", t),
-    }
-}
-
-fn key_of_tylist(args: &[Ty]) -> String {
-    if args.is_empty() {
-        String::from("<>")
-    } else {
-        format!("<{}>", args.iter().map(key_of_ty).collect::<Vec<_>>().join(","))
-    }
-}
-
-/* ====== 调用名工具（处理 Callee） ====== */
-
-fn callee_base_name<'a>(c: &'a Callee) -> Result<&'a str> {
-    match c {
-        Callee::Name(s) => Ok(s.as_str()),
-        Callee::Qualified { trait_name, method } => {
-            bail!("trait-qualified call `{trait_name}::{method}` not supported yet")
-        }
-    }
-}
-
 /* ====== 类型检查器 ====== */
-
 pub struct TyCk<'a> {
     fnscheme: &'a HashMap<String, Scheme>,
     tenv: &'a TraitEnv,
@@ -248,40 +291,22 @@ impl<'a> TyCk<'a> {
         }
     }
 
-    fn push(&mut self) {
-        self.scopes.push(HashMap::new());
-        self.locals_const.push(HashSet::new());
-    }
-    fn pop(&mut self) {
-        self.scopes.pop();
-        self.locals_const.pop();
-    }
+    fn push(&mut self) { self.scopes.push(HashMap::new()); self.locals_const.push(HashSet::new()); }
+    fn pop (&mut self) { self.scopes.pop(); self.locals_const.pop(); }
 
     fn lookup(&self, n: &str) -> Option<Ty> {
-        for s in self.scopes.iter().rev() {
-            if let Some(t) = s.get(n) { return Some(t.clone()); }
-        }
+        for s in self.scopes.iter().rev() { if let Some(t) = s.get(n) { return Some(t.clone()); } }
         self.globals.get(n).cloned()
     }
 
     fn is_const_name(&self, n:&str)->bool{
-        for cset in self.locals_const.iter().rev() {
-            if cset.contains(n) { return true; }
-        }
+        for cset in self.locals_const.iter().rev() { if cset.contains(n) { return true; } }
         self.globals_const.contains(n)
     }
 
-    // ---------- 数值与共同类型/提升规则 ----------
-
-    #[inline] fn is_intish(&self, t: &Ty) -> bool {
-        matches!(t, Ty::Int | Ty::Long | Ty::Char)
-    }
-    #[inline] fn is_floatish(&self, t: &Ty) -> bool {
-        matches!(t, Ty::Float | Ty::Double)
-    }
-    #[inline] fn as_intish(&self, t: &Ty) -> Ty {
-        if *t == Ty::Char { Ty::Int } else { t.clone() }
-    }
+    #[inline] fn is_intish(&self, t: &Ty) -> bool { matches!(t, Ty::Int | Ty::Long | Ty::Char) }
+    #[inline] fn is_floatish(&self, t: &Ty) -> bool { matches!(t, Ty::Float | Ty::Double) }
+    #[inline] fn as_intish(&self, t: &Ty) -> Ty { if *t == Ty::Char { Ty::Int } else { t.clone() } }
 
     fn common_numeric(&self, l:&Ty, r:&Ty) -> Result<Ty> {
         use Ty::*;
@@ -297,23 +322,17 @@ impl<'a> TyCk<'a> {
     fn require_assignable(&self, src:&Ty, dst:&Ty)->Result<()>{
         use Ty::*;
         if src==dst { return Ok(()); }
-        ensure_no_free_tyvar(src)?;
-        ensure_no_free_tyvar(dst)?;
-
+        ensure_no_free_tyvar(src)?; ensure_no_free_tyvar(dst)?;
         let src_n = self.as_intish(src);
         let dst_n = self.as_intish(dst);
 
         match (src_n, dst_n) {
             (Int, Long) => Ok(()),
-
             (Int, Float) | (Long, Float) => Ok(()),
             (Int, Double) | (Long, Double) | (Float, Double) => Ok(()),
-
             (s, d) => Err(anyhow!("expect `{}`, got `{}`", d, s)),
         }
     }
-
-    // ---------- 顶层与语句/表达式 ----------
 
     fn check_fun(&mut self, f: &FunDecl) -> Result<()> {
         self.current_ret = Some(f.ret.clone());
@@ -327,7 +346,6 @@ impl<'a> TyCk<'a> {
             }
             self.scopes.last_mut().unwrap().insert(n.clone(), t.clone());
         }
-
         let _ = self.block(&f.body)?;
         self.pop();
 
@@ -468,15 +486,11 @@ impl<'a> TyCk<'a> {
                 let t=self.expr(rhs)?;
                 match op {
                     Neg=>{
-                        if self.is_floatish(&t) || self.is_intish(&t) {
-                            self.as_intish(&t)
-                        } else {
-                            return Err(anyhow!("unary `-` expects numeric, got `{}`", t));
-                        }
+                        if self.is_floatish(&t) || self.is_intish(&t) { self.as_intish(&t) }
+                        else { return Err(anyhow!("unary `-` expects numeric, got `{}`", t)); }
                     }
                     Not=>{
-                        self.require_assignable(&t,&Ty::Bool)?;
-                        Ty::Bool
+                        self.require_assignable(&t,&Ty::Bool)?; Ty::Bool
                     }
                 }
             }
@@ -491,17 +505,12 @@ impl<'a> TyCk<'a> {
                         self.common_numeric(&lt, &rt)?
                     }
                     Lt|Le|Gt|Ge => {
-                        if has_free_tyvar(&lt) || has_free_tyvar(&rt) {
-                            bail!("comparison requires concrete numeric types");
-                        }
+                        if has_free_tyvar(&lt) || has_free_tyvar(&rt) { bail!("comparison requires concrete numeric types"); }
                         let _ = self.common_numeric(&lt, &rt)?; Ty::Bool
                     }
                     Eq|Ne => {
-                        if (self.is_intish(&lt) || self.is_floatish(&lt)) &&
-                            (self.is_intish(&rt) || self.is_floatish(&rt)) {
-                            if has_free_tyvar(&lt) || has_free_tyvar(&rt) {
-                                bail!("equality on numeric requires concrete types");
-                            }
+                        if (self.is_intish(&lt) || self.is_floatish(&lt)) && (self.is_intish(&rt) || self.is_floatish(&rt)) {
+                            if has_free_tyvar(&lt) || has_free_tyvar(&rt) { bail!("equality on numeric requires concrete types"); }
                             let _ = self.common_numeric(&lt, &rt)?; Ty::Bool
                         } else if lt == Ty::Bool && rt == Ty::Bool {
                             Ty::Bool
@@ -512,9 +521,7 @@ impl<'a> TyCk<'a> {
                         }
                     }
                     And|Or => {
-                        self.require_assignable(&lt,&Ty::Bool)?;
-                        self.require_assignable(&rt,&Ty::Bool)?;
-                        Ty::Bool
+                        self.require_assignable(&lt,&Ty::Bool)?; self.require_assignable(&rt,&Ty::Bool)?; Ty::Bool
                     }
                 }
             }
@@ -529,9 +536,7 @@ impl<'a> TyCk<'a> {
 
             Expr::Match { scrut, arms, default } => {
                 let st = self.expr(scrut)?;
-                if has_free_tyvar(&st) {
-                    bail!("match scrutinee must be concrete type, got `{}`", st);
-                }
+                if has_free_tyvar(&st) { bail!("match scrutinee must be concrete type, got `{}`", st); }
                 let mut out_ty: Option<Ty> = None;
 
                 for (pat, blk) in arms {
@@ -560,54 +565,69 @@ impl<'a> TyCk<'a> {
                 out_ty.unwrap_or(Ty::Int)
             }
 
-            // 调用（支持显式/简单推断；callee 取自由函数名）
+            // 关键：函数/方法调用
             Expr::Call{callee, generics, args}=>{
-                let fname = callee_base_name(callee)?; // &str
-                let sch = self.fnscheme.get(fname)
-                    .ok_or_else(||anyhow!("unknown function `{}`", fname))?
-                    .clone();
+                match callee {
+                    Callee::Name(name) => {
+                        let sch = self.fnscheme.get(name)
+                            .ok_or_else(||anyhow!("unknown function `{}`", name))?.clone();
 
-                let mut subst: Subst = Subst::new();
-                if !sch.tparams.is_empty() {
-                    if !generics.is_empty() {
-                        if generics.len()!=sch.tparams.len() {
-                            bail!("function `{}` expects {} type args, got {}", fname, sch.tparams.len(), generics.len());
-                        }
-                        for (tp, ta) in sch.tparams.iter().zip(generics.iter()) {
-                            ensure_no_free_tyvar(ta)?;
-                            subst.insert(tp.clone(), ta.clone());
-                        }
-                    } else {
-                        if args.len()!=sch.params.len(){
-                            bail!("function `{}` expects {} args, got {}", fname, sch.params.len(), args.len());
-                        }
-                        for (arg_expr, pty) in args.iter().zip(sch.params.iter()) {
-                            let at = self.expr(arg_expr)?;
-                            if has_free_tyvar(&at) {
-                                bail!("cannot infer from generic actual type `{}`", at);
+                        let mut subst: Subst = Subst::new();
+                        if !sch.tparams.is_empty() {
+                            if !generics.is_empty() {
+                                if generics.len()!=sch.tparams.len() {
+                                    bail!("function `{}` expects {} type args, got {}", name, sch.tparams.len(), generics.len());
+                                }
+                                for (tp, ta) in sch.tparams.iter().zip(generics.iter()) {
+                                    ensure_no_free_tyvar(ta)?; subst.insert(tp.clone(), ta.clone());
+                                }
+                            } else {
+                                if args.len()!=sch.params.len(){ bail!("function `{}` expects {} args, got {}", name, sch.params.len(), args.len()); }
+                                for (arg_expr, pty) in args.iter().zip(sch.params.iter()) {
+                                    let at = self.expr(arg_expr)?;
+                                    if has_free_tyvar(&at) { bail!("cannot infer from generic actual type `{}`", at); }
+                                    unify(pty, &at, &mut subst)?;
+                                }
                             }
-                            unify(pty, &at, &mut subst)?;
+                        } else if sch.params.len()!=args.len() {
+                            bail!("function `{}` expects {} args, got {}", name, sch.params.len(), args.len());
                         }
+
+                        let inst_params: Vec<Ty> = sch.params.iter().map(|t| apply_subst(t, &subst)).collect();
+                        let inst_ret: Ty = apply_subst(&sch.ret, &subst);
+
+                        self.check_where_bounds(&sch.where_bounds, &subst)
+                            .map_err(|e| anyhow!("`{}` where: {}", name, e))?;
+
+                        for (i,(a,pt)) in args.iter().zip(inst_params.iter()).enumerate() {
+                            let at=self.expr(a)?; self.require_assignable(&at, pt)
+                                .map_err(|e|anyhow!("arg#{i}: {e}"))?;
+                        }
+                        inst_ret
                     }
-                } else {
-                    if sch.params.len()!=args.len() {
-                        bail!("function `{}` expects {} args, got {}", fname, sch.params.len(), args.len());
+
+                    Callee::Qualified { trait_name, method } => {
+                        if generics.is_empty() {
+                            bail!("qualified call `{}::{}` needs explicit type args", trait_name, method);
+                        }
+                        // 生成与 codegen 同名的具体符号，并从 fnscheme 中取签名
+                        let sym = mangle_impl_method(trait_name, generics, method);
+                        let sch = self.fnscheme.get(&sym)
+                            .ok_or_else(|| anyhow!("no such impl method `{}`; missing `impl {0}<...>`?", sym))?
+                            .clone();
+                        if sch.tparams.len() != 0 {
+                            bail!("impl method should be monomorphic here");
+                        }
+                        if sch.params.len() != args.len() {
+                            bail!("function `{}` expects {} args, got {}", sym, sch.params.len(), args.len());
+                        }
+                        for (i,(a,pt)) in args.iter().zip(sch.params.iter()).enumerate() {
+                            let at=self.expr(a)?; self.require_assignable(&at, pt)
+                                .map_err(|e|anyhow!("arg#{i}: {e}"))?;
+                        }
+                        sch.ret
                     }
                 }
-
-                // 实例化并校验 where
-                let inst_params: Vec<Ty> = sch.params.iter().map(|t| apply_subst(t, &subst)).collect();
-                let inst_ret: Ty = apply_subst(&sch.ret, &subst);
-
-                self.check_where_bounds(&sch.where_bounds, &subst)
-                    .map_err(|e| anyhow!("`{}` where: {}", fname, e))?;
-
-                for (i,(a,pt)) in args.iter().zip(inst_params.iter()).enumerate() {
-                    let at=self.expr(a)?;
-                    self.require_assignable(&at, pt)
-                        .map_err(|e|anyhow!("arg#{i}: {e}"))?;
-                }
-                inst_ret
             }
 
             Expr::Block(b)=> self.block(b)?,
@@ -621,27 +641,19 @@ impl<'a> TyCk<'a> {
                 bail!("unresolved type parameter in where: `{}`", ty_i);
             }
             for b in &wp.bounds {
-                // bound 的实参全部套用代换；若无显式实参，则默认把 subject 作为第一个实参
-                let mut args_i: Vec<Ty> =
-                    if b.args.is_empty() {
-                        vec![ty_i.clone()]
-                    } else {
-                        b.args.iter().map(|t| apply_subst(t, subst)).collect()
-                    };
-
-                // 不允许任何自由类型变量残留
-                for a in &args_i {
-                    ensure_no_free_tyvar(a)?;
+                // bound 可能写成 Eq<T> / Foo<A,B> / 省略成 Eq（表示绑定在 ty_i 上），此处统一转为完整实参向量
+                let mut all_args: Vec<Ty> = if b.args.is_empty() {
+                    vec![ty_i.clone()]
+                } else {
+                    let mut v = Vec::new();
+                    for a in &b.args { v.push(apply_subst(a, subst)); }
+                    v
+                };
+                if all_args.iter().any(has_free_tyvar) {
+                    bail!("where bound has unresolved generic: {}<...>", b.name);
                 }
-
-                if !self.ienv.has_impl(&b.name, &args_i) {
-                    // 友好提示：打印如 `impl Eq<Int>` 或 `impl PairEq<Int,Long>`
-                    let pretty = if args_i.is_empty() {
-                        format!("{}<>", b.name)
-                    } else {
-                        format!("{}<{}>", b.name, args_i.iter().map(show_ty).collect::<Vec<_>>().join(","))
-                    };
-                    bail!("missing `{}`", pretty);
+                if !self.ienv.has_impl(&b.name, &all_args) {
+                    bail!("missing `impl {0}<...>` for `{0}<{1}>`", b.name, all_args.iter().map(show_ty).collect::<Vec<_>>().join(", "));
                 }
             }
         }
