@@ -194,29 +194,90 @@ fn canon<P: AsRef<Path>>(p: P) -> Result<OsString> {
         .into_os_string())
 }
 
-/// 在若干候选位置查找 libpawrt.a：
-/// 优先级：
-/// 1) 环境变量 PAWRT_LIB 指定的绝对路径
-/// 2) ./deps/<zig-triple>/libpawrt.a
 fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
+    use anyhow::bail;
+
+    // 1) 显式环境变量优先
     if let Ok(p) = env::var("PAWRT_LIB") {
-        let pb = PathBuf::from(p);
+        let pb = PathBuf::from(&p);
         if pb.is_file() {
             return Ok(pb);
         } else {
-            anyhow::bail!("PAWRT_LIB 指向的文件不存在：{}", pb.display());
+            bail!("PAWRT_LIB 指向的文件不存在：{}", pb.display());
         }
     }
 
-    // 2) deps/<triple>/libpawrt.a
-    let mut cand = PathBuf::from("deps");
-    cand.push(target.rust_triple());
-    cand.push("libpawrt.a");
-    if cand.is_file() {
-        return Ok(cand);
+    let rust_triple = target.rust_triple();
+    let zig_triple  = target.zig_triple();
+
+    // 2) 组装一批“搜索起点”：
+    //    - 当前工作目录（通常是 paw/）
+    //    - 工作目录的所有祖先（一路向上直到磁盘根）
+    //    - 可选：编译期的工程根（如果可用）
+    //    - 可选：可执行文件所在目录
+    let mut bases: Vec<PathBuf> = Vec::new();
+
+    if let Ok(cwd) = env::current_dir() {
+        // cwd 以及它的所有 ancestors
+        for anc in cwd.ancestors() {
+            bases.push(anc.to_path_buf());
+        }
+    }
+    if let Some(mdir) = option_env!("CARGO_MANIFEST_DIR") {
+        bases.push(PathBuf::from(mdir));
+    }
+    if let Ok(exe) = env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            bases.push(dir.to_path_buf());
+        }
     }
 
-    anyhow::bail!("未找到 libpawrt.a。请先构建运行时静态库，或设置环境变量 PAWRT_LIB 指向它")
+    // 3) 在每个 base 下尝试这些候选：
+    //    deps/<rust_triple>/libpawrt.a
+    //    deps/<zig_triple>/libpawrt.a
+    //    deps/libpawrt_<zig_triple>.a
+    //    deps/libpawrt.a
+    let mut tried: Vec<PathBuf> = Vec::new();
+    for base in bases {
+        let cands = [
+            base.join("deps").join(rust_triple).join("libpawrt.a"),
+            base.join("deps").join(zig_triple).join("libpawrt.a"),
+            base.join("deps").join(format!("libpawrt_{}.a", zig_triple)),
+            base.join("deps").join("libpawrt.a"),
+        ];
+        for c in cands {
+            tried.push(c.clone());
+            if c.is_file() {
+                if env::var("PAW_VERBOSE").ok().as_deref() == Some("1") {
+                    eprintln!("[paw-link] use runtime: {}", c.display());
+                }
+                return Ok(c);
+            } else if env::var("PAW_VERBOSE").ok().as_deref() == Some("1") {
+                eprintln!("[paw-link] miss: {}", c.display());
+            }
+        }
+    }
+
+    // 4) 全部未命中，给出清晰报错
+    if env::var("PAW_VERBOSE").ok().as_deref() == Some("1") {
+        eprintln!("\n[paw-link] tried candidates:");
+        for t in &tried {
+            eprintln!("  - {}", t.display());
+        }
+    }
+
+    bail!(
+        "未找到 libpawrt.a。\n\
+         你当前在子目录（例如 paw/）运行构建，我会沿着父目录查找 deps/。\n\
+         请将运行时静态库放在仓库根的 deps/ 下的以下任一路径之一，或设置 PAWRT_LIB 环境变量：\n\
+           - deps/{rt}/libpawrt.a\n\
+           - deps/{zt}/libpawrt.a\n\
+           - deps/libpawrt_{zt}.a\n\
+           - deps/libpawrt.a\n\
+         （目标：rust_triple={rt}, zig_triple={zt}）",
+        rt = rust_triple,
+        zt = zig_triple
+    )
 }
 
 /// ===== 对外：链接函数 =====

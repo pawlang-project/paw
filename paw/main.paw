@@ -1,6 +1,6 @@
-import "std/prelude.paw";
-import "generic.paw";
-import "traits.paw";
+import "std::prelude";
+import "generic";
+import "traits";
 
 // 覆盖：全局常量、基本类型字面量
 const KInt:  Int  = 10;
