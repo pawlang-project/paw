@@ -1,12 +1,12 @@
 import "std/prelude.paw";
+
 import "generic.paw";
+import "traits.paw";
 
-const KInt:  Int  = 10;
-const KLong: Long = 7;
+const KInt: Int = 10;
+const KLong: Long = 7L;
 
-fn add(a: Int, b: Int) -> Int {
-    return a + b;
-}
+fn add(a: Int, b: Int) -> Int { return a + b; }
 
 fn main() -> Int {
     let a: Int  = id<Int>(41);
@@ -15,53 +15,38 @@ fn main() -> Int {
     let c: Int = first<Int, Long>(a, b);
     let d: Int = choose<Int>(true, c, 0);
 
-    // 连续的显式泛型嵌套调用
-    let e: Int = id<Int>(id<Int>(id<Int>(1)));
+    let e: Int = id<Int>( id<Int>( id<Int>(1) ) );
 
-    // while
     let i: Int = 0;
-    while (i < 3) {
-        i = i + 1;
-    }
+    while (i < 3) { i = i + 1; }
 
-    // for(init; cond; step)
-    for (let j: Int = 0; j < 2; j = j + 1) {
-        // 空体
-    }
+    for (let j: Int = 0; j < 2; j = j + 1) { }
 
-    // match on Int
-    let m1: Int = match(a) {
+    let m1: Int = match (a) {
         40 => { 1 },
         41 => { 2 },
-        _  => { 3 },
+        _  => { 3 }
     };
 
-    // match on Char
     let ch: Char = 'A';
-    let m2: Int = match(ch) {
+    let m2: Int = match (ch) {
         'A' => { 10 },
-        _   => { 0 },
+        _   => { 0 }
     };
 
-    // match on Bool
     let flag: Bool = false;
-    let m3: Int = match(flag) {
+    let m3: Int = match (flag) {
         true  => { 1 },
-        false => { 0 },
+        false => { 0 }
     };
 
-    // 交叉类型的泛型：返回第二个实参类型
     let y: Long = swap<Int, Long>(a, b);
 
-    // 组合一下让结果可预期：应当得到 67
-    let sum: Int =
-        add(d, e) // 41 + 1 = 42
-        + m1      // +2 = 44
-        + m2      // +10 = 54
-        + m3      // +0 = 54
-        + i       // +3 = 57
-        + KInt;   // +10 = 67
+    // 需要 where 约束：T: Eq<T>
+    let _z1: Int = needEq<Int>(a, c);
+    let _z2: Int = needEq<Long>(b, y);
 
+    let sum: Int = add(d, e) + m1 + m2 + m3 + i + KInt;
     println_int(sum);
     return sum;
 }

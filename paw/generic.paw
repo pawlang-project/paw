@@ -1,19 +1,9 @@
-// 恒等：保持类型 T
-fn id<T>(x: T) -> T {
-    return x;
-}
+fn id<T>(x: T) -> T { return x; }
 
-// 取第一个：A,B -> A
-fn first<A, B>(a: A, _b: B) -> A {
-    return a;
-}
+fn first<A, B>(a: A, _b: B) -> A { return a; }
 
-// 带布尔选择的多态函数：需要显式类型实参
 fn choose<T>(b: Bool, x: T, y: T) -> T {
     return if (b) { x } else { y };
 }
 
-// 交换后返回第二个参数的值与类型
-fn swap<A, B>(x: A, y: B) -> B {
-    return y;
-}
+fn swap<A, B>(x: A, y: B) -> B { return y; }
