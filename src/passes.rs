@@ -1,150 +1,23 @@
+// src/passes.rs
 use crate::ast::*;
 use crate::mangle::mangle_impl_method;
 use crate::parser;
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashSet;
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 递归展开 Import，并以 **entry_dir** 作为首要基准目录。
-/// 建议从 main 里调用 `expand_imports_with_base(root, entry_dir)`.
-pub fn expand_imports(root: &Program) -> Result<Program> {
-    // 兼容旧接口：用当前工作目录作为基准（可能找不到 std/）
-    let cwd = std::env::current_dir().context("get current_dir failed")?;
-    expand_with_base(root, &cwd)
-}
-
-/// 推荐：传入“入口文件”的目录作为基准
-pub fn expand_imports_with_base(root: &Program, entry_dir: &Path) -> Result<Program> {
-    expand_with_base(root, entry_dir)
-}
-
-fn expand_with_base(root: &Program, base_dir: &Path) -> Result<Program> {
-    let mut out = Vec::<Item>::new();
-    let mut seen = HashSet::<String>::new();
-
-    for it in &root.items {
-        match it {
-            Item::Import(path_str) => {
-                let path = resolve_import(base_dir, path_str)
-                    .with_context(|| format!("while importing `{}`", path_str))?;
-                expand_file(&path, &mut out, &mut seen)
-                    .with_context(|| format!("while importing `{}`", path_str))?;
-            }
-            other => out.push(other.clone()),
-        }
-    }
-
-    Ok(Program { items: out })
-}
-
-/// 实际展开某个已解析到的文件
-fn expand_file(path: &Path, out: &mut Vec<Item>, seen: &mut HashSet<String>) -> Result<()> {
-    let canon = fs::canonicalize(path)
-        .with_context(|| format!("canonicalize({})", path.display()))?;
-    let key = canon.to_string_lossy().to_string();
-    if !seen.insert(key) {
-        // 已展开过：防重复/防环
-        return Ok(());
-    }
-
-    let src = fs::read_to_string(&canon)
-        .with_context(|| format!("read_to_string({})", canon.display()))?;
-    let prog = parser::parse_program(&src)
-        .with_context(|| format!("parse `{}` failed", canon.display()))?;
-
-    let this_base = canon.parent().unwrap_or(Path::new(".")).to_path_buf();
-
-    for it in &prog.items {
-        match it {
-            Item::Import(p) => {
-                let sub = resolve_import(&this_base, p)
-                    .with_context(|| format!("while importing `{}`", p))?;
-                expand_file(&sub, out, seen)
-                    .with_context(|| format!("while importing `{}`", p))?;
-            }
-            other => out.push(other.clone()),
-        }
-    }
-    Ok(())
-}
-
-/// 解析 import 路径：
-/// - 若为绝对路径，则直接检查存在性；
-/// - 若为相对路径，则在“搜索根”中依次尝试：
-///   1) 发起 import 的文件所在目录（base_dir）
-///   2) 当前工作目录
-///   3) 环境变量 PAW_IMPORT_PATH 中的若干目录（; 分隔，Unix 可用 :）
-///   4) 环境变量 PAW_STDLIB 指向的目录
-///   5) 编译时的工程根（CARGO_MANIFEST_DIR）及其子目录 `paw/`
-fn resolve_import(base_dir: &Path, p: &str) -> Result<PathBuf> {
-    let want = Path::new(p);
-
-    // 绝对路径
-    if want.is_absolute() {
-        if want.exists() {
-            return Ok(want.to_path_buf());
-        }
-        return Err(anyhow!("absolute import not found: {}", want.display()));
-    }
-
-    // 构造搜索根
-    let mut roots: Vec<PathBuf> = Vec::new();
-    roots.push(base_dir.to_path_buf()); // 入口/当前文件目录
-    if let Ok(cwd) = env::current_dir() {
-        roots.push(cwd);
-    }
-
-    // PAW_IMPORT_PATH：;（Windows）或 :（Unix）分隔
-    if let Ok(s) = env::var("PAW_IMPORT_PATH") {
-        let sep = if cfg!(windows) { ';' } else { ':' };
-        for part in s.split(sep) {
-            let part = part.trim();
-            if !part.is_empty() {
-                roots.push(PathBuf::from(part));
-            }
-        }
-    }
-
-    // PAW_STDLIB：通常指向 std 目录所在的根
-    if let Ok(stdlib) = env::var("PAW_STDLIB") {
-        roots.push(PathBuf::from(stdlib));
-    }
-
-    // 工程根（编译时），常见布局：<repo>/paw、<repo>/std
-    if let Some(manifest) = option_env!("CARGO_MANIFEST_DIR") {
-        let m = PathBuf::from(manifest);
-        roots.push(m.join("paw"));
-        roots.push(m.join("std"));
-        roots.push(m);
-    }
-
-    // 依次尝试
-    let mut tried = Vec::<PathBuf>::new();
-    for r in roots {
-        let cand = r.join(want);
-        tried.push(cand.clone());
-        if cand.exists() {
-            return Ok(cand);
-        }
-    }
-
-    // 打印尝试过的路径，方便定位
-    let mut msg = String::new();
-    msg.push_str(&format!("cannot resolve import `{p}`; tried:\n"));
-    for t in tried {
-        msg.push_str(&format!("  - {}\n", t.display()));
-    }
-    Err(anyhow!(msg))
-}
-
-/* ========= （可选）把 impl 方法降解为自由函数 ========= */
-
+/// ===============================
+/// 1) 把 impl 方法降解为自由函数（保持你原有功能）
+///    例如：impl Eq<Int> { fn eq(x:Int,y:Int)->Bool {...} }
+///    生成一个自由函数：__impl_Eq$Int__eq(x:Int,y:Int)->Bool
+/// ===============================
 pub fn declare_impls_from_program(mut p: Program) -> Program {
-    let mut existing: HashSet<String> = p.items.iter().filter_map(|it| {
-        if let Item::Fun(f) = it { Some(f.name.clone()) } else { None }
-    }).collect();
+    let mut existing: HashSet<String> = p
+        .items
+        .iter()
+        .filter_map(|it| if let Item::Fun(f) = it { Some(f.name.clone()) } else { None })
+        .collect();
 
     let mut extra: Vec<Item> = Vec::new();
 
@@ -161,11 +34,135 @@ pub fn declare_impls_from_program(mut p: Program) -> Program {
                         where_bounds: vec![],
                         body: m.body.clone(),
                         is_extern: false,
-                    }.into()));
+                    }));
                 }
             }
         }
     }
     p.items.extend(extra);
     p
+}
+
+/// ===============================
+/// 2) import 展开（仅支持 **双冒号** 模块路径）
+///    - 入口 A：expand_imports_with_loader（单个搜索根，一般传工程根）
+///    - 入口 B：expand_imports_with_roots（多个搜索根）
+///    规则：`a::b::c` 解析为 `<root>/a/b/c.paw`
+/// ===============================
+
+/// 单一搜索根（通常传工程根目录）
+pub fn expand_imports_with_loader(root: &Program, project_root: &Path) -> Result<Program> {
+    expand_imports_with_roots(root, &[project_root.to_path_buf()])
+}
+
+/// 多搜索根（如果将来需要附加额外目录可使用此入口）
+pub fn expand_imports_with_roots(root: &Program, roots: &[PathBuf]) -> Result<Program> {
+    let mut visited_files: HashSet<PathBuf> = HashSet::new();
+    expand_prog_recursive(root, roots, &mut visited_files)
+}
+
+/// 递归展开 Program（去重防环）
+fn expand_prog_recursive(
+    prog: &Program,
+    roots: &[PathBuf],
+    visited: &mut HashSet<PathBuf>,
+) -> Result<Program> {
+    let mut out_items: Vec<Item> = Vec::new();
+
+    for it in &prog.items {
+        match it {
+            Item::Import(spec) => {
+                // 仅允许 "a::b::c" 形式
+                let path = resolve_double_colon_import(spec, roots)
+                    .with_context(|| format!("while importing `{}`", spec))?;
+
+                let cano = canonicalize_lossy(&path)?;
+                if !visited.insert(cano.clone()) {
+                    // 已导入过，跳过
+                    continue;
+                }
+
+                let src = fs::read_to_string(&path)
+                    .with_context(|| format!("read_to_string({})", path.display()))?;
+                let sub = parser::parse_program(&src)
+                    .with_context(|| format!("parse `{}` failed", path.display()))?;
+
+                // 递归展开子 Program
+                let sub_expanded = expand_prog_recursive(&sub, roots, visited)?;
+                out_items.extend(sub_expanded.items);
+            }
+            _ => out_items.push(it.clone()),
+        }
+    }
+
+    Ok(Program { items: out_items })
+}
+
+/// 解析 `import "a::b::c";`：
+/// - 严格禁止旧写法与任何路径分隔符（'.'、'/'、'\\'）
+/// - 仅接受由 `::` 分隔的若干合法标识符段
+/// - 映射为 a/b/c.paw，并按 roots 顺序查找
+fn resolve_double_colon_import(spec: &str, roots: &[PathBuf]) -> Result<PathBuf> {
+    // 拒绝旧写法与路径分隔符
+    if spec.contains('.') || spec.contains('/') || spec.contains('\\') {
+        return Err(anyhow!(
+            "invalid import `{}`: only double-colon module paths are allowed, e.g. \"std::prelude\"",
+            spec
+        ));
+    }
+    if !is_double_colon_mod_path(spec) {
+        return Err(anyhow!(
+            "invalid module path `{}`: use double-colon identifiers like \"foo::bar\"",
+            spec
+        ));
+    }
+
+    // "a::b::c" -> "a/b/c.paw"
+    let rel = PathBuf::from(spec.replace("::", "/")).with_extension("paw");
+
+    for base in roots {
+        let cand = base.join(&rel);
+        if cand.is_file() {
+            return Ok(cand);
+        }
+    }
+
+    Err(anyhow!(
+        "cannot resolve import `{}` (looked for `{}`) in roots: {}",
+        spec,
+        rel.display(),
+        format_roots(roots),
+    ))
+}
+
+/// 判断是否为合法的 a::b::c 模块路径（每段都是合法标识符）
+fn is_double_colon_mod_path(s: &str) -> bool {
+    if s.is_empty() { return false; }
+    // 不允许以 "::" 开头/结尾，也不允许出现空段
+    if s.starts_with("::") || s.ends_with("::") { return false; }
+    s.split("::").all(|seg| {
+        if seg.is_empty() { return false; }
+        let mut it = seg.chars();
+        match it.next() {
+            Some(c0) if c0.is_ascii_alphabetic() || c0 == '_' =>
+                it.all(|ch| ch.is_ascii_alphanumeric() || ch == '_'),
+            _ => false,
+        }
+    })
+}
+
+/// 规范化 canonicalize（用于去重）
+fn canonicalize_lossy(p: &Path) -> Result<PathBuf> {
+    let c = std::fs::canonicalize(p)
+        .with_context(|| format!("canonicalize({})", p.display()))?;
+    Ok(c)
+}
+
+fn format_roots(roots: &[PathBuf]) -> String {
+    let mut s = String::new();
+    for (i, r) in roots.iter().enumerate() {
+        if i > 0 { s.push_str(", "); }
+        s.push_str(&r.display().to_string());
+    }
+    s
 }
