@@ -2,7 +2,8 @@ use anyhow::{anyhow, bail, Result};
 use std::collections::{HashMap, HashSet};
 use crate::ast::*;
 
-/// 多态函数签名（含类型形参与 where 约束）
+/* ---------- 多态函数签名 ---------- */
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scheme {
     pub tparams: Vec<String>,
@@ -11,31 +12,33 @@ pub struct Scheme {
     pub where_bounds: Vec<WherePred>,
 }
 
-/// trait / impl 环境（仅用于存在性与 where 校验）
-#[derive(Default)]
+/* ---------- trait / impl 环境 ---------- */
+
+#[derive(Default, Clone)]
 pub struct TraitEnv {
-    // name -> TraitDecl（目前检查不需要细节，留存以便将来用）
     pub decls: HashMap<String, TraitDecl>,
 }
-#[derive(Default)]
+
+#[derive(Default, Clone)]
 pub struct ImplEnv {
-    // (trait, concrete_type_key) -> true
+    // (trait_name, key_of_tylist(args)) -> true
     map: HashMap<(String, String), bool>,
 }
 
 impl ImplEnv {
-    fn insert(&mut self, tr: &str, ty: &Ty) {
-        self.map.insert((tr.to_string(), key_of_ty(ty)), true);
+    fn insert(&mut self, tr: &str, args: &[Ty]) {
+        self.map.insert((tr.to_string(), key_of_tylist(args)), true);
     }
-    fn has_impl(&self, tr: &str, ty: &Ty) -> bool {
-        self.map.contains_key(&(tr.to_string(), key_of_ty(ty)))
+    fn has_impl(&self, tr: &str, args: &[Ty]) -> bool {
+        self.map.contains_key(&(tr.to_string(), key_of_tylist(args)))
     }
 }
 
-/// 条目级类型检查：收集函数方案 / 全局变量 / trait/impl，并逐函数检查
-pub fn typecheck_program(p: &Program)
-                         -> Result<(HashMap<String, Scheme>, HashMap<String, Ty>, TraitEnv, ImplEnv)>
-{
+/* ---------- 入口：收集/检查 ---------- */
+
+pub fn typecheck_program(
+    p: &Program
+) -> Result<(HashMap<String, Scheme>, HashMap<String, Ty>, TraitEnv, ImplEnv)> {
     // 0) 收集 trait / impl
     let mut tenv = TraitEnv::default();
     let mut ienv = ImplEnv::default();
@@ -49,14 +52,14 @@ pub fn typecheck_program(p: &Program)
                 tenv.decls.insert(td.name.clone(), td.clone());
             }
             Item::Impl(id) => {
-                // 只登记“(trait, 具体类型)”存在（where 校验阶段用）
-                ienv.insert(&id.trait_name, &id.for_ty);
+                // 记录“impl Trait<args...>”
+                ienv.insert(&id.trait_name, &id.trait_args);
             }
             _ => {}
         }
     }
 
-    // 1) 收集函数“方案”（包含 extern）
+    // 1) 收集函数方案（包含 extern）
     let mut fnscheme = HashMap::<String, Scheme>::new();
     for it in &p.items {
         if let Item::Fun(f) = it {
@@ -83,7 +86,6 @@ pub fn typecheck_program(p: &Program)
             if globals.contains_key(name) {
                 return Err(anyhow!("duplicate global `{}`", name));
             }
-            // 顶层不允许自由类型变量
             ensure_no_free_tyvar(ty)
                 .map_err(|e| anyhow!("global `{}`: {}", name, e))?;
             globals.insert(name.clone(), ty.clone());
@@ -101,7 +103,7 @@ pub fn typecheck_program(p: &Program)
         }
     }
 
-    // 4) 检查函数（忽略 extern 的函数体）
+    // 4) 检查函数体（忽略 extern）
     for it in &p.items {
         if let Item::Fun(f) = it {
             if !f.is_extern {
@@ -112,7 +114,7 @@ pub fn typecheck_program(p: &Program)
     Ok((fnscheme, globals, tenv, ienv))
 }
 
-/// ====== 类型代换 / 统一 ======
+/* ====== 代换 / 统一 ====== */
 
 type Subst = HashMap<String, Ty>;
 
@@ -145,7 +147,6 @@ fn unify(lhs: &Ty, rhs: &Ty, s: &mut Subst) -> Result<()> {
             if occurs(v, t) {
                 bail!("occurs check failed: `{}` in `{}`", v, show_ty(t));
             }
-            // 只允许把类型变量绑定到“具体类型”(无自由变量)；如果你想允许 Var->Var 可以移除此判断
             if has_free_tyvar(t) {
                 bail!("cannot bind type variable `{}` to generic `{}`", v, show_ty(t));
             }
@@ -193,7 +194,26 @@ fn key_of_ty(t: &Ty) -> String {
     }
 }
 
-/// ====== 类型检查器 ======
+fn key_of_tylist(args: &[Ty]) -> String {
+    if args.is_empty() {
+        String::from("<>")
+    } else {
+        format!("<{}>", args.iter().map(key_of_ty).collect::<Vec<_>>().join(","))
+    }
+}
+
+/* ====== 调用名工具（处理 Callee） ====== */
+
+fn callee_base_name<'a>(c: &'a Callee) -> Result<&'a str> {
+    match c {
+        Callee::Name(s) => Ok(s.as_str()),
+        Callee::Qualified { trait_name, method } => {
+            bail!("trait-qualified call `{trait_name}::{method}` not supported yet")
+        }
+    }
+}
+
+/* ====== 类型检查器 ====== */
 
 pub struct TyCk<'a> {
     fnscheme: &'a HashMap<String, Scheme>,
@@ -206,9 +226,7 @@ pub struct TyCk<'a> {
     current_ret: Option<Ty>,
     in_loop: usize,
 
-    // 当前函数的类型形参集合（用于报错/限制）
     current_tparams: HashSet<String>,
-    // 当前函数的 where 约束（原样保存；在调用/算术等处并不自动放宽）
     current_where: Vec<WherePred>,
 }
 
@@ -261,12 +279,10 @@ impl<'a> TyCk<'a> {
     #[inline] fn is_floatish(&self, t: &Ty) -> bool {
         matches!(t, Ty::Float | Ty::Double)
     }
-    /// Char 参与算术时按 Int 看待
     #[inline] fn as_intish(&self, t: &Ty) -> Ty {
         if *t == Ty::Char { Ty::Int } else { t.clone() }
     }
 
-    /// 两个数值类型的共同类型（浮点优先，再整数）
     fn common_numeric(&self, l:&Ty, r:&Ty) -> Result<Ty> {
         use Ty::*;
         let l = self.as_intish(l);
@@ -278,27 +294,21 @@ impl<'a> TyCk<'a> {
         Err(anyhow!("numeric types expected, got `{}` and `{}`", l, r))
     }
 
-    /// 赋值/参数/返回的“可赋值”关系（窄→宽）
     fn require_assignable(&self, src:&Ty, dst:&Ty)->Result<()>{
         use Ty::*;
         if src==dst { return Ok(()); }
-        // 若含自由类型变量，拒绝
         ensure_no_free_tyvar(src)?;
         ensure_no_free_tyvar(dst)?;
 
-        // Char 视为 Int 的语义——只对数值提升生效，原地比较显示仍打印 Char
         let src_n = self.as_intish(src);
         let dst_n = self.as_intish(dst);
 
         match (src_n, dst_n) {
-            // 整数提升
             (Int, Long) => Ok(()),
 
-            // 向浮点提升
             (Int, Float) | (Long, Float) => Ok(()),
             (Int, Double) | (Long, Double) | (Float, Double) => Ok(()),
 
-            // 其余不允许
             (s, d) => Err(anyhow!("expect `{}`, got `{}`", d, s)),
         }
     }
@@ -312,16 +322,13 @@ impl<'a> TyCk<'a> {
 
         self.push();
         for (n, t) in &f.params {
-            // 形参可以含类型变量（如 T）
             if self.scopes.last().unwrap().contains_key(n) {
                 return Err(anyhow!("dup param `{}`", n));
             }
             self.scopes.last_mut().unwrap().insert(n.clone(), t.clone());
         }
-        // 函数返回类型不可含自由类型变量以外的非法位置（这里允许 T/Void 等）
-        // 若你要禁止 void + where 组合，可在此加检查
 
-        let _ = self.block(&f.body)?; // 你原先的含义：块值仅用于表达式位置
+        let _ = self.block(&f.body)?;
         self.pop();
 
         self.current_ret = None;
@@ -333,7 +340,6 @@ impl<'a> TyCk<'a> {
     fn block(&mut self, b:&Block)->Result<Ty>{
         self.push();
         for s in &b.stmts { self.stmt(s)?; }
-        // 保持你原逻辑：无尾表达式时返回 Int（而非 Void）
         let ty = if let Some(e)=&b.tail { self.expr(e)? } else { Ty::Int };
         self.pop();
         Ok(ty)
@@ -438,10 +444,8 @@ impl<'a> TyCk<'a> {
                     .clone().ok_or_else(||anyhow!("return outside function"))?;
                 if let Some(e) = opt {
                     let t = self.expr(e)?; self.require_assignable(&t, &ret_ty)?;
-                } else {
-                    if ret_ty != Ty::Void {
-                        return Err(anyhow!("function expects `{}`, but return without value", ret_ty));
-                    }
+                } else if ret_ty != Ty::Void {
+                    return Err(anyhow!("function expects `{}`, but return without value", ret_ty));
                 }
                 Ok(())
             }
@@ -451,7 +455,6 @@ impl<'a> TyCk<'a> {
     fn expr(&mut self, e:&Expr)->Result<Ty>{
         use BinOp::*; use UnOp::*;
         Ok(match e {
-            // 字面量/变量
             Expr::Int(_)=>Ty::Int,
             Expr::Long(_)=>Ty::Long,
             Expr::Bool(_)=>Ty::Bool,
@@ -461,7 +464,6 @@ impl<'a> TyCk<'a> {
             Expr::Double(_)=>Ty::Double,
             Expr::Var(n)=> self.lookup(n).ok_or_else(||anyhow!("unknown var `{n}`"))?,
 
-            // 一元运算
             Expr::Unary{op,rhs} => {
                 let t=self.expr(rhs)?;
                 match op {
@@ -479,12 +481,10 @@ impl<'a> TyCk<'a> {
                 }
             }
 
-            // 二元运算（混合数值）
             Expr::Binary{op,lhs,rhs}=>{
                 let lt=self.expr(lhs)?; let rt=self.expr(rhs)?;
                 match op {
                     Add|Sub|Mul|Div => {
-                        // 若出现类型变量，当前阶段不允许在无约束下参与算术
                         if has_free_tyvar(&lt) || has_free_tyvar(&rt) {
                             bail!("numeric op requires concrete numeric types (consider adding a trait bound)");
                         }
@@ -519,7 +519,6 @@ impl<'a> TyCk<'a> {
                 }
             }
 
-            // 表达式 if
             Expr::If{cond,then_b,else_b}=>{
                 let ct=self.expr(cond)?; self.require_assignable(&ct,&Ty::Bool)
                     .map_err(|e|anyhow!("if cond: {}", e))?;
@@ -528,7 +527,6 @@ impl<'a> TyCk<'a> {
                 tt
             }
 
-            // match 表达式
             Expr::Match { scrut, arms, default } => {
                 let st = self.expr(scrut)?;
                 if has_free_tyvar(&st) {
@@ -562,30 +560,29 @@ impl<'a> TyCk<'a> {
                 out_ty.unwrap_or(Ty::Int)
             }
 
-            // 调用（支持显式/省略泛型）
+            // 调用（支持显式/简单推断；callee 取自由函数名）
             Expr::Call{callee, generics, args}=>{
-                let sch = self.fnscheme.get(callee)
-                    .ok_or_else(||anyhow!("unknown function `{callee}`"))?.clone();
+                let fname = callee_base_name(callee)?; // &str
+                let sch = self.fnscheme.get(fname)
+                    .ok_or_else(||anyhow!("unknown function `{}`", fname))?
+                    .clone();
 
-                // 1) 先根据显式/隐式确定代换 subst
                 let mut subst: Subst = Subst::new();
                 if !sch.tparams.is_empty() {
                     if !generics.is_empty() {
                         if generics.len()!=sch.tparams.len() {
-                            bail!("function `{}` expects {} type args, got {}", callee, sch.tparams.len(), generics.len());
+                            bail!("function `{}` expects {} type args, got {}", fname, sch.tparams.len(), generics.len());
                         }
                         for (tp, ta) in sch.tparams.iter().zip(generics.iter()) {
                             ensure_no_free_tyvar(ta)?;
                             subst.insert(tp.clone(), ta.clone());
                         }
                     } else {
-                        // 简单推断：从 args 对 sch.params 做一阶统一（Var 只能绑定具体类型）
                         if args.len()!=sch.params.len(){
-                            bail!("function `{}` expects {} args, got {}", callee, sch.params.len(), args.len());
+                            bail!("function `{}` expects {} args, got {}", fname, sch.params.len(), args.len());
                         }
                         for (arg_expr, pty) in args.iter().zip(sch.params.iter()) {
                             let at = self.expr(arg_expr)?;
-                            // 不允许把“含自由类型变量”的实参用于推断
                             if has_free_tyvar(&at) {
                                 bail!("cannot infer from generic actual type `{}`", at);
                             }
@@ -593,21 +590,18 @@ impl<'a> TyCk<'a> {
                         }
                     }
                 } else {
-                    // 非泛型函数：参数数量必须匹配
                     if sch.params.len()!=args.len() {
-                        bail!("function `{}` expects {} args, got {}", callee, sch.params.len(), args.len());
+                        bail!("function `{}` expects {} args, got {}", fname, sch.params.len(), args.len());
                     }
                 }
 
-                // 2) 实例化参数/返回类型
+                // 实例化并校验 where
                 let inst_params: Vec<Ty> = sch.params.iter().map(|t| apply_subst(t, &subst)).collect();
                 let inst_ret: Ty = apply_subst(&sch.ret, &subst);
 
-                // 3) 校验 where 约束（套用代换后，要求 impl 存在）
                 self.check_where_bounds(&sch.where_bounds, &subst)
-                    .map_err(|e| anyhow!("`{}` where: {}", callee, e))?;
+                    .map_err(|e| anyhow!("`{}` where: {}", fname, e))?;
 
-                // 4) 逐实参与形参检查
                 for (i,(a,pt)) in args.iter().zip(inst_params.iter()).enumerate() {
                     let at=self.expr(a)?;
                     self.require_assignable(&at, pt)
@@ -616,7 +610,6 @@ impl<'a> TyCk<'a> {
                 inst_ret
             }
 
-            // 块表达式
             Expr::Block(b)=> self.block(b)?,
         })
     }
@@ -628,22 +621,27 @@ impl<'a> TyCk<'a> {
                 bail!("unresolved type parameter in where: `{}`", ty_i);
             }
             for b in &wp.bounds {
-                // 目前 impl 语法是 impl Trait<Concrete>，因此 bound 通常写成 Trait<T>
-                // 若 bound.args 为空，按 Trait<ty_i> 解释
-                let target_ty = if b.args.is_empty() {
-                    ty_i.clone()
-                } else if b.args.len() == 1 {
-                    let t0 = apply_subst(&b.args[0], subst);
-                    if t0 != ty_i {
-                        bail!("where bound `{}` applies to `{}`, but target is `{}`", b.name, t0, ty_i);
-                    }
-                    t0
-                } else {
-                    bail!("multi-arg trait bound not supported yet: {}<...>", b.name);
-                };
+                // bound 的实参全部套用代换；若无显式实参，则默认把 subject 作为第一个实参
+                let mut args_i: Vec<Ty> =
+                    if b.args.is_empty() {
+                        vec![ty_i.clone()]
+                    } else {
+                        b.args.iter().map(|t| apply_subst(t, subst)).collect()
+                    };
 
-                if !self.ienv.has_impl(&b.name, &target_ty) {
-                    bail!("missing `impl {0}<{1}>`", b.name, show_ty(&target_ty));
+                // 不允许任何自由类型变量残留
+                for a in &args_i {
+                    ensure_no_free_tyvar(a)?;
+                }
+
+                if !self.ienv.has_impl(&b.name, &args_i) {
+                    // 友好提示：打印如 `impl Eq<Int>` 或 `impl PairEq<Int,Long>`
+                    let pretty = if args_i.is_empty() {
+                        format!("{}<>", b.name)
+                    } else {
+                        format!("{}<{}>", b.name, args_i.iter().map(show_ty).collect::<Vec<_>>().join(","))
+                    };
+                    bail!("missing `{}`", pretty);
                 }
             }
         }

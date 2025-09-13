@@ -1,19 +1,19 @@
-// 一些通用的泛型函数：只做“直传/选择”，避免依赖算术 trait 约束
-
+// 恒等：保持类型 T
 fn id<T>(x: T) -> T {
-  return x;
+    return x;
 }
 
+// 取第一个：A,B -> A
 fn first<A, B>(a: A, _b: B) -> A {
-  return a;
+    return a;
 }
 
+// 带布尔选择的多态函数：需要显式类型实参
 fn choose<T>(b: Bool, x: T, y: T) -> T {
-  // 表达式 if：两个分支 block 都要有尾表达式
-  return if (b) { x } else { y };
+    return if (b) { x } else { y };
 }
 
+// 交换后返回第二个参数的值与类型
 fn swap<A, B>(x: A, y: B) -> B {
-  // 返回第二个参数，方便在主程序里验证 Long 专门化
-  return y;
+    return y;
 }

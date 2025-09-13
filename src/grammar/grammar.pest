@@ -6,7 +6,7 @@
 //////////////////////////////
 
 // ===== 基础/空白与注释 =====
-UPPER = _{ 'A'..'Z' }
+UPPER         = _{ 'A'..'Z' }
 IDENT_NEXT    = _{ ASCII_ALPHANUMERIC | "_" }
 
 WHITESPACE    = _{ ( " " | "\t" | "\r" | NEWLINE | COMMENT )+ }
@@ -48,11 +48,11 @@ ty = { ty_app | ty_prim | ty_var }
 ty_ident  = @{ UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
 ty_params = { "<" ~ ty_ident ~ ("," ~ ty_ident)* ~ ">" }
 
-// 调用处的类型实参（<Int, String, Vec<T>>）
+// 调用处/impl 处的类型实参（<Int, String, Vec<T>>）
 ty_args = { "<" ~ ty ~ ("," ~ ty)* ~ ">" }
 
 // ===== where 子句（约束） =====
-// 例如：where T: Eq + Show, U: Ord
+// 例如：where T: Eq + Show, U: Ord, Pair<Int,Long>: Foo<Int>
 where_clause = { KW_WHERE ~ where_pred ~ ("," ~ where_pred)* }
 where_pred   = { ty ~ ":" ~ bound ~ ("+" ~ bound)* }
 // 约束名允许将来带实参，如 Iterator<Item=T>（此处先留钩子）
@@ -104,16 +104,19 @@ add         = { mult      ~ ((OP_ADD | OP_SUB) ~ mult)* }
 mult        = { unary     ~ ((OP_MUL | OP_DIV) ~ unary)* }
 unary       = { (OP_NOT | OP_SUB) ~ unary | postfix }
 
+// 可调用名：单段 ident 或 多段 qident（Trait::method）
+qident   = @{ ident ~ ("::" ~ ident)+ }
+name_ref = { qident | ident }
+
 // 后缀：仅支持“安全泛型调用后缀”（ty_args? + "(" args? ")"）
-postfix     = { primary ~ ( call_suffix )* }
+postfix     = { primary_head ~ ( call_suffix )* }
+primary_head = { float_lit | long_lit | int_lit | bool_lit | string_lit | char_lit
+               | if_expr | match_expr | name_ref | group | block
+               }
 call_suffix = { ty_args? ~ "(" ~ arg_list? ~ ")" }
 arg_list    = { expr ~ ("," ~ expr)* }
 
 // ===== 原子表达式 =====
-primary = {
-    float_lit | long_lit | int_lit | bool_lit | string_lit | char_lit
-  | if_expr | match_expr | ident | group | block
-}
 group   = { "(" ~ expr ~ ")" }
 
 // if 作为表达式（有 else 才有值）
@@ -155,12 +158,12 @@ string_lit = @{
 }
 
 // ===== trait / impl =====
-// trait：仅方法签名（以分号结尾）
-trait_decl = { KW_TRAIT ~ ident ~ "<" ~ ty_ident ~ ">" ~ "{" ~ trait_item* ~ "}" }
+trait_decl = { KW_TRAIT ~ ident ~ ty_params? ~ "{" ~ trait_item* ~ "}" }
 trait_item = { KW_FNs ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ ";" }
 
-// impl：具体类型的实现（带方法体）
-impl_decl = { KW_IMPL ~ ident ~ "<" ~ ty ~ ">" ~ "{" ~ impl_item* ~ "}" }
+// 例：impl Eq<Int> { fn eq(...) -> Bool { ... } }
+// 也允许 impl Foo<A, B> { ... }
+impl_decl = { KW_IMPL ~ ident ~ ty_args ~ "{" ~ impl_item* ~ "}" }
 impl_item = { KW_FNs ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ block }
 
 // ===== 标识符 / 关键字 / 运算符 =====
@@ -176,7 +179,7 @@ keyword = {
   ) ~ !IDENT_NEXT
 }
 
-// 关键字：统一加上“非标识继续”断言，避免吞掉前缀
+// 关键字
 KW_FNs      = @{ "fn"      ~ !IDENT_NEXT }
 KW_EXTERN   = @{ "extern"  ~ !IDENT_NEXT }
 KW_IMPORT   = @{ "import"  ~ !IDENT_NEXT }
@@ -206,7 +209,7 @@ KW_Void   = @{ "Void"   ~ !IDENT_NEXT }
 KW_true   = @{ "true"   ~ !IDENT_NEXT }
 KW_false  = @{ "false"  ~ !IDENT_NEXT }
 
-// 运算符（注意比较的 <= 与 >= 要先于 < 与 >）
+// 运算符（注意 <= / >= 在 < / > 之前）
 OP_OR  = { "||" }
 OP_AND = { "&&" }
 OP_EQ  = { "==" }
