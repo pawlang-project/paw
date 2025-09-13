@@ -21,8 +21,8 @@ program = { SOI ~ item* ~ EOI }
 item = { extern_fun | fun_decl | let_decl | import_decl | trait_decl | impl_decl }
 
 // ===== 函数 / 外部函数 / 导入 / 参数 =====
-fun_decl    = { KW_FNs ~ ident ~ ty_params? ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ where_clause? ~ block }
-extern_fun  = { KW_EXTERN ~ KW_FNs ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ ";" }
+fun_decl    = { KW_FN ~ ident ~ ty_params? ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ where_clause? ~ block }
+extern_fun  = { KW_EXTERN ~ KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ ";" }
 import_decl = { KW_IMPORT ~ string_lit ~ ";" }
 
 param_list = { param ~ ("," ~ param)* }
@@ -36,7 +36,7 @@ let_decl = { ( KW_LET | KW_CONST ) ~ ident ~ ":" ~ ty ~ "=" ~ expr ~ ";" }
 ty_var = @{ UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
 
 // 类型应用：如 Vec<Int>, Map<String, Int>
-ty_app = { ident ~ "<" ~ ty ~ ("," ~ ty)* ~ ">" }
+ty_app   = { (qident | ident) ~ "<" ~ ty ~ ("," ~ ty)* ~ ">" }
 
 // 内建原子类型
 ty_prim = { KW_Int | KW_Long | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void }
@@ -53,10 +53,11 @@ ty_args   = { "<" ~ ty ~ ("," ~ ty)* ~ ">" }
 
 // ===== where 子句（约束） =====
 // 例如：where T: Eq + Show, U: Ord, Pair<Int,Long>: Foo<Int>
-where_clause = { KW_WHERE ~ where_pred ~ ("," ~ where_pred)* }
+where_clause = { KW_WHERE ~ where_item ~ ("," ~ where_item)* }
+where_item   = { where_pred | bound }
 where_pred   = { ty ~ ":" ~ bound ~ ("+" ~ bound)* }
 // 约束名允许将来带实参，如 Iterator<Item=T>（此处先留钩子）
-bound        = { ident ~ ("<" ~ ty ~ ("," ~ ty)* ~ ">")? }
+bound        = { (qident | ident) ~ ("<" ~ ty ~ ("," ~ ty)* ~ ">")? }
 
 // ===== 语句/表达式与块 =====
 block      = { "{" ~ stmt* ~ tail_expr? ~ "}" }
@@ -109,11 +110,11 @@ qident   = @{ ident ~ ("::" ~ ident)+ }
 name_ref = { qident | ident }
 
 // 后缀：仅支持“安全泛型调用后缀”（ty_args? + "(" args? ")"）
-postfix       = { primary_head ~ ( call_suffix )* }
-primary_head  = { float_lit | long_lit | int_lit | bool_lit | string_lit | char_lit
+postfix       = { name_ref ~ call_suffix+ | primary_head ~ call_suffix* }
+primary_head  = { float_lit | double_lit | long_lit | int_lit | bool_lit | string_lit | char_lit
                 | if_expr | match_expr | name_ref | group | block
                 }
-// 为了兼容旧 parse.rs：允许用 Rule::primary 来匹配
+// 为了兼容旧 parser：允许用 Rule::primary 来匹配
 primary       = { primary_head }
 
 call_suffix = { ty_args? ~ "(" ~ arg_list? ~ ")" }
@@ -142,7 +143,13 @@ int_lit    = @{ "-"? ~ ASCII_DIGIT+ }
 long_lit   = @{ "-"? ~ ASCII_DIGIT+ ~ ("L" | "l") }
 bool_lit   = { KW_true | KW_false }
 float_lit  = @{
-  "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)?
+  "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~
+  (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)? ~
+  ("f" | "F")
+}
+double_lit = @{
+  "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~
+  (("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+)?
 }
 
 char_lit = @{
@@ -162,18 +169,18 @@ string_lit = @{
 
 // ===== trait / impl =====
 trait_decl = { KW_TRAIT ~ ident ~ ty_params? ~ "{" ~ trait_item* ~ "}" }
-trait_item = { KW_FNs ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ ";" }
+trait_item = { KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ ";" }
 
 // 允许 impl Foo<A, B> {...} 或 impl Foo {...}（让 typecheck 去判是否缺实参）
 impl_decl  = { KW_IMPL  ~ ident ~ ty_args?  ~ "{" ~ impl_item*  ~ "}" }
-impl_item  = { KW_FNs ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ block }
+impl_item  = { KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ block }
 
 // ===== 标识符 / 关键字 / 运算符 =====
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
 keyword = {
   (
-      KW_FNs | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST
+      KW_FN | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST
     | KW_IF | KW_ELSE | KW_WHILE | KW_FOR | KW_BREAK | KW_CONTINUE | KW_MATCH
     | KW_RETURN | KW_TRAIT | KW_IMPL | KW_WHERE
     | KW_Int | KW_Long | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void
@@ -182,7 +189,7 @@ keyword = {
 }
 
 // 关键字
-KW_FNs      = @{ "fn"      ~ !IDENT_NEXT }
+KW_FN      = @{ "fn"      ~ !IDENT_NEXT }
 KW_EXTERN   = @{ "extern"  ~ !IDENT_NEXT }
 KW_IMPORT   = @{ "import"  ~ !IDENT_NEXT }
 KW_LET      = @{ "let"     ~ !IDENT_NEXT }

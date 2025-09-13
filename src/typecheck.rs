@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use std::collections::{HashMap, HashSet};
 use crate::ast::*;
+use crate::mangle::{mangle_impl_method, mangle_ty};
 
 /* ========= 多态函数签名 ========= */
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -11,10 +12,15 @@ pub struct Scheme {
     pub where_bounds: Vec<WherePred>,
 }
 
-/* ========= trait / impl 环境（用于 where 校验） ========= */
+/* ========= trait / impl 环境 ========= */
 #[derive(Default, Clone)]
 pub struct TraitEnv {
-    pub decls: HashMap<String, TraitDecl>, // 名 -> 声明（包含形参个数/方法原型）
+    pub decls: HashMap<String, TraitDecl>, // 名 -> 声明（包含形参、方法原型）
+}
+impl TraitEnv {
+    pub fn arity(&self, name: &str) -> Option<usize> {
+        self.decls.get(name).map(|d| d.type_params.len())
+    }
 }
 
 #[derive(Default, Clone)]
@@ -30,167 +36,21 @@ fn key_of_ty(t: &Ty) -> String {
         _ => format!("{}", t),
     }
 }
-
 fn trait_inst_key(tr: &str, args: &[Ty]) -> (String, String) {
-    (tr.to_string(), args.iter().map(key_of_ty).collect::<Vec<_>>().join(","))
+    (tr.to_string(), args.iter().map(key_of_ty).collect::<Vec<_>>().join(",")) // 用逗号与 mangle.rs 保持一致
 }
 
 impl ImplEnv {
-    fn insert(&mut self, tr: &str, args: &[Ty]) {
-        self.map.insert(trait_inst_key(tr, args), true);
+    fn insert(&mut self, tr: &str, args: &[Ty]) -> Result<()> {
+        let k = trait_inst_key(tr, args);
+        if self.map.contains_key(&k) {
+            bail!("duplicate impl `{}`<{}>", tr, k.1);
+        }
+        self.map.insert(k, true);
+        Ok(())
     }
-    fn has_impl(&self, tr: &str, args: &[Ty]) -> bool {
+    pub fn has_impl(&self, tr: &str, args: &[Ty]) -> bool {
         self.map.contains_key(&trait_inst_key(tr, args))
-    }
-}
-
-/* ========= 对外入口：返回 (函数方案, 全局类型, TraitEnv, ImplEnv) ========= */
-pub fn typecheck_program(
-    p: &Program
-) -> Result<(HashMap<String, Scheme>, HashMap<String, Ty>, TraitEnv, ImplEnv)> {
-    // 0) 收集 trait / impl
-    let mut tenv = TraitEnv::default();
-    let mut ienv = ImplEnv::default();
-
-    for it in &p.items {
-        match it {
-            Item::Trait(td) => {
-                if tenv.decls.contains_key(&td.name) {
-                    bail!("duplicate trait `{}`", td.name);
-                }
-                tenv.decls.insert(td.name.clone(), td.clone());
-            }
-            Item::Impl(id) => {
-                // impl 的实参必须全为具体类型
-                for ta in &id.trait_args { ensure_no_free_tyvar(ta)?; }
-                ienv.insert(&id.trait_name, &id.trait_args);
-            }
-            _ => {}
-        }
-    }
-
-    // 1) 收集函数方案（FunDecl + impl 方法映射为普通函数）
-    let mut fnscheme = HashMap::<String, Scheme>::new();
-
-    // 普通/extern 函数
-    for it in &p.items {
-        if let Item::Fun(f) = it {
-            if fnscheme.contains_key(&f.name) {
-                return Err(anyhow!("duplicate function `{}`", f.name));
-            }
-            fnscheme.insert(
-                f.name.clone(),
-                Scheme {
-                    tparams: f.type_params.clone(),
-                    params: f.params.iter().map(|(_, t)| t.clone()).collect(),
-                    ret: f.ret.clone(),
-                    where_bounds: f.where_bounds.clone(),
-                },
-            );
-        }
-    }
-    // impl 方法 -> 具体符号
-    for it in &p.items {
-        if let Item::Impl(id) = it {
-            for m in &id.items {
-                let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
-                if fnscheme.contains_key(&sym) {
-                    bail!("duplicate impl method symbol `{}`", sym);
-                }
-                // 方法在 impl 中已是具体类型（不再包含 trait 的形参）
-                for (_, t) in &m.params { ensure_no_free_tyvar(t)?; }
-                ensure_no_free_tyvar(&m.ret)?;
-                fnscheme.insert(sym.clone(), Scheme {
-                    tparams: vec![],
-                    params: m.params.iter().map(|(_, t)| t.clone()).collect(),
-                    ret: m.ret.clone(),
-                    where_bounds: vec![],
-                });
-            }
-        }
-    }
-
-    // 2) 收集全局变量
-    let mut globals = HashMap::<String, Ty>::new();
-    let mut globals_const = HashSet::<String>::new();
-    for it in &p.items {
-        if let Item::Global { name, ty, is_const, .. } = it {
-            if globals.contains_key(name) {
-                return Err(anyhow!("duplicate global `{}`", name));
-            }
-            ensure_no_free_tyvar(ty)
-                .map_err(|e| anyhow!("global `{}`: {}", name, e))?;
-            globals.insert(name.clone(), ty.clone());
-            if *is_const { globals_const.insert(name.clone()); }
-        }
-    }
-
-    // 3) 检查全局初始化
-    let mut ck = TyCk::new(&fnscheme, &tenv, &ienv, globals.clone(), globals_const.clone());
-    for it in &p.items {
-        if let Item::Global { name, ty, init, .. } = it {
-            let t = ck.expr(init)?;
-            ck.require_assignable(&t, ty)
-                .map_err(|e| anyhow!("global `{}` init: {}", name, e))?;
-        }
-    }
-
-    // 4) 检查函数体（忽略 extern）
-    for it in &p.items {
-        if let Item::Fun(f) = it {
-            if !f.is_extern {
-                ck.check_fun(f)?;
-            }
-        }
-    }
-    // impl 方法体：按普通函数检查一遍
-    for it in &p.items {
-        if let Item::Impl(id) = it {
-            for m in &id.items {
-                let fdecl = FunDecl {
-                    name: mangle_impl_method(&id.trait_name, &id.trait_args, &m.name),
-                    type_params: vec![],
-                    params: m.params.clone(),
-                    ret: m.ret.clone(),
-                    where_bounds: vec![],
-                    body: m.body.clone(),
-                    is_extern: false,
-                };
-                ck.check_fun(&fdecl)?;
-            }
-        }
-    }
-
-    Ok((fnscheme, globals, tenv, ienv))
-}
-
-/* ====== 辅助：名搅拌（与 codegen 对应） ====== */
-fn mangle_ty(t: &Ty) -> String {
-    match t {
-        Ty::Int    => "Int".into(),
-        Ty::Long   => "Long".into(),
-        Ty::Bool   => "Bool".into(),
-        Ty::String => "String".into(),
-        Ty::Double => "Double".into(),
-        Ty::Float  => "Float".into(),
-        Ty::Char   => "Char".into(),
-        Ty::Void   => "Void".into(),
-        Ty::Var(n) => format!("Var({})", n),
-        Ty::App { name, args } => {
-            if args.is_empty() { name.clone() }
-            else {
-                let parts: Vec<String> = args.iter().map(mangle_ty).collect();
-                format!("{}<{}>", name, parts.join(","))
-            }
-        }
-    }
-}
-fn mangle_impl_method(trait_name: &str, trait_args: &[Ty], method: &str) -> String {
-    if trait_args.is_empty() {
-        format!("__impl_{}__{}", trait_name, method)
-    } else {
-        let parts: Vec<String> = trait_args.iter().map(mangle_ty).collect();
-        format!("__impl_{}${}__{}", trait_name, parts.join(","), method)
     }
 }
 
@@ -244,17 +104,168 @@ fn has_free_tyvar(t: &Ty) -> bool {
         _ => false,
     }
 }
-
 fn ensure_no_free_tyvar(t: &Ty) -> Result<()> {
     if has_free_tyvar(t) { bail!("free type variable not allowed here: `{}`", show_ty(t)); }
     Ok(())
 }
-
 fn show_ty(t: &Ty) -> String {
     use std::fmt::Write;
     let mut s = String::new();
-    write!(&mut s, "{t}").ok();
+    let _ = write!(&mut s, "{t}");
     s
+}
+
+/* ========= 对外入口：返回 (函数方案, 全局类型, TraitEnv, ImplEnv) ========= */
+pub fn typecheck_program(
+    p: &Program
+) -> Result<(HashMap<String, Scheme>, HashMap<String, Ty>, TraitEnv, ImplEnv)> {
+    // 0) 收集 trait / impl（并做结构校验）
+    let mut tenv = TraitEnv::default();
+    let mut ienv = ImplEnv::default();
+
+    // 收集 trait 声明
+    for it in &p.items {
+        if let Item::Trait(td) = it {
+            if tenv.decls.contains_key(&td.name) {
+                bail!("duplicate trait `{}`", td.name);
+            }
+            // 基本自检：方法名重复？
+            {
+                let mut seen = HashSet::<String>::new();
+                for m in &td.items {
+                    if !seen.insert(m.name.clone()) {
+                        bail!("trait `{}` has duplicate method `{}`", td.name, m.name);
+                    }
+                }
+            }
+            tenv.decls.insert(td.name.clone(), td.clone());
+        }
+    }
+
+    // 校验 impl：trait 存在、元数匹配、方法签名匹配、实参具体；同时注册到 ImplEnv
+    for it in &p.items {
+        if let Item::Impl(id) = it {
+            let td = tenv.decls.get(&id.trait_name)
+                .ok_or_else(|| anyhow!("impl refers unknown trait `{}`", id.trait_name))?;
+
+            // 元数匹配
+            if td.type_params.len() != id.trait_args.len() {
+                bail!(
+                    "impl `{}` expects {} type args, got {}",
+                    id.trait_name, td.type_params.len(), id.trait_args.len()
+                );
+            }
+            // impl 的实参必须全部是具体类型
+            for ta in &id.trait_args { ensure_no_free_tyvar(ta)?; }
+
+            // trait 形参 -> impl 实参 的替换表
+            let mut subst: Subst = Subst::new();
+            for (tp, ta) in td.type_params.iter().zip(id.trait_args.iter()) {
+                subst.insert(tp.clone(), ta.clone());
+            }
+
+            // 方法集合相等性检查（不多不少）
+            let trait_method_names: HashSet<_> = td.items.iter().map(|m| m.name.clone()).collect();
+            let impl_method_names:  HashSet<_> = id.items.iter().map(|m| m.name.clone()).collect();
+
+            for extra in impl_method_names.difference(&trait_method_names) {
+                bail!("impl `{}` provides unknown method `{}`", id.trait_name, extra);
+            }
+            for miss in trait_method_names.difference(&impl_method_names) {
+                bail!("impl `{}` missing method `{}`", id.trait_name, miss);
+            }
+
+            // 每个方法签名与 trait 一致（经替换后）
+            for m in &id.items {
+                let decl = td.items.iter().find(|d| d.name == m.name).unwrap();
+                let want_params: Vec<Ty> = decl.params.iter().map(|(_, t)| apply_subst(t, &subst)).collect();
+                let want_ret: Ty = apply_subst(&decl.ret, &subst);
+
+                for (_, t) in &m.params { ensure_no_free_tyvar(t)?; }
+                ensure_no_free_tyvar(&m.ret)?;
+
+                let got_params: Vec<Ty> = m.params.iter().map(|(_, t)| t.clone()).collect();
+                if want_params != got_params {
+                    bail!(
+                        "impl `{}` method `{}` params mismatch: expect ({:?}), got ({:?})",
+                        id.trait_name, m.name, want_params, got_params
+                    );
+                }
+                if want_ret != m.ret {
+                    bail!(
+                        "impl `{}` method `{}` return mismatch: expect `{}`, got `{}`",
+                        id.trait_name, m.name, want_ret, m.ret
+                    );
+                }
+            }
+
+            // 记录 impl 实例（供 where 检查 / 合法性校验）
+            ienv.insert(&id.trait_name, &id.trait_args)?;
+        }
+    }
+
+    // 1) 收集函数方案（**仅**从 Item::Fun；impl 方法已由 passes 降成自由函数）
+    let mut fnscheme = HashMap::<String, Scheme>::new();
+    for it in &p.items {
+        if let Item::Fun(f) = it {
+            if fnscheme.contains_key(&f.name) {
+                return Err(anyhow!("duplicate function `{}`", f.name));
+            }
+            fnscheme.insert(
+                f.name.clone(),
+                Scheme {
+                    tparams: f.type_params.clone(),
+                    params: f.params.iter().map(|(_, t)| t.clone()).collect(),
+                    ret: f.ret.clone(),
+                    where_bounds: f.where_bounds.clone(),
+                },
+            );
+        }
+    }
+
+    // 2) 收集全局变量
+    let mut globals = HashMap::<String, Ty>::new();
+    let mut globals_const = HashSet::<String>::new();
+    for it in &p.items {
+        if let Item::Global { name, ty, is_const, .. } = it {
+            if globals.contains_key(name) {
+                return Err(anyhow!("duplicate global `{}`", name));
+            }
+            ensure_no_free_tyvar(ty)
+                .map_err(|e| anyhow!("global `{}`: {}", name, e))?;
+            globals.insert(name.clone(), ty.clone());
+            if *is_const { globals_const.insert(name.clone()); }
+        }
+    }
+
+    // 3) 检查全局初始化
+    let mut ck = TyCk::new(&fnscheme, &tenv, &ienv, globals.clone(), globals_const.clone());
+    for it in &p.items {
+        if let Item::Global { name, ty, init, .. } = it {
+            let t = ck.expr(init)?;
+            ck.require_assignable(&t, ty)
+                .map_err(|e| anyhow!("global `{}` init: {}", name, e))?;
+        }
+    }
+
+    // 4) 检查函数体（忽略 extern）
+    for it in &p.items {
+        if let Item::Fun(f) = it {
+            if !f.is_extern {
+                ck.check_fun(f)?;
+            }
+        }
+    }
+
+    Ok((fnscheme, globals, tenv, ienv))
+}
+
+fn collect_free_tyvars(t: &Ty, out: &mut HashSet<String>) {
+    match t {
+        Ty::Var(v) => { out.insert(v.clone()); }
+        Ty::App { args, .. } => for a in args { collect_free_tyvars(a, out); }
+        _ => {}
+    }
 }
 
 /* ====== 类型检查器 ====== */
@@ -297,6 +308,36 @@ impl<'a> TyCk<'a> {
     fn lookup(&self, n: &str) -> Option<Ty> {
         for s in self.scopes.iter().rev() { if let Some(t) = s.get(n) { return Some(t.clone()); } }
         self.globals.get(n).cloned()
+    }
+
+    /// 这些自由类型变量必须全部是当前函数的类型参数
+    fn free_vars_all_in_current_tparams(&self, t: &Ty) -> bool {
+        let mut s = HashSet::<String>::new();
+        collect_free_tyvars(t, &mut s);
+        s.into_iter().all(|v| self.current_tparams.contains(&v))
+    }
+
+    /// 当前函数的 where 条件是否允许调用 `trait_name<args...>`
+    fn where_allows_trait_call(&self, trait_name: &str, targs: &[Ty]) -> Result<bool> {
+        let ar = self.tenv.arity(trait_name)
+            .ok_or_else(|| anyhow!("unknown trait `{}` in qualified call", trait_name))?;
+
+        for wp in &self.current_where {
+            for b in &wp.bounds {
+                if b.name != trait_name { continue; }
+                if b.args.is_empty() {
+                    // 仅一元 trait 可省略参数，表示约束在 wp.ty 上
+                    if ar == 1 && targs.len() == 1 && targs[0] == wp.ty {
+                        return Ok(true);
+                    }
+                } else {
+                    if b.args == targs {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
     }
 
     fn is_const_name(&self, n:&str)->bool{
@@ -565,7 +606,7 @@ impl<'a> TyCk<'a> {
                 out_ty.unwrap_or(Ty::Int)
             }
 
-            // 关键：函数/方法调用
+            // 函数/方法调用
             Expr::Call{callee, generics, args}=>{
                 match callee {
                     Callee::Name(name) => {
@@ -610,22 +651,90 @@ impl<'a> TyCk<'a> {
                         if generics.is_empty() {
                             bail!("qualified call `{}::{}` needs explicit type args", trait_name, method);
                         }
-                        // 生成与 codegen 同名的具体符号，并从 fnscheme 中取签名
-                        let sym = mangle_impl_method(trait_name, generics, method);
-                        let sch = self.fnscheme.get(&sym)
-                            .ok_or_else(|| anyhow!("no such impl method `{}`; missing `impl {0}<...>`?", sym))?
-                            .clone();
-                        if sch.tparams.len() != 0 {
-                            bail!("impl method should be monomorphic here");
+
+                        // 是否包含当前函数的类型形参（T/U ...）
+                        let has_generic_vars = generics.iter().any(has_free_tyvar);
+
+                        // 形参里若有自由类型变量，必须属于当前函数的类型参数集合
+                        for ta in generics {
+                            if has_free_tyvar(ta) && !self.free_vars_all_in_current_tparams(ta) {
+                                bail!("unknown type parameter appears in qualified call: `{}`", show_ty(ta));
+                            }
                         }
-                        if sch.params.len() != args.len() {
-                            bail!("function `{}` expects {} args, got {}", sym, sch.params.len(), args.len());
+
+                        if !has_generic_vars {
+                            // —— 全部具体：走“已实例化 impl 方法”的路径（保持你原来的逻辑）——
+                            if !self.ienv.has_impl(trait_name, generics) {
+                                bail!("no `impl {0}<...>` found matching `{0}<{1}>`",
+                  trait_name,
+                  generics.iter().map(show_ty).collect::<Vec<_>>().join(", "));
+                            }
+                            let sym = mangle_impl_method(trait_name, generics, method);
+                            let sch = self.fnscheme.get(&sym)
+                                .ok_or_else(|| anyhow!("no such impl method `{}`; missing `impl {0}<...>`?", sym))?
+                                .clone();
+                            if sch.tparams.len() != 0 {
+                                bail!("impl method should be monomorphic here");
+                            }
+                            if sch.params.len() != args.len() {
+                                bail!("function `{}` expects {} args, got {}", sym, sch.params.len(), args.len());
+                            }
+                            for (i,(a,pt)) in args.iter().zip(sch.params.iter()).enumerate() {
+                                let at=self.expr(a)?; self.require_assignable(&at, pt)
+                                    .map_err(|e|anyhow!("arg#{i}: {e}"))?;
+                            }
+                            sch.ret
+                        } else {
+                            // —— 含有类型形参：必须由 where 约束保证存在 impl；按 trait 方法原型做类型检查 —— //
+                            if !self.where_allows_trait_call(trait_name, generics)? {
+                                bail!(
+                "cannot call `{0}::<{1}>::{2}` here; missing matching `where` bound",
+                trait_name,
+                generics.iter().map(show_ty).collect::<Vec<_>>().join(", "),
+                method
+            );
+                            }
+
+                            // 用 trait 的方法签名做“形参替换”，得到本次调用应该检查的形参/返回类型
+                            let td = self.tenv.decls.get(trait_name)
+                                .ok_or_else(|| anyhow!("unknown trait `{}`", trait_name))?;
+                            let md = td.items.iter().find(|m| m.name == *method)
+                                .ok_or_else(|| anyhow!("trait `{}` has no method `{}`", trait_name, method))?;
+
+                            if td.type_params.len() != generics.len() {
+                                bail!(
+                "trait `{}` expects {} type args, got {}",
+                trait_name, td.type_params.len(), generics.len()
+            );
+                            }
+                            // 形参替换：trait 形参 -> 本次提供的实参（其中可含 T/U）
+                            let mut subst: Subst = Subst::new();
+                            for (tp, ta) in td.type_params.iter().zip(generics.iter()) {
+                                subst.insert(tp.clone(), ta.clone());
+                            }
+                            let want_params: Vec<Ty> = md.params.iter().map(|(_, t)| apply_subst(t, &subst)).collect();
+                            let want_ret: Ty = apply_subst(&md.ret, &subst);
+
+                            if want_params.len() != args.len() {
+                                bail!("method `{}` expects {} args, got {}", method, want_params.len(), args.len());
+                            }
+
+                            // 参数检查：若涉及类型形参，做“严格相等”；纯具体类型则允许数值提升规则
+                            for (i, (a, want)) in args.iter().zip(want_params.iter()).enumerate() {
+                                let at = self.expr(a)?;
+                                if has_free_tyvar(&at) || has_free_tyvar(want) {
+                                    if at != *want {
+                                        bail!("arg#{i}: type mismatch: expect `{}`, got `{}`", show_ty(want), show_ty(&at));
+                                    }
+                                } else {
+                                    self.require_assignable(&at, want)
+                                        .map_err(|e| anyhow!("arg#{i}: {e}"))?;
+                                }
+                            }
+
+                            // 返回类型也可能仍然带有 T/U；在泛型函数体中这是允许的
+                            want_ret
                         }
-                        for (i,(a,pt)) in args.iter().zip(sch.params.iter()).enumerate() {
-                            let at=self.expr(a)?; self.require_assignable(&at, pt)
-                                .map_err(|e|anyhow!("arg#{i}: {e}"))?;
-                        }
-                        sch.ret
                     }
                 }
             }
@@ -641,19 +750,28 @@ impl<'a> TyCk<'a> {
                 bail!("unresolved type parameter in where: `{}`", ty_i);
             }
             for b in &wp.bounds {
-                // bound 可能写成 Eq<T> / Foo<A,B> / 省略成 Eq（表示绑定在 ty_i 上），此处统一转为完整实参向量
-                let mut all_args: Vec<Ty> = if b.args.is_empty() {
+                let ar = self.tenv.arity(&b.name)
+                    .ok_or_else(|| anyhow!("unknown trait `{}` in where", b.name))?;
+
+                // 按元数构造完整实参列表
+                let all_args: Vec<Ty> = if b.args.is_empty() {
+                    if ar != 1 {
+                        bail!("trait `{}` expects {} type args in where, got 0", b.name, ar);
+                    }
                     vec![ty_i.clone()]
                 } else {
-                    let mut v = Vec::new();
-                    for a in &b.args { v.push(apply_subst(a, subst)); }
-                    v
+                    if b.args.len() != ar {
+                        bail!("trait `{}` expects {} type args in where, got {}", b.name, ar, b.args.len());
+                    }
+                    b.args.iter().map(|a| apply_subst(a, subst)).collect()
                 };
+
                 if all_args.iter().any(has_free_tyvar) {
                     bail!("where bound has unresolved generic: {}<...>", b.name);
                 }
                 if !self.ienv.has_impl(&b.name, &all_args) {
-                    bail!("missing `impl {0}<...>` for `{0}<{1}>`", b.name, all_args.iter().map(show_ty).collect::<Vec<_>>().join(", "));
+                    bail!("missing `impl {0}<...>` for `{0}<{1}>`",
+                          b.name, all_args.iter().map(show_ty).collect::<Vec<_>>().join(", "));
                 }
             }
         }

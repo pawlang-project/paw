@@ -14,7 +14,6 @@ dependencies = [
  "cranelift-object",
  "pest",
  "pest_derive",
- "target-lexicon",
 ]
 
 [[package]]
