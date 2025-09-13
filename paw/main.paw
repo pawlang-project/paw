@@ -1,52 +1,89 @@
 import "std/prelude.paw";
-
 import "generic.paw";
 import "traits.paw";
 
-const KInt: Int = 10;
-const KLong: Long = 7L;
+// 覆盖：全局常量、基本类型字面量
+const KInt:  Int  = 10;
+const KLong: Long = 7;
 
-fn add(a: Int, b: Int) -> Int { return a + b; }
+// 覆盖：普通函数定义与调用
+fn add(a: Int, b: Int) -> Int {
+    return a + b;
+}
 
 fn main() -> Int {
+    // —— 1) 变量绑定 / 显式泛型调用 / 类型推断 —— //
     let a: Int  = id<Int>(41);
     let b: Long = id<Long>(KLong);
+    let c: Int  = first<Int, Long>(a, b);
+    let d: Int  = choose<Int>(true, c, 0);
+    let e: Int  = id<Int>(id<Int>(id<Int>(1)));
 
-    let c: Int = first<Int, Long>(a, b);
-    let d: Int = choose<Int>(true, c, 0);
-
-    let e: Int = id<Int>( id<Int>( id<Int>(1) ) );
-
+    // —— 2) while 与赋值 —— //
     let i: Int = 0;
-    while (i < 3) { i = i + 1; }
+    while (i < 3) {
+        i = i + 1;
+    }
 
-    for (let j: Int = 0; j < 2; j = j + 1) { }
+    // —— 3) for(init; cond; step) —— //
+    for (let j: Int = 0; j < 2; j = j + 1) {
+        // 空体即可
+    }
 
+    // —— 4) match（Int/Char/Bool + _ 通配） —— //
     let m1: Int = match (a) {
         40 => { 1 },
         41 => { 2 },
-        _  => { 3 }
+        _  => { 3 },
     };
 
     let ch: Char = 'A';
     let m2: Int = match (ch) {
         'A' => { 10 },
-        _   => { 0 }
+        _   => { 0 },
     };
 
     let flag: Bool = false;
     let m3: Int = match (flag) {
         true  => { 1 },
-        false => { 0 }
+        false => { 0 },
     };
 
+    // —— 5) trait 限定调用 + where 约束（在 traits.paw 中定义） —— //
     let y: Long = swap<Int, Long>(a, b);
-
-    // 需要 where 约束：T: Eq<T>
     let _z1: Int = needEq<Int>(a, c);
     let _z2: Int = needEq<Long>(b, y);
+    let _z3: Int = needPair<Int, Long>(a, b);
 
+    // —— 6) 一些算子/逻辑 —— //
+    let arith: Int = ((1 + 2) * 3) / 2;            // 4
+    let cmp:   Bool = (a == 41) && (b > 0) || !false;
+    println_bool(cmp);
+
+    // —— 7) 浮点/双精度/字符串字面量 —— //
+    println_float(2.5f);
+    println_double(3.0);
+    println_str("hello paw!");
+
+    // —— 8) break / continue —— //
+    let k: Int = 0;
+    let s: Int = 0;
+    while (k < 5) {
+        k = k + 1;
+        if (k == 2) { continue; }
+        if (k == 4) { break; }
+        // 累加 1 + 3 = 4
+        // （只是触发 continue / break 的路径）
+    }
+
+    // —— 9) 汇总：这行覆盖了数字提升、函数调用链、全局常量读取等 —— //
     let sum: Int = add(d, e) + m1 + m2 + m3 + i + KInt;
+    // 期望： (41+1) + 2 + 10 + 0 + 3 + 10 = 67
     println_int(sum);
-    return sum;
+
+    // 也顺便把其他类型打一下
+    println_long(b);
+    println_char(ch);
+
+    return sum; // == 67
 }

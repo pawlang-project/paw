@@ -1,148 +1,174 @@
 // src/main.rs
+use anyhow::{Context, Result};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::{env, process};
+
 mod ast;
-mod codegen;
-mod link_zig;
-mod parse;
 mod typecheck;
+mod codegen;
+mod mangle;
+mod parser;
+mod passes;
+mod link_zig;
 
-use anyhow::{anyhow, Context, Result};
-use ast::{FunDecl, Item, Program};
-use link_zig::{LinkInput, PawTarget};
-use std::{
-    collections::HashSet,
-    env, fs,
-    path::{Path, PathBuf},
-};
+use ast::{Item, Program};
+use codegen::CLBackend;
+use typecheck::typecheck_program;
+use link_zig::{PawTarget, LinkInput, link_with_zig};
 
-fn parse_file(path: &Path) -> Result<Program> {
-    let src = fs::read_to_string(path)
-        .with_context(|| format!("read_to_string({})", path.display()))?;
-    parse::parse_program(&src)
+/// 从入口文件读取源码 -> 解析 -> 以“入口文件所在目录”为基准展开 import
+fn load_and_expand_program(entry: &str) -> Result<Program> {
+    // 读入口文件源码
+    let src = fs::read_to_string(entry)
+        .with_context(|| format!("read_to_string({entry}) failed"))?;
+    // 解析
+    let root = parser::parse_program(&src)
+        .with_context(|| format!("parse `{entry}` failed"))?;
+
+    // 以入口文件所在目录为首次搜索根
+    let base_dir = Path::new(entry)
+        .parent()
+        .unwrap_or(Path::new("."))
+        .to_path_buf();
+
+    // 展开 import（内部会再附加其它搜索根：cwd / 环境变量等）
+    let merged = passes::expand_imports_with_base(&root, &base_dir)
+        .context("expand imports failed")?;
+
+    Ok(merged)
 }
 
-fn expand_file(path: &Path, visited: &mut HashSet<PathBuf>) -> Result<Vec<Item>> {
-    let canon = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    if !visited.insert(canon.clone()) {
-        return Err(anyhow!("cyclic import detected at {}", path.display()));
-    }
+/// 把完整 Program 编译为目标文件（Object bytes）
+fn build_object(prog: &Program) -> Result<Vec<u8>> {
+    // 0) 类型检查（能早发现 where / trait / impl 问题）
+    let _ = typecheck_program(prog)?;
 
-    let prog = parse_file(path)?;
-    println!("{:#?}", prog);
-    let mut out = Vec::new();
-    for it in prog.items {
-        match it {
-            Item::Import(spec) => {
-                let base = path.parent().unwrap_or_else(|| Path::new("."));
-                let target = {
-                    let p = Path::new(&spec);
-                    if p.is_absolute() { p.to_path_buf() } else { base.join(p) }
-                };
-                let mut sub = expand_file(&target, visited)
-                    .with_context(|| format!("while importing `{}` from {}", spec, path.display()))?;
-                out.append(&mut sub);
-            }
-            other => out.push(other),
-        }
-    }
+    // 1) 后端初始化 & 可内联常量
+    let mut be = CLBackend::new()?;
+    be.set_globals_from_program(prog);
 
-    visited.remove(&canon);
-    Ok(out)
-}
+    // 2) 声明所有“非泛型/extern”函数
+    //    注意这里收集到的是 **值** 的 Vec<FunDecl>
+    let funs: Vec<_> = prog.items.iter().filter_map(|it| {
+        if let Item::Fun(f) = it { Some(f.clone()) } else { None }
+    }).collect();
+    let base_ids = be.declare_fns(&funs)?;
 
-fn load_program_with_imports(entry: &Path) -> Result<Program> {
-    let mut visited = HashSet::new();
-    let items = expand_file(entry, &mut visited)?;
-    Ok(Program { items })
-}
+    // 3) 声明所有 impl 方法符号（__impl_{Trait}${Args}__{method}）
+    be.declare_impls_from_program(prog)?;
 
-fn collect_fun_decls(p: &ast::Program) -> Vec<FunDecl> {
-    p.items
-        .iter()
-        .filter_map(|it| {
-            if let Item::Fun(f) = it {
-                Some(f.clone())
-            } else {
-                None
-            }
-        })
-        .collect()
-}
+    // 4) 扫描显式类型实参的泛型调用，声明对应单态化符号
+    be.declare_mono_from_program(prog)?;
 
-fn parse_target_from_args(rest: &[String]) -> PawTarget {
-    if let Some(i) = rest.iter().position(|a| a == "--target") {
-        if let Some(t) = rest.get(i + 1) {
-            return PawTarget::parse(t);
-        }
-    }
-    PawTarget::from_env_or_default()
+    // 5) 定义普通（非泛型、非 extern）函数体
+    for f in &funs { be.define_fn(f, &base_ids)?; }
+
+    // 6) 定义 impl 方法体
+    be.define_impls_from_program(prog)?;
+
+    // 7) 定义已声明的单态化实例函数体
+    be.define_mono_from_program(prog, &base_ids)?;
+
+    // 8) 产出 object bytes
+    be.finish()
 }
 
 fn main() -> Result<()> {
-    // 兼容原来的三个位置参数：<src.paw> [out_dir] [exe_name]，并额外支持 --target <triple>
-    let mut it = env::args().skip(1);
-    let src_path = it.next().unwrap_or_else(|| "paw/main.paw".to_string());
-    let out_dir = it.next().unwrap_or_else(|| "build".to_string());
-    let exe_name = it.next().unwrap_or_else(|| "pawlang".to_string());
-    let rest = it.collect::<Vec<_>>();
-
-    let target = parse_target_from_args(&rest);
-
-    // —— 用“带 import 展开”的加载函数 —— //
-    let src_pathbuf = PathBuf::from(&src_path);
-    let prog = load_program_with_imports(&src_pathbuf)?;
-
-    // 类型检查（此处已要求：泛型调用必须显式类型实参）
-    let (fnscheme, globals, tenv, ienv) = typecheck::typecheck_program(&prog)?;
-
-    // 后端生成对象字节（接入单态化）
-    let mut be = codegen::CLBackend::new()?;
-    be.set_globals_from_program(&prog);
-
-    let funs = collect_fun_decls(&prog);
-
-    // 1) 声明“非泛型/extern”基名函数
-    let ids = be.declare_fns(&funs)?;
-
-    // 2) 根据程序中的 `<...>` 调用，声明所有需要的专门化函数符号
-    be.declare_mono_from_program(&prog)?;
-
-    // 3) 先定义所有“非泛型”函数体
-    for f in &funs {
-        be.define_fn(f, &ids)?;
+    // 用法：pawc <input.paw> [-o out] [--target <triple>] [-c]
+    let mut args = env::args().skip(1).collect::<Vec<_>>();
+    if args.is_empty() {
+        eprintln!("usage: pawc <input.paw> [-o OUT] [--target <triple>] [-c]");
+        process::exit(1);
     }
 
-    // 4) 再定义根据调用收集到的所有“专门化”函数体
-    be.define_mono_from_program(&prog, &ids)?;
+    // 解析选项
+    let mut out_path: Option<String> = None;
+    let mut compile_only = false;
+    let mut target_override: Option<PawTarget> = None;
 
-    // 5) 结束，得到目标平台对象文件字节
-    let obj_bytes = be.finish()?; // 已按 target 产出匹配格式（COFF/ELF/Mach-O）
-
-    // 输出路径：对象文件路径 + 可执行路径
-    let (obj_stem, exe_path) = link_zig::default_paths(&out_dir, &exe_name);
-
-    // 给对象文件加上平台扩展名（.obj / .o）
-    let mut obj_path = obj_stem.clone();
-    obj_path.set_extension(target.obj_ext());
-
-    // 落盘对象
-    if let Some(parent) = obj_path.parent() {
-        fs::create_dir_all(parent)?;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" => {
+                if i + 1 >= args.len() {
+                    anyhow::bail!("`-o` requires an output file name");
+                }
+                out_path = Some(args[i + 1].clone());
+                args.drain(i..=i + 1);
+            }
+            "-c" => {
+                compile_only = true;
+                args.remove(i);
+            }
+            "--target" => {
+                if i + 1 >= args.len() {
+                    anyhow::bail!("`--target` requires a triple, e.g. x86_64-unknown-linux-gnu");
+                }
+                target_override = Some(PawTarget::parse(&args[i + 1]));
+                args.drain(i..=i + 1);
+            }
+            _ => i += 1,
+        }
     }
+    let entry = &args[0];
+
+    // 1) 读取/解析/展开 import
+    let program = load_and_expand_program(entry)?;
+
+    // 2) 编译为 object bytes
+    let obj_bytes = build_object(&program)?;
+
+    // 3) 决定目标平台与输出路径
+    let target = target_override.unwrap_or_else(PawTarget::from_env_or_default);
+    let triple_dir = target.triple_dir();
+    let obj_ext = target.obj_ext();
+    let exe_ext = target.exe_ext();
+
+    // 默认输出目录：build/<triple>/
+    let out_dir = PathBuf::from(format!("build/{}", triple_dir));
+    fs::create_dir_all(&out_dir)
+        .with_context(|| format!("create_dir_all({})", out_dir.display()))?;
+
+    // 默认对象路径：build/<triple>/out.<ext>
+    let default_obj_path = out_dir.join(format!("out.{}", obj_ext));
+
+    // 默认可执行名：入口文件名（不含扩展）
+    let entry_stem = Path::new(entry)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "a".to_string());
+    let default_exe_name = if exe_ext.is_empty() {
+        entry_stem.clone()
+    } else {
+        format!("{}.{}", entry_stem, exe_ext)
+    };
+    let default_exe_path = out_dir.join(default_exe_name);
+
+    if compile_only {
+        // 仅写对象
+        let obj_path = PathBuf::from(out_path.unwrap_or_else(|| default_obj_path.to_string_lossy().to_string()));
+        fs::write(&obj_path, &obj_bytes)
+            .with_context(|| format!("write object `{}` failed", obj_path.display()))?;
+        eprintln!("OK (compile only): {} -> {}", entry, obj_path.display());
+        return Ok(());
+    }
+
+    // 4) 链接：先把对象写到 build 目录，再调用 zig cc
+    let obj_path = default_obj_path; // 链接流程统一使用默认对象位置
     fs::write(&obj_path, &obj_bytes)
-        .with_context(|| format!("write({})", obj_path.display()))?;
+        .with_context(|| format!("write object `{}` failed", obj_path.display()))?;
 
-    // 链接（自动附带 libpawrt；不再编译 runtime.c）
+    let exe_path = PathBuf::from(out_path.unwrap_or_else(|| default_exe_path.to_string_lossy().to_string()));
+
     let inp = LinkInput {
-        obj_files: vec![obj_path.to_string_lossy().into_owned()],
-        out_exe: exe_path.to_string_lossy().into_owned(),
+        obj_files: vec![obj_path.to_string_lossy().to_string()],
+        out_exe: exe_path.to_string_lossy().to_string(),
         target,
     };
-    link_zig::link_with_zig(&inp)?;
 
-    println!(
-        "✅ built: {} (target: {})",
-        exe_path.display(),
-        target.zig_triple()
-    );
+    link_with_zig(&inp).context("link step failed")?;
+
+    eprintln!("OK: {} -> {}", entry, exe_path.display());
     Ok(())
 }

@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::mangle::{mangle_name, mangle_impl_method}; // 统一使用全局搅拌
 use anyhow::{anyhow, Result};
 use cranelift_codegen::{
     ir::{self, types, AbiParam, InstBuilder},
@@ -10,7 +11,7 @@ use cranelift_module::{default_libcall_names, DataDescription as DataContext, Da
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cranelift_native;
 use std::collections::{HashMap, HashSet};
-use cranelift_codegen::settings::Configurable;
+use cranelift_codegen::settings::{Configurable, Flags};
 
 /* ---------- 可内联注入的全局常量 ---------- */
 #[derive(Clone, Debug)]
@@ -45,9 +46,10 @@ pub struct CLBackend {
 
 impl CLBackend {
     pub fn new() -> Result<Self> {
-        let mut fb = settings::builder();
-        fb.set("is_pic", "true")?;
-        let flags = settings::Flags::new(fb);
+        let mut fbuilder = settings::builder();
+        fbuilder.set("is_pic", "true")?;
+
+        let flags = Flags::new(fbuilder);
 
         let isa = cranelift_native::builder()
             .map_err(|e| anyhow!("cranelift_native::builder(): {e}"))?
@@ -90,14 +92,21 @@ impl CLBackend {
     }
 
     /// 声明**非泛型/extern**函数；保存**泛型模板**
-    pub fn declare_fns(&mut self, funs: &[FunDecl]) -> Result<HashMap<String, FuncId>> {
+    pub fn declare_fns<'a, I>(&mut self, funs: I) -> anyhow::Result<HashMap<String, FuncId>>
+    where
+        I: IntoIterator<Item = &'a FunDecl>,
+    {
+        use cranelift_codegen::settings::Configurable;
         let mut ids = HashMap::new();
+
         for f in funs {
             if !f.type_params.is_empty() {
+                // 保存模板
                 self.templates.insert(f.name.clone(), f.clone());
                 continue;
             }
-            // 非泛型（包含 extern）
+
+            // 非泛型/extern 声明（以下与原逻辑相同）
             let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
             for (_, ty) in &f.params {
                 let t = cl_ty(ty).ok_or_else(|| anyhow!("param type `{:?}` cannot be used in ABI", ty))?;
@@ -111,21 +120,27 @@ impl CLBackend {
             ids.insert(f.name.clone(), id);
             self.base_func_ids.insert(f.name.clone(), id);
 
-            // 记录签名（基名或外部符号）
             self.fn_sig.insert(
                 f.name.clone(),
-                (f.params.iter().map(|(_, t)| t.clone()).collect(), f.ret.clone())
+                (f.params.iter().map(|(_, t)| t.clone()).collect(), f.ret.clone()),
             );
         }
+
         Ok(ids)
     }
 
     /// 扫描程序，声明所有 impl 方法（作为普通函数符号）
+    /// 幂等：若 passes 已经把 impl 方法降解为 `FunDecl` 并被 declare_fns 处理过，这里直接跳过。
     pub fn declare_impls_from_program(&mut self, prog: &Program) -> Result<()> {
         for it in &prog.items {
             if let Item::Impl(id) = it {
                 for m in &id.items {
                     let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
+
+                    // 已存在（可能是降解后的自由函数或之前声明过），跳过
+                    if self.base_func_ids.contains_key(&sym) || self.base_func_ids.contains_key(&sym) {
+                        continue;
+                    }
 
                     let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
                     for (_, ty) in &m.params {
@@ -201,12 +216,24 @@ impl CLBackend {
         self.define_fn_core(fid, f)
     }
 
-    /// 定义所有 impl 方法体
+    /// 定义所有 impl 方法体（若 passes 已降解为自由函数则跳过）
     pub fn define_impls_from_program(&mut self, prog: &Program) -> Result<()> {
+        // 收集 Program 里已有的自由函数名
+        let mut fun_names = HashSet::<String>::new();
+        for it in &prog.items {
+            if let Item::Fun(f) = it { fun_names.insert(f.name.clone()); }
+        }
+
         for it in &prog.items {
             if let Item::Impl(id) = it {
                 for m in &id.items {
                     let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
+
+                    // 已有同名自由函数（passes 降解），交给 define_fn 处理，这里跳过
+                    if fun_names.contains(&sym) {
+                        continue;
+                    }
+
                     let fid = *self.base_func_ids.get(&sym)
                         .ok_or_else(|| anyhow!("define_impls: missing FuncId for `{}`", sym))?;
 
@@ -480,7 +507,7 @@ impl<'a> ExprGen<'a> {
                     b.def_var(var, v);
                 }
 
-                // 关键：表达式语句——**始终**实际求值（即使返回 Void），确保诸如 println_int(...) 的副作用发生
+                // 表达式语句——**始终**实际求值（即使返回 Void），确保诸如 println_int(...) 的副作用发生
                 Stmt::Expr(e) => { let _ = self.emit_expr(b, e)?; }
 
                 Stmt::If { cond, then_b, else_b } => {
@@ -756,8 +783,17 @@ impl<'a> ExprGen<'a> {
                                                trait_name, method, trait_name, method));
                         }
                         let sym = mangle_impl_method(trait_name, generics, method);
-                        let fid = *self.be.base_func_ids.get(&sym)
-                            .ok_or_else(|| anyhow!("unknown impl method symbol `{}`; did you call declare_impls_from_program()?", sym))?;
+                        let fid = match self.be.base_func_ids.get(&sym) {
+                            Some(fid) => *fid,
+                            None => {
+                                return Err(anyhow!(
+                                    "unknown impl method symbol `{}`; 确认你在 codegen 前调用了 \
+                                     `declare_impls_from_program(&program)`，或已由 passes 降解为自由函数并调用了 \
+                                     `declare_fns(&all_fun_decls)`",
+                                    sym
+                                ));
+                            }
+                        };
                         (sym, fid)
                     }
                 };
@@ -792,34 +828,8 @@ impl<'a> ExprGen<'a> {
 }
 
 /* ----------------------------------
- * ----- 单态化：名字 & 替换工具 -----
+ * ----- 单态化：替换工具 -----
  * ---------------------------------- */
-fn mangle_ty(t: &Ty) -> String {
-    match t {
-        Ty::Int    => "Int".into(),
-        Ty::Long   => "Long".into(),
-        Ty::Bool   => "Bool".into(),
-        Ty::String => "String".into(),
-        Ty::Double => "Double".into(),
-        Ty::Float  => "Float".into(),
-        Ty::Char   => "Char".into(),
-        Ty::Void   => "Void".into(),
-        Ty::Var(n) => format!("Var({})", n),
-        Ty::App { name, args } => {
-            if args.is_empty() { name.clone() }
-            else { let parts: Vec<String> = args.iter().map(mangle_ty).collect(); format!("{}<{}>", name, parts.join(",")) }
-        }
-    }
-}
-fn mangle_name(base: &str, args: &[Ty]) -> String {
-    if args.is_empty() { base.to_string() }
-    else { let parts: Vec<String> = args.iter().map(mangle_ty).collect(); format!("{}${}", base, parts.join(",")) }
-}
-fn mangle_impl_method(trait_name: &str, trait_args: &[Ty], method: &str) -> String {
-    if trait_args.is_empty() { format!("__impl_{}__{}", trait_name, method) }
-    else { let parts: Vec<String> = trait_args.iter().map(mangle_ty).collect(); format!("__impl_{}${}__{}", trait_name, parts.join(","), method) }
-}
-
 fn build_subst_map(params: &[String], args: &[Ty]) -> HashMap<String, Ty> {
     let mut m = HashMap::new();
     for (p, a) in params.iter().zip(args.iter()) { m.insert(p.clone(), a.clone()); }
@@ -962,4 +972,36 @@ fn collect_calls_in_expr(e: &Expr, out: &mut Vec<(String, Vec<Ty>)>) {
         Expr::Block(b) => collect_calls_in_block(b, out),
         _ => {}
     }
+}
+
+/* ---------------------------
+ * 可选：统一的编译入口（确保顺序）
+ * --------------------------- */
+pub fn compile_program(prog: &Program) -> Result<Vec<u8>> {
+    let mut be = CLBackend::new()?;
+    be.set_globals_from_program(prog);
+
+    // 1) 先把“自由函数”（含 extern）全部声明
+    let funs: Vec<&FunDecl> = prog.items.iter().filter_map(|it| {
+        if let Item::Fun(f) = it { Some(f) } else { None }
+    }).collect();
+    let base_ids = be.declare_fns(funs.clone())?;
+
+    // 2) 再把 impl 方法声明成普通符号（若 passes 已降解，会被上面的 declare_fns 覆盖；此处就跳过）
+    be.declare_impls_from_program(prog)?;
+
+    // 3) 收集并声明所有需要的单态化实例（对 `foo<T>` 这类）
+    be.declare_mono_from_program(prog)?;
+
+    // 4) 定义自由函数（非泛型）
+    for f in &funs { be.define_fn(f, &base_ids)?; }
+
+    // 5) 定义 impl 方法（若 passes 已降解为自由函数，这里会跳过）
+    be.define_impls_from_program(prog)?;
+
+    // 6) 定义单态化实例
+    be.define_mono_from_program(prog, &base_ids)?;
+
+    // 7) 输出 obj
+    be.finish()
 }
