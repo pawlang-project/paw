@@ -92,7 +92,7 @@ fn main() -> Result<()> {
     let prog = load_program_with_imports(&src_pathbuf)?;
 
     // 类型检查（此处已要求：泛型调用必须显式类型实参）
-    let (_schemes, _globals, _trait_env, _impl_env) = typecheck::typecheck_program(&prog)?;
+    let (fnscheme, globals, tenv, ienv) = typecheck::typecheck_program(&prog)?;
 
     // 后端生成对象字节（接入单态化）
     let mut be = codegen::CLBackend::new()?;

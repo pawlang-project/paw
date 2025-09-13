@@ -1,59 +1,67 @@
-import  "std/prelude.paw";
+import "std/prelude.paw";
 import "generic.paw";
 
-// 一些全局常量（会被后端内联）
-const KInt  : Int  = 10;
-const KLong : Long = 7L;
+const KInt:  Int  = 10;
+const KLong: Long = 7;
 
 fn add(a: Int, b: Int) -> Int {
-  return a + b;
+    return a + b;
 }
 
 fn main() -> Int {
-  // 基础：显式类型实参的单态化
-  let a: Int  = id<Int>(41);
-  let b: Long = id<Long>(KLong);
-  let c: Int  = first<Int, Long>(a, b);          // -> Int 专门化
-  let d: Int  = choose<Int>(true, c, 0);         // 表达式 if + 泛型返回
-  let e: Int  = id<Int>(id<Int>(id<Int>(1)));    // 多层嵌套调用
+    let a: Int  = id<Int>(41);
+    let b: Long = id<Long>(KLong);
 
-  // while / 赋值
-  let i: Int = 0;
-  while (i < 3) {
-    i = i + 1;
-  }
+    let c: Int = first<Int, Long>(a, b);
+    let d: Int = choose<Int>(true, c, 0);
 
-  // for(init; cond; step)
-  for (let j: Int = 0; j < 2; j = j + 1) {
-    // 空循环体
-  }
+    // 连续的显式泛型嵌套调用
+    let e: Int = id<Int>(id<Int>(id<Int>(1)));
 
-  // match on Int / Char / Bool
-  let m1: Int = match (a) {
-      40 => { 1 },
-      41 => { 2 },
-      _  => { 3 },
-  };
+    // while
+    let i: Int = 0;
+    while (i < 3) {
+        i = i + 1;
+    }
 
-  let ch: Char = 'A';
-  let m2: Int = match (ch) {
-      'A' => { 10 },
-      _   => { 0 },
-  };
+    // for(init; cond; step)
+    for (let j: Int = 0; j < 2; j = j + 1) {
+        // 空体
+    }
 
-  let flag: Bool = false;
-  let m3: Int = match (flag) {
-      true  => { 1 },
-      false => { 0 },
-  };
+    // match on Int
+    let m1: Int = match(a) {
+        40 => { 1 },
+        41 => { 2 },
+        _  => { 3 },
+    };
 
-  // 两参泛型：swap<Int, Long> 专门化应生成 swap$Int,Long
-  let y: Long = swap<Int, Long>(a, b);
+    // match on Char
+    let ch: Char = 'A';
+    let m2: Int = match(ch) {
+        'A' => { 10 },
+        _   => { 0 },
+    };
 
-  // 简单算术与返回
-  let sum: Int = add(d, e) + m1 + m2 + m3 + i + KInt;
-  println_int(sum);
+    // match on Bool
+    let flag: Bool = false;
+    let m3: Int = match(flag) {
+        true  => { 1 },
+        false => { 0 },
+    };
 
-  // 结束：返回一个稳定的非零值，方便在 CI 里断言
-  return sum; // 期望：41->2, m2=10, m3=0, i=3, KInt=10, e=1, d=c=41 => sum = 2+1+10+0+3+10 = 26，再加 add(41,1)=42 -> 68
+    // 交叉类型的泛型：返回第二个实参类型
+    let y: Long = swap<Int, Long>(a, b);
+
+    // 组合一下让结果可预期：应当得到 67
+    let sum: Int =
+        add(d, e) // 41 + 1 = 42
+        + m1      // +2 = 44
+        + m2      // +10 = 54
+        + m3      // +0 = 54
+        + i       // +3 = 57
+        + KInt;   // +10 = 67
+
+    println_int(sum);
+    return sum;
 }
