@@ -319,20 +319,20 @@ pub extern "C" fn paw_exit(code: c_int) {
 // # 安装目标（如未安装）
 // rustup target add x86_64-pc-windows-gnu
 // # 构建静态库
-// cargo build -p pawrt --release --target x86_64-pc-windows-gnu
+// cargo build -p runtime --release --target x86_64-pc-windows-gnu
 // # 产物位置：
-// #   pawrt/target/x86_64-pc-windows-gnu/release/libpawrt.a
+// #   runtime/target/x86_64-pc-windows-gnu/release/libruntime.a
 
 
 // Linux
 // rustup target add x86_64-unknown-linux-gnu
-// cargo build -p pawrt --release --target x86_64-unknown-linux-gnu
+// cargo build -p runtime --release --target x86_64-unknown-linux-gnu
 // # 产物：
-// #   pawrt/target/x86_64-unknown-linux-gnu/release/libpawrt.a
+// #   runtime/target/x86_64-unknown-linux-gnu/release/libruntime.a
 
 // macOS
 // rustup target add x86_64-apple-darwin aarch64-apple-darwin
-// cargo build -p pawrt --release --target x86_64-apple-darwin
-// cargo build -p pawrt --release --target aarch64-apple-darwin
+// cargo build -p runtime --release --target x86_64-apple-darwin
+// cargo build -p runtime --release --target aarch64-apple-darwin
 // # 产物：
-// #   pawrt/target/<triple>/release/libpawrt.a
+// #   runtime/target/<triple>/release/libruntime.a
