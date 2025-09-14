@@ -131,7 +131,7 @@ fn main() -> Result<()> {
     };
     let exe_path = out_dir.join(exe_file);
 
-    // 6) 调用 zig 链接（自动附带 libpawrt.a）
+    // 6) 调用 zig 链接（自动附带 libruntime.a）
     let inp = LinkInput {
         obj_files: vec![obj_path.to_string_lossy().to_string()],
         out_exe: exe_path.to_string_lossy().to_string(),

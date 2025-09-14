@@ -233,17 +233,17 @@ fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
     }
 
     // 3) 在每个 base 下尝试这些候选：
-    //    deps/<rust_triple>/libpawrt.a
-    //    deps/<zig_triple>/libpawrt.a
-    //    deps/libpawrt_<zig_triple>.a
-    //    deps/libpawrt.a
+    //    deps/<rust_triple>/libruntime.a
+    //    deps/<zig_triple>/libruntime.a
+    //    deps/libruntime_<zig_triple>.a
+    //    deps/libruntime.a
     let mut tried: Vec<PathBuf> = Vec::new();
     for base in bases {
         let cands = [
-            base.join("deps").join(rust_triple).join("libpawrt.a"),
-            base.join("deps").join(zig_triple).join("libpawrt.a"),
-            base.join("deps").join(format!("libpawrt_{}.a", zig_triple)),
-            base.join("deps").join("libpawrt.a"),
+            base.join("deps").join(rust_triple).join("libruntime.a"),
+            base.join("deps").join(zig_triple).join("libruntime.a"),
+            base.join("deps").join(format!("libruntime_{}.a", zig_triple)),
+            base.join("deps").join("libruntime.a"),
         ];
         for c in cands {
             tried.push(c.clone());
@@ -267,13 +267,13 @@ fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
     }
 
     bail!(
-        "未找到 libpawrt.a。\n\
+        "未找到 libruntime.a。\n\
          你当前在子目录（例如 paw/）运行构建，我会沿着父目录查找 deps/。\n\
          请将运行时静态库放在仓库根的 deps/ 下的以下任一路径之一，或设置 PAWRT_LIB 环境变量：\n\
-           - deps/{rt}/libpawrt.a\n\
-           - deps/{zt}/libpawrt.a\n\
-           - deps/libpawrt_{zt}.a\n\
-           - deps/libpawrt.a\n\
+           - deps/{rt}/libruntime.a\n\
+           - deps/{zt}/libruntime.a\n\
+           - deps/libruntime_{zt}.a\n\
+           - deps/libruntime.a\n\
          （目标：rust_triple={rt}, zig_triple={zt}）",
         rt = rust_triple,
         zt = zig_triple
@@ -282,7 +282,7 @@ fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
 
 /// ===== 对外：链接函数 =====
 
-/// 纯对象 + 自动附带 libpawrt.a → 生成可执行文件
+/// 纯对象 + 自动附带 libruntime.a → 生成可执行文件
 pub fn link_with_zig(inp: &LinkInput) -> Result<()> {
     // 确保输出目录存在
     let out_exe = PathBuf::from(&inp.out_exe);
@@ -291,7 +291,7 @@ pub fn link_with_zig(inp: &LinkInput) -> Result<()> {
             .with_context(|| format!("create_dir_all({})", parent.display()))?;
     }
 
-    // 解析 libpawrt.a
+    // 解析 libruntime.a
     let pawrt = resolve_pawrt_lib(inp.target)?;
 
     let mut cmd = zig_cmd()?;
@@ -337,7 +337,7 @@ pub fn link_with_zig(inp: &LinkInput) -> Result<()> {
     Ok(())
 }
 
-/// 兼容：一次性把对象们（含其它库）全部丢进来并自动附带 libpawrt.a
+/// 兼容：一次性把对象们（含其它库）全部丢进来并自动附带 libruntime.a
 pub fn link_many_with_zig(obj_files: &[String], out_exe: &str, target: PawTarget) -> Result<()> {
     let inp = LinkInput {
         obj_files: obj_files.to_vec(),
