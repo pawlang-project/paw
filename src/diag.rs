@@ -155,6 +155,8 @@ fn color_for(sev: Severity) -> Color {
 /// Render all diagnostics with Ariadne 0.5.
 /// Safe to call multiple times; it does not mutate `sink`.
 pub fn render_all(sink: &DiagSink, sources_map: &RenderSources) {
+    use ariadne::{sources, Color, Label, Report, ReportKind};
+
     for d in &sink.diags {
         let kind = match d.severity {
             Severity::Error => ReportKind::Error,
@@ -162,39 +164,44 @@ pub fn render_all(sink: &DiagSink, sources_map: &RenderSources) {
             Severity::Note => ReportKind::Advice,
         };
 
-        // Primary anchor: if no span, use 0..0 (Ariadne requires a span)
+        // 主定位 span，没有就用 0..0
         let primary_span: Span = d.span.clone().unwrap_or(0..0);
-        let file_id = d.file.as_str();
 
-        // IMPORTANT: don't reuse moved tuples; build fresh tuples each time
-        let mut builder = Report::build(kind, (file_id, primary_span.clone()))
+        // 统一使用 String 作为 FileId，避免 &str 生命周期问题
+        let file_id: String = d.file.clone();
+
+        // 每次使用都 clone，一次性拥有，不会 move 冲突
+        let mut builder = Report::build(kind, (file_id.clone(), primary_span.clone()))
             .with_code(d.code)
             .with_message(&d.message)
             .with_label(
-                Label::new((file_id, primary_span.clone()))
+                Label::new((file_id.clone(), primary_span.clone()))
                     .with_message(&d.message)
-                    .with_color(color_for(d.severity)),
+                    .with_color(match d.severity {
+                        Severity::Error => Color::Red,
+                        Severity::Warning => Color::Yellow,
+                        Severity::Note => Color::Blue,
+                    }),
             );
 
-        // Secondary labels
+        // 次级 labels（也用 String 拷贝，保持 Id 类型一致）
         for (f, s, msg) in &d.labels {
-            builder = builder.with_label(Label::new((f.as_str(), s.clone())).with_message(msg));
+            builder = builder.with_label(Label::new((f.clone(), s.clone())).with_message(msg));
         }
 
-        // Optional help/note
         if let Some(help) = &d.help {
             builder = builder.with_note(help);
         }
 
-        // Build a multi-source provider: EXPECTS (file_id: &str, content: &str)
+        // 关键：把源文件映射克隆为 (String, String)，满足 'static 要求
         let provider = sources(
             sources_map
                 .files
                 .iter()
-                .map(|(k, v)| (k.as_str(), v.as_str())),
+                .map(|(k, v)| (k.clone(), v.clone())),
         );
 
-        // Print report
+        // 打印；忽略打印错误（例如找不到文件）
         let _ = builder.finish().print(provider);
     }
 }
