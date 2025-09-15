@@ -1,401 +1,273 @@
-# Paw — README (current snapshot)
+# Paw 语言（PawLang）README
 
-> A tiny, ahead-of-time compiled language with traits, generics, and a strict module system.
-> Status: **experimental**, feature set still evolving.
+> 一个带静态类型、泛型与 trait 的小型语言与编译器。
+> 目前编译后端使用 \[Cranelift] 生成目标文件，再由 \[Zig] 负责链接，内置一个用 Rust 写的运行时（打印、字符串与基础内存 API）。
 
 ---
 
-## Quick start
+## ✨ 当前能力概览
+
+* **静态类型与数值提升**：`Int | Long | Float | Double | Bool | Char | String | Void`
+* **函数与泛型**：支持类型形参 `fn foo<T>(x: T) -> T`
+* **trait / impl / where**：可声明 trait、为具体类型实现，并在函数上施加 `where` 约束
+* **import / prelude / 标准库雏形**：`import "std::fmt"` 引入打印相关 API
+* **模式匹配**：`match`（当前支持对原生数值/布尔/字符）
+* **控制流**：`if/else`, `while`, `for`, `break`, `continue`, `return`
+* **全局常量内联**：常量全局会在后端被内联成字面量
+* **FFI（到运行时）**：通过一组 `extern` C ABI 函数与运行时交互（打印/内存/字符串等）
+* **单态化（Monomorphization）**：
+
+  * 对**显式**泛型调用（如 `foo<Int>(...)`）在编译声明期收集并生成实例；
+  * 对**隐式**泛型的**简单形态**（如 `println(x: T)` 这一元模板）在**codegen 阶段**按需推断并即时生成实例（详见下文）。
+* **跨平台链接**：使用 Zig 链接器并自动打包运行时静态库
+
+---
+
+## 🚀 快速开始
+
+### 1. 前置工具
+
+* Rust 稳定版（用于构建编译器）
+* Zig（用作链接器）
+* （可选）本地 C 工具链，用于 Zig 在某些平台上的协作
+
+### 2. 构建编译器
 
 ```bash
-# in your project root (same folder as Paw.toml)
-pawc build dev       # or: pawc build release
-# output: ./build/<dev|release>/<package_name>[.exe]
+# 在仓库根目录
+cargo build --release
+# 或开发版
+cargo build
 ```
 
-### Minimal project layout
+编译器可执行一般叫 **`pawc`**（target 下的相应目录）。
 
-```
-your-app/
-├─ Paw.toml
-├─ main.paw
-└─ std/                # example module tree you can import from
-   └─ prelude.paw
-```
+### 3. 工程结构与构建
 
-**Paw\.toml**
+Paw 的项目根目录需要一个入口文件（默认 `main.paw`），以及可选的 `Paw.toml` 配置。构建命令：
 
-```toml
-[package]
-name = "Paw"
-version = "0.0.1"
-
-[module]
-modules = ["std"]   # expose modules by folder name (optional but recommended)
+```bash
+# 在项目根目录执行
+pawc build dev
+# 或
+pawc build release
 ```
 
-**main.paw**
+输出位于：
+
+```
+./build/dev/     # 或 ./build/release/
+  ├─ out.<obj>   # 编译生成的目标文件（平台相关扩展名）
+  └─ <name>[.exe]# 可执行文件（名称来自 Paw.toml 的包名；否则为 app）
+```
+
+> `pawc` 会自动展开 `import`（以项目根为搜索根），并使用 Zig 链接运行时静态库。
+
+---
+
+## 🧪 一个最小示例
+
+`main.paw`：
 
 ```paw
-import "std::prelude";
+import "std::fmt";
 
 fn main() -> Int {
-    println_int(42);
-    0
+  println(42);          // 隐式：推断为 println<Int>
+  println("hello");     // 隐式：推断为 println<String>
+  print(3.14); println('\n');  // 混合使用
+  0
 }
 ```
 
----
+构建并运行：
 
-## Toolchain & runtime
-
-* **Compiler**: `pawc` (this repo).
-* **Linker**: uses `zig cc`. Set `ZIG_BIN` if it’s not on PATH.
-* **Runtime static lib**: `libpawrt.a`.
-  Place it at `./deps/<rust-triple>/libpawrt.a` **relative to the Rust project root** (where `pawc` is built),
-  e.g.:
-
-  ```
-  deps/
-    x86_64-unknown-linux-gnu/libpawrt.a
-    x86_64-apple-darwin/libpawrt.a
-    aarch64-apple-darwin/libpawrt.a
-    x86_64-pc-windows-gnu/libpawrt.a
-  ```
-
-  Or set `PAWRT_LIB` to an absolute file path.
-
-### Useful env vars
-
-* `PAW_TARGET`: overrides target triplet understood by `pawc` (e.g., `x86_64-unknown-linux-gnu`).
-* `PAWRT_LIB`: absolute path to `libpawrt.a` (if you don’t use the `deps/` layout above).
-* `ZIG_BIN` or `ZIG`: absolute path to the `zig` executable.
-* `PAW_VERBOSE=1`: prints the external commands executed.
-
----
-
-## Module system & imports
-
-Only **double-colon** imports are allowed:
-
-```paw
-import "std::prelude";
-import "mylib::algo::sort";
+```bash
+pawc build dev
+./build/dev/app     # 或你的包名
 ```
 
-Rules:
+---
 
-* An import like `"a::b::c"` maps to a file path `a/b/c.paw` under your **project root**.
-* No legacy forms (`"std/prelude.paw"`, `"std.prelude"`, relative paths, etc.) are accepted.
-* Module names must be identifier-like (`[A-Za-z_][A-Za-z0-9_]*` per segment).
+## 🖨️ 打印系统（现在的行为）
+
+运行时（Rust）里保留了**具体类型**的外部函数：
+
+```
+print_int / println_int
+print_long / println_long
+print_bool / println_bool
+print_char / println_char
+print_float / println_float
+print_double / println_double
+print_str / println_str
+```
+
+而在 Paw 的 **prelude / std::fmt** 中，提供了**用户态分发**：
+
+```paw
+// 伪代码示意：泛型一元模板，用于分发到具体 extern 实现
+fn print<T>(x: T) -> Void { /* 根据 T 调用对应的 print_* */ }
+fn println<T>(x: T) -> Void { /* 根据 T 调用对应的 println_* */ }
+```
+
+### 隐式泛型推断（对 println/print）
+
+* 只要函数模板是**单类型形参**且**唯一形参就是该形参**（典型：`fn println<T>(x: T) -> Void`），
+* 调用形如 `println(expr)` 时，**后端 codegen 会从 `expr` 的静态类型快速推断** `T`，
+* 然后**即时**生成并调用对应的实例（例如 `println$Int` / `println$String`），
+* 无需在源码处写 `println<Int>(...)`。
+
+> 对更复杂的泛型形态，请使用**显式**类型实参 `<...>`。
 
 ---
 
-## Language tour
+## 🧩 语言速查
 
-### Types (first-class, no user-defined structs yet)
+### 基本类型
 
-* `Int` (i32), `Long` (i64)
-* `Bool` (1-byte, handled as `i8` in ABI)
-* `Char` (Unicode scalar, ABI as `i32`)
-* `Float` (f32), `Double` (f64)
-* `String` (opaque runtime handle; passed as `i64` ABI-wise)
-* `Void` (no value)
-* **Type variables**: `T`, `U`, …
-* **Type application**: `Name<T, U>`. (Parsed/checked; runtime struct types not emitted yet.)
-* Return `Void` for side-effect-only functions.
+* `Int`(32 位), `Long`(64 位), `Float`(32 位), `Double`(64 位)
+* `Bool`(8 位，语义真/假), `Char`(32 位 Unicode 标量值)
+* `String`（运行时约定：指向以 `\0` 结尾的字节序列的指针）
+* `Void`（无返回）
 
-### Literals
+### 变量与常量
 
-* Integers: `0`, `-12` (fits `Int`, otherwise `Long`)
-* Long: `123L`
-* Float/Double: `1.0`, `-2.5`, `1.0e-3` (currently parsed as **Double**; use `println_double` to print)
-* Char: `'A'`, `'\n'`, `'\u{4E2D}'`
-* String: `"hello\nworld"`
+```paw
+let x: Int = 1;
+const PI: Double = 3.14159;
+x = 2;        // 给 let 变量赋值
+// PI = 3.14; // ❌ 常量不可赋值
+```
 
-> Note: `2.5` is `Double`. There’s no `2.5f` suffix yet.
+### 表达式与控制流
 
-### Expressions & statements
+```paw
+if cond { ... } else { ... }
 
-* Arithmetic: `+ - * /`
-* Comparisons: `< <= > >= == !=`
-* Logical: `&& || !`
-* Variables:
+while cond { ... }
 
-  ```paw
-  let x: Int = 10;
-  const K: Int = 7;      // may be inlined if used
-  x = x + 1;
-  ```
-* If (stmt & expr):
+for (let i: Int = 0; i < 10; i = i + 1) { ... }
 
-  ```paw
-  if (x < 0) { ... } else { ... }
-  let y: Int = if (flag) { 1 } else { 0 };
-  ```
-* While:
+match x {
+  0 => { ... }
+  1 => { ... }
+  _ => { ... }
+}
+```
 
-  ```paw
-  while (i < 10) { i = i + 1; }
-  ```
-* For (C-style):
-
-  ```paw
-  for (let j: Int = 0; j < 3; j = j + 1) { ... }
-  ```
-* Match (integers/longs/bool/char/wild):
-
-  ```paw
-  let r: Int = match (a) {
-    0      => { 100 },
-    1      => { 200 },
-    _      => { 0 },
-  };
-  ```
-
-### Functions
+### 函数与返回
 
 ```paw
 fn add(a: Int, b: Int) -> Int {
-  return a + b;
+  a + b
 }
+
+fn noop() -> Void { }
 ```
 
-* `return` is optional at tail; last expression of a block is the value if used as tail.
-
-### Extern functions
-
-Declare things provided by the runtime:
+### 泛型、trait、impl、where
 
 ```paw
-extern fn println_int(x: Int) -> Void;
-extern fn println_long(x: Long) -> Void;
-extern fn println_bool(x: Bool) -> Void;
-extern fn println_char(x: Char) -> Void;
-extern fn println_float(x: Float) -> Void;
-extern fn println_double(x: Double) -> Void;
-extern fn print_str(p: String) -> Void;
-extern fn println_str(p: String) -> Void;
-```
-
-### Generics (functions)
-
-```paw
-fn id<T>(x: T) -> T { x }
-fn first<A, B>(a: A, _b: B) -> A { a }
-fn choose<T>(b: Bool, x: T, y: T) -> T {
-  if (b) { x } else { y }
+trait Show<T> {
+  fn show(x: T) -> Void;
 }
-```
 
-* Call with **explicit type args**:
-
-  ```paw
-  let a: Int  = id<Int>(41);
-  let b: Long = id<Long>(7L);
-  let c: Int  = first<Int, Long>(a, b);
-  ```
-* The compiler **monomorphizes** only sites with explicit type args (e.g. `id$Int`).
-* Free type variables cannot reach codegen; typecheck enforces concreteness.
-
-### Traits & impl
-
-Declare a trait:
-
-```paw
-trait Eq<T> {
-  fn eq(x: T, y: T) -> Bool;
+// 为具体类型实现
+impl Show<Int> {
+  fn show(x: Int) -> Void { println(x); }
 }
-```
 
-Provide impls (with **explicit** type args):
-
-```paw
-impl Eq<Int> {
-  fn eq(x: Int, y: Int) -> Bool { x == y }
-}
-impl Eq<Long> {
-  fn eq(x: Long, y: Long) -> Bool { x == y }
-}
-```
-
-Use in a generic with a `where` clause:
-
-```paw
-fn needEq<T>(a: T, b: T) -> Int
-where T: Eq<T> 
+fn dump<T>(x: T) -> Void
+where T: Show   // 一元 trait 可省略参数，表示作用于 T
 {
-  if (Eq::eq<T>(a, b)) { 1 } else { 0 }
-}
-```
-
-* **Qualified call is required**: `Trait::method<...>(args...)`.
-* Internally, impl methods are lowered to free functions like
-  `__impl_Eq$Int__eq(x:Int,y:Int)->Bool`. This is why the compiler needs to
-  **declare impls before codegen** (already handled in the current pipeline).
-
-Multi-parameter trait:
-
-```paw
-trait PairEq<A, B> {
-  fn eq2(x: A, y: B) -> Bool;
+  Show::show<T>(x);     // 合格名调用，复杂调用需显式 <T>
 }
 
-impl PairEq<Int, Long> {
-  fn eq2(x: Int, y: Long) -> Bool { x == y }
-}
-
-fn needPair<T, U>(a: T, b: U) -> Int
-where __Self: PairEq<T, U>   // special “self” bound form
-{
-  if (PairEq::eq2<T, U>(a, b)) { return 1; }
-  0
-}
-```
-
-> The `__Self` trick is a temporary way to constrain “something must implement this trait”; it’s accepted by the typechecker and lowered by codegen.
-
----
-
-## Standard library (thin FFI, WIP)
-
-What’s currently expected by examples:
-
-* printing: `print_*`, `println_*` for each primitive type
-* basic string/vec handles in the runtime (opaque `String` / `Vec`-like via FFI)
-* memory helpers: `paw_malloc/paw_free/paw_realloc` (FFI)
-
-These are provided by `libpawrt.a`. If you don’t link it, you’ll get unresolved symbols during the link step.
-
----
-
-## Build outputs
-
-* Objects: `./build/<dev|release>/out.<o|obj>`
-* Executable: `./build/<dev|release>/<package_name>[.exe]`
-
-The target triple is auto-detected; override with `PAW_TARGET`.
-
----
-
-## Sample program (covers most features)
-
-```paw
-import "std::prelude";
-
-extern fn println_int(x: Int) -> Void;
-extern fn println_long(x: Long) -> Void;
-extern fn println_double(x: Double) -> Void;
-extern fn println_bool(x: Bool) -> Void;
-extern fn println_char(x: Char) -> Void;
-
-const KInt: Int = 10;
-const KLong: Long = 7L;
-
-fn add(a: Int, b: Int) -> Int { a + b }
-
-fn id<T>(x: T) -> T { x }
-fn first<A, B>(a: A, _b: B) -> A { a }
-fn choose<T>(b: Bool, x: T, y: T) -> T { if (b) { x } else { y } }
-
-trait Eq<T> {
-  fn eq(x: T, y: T) -> Bool;
-}
-impl Eq<Int>  { fn eq(x: Int,  y: Int)  -> Bool { x == y } }
-impl Eq<Long> { fn eq(x: Long, y: Long) -> Bool { x == y } }
-
-trait PairEq<A, B> {
-  fn eq2(x: A, y: B) -> Bool;
-}
-impl PairEq<Int, Long> { fn eq2(x: Int, y: Long) -> Bool { x == y } }
-
-fn needEq<T>(a: T, b: T) -> Int
-where T: Eq<T>
-{
-  if (Eq::eq<T>(a, b)) { 1 } else { 0 }
-}
-
-fn needPair<T, U>(a: T, b: U) -> Int
-where __Self: PairEq<T, U>
-{
-  if (PairEq::eq2<T, U>(a, b)) { return 1; }
-  0
-}
-
+// 使用
 fn main() -> Int {
-  let a: Int = id<Int>(41);
-  let b: Long = id<Long>(KLong);
-  let c: Int = first<Int, Long>(a, b);
-
-  let d: Int = choose<Int>(true, c, 0);
-  let e: Int = id<Int>(id<Int>(id<Int>(1)));
-
-  let mut i: Int = 0;
-  while (i < 3) { i = i + 1; }
-
-  for (let j: Int = 0; j < 2; j = j + 1) { /* ... */ }
-
-  let m1: Int = match (a) {
-    40 => { 1 },
-    41 => { 2 },
-    _  => { 3 },
-  };
-
-  let ch: Char = 'A';
-  let m2: Int = match (ch) { 'A' => { 10 }, _ => { 0 } };
-
-  let flag: Bool = false;
-  let m3: Int = match (flag) { true => { 1 }, false => { 0 } };
-
-  let y: Long = first<Int, Long>(a, b); // or swap-like
-
-  let _z1: Int = needEq<Int>(a, c);
-  let _z2: Int = needEq<Long>(b, y);
-  let _z3: Int = needPair<Int, Long>(a, b);
-
-  let sum: Int = add(d, e) + m1 + m2 + m3 + i + KInt;
-  println_int(sum);
-  println_double(2.5);   // DOUBLE literal
-
+  dump<Int>(42);
   0
 }
 ```
 
----
+> `typecheck` 会严格校验 trait/impl 的方法集合与签名、`where` 约束是否可满足、以及调用处是否给出了充分的信息（或属于隐式可推断的简单模板）。
 
-## Grammar cheat sheet (informal)
+### 数值提升与比较
 
-* **Program**: sequence of `item`
-* **Item**:
-
-    * `fn name<Ts?>(params) -> Ty where? { ... }`
-    * `extern fn name(params) -> Ty;`
-    * `let/const name: Ty = expr;`
-    * `trait Name<Ts?> { fn ...; }`
-    * `impl Name<Targs> { fn ... { ... } ... }`
-    * `import "a::b::c";`
-* **Types**: `Int | Long | Bool | Char | Float | Double | String | Void | T | Name<Ts?>`
-* **Expr**: literals, variables, calls (`Name<types?>(args?)` or `Trait::method<types>(args)`),
-  blocks `{...}`, `if (...) { ... } else { ... }`, `match (...) { ... }`, binary/unary ops
-* **Statements**: `let/const`, assignment, `if`, `while`, `for (...) {}`, `break`, `continue`, `return`, expression `;`
+* 算术运算会对参与类型做**公共数值类型**提升（例如 `Int + Double -> Double`）。
+* 比较与相等遵循数值/布尔/同类型比较的规则，其他类型需相等类型方可比较。
 
 ---
 
-## What’s missing / known limitations
+## 📦 工程与标准库
 
-* No user-defined structs/enums yet; `Ty::App` is parsed but not lowered to real data layouts.
-* Inference at call sites is minimal; **explicit generic args** are required.
-* `Float` literal suffix (`2.5f`) not supported—use `println_double` for now.
-* Module privacy/visibility not implemented; everything is public.
-* No packages/workspaces; modules are file-based only.
+* `import "std::fmt"`：引入打印 API（`print/println`）
+* `prelude`：工程默认会引入 prelude（含基础内建/别名/便捷函数）
+* `Paw.toml`（可选）：提供包名等元信息（用于生成最终可执行名）
+
+> import 展开由 `passes::expand_imports_with_loader` 完成，搜索根为**项目根目录**。
 
 ---
 
-## Troubleshooting
+## 🏗️ 编译管线（实现细节）
 
-* **“cannot resolve import …”**
-  Ensure your path matches a file under the project root: `"a::b::c"` → `a/b/c.paw`.
-* **“unknown impl method symbol … did you call declare\_impls\_from\_program()?”**
-  You’re calling a qualified trait method without an impl for those concrete types, or the impl wasn’t visible via imports. Make sure the relevant `impl` file is imported.
-* **Link error about `libpawrt.a`**
-  Put the archive at `deps/<rust-triple>/libpawrt.a` (relative to the **compiler repo root**) or set `PAWRT_LIB` to its absolute path. Also ensure `zig` is installed/set via `ZIG_BIN`.
+* **语法/解析**：`grammar.pest` + `parser.rs` → `ast.rs`
+* **Import 展开**：`passes.rs`
+* **类型检查**：`typecheck.rs`
+
+  * 构建 `TraitEnv/ImplEnv`、检查 `impl` 对应 `trait` 的**方法集合与签名一致性**
+  * 函数体内做**赋值兼容规则**、控制流与返回类型检查、`where` 约束验证等
+* **名称改写**：`mangle.rs`（函数/实例/impl 方法符号名）
+* **代码生成**：`codegen.rs`（Cranelift IR → 目标文件）
+
+  * **显式**泛型调用：在声明期收集并生成实例
+  * **隐式**泛型（如 `println<T>(x:T)`）：**codegen 阶段**从实参类型**即时推断并单态化**
+* **链接**：`link_zig.rs` 使用 Zig 把目标文件与运行时静态库链接为可执行
+* **项目与 CLI**：`project.rs`, `src/main.rs`（命令：`pawc build <dev|release>`）
+
+---
+
+## 🧰 运行时（Rust 实现）
+
+运行时以静态库形式链接，导出 C ABI：
+
+* **打印**：`print_*` / `println_*`（各具体类型）
+  在 Paw 层由 `print<T>/println<T>` 统一分发、并支持隐式推断。
+* **内存**：`paw_malloc` / `paw_free` / `paw_realloc`
+* **字符串**（UTF-8，`Vec<u8>` 为底）：
+  `paw_string_new/from_cstr/push_cstr/push_char/as_cstr/...`
+  约定导出到 `print_str` 之前会在末尾补 `\0`。
+* **通用容器**：`paw_vec_u8_*`, `paw_vec_i64_*`
+* **退出**：`paw_exit(code)`
+
+> 注意：`String` 底层以指针表示；向 `println` 传 `String` 时，由 `std::fmt` 分发到 `println_str`（C 字符串）完成输出。
+
+---
+
+## ⚠️ 已知限制与后续方向
+
+* **隐式泛型推断**目前只覆盖**一元模板且唯一参数为该类型形参**的场景（为 `print/println` 量身定制）。更复杂的泛型调用请写显式 `<...>`。
+* **模式匹配**暂只支持原生字面量与 `_`，尚不支持代数数据类型。
+* **类型系统**尚不包含用户结构体/枚举、自定义泛型类型构造等。
+* **字符串**以 C 风格 `\0` 结尾字节序列为主，与运行时互操作时请确保正确性。
+* **跨平台支持**依赖 Zig；某些平台上可能需要本地工具链辅助。
+
+**路线图（建议）**：
+
+* 统一的模块系统与包管理
+* 用户自定义聚合类型（record/enum）与模式匹配扩展
+* 更通用的类型推断（跨表达式流）
+* 更丰富的标准库（集合/IO/文件/时间等）
+* 更细粒度的错误报告与 IDE 友好性（位置、修复建议）
+
+---
+
+## 🙌 贡献
+
+欢迎提交 Issue / PR！
+典型改动点：`grammar.pest`（语法）、`typecheck.rs`（规则/诊断）、`codegen.rs`（后端/优化）、`std/`（标准库）。
+
+---
+
+如需帮助或想扩展某部分（比如把隐式泛型推断推广到多参数、多约束），可以直接给我一个目标用例，我会基于当前实现给出最稳的落地方案。
