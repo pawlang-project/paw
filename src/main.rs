@@ -4,19 +4,20 @@ use std::fs;
 use std::path::Path;
 use std::{env, process};
 
-mod ast;
-mod typecheck;
-mod codegen;
-mod mangle;
-mod parser;
-mod passes;
-mod link_zig;
 mod project;
+mod frontend;
+mod middle;
+mod backend;
+mod interner;
+mod utils;
 
-use ast::{Item, Program};
-use link_zig::{link_with_zig, LinkInput, PawTarget};
+use frontend::ast::Program;
+use backend::link_zig::{link_with_zig, LinkInput, PawTarget};
+use middle::passes;
 use project::{BuildProfile, Project};
-use typecheck::typecheck_program;
+use middle::typecheck::typecheck_program;
+use crate::backend::codegen;
+use crate::frontend::parser;
 
 /// 读取 entry 源码 -> 解析 -> 以工程根目录为搜索根展开 import
 fn load_and_expand_program(entry: &Path, project_root: &Path) -> Result<Program> {
