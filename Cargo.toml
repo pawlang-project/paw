@@ -4,6 +4,7 @@ version = "0.0.2"
 edition = "2024"
 
 [dependencies]
+ariadne = "0.5.1"
 anyhow = "1"
 # 解析
 pest = "2.8.2"
