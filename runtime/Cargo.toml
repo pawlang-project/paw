@@ -3,6 +3,9 @@ name = "runtime"
 version = "0.0.1"
 edition = "2024"
 
+[dependencies]
+once_cell = "1.21.3"
+
 [lib]
 # 产出静态库，供你的“编译器产物”链接
 crate-type = ["staticlib"]
