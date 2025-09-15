@@ -10,6 +10,7 @@ mod middle;
 mod backend;
 mod interner;
 mod utils;
+mod diag;
 
 use frontend::ast::Program;
 use backend::link_zig::{link_with_zig, LinkInput, PawTarget};
