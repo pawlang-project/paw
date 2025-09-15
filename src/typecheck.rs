@@ -115,10 +115,10 @@ fn show_ty(t: &Ty) -> String {
     s
 }
 
-/* ========= 对外入口：返回 (函数方案, 全局类型, TraitEnv, ImplEnv) ========= */
+/* ========= 对外入口：返回 (函数方案们, 全局类型, TraitEnv, ImplEnv) ========= */
 pub fn typecheck_program(
     p: &Program
-) -> Result<(HashMap<String, Scheme>, HashMap<String, Ty>, TraitEnv, ImplEnv)> {
+) -> Result<(HashMap<String, Vec<Scheme>>, HashMap<String, Ty>, TraitEnv, ImplEnv)> {
     // 0) 收集 trait / impl（并做结构校验）
     let mut tenv = TraitEnv::default();
     let mut ienv = ImplEnv::default();
@@ -204,22 +204,23 @@ pub fn typecheck_program(
         }
     }
 
-    // 1) 收集函数方案（**仅**从 Item::Fun；impl 方法已由 passes 降成自由函数）
-    let mut fnscheme = HashMap::<String, Scheme>::new();
+    // 1) 收集函数方案（**允许同名多份**；impl 方法已由 passes 降成自由函数）
+    let mut fnscheme = HashMap::<String, Vec<Scheme>>::new();
     for it in &p.items {
         if let Item::Fun(f) = it {
-            if fnscheme.contains_key(&f.name) {
-                return Err(anyhow!("duplicate function `{}`", f.name));
+            let entry = fnscheme.entry(f.name.clone()).or_default();
+            let sch = Scheme {
+                tparams: f.type_params.clone(),
+                params: f.params.iter().map(|(_, t)| t.clone()).collect(),
+                ret: f.ret.clone(),
+                where_bounds: f.where_bounds.clone(),
+            };
+            // 可选：拒绝完全相同的重复项
+            if !entry.iter().any(|s| s == &sch) {
+                entry.push(sch);
+            } else {
+                // 若要严格禁止重复：bail!("duplicate function scheme `{}`", f.name);
             }
-            fnscheme.insert(
-                f.name.clone(),
-                Scheme {
-                    tparams: f.type_params.clone(),
-                    params: f.params.iter().map(|(_, t)| t.clone()).collect(),
-                    ret: f.ret.clone(),
-                    where_bounds: f.where_bounds.clone(),
-                },
-            );
         }
     }
 
@@ -270,7 +271,7 @@ fn collect_free_tyvars(t: &Ty, out: &mut HashSet<String>) {
 
 /* ====== 类型检查器 ====== */
 pub struct TyCk<'a> {
-    fnscheme: &'a HashMap<String, Scheme>,
+    fnscheme: &'a HashMap<String, Vec<Scheme>>,
     tenv: &'a TraitEnv,
     ienv: &'a ImplEnv,
     globals: HashMap<String, Ty>,
@@ -286,7 +287,7 @@ pub struct TyCk<'a> {
 
 impl<'a> TyCk<'a> {
     pub fn new(
-        fnscheme: &'a HashMap<String, Scheme>,
+        fnscheme: &'a HashMap<String, Vec<Scheme>>,
         tenv: &'a TraitEnv,
         ienv: &'a ImplEnv,
         globals: HashMap<String, Ty>,
@@ -610,41 +611,8 @@ impl<'a> TyCk<'a> {
             Expr::Call{callee, generics, args}=>{
                 match callee {
                     Callee::Name(name) => {
-                        let sch = self.fnscheme.get(name)
-                            .ok_or_else(||anyhow!("unknown function `{}`", name))?.clone();
-
-                        let mut subst: Subst = Subst::new();
-                        if !sch.tparams.is_empty() {
-                            if !generics.is_empty() {
-                                if generics.len()!=sch.tparams.len() {
-                                    bail!("function `{}` expects {} type args, got {}", name, sch.tparams.len(), generics.len());
-                                }
-                                for (tp, ta) in sch.tparams.iter().zip(generics.iter()) {
-                                    ensure_no_free_tyvar(ta)?; subst.insert(tp.clone(), ta.clone());
-                                }
-                            } else {
-                                if args.len()!=sch.params.len(){ bail!("function `{}` expects {} args, got {}", name, sch.params.len(), args.len()); }
-                                for (arg_expr, pty) in args.iter().zip(sch.params.iter()) {
-                                    let at = self.expr(arg_expr)?;
-                                    if has_free_tyvar(&at) { bail!("cannot infer from generic actual type `{}`", at); }
-                                    unify(pty, &at, &mut subst)?;
-                                }
-                            }
-                        } else if sch.params.len()!=args.len() {
-                            bail!("function `{}` expects {} args, got {}", name, sch.params.len(), args.len());
-                        }
-
-                        let inst_params: Vec<Ty> = sch.params.iter().map(|t| apply_subst(t, &subst)).collect();
-                        let inst_ret: Ty = apply_subst(&sch.ret, &subst);
-
-                        self.check_where_bounds(&sch.where_bounds, &subst)
-                            .map_err(|e| anyhow!("`{}` where: {}", name, e))?;
-
-                        for (i,(a,pt)) in args.iter().zip(inst_params.iter()).enumerate() {
-                            let at=self.expr(a)?; self.require_assignable(&at, pt)
-                                .map_err(|e|anyhow!("arg#{i}: {e}"))?;
-                        }
-                        inst_ret
+                        // 统一走候选选择器（支持重载 + 泛型推断 + where 检查）
+                        return self.resolve_fun_call(name, generics, args, "call");
                     }
 
                     Callee::Qualified { trait_name, method } => {
@@ -663,22 +631,29 @@ impl<'a> TyCk<'a> {
                         }
 
                         if !has_generic_vars {
-                            // —— 全部具体：走“已实例化 impl 方法”的路径（保持你原来的逻辑）——
+                            // —— 全部具体：走“已实例化 impl 方法”的路径 —— //
                             if !self.ienv.has_impl(trait_name, generics) {
                                 bail!("no `impl {0}<...>` found matching `{0}<{1}>`",
-                  trait_name,
-                  generics.iter().map(show_ty).collect::<Vec<_>>().join(", "));
+                                      trait_name,
+                                      generics.iter().map(show_ty).collect::<Vec<_>>().join(", "));
                             }
                             let sym = mangle_impl_method(trait_name, generics, method);
-                            let sch = self.fnscheme.get(&sym)
-                                .ok_or_else(|| anyhow!("no such impl method `{}`; missing `impl {0}<...>`?", sym))?
-                                .clone();
-                            if sch.tparams.len() != 0 {
-                                bail!("impl method should be monomorphic here");
+                            // 该符号应当是单态的，或只有一个可用定义
+                            let schs = self.fnscheme.get(&sym)
+                                .ok_or_else(|| anyhow!("no such impl method `{}`; missing `impl {0}<...>`?", sym))?;
+                            // 选择：tparams==0 且 params.len()==args.len() 的唯一项
+                            let mut pick: Option<Scheme> = None;
+                            for s in schs {
+                                if !s.tparams.is_empty() { continue; }
+                                if s.params.len() != args.len() { continue; }
+                                // 先不做严格参数匹配（下面还有 require_assignable）
+                                if pick.is_some() {
+                                    bail!("ambiguous impl method `{}` (multiple monomorphic candidates)", sym);
+                                }
+                                pick = Some(s.clone());
                             }
-                            if sch.params.len() != args.len() {
-                                bail!("function `{}` expects {} args, got {}", sym, sch.params.len(), args.len());
-                            }
+                            let sch = pick.ok_or_else(|| anyhow!("no monomorphic candidate for `{}`", sym))?;
+                            // 参数检查
                             for (i,(a,pt)) in args.iter().zip(sch.params.iter()).enumerate() {
                                 let at=self.expr(a)?; self.require_assignable(&at, pt)
                                     .map_err(|e|anyhow!("arg#{i}: {e}"))?;
@@ -688,11 +663,11 @@ impl<'a> TyCk<'a> {
                             // —— 含有类型形参：必须由 where 约束保证存在 impl；按 trait 方法原型做类型检查 —— //
                             if !self.where_allows_trait_call(trait_name, generics)? {
                                 bail!(
-                "cannot call `{0}::<{1}>::{2}` here; missing matching `where` bound",
-                trait_name,
-                generics.iter().map(show_ty).collect::<Vec<_>>().join(", "),
-                method
-            );
+                                    "cannot call `{0}::<{1}>::{2}` here; missing matching `where` bound",
+                                    trait_name,
+                                    generics.iter().map(show_ty).collect::<Vec<_>>().join(", "),
+                                    method
+                                );
                             }
 
                             // 用 trait 的方法签名做“形参替换”，得到本次调用应该检查的形参/返回类型
@@ -703,9 +678,9 @@ impl<'a> TyCk<'a> {
 
                             if td.type_params.len() != generics.len() {
                                 bail!(
-                "trait `{}` expects {} type args, got {}",
-                trait_name, td.type_params.len(), generics.len()
-            );
+                                    "trait `{}` expects {} type args, got {}",
+                                    trait_name, td.type_params.len(), generics.len()
+                                );
                             }
                             // 形参替换：trait 形参 -> 本次提供的实参（其中可含 T/U）
                             let mut subst: Subst = Subst::new();
@@ -776,5 +751,127 @@ impl<'a> TyCk<'a> {
             }
         }
         Ok(())
+    }
+
+    /* ============ 重载/泛型 解析核心 ============ */
+
+    #[inline]
+    fn is_numeric_widen(&self, src: &Ty, dst: &Ty) -> bool {
+        use Ty::*;
+        let s = self.as_intish(src);
+        let d = self.as_intish(dst);
+        matches!(
+            (s, d),
+            (Int, Long) |
+            (Int, Float) | (Long, Float) |
+            (Int, Double) | (Long, Double) | (Float, Double)
+        )
+    }
+
+    /// 根据名字 / 显式类型实参 / 实参表达式，解析“最佳候选”，并返回其实例化后的返回类型
+    fn resolve_fun_call(
+        &mut self,
+        name: &str,
+        generics: &[Ty],
+        args: &[Expr],
+        _call_hint: &str,
+    ) -> Result<Ty> {
+        let cands = self.fnscheme.get(name)
+            .ok_or_else(|| anyhow!("unknown function `{}`", name))?;
+
+        // 先按形参数量粗筛
+        let mut viable: Vec<(usize /*score*/, Scheme, Subst, Vec<Ty> /*inst params*/, Ty /*inst ret*/)> = Vec::new();
+
+        'CAND: for sch in cands {
+            if sch.params.len() != args.len() { continue; }
+
+            let mut subst: Subst = Subst::new();
+
+            // 处理类型实参/推断
+            if !sch.tparams.is_empty() {
+                if !generics.is_empty() {
+                    if generics.len() != sch.tparams.len() { continue; }
+                    for (tp, ta) in sch.tparams.iter().zip(generics.iter()) {
+                        if has_free_tyvar(ta) { continue 'CAND; }
+                        subst.insert(tp.clone(), ta.clone());
+                    }
+                } else {
+                    // 从实参类型推断
+                    for (arg_expr, pty) in args.iter().zip(sch.params.iter()) {
+                        let at = self.expr(arg_expr)?;
+                        if has_free_tyvar(&at) { continue 'CAND; }
+                        let mut s_local = subst.clone();
+                        if let Err(_) = unify(pty, &at, &mut s_local) {
+                            continue 'CAND;
+                        }
+                        subst = s_local;
+                    }
+                }
+            } else if !generics.is_empty() {
+                continue;
+            }
+
+            // 实例化
+            let inst_params: Vec<Ty> = sch.params.iter().map(|t| apply_subst(t, &subst)).collect();
+            let inst_ret: Ty = apply_subst(&sch.ret, &subst);
+
+            // where 检查
+            if let Err(_) = self.check_where_bounds(&sch.where_bounds, &subst) {
+                continue;
+            }
+
+            // 参数检查 + 评分
+            let mut score: usize = 0;
+            for (i, (arg_e, want)) in args.iter().zip(inst_params.iter()).enumerate() {
+                let at = self.expr(arg_e)?;
+                if has_free_tyvar(&at) || has_free_tyvar(want) {
+                    if at != *want { continue 'CAND; }
+                } else if at == *want {
+                    // exact：加 0 分
+                } else if self.is_numeric_widen(&at, want) {
+                    score += 1;
+                } else {
+                    if let Err(_) = self.require_assignable(&at, want) {
+                        continue 'CAND;
+                    } else {
+                        score += 2;
+                    }
+                }
+            }
+
+            // 泛型候选稍降级，偏向更具体的定义
+            if !sch.tparams.is_empty() { score += 1; }
+
+            viable.push((score, sch.clone(), subst, inst_params, inst_ret));
+        }
+
+        if viable.is_empty() {
+            if self.fnscheme.contains_key(name) {
+                bail!(
+                    "no matching overload for `{}`{}",
+                    name,
+                    if generics.is_empty() {
+                        " (try adding explicit type arguments, or ensure a proper trait/impl is in scope)"
+                    } else { "" }
+                );
+            } else {
+                bail!("unknown function `{}`", name);
+            }
+        }
+
+        viable.sort_by_key(|(sc, _, _, _, _)| *sc);
+        let best_score = viable[0].0;
+        let n_best = viable.iter().take_while(|(sc, ..)| *sc == best_score).count();
+        if n_best > 1 {
+            bail!("ambiguous call to `{}{}{}: {} candidates tie",
+                name,
+                if !generics.is_empty() { "<...>" } else { "" },
+                if args.is_empty() { "()" } else { "(...)" },
+                n_best
+            );
+        }
+
+        let (_sc, _sch, _subst, _inst_params, inst_ret) = viable.remove(0);
+        Ok(inst_ret)
     }
 }

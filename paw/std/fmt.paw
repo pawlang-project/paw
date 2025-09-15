@@ -1,0 +1,105 @@
+// 打印
+extern fn print_int(x: Int) -> Void;
+extern fn println_int(x: Int) -> Void;
+extern fn print_long(x: Long) -> Void;
+extern fn println_long(x: Long) -> Void;
+extern fn print_bool(x: Bool) -> Void;
+extern fn println_bool(x: Bool) -> Void;
+extern fn print_char(x: Char) -> Void;
+extern fn println_char(x: Char) -> Void;
+extern fn print_float(x: Float) -> Void;
+extern fn println_float(x: Float) -> Void;
+extern fn print_double(x: Double) -> Void;
+extern fn println_double(x: Double) -> Void;
+extern fn print_str(p: String) -> Void;
+extern fn println_str(p: String) -> Void;
+
+trait Printable<T> {
+  fn print(x: T)   -> Void;
+  fn println(x: T) -> Void;
+}
+
+// ===== 内置类型实现：直接转调旧的运行时函数 =====
+impl Printable<Int> {
+    fn print(x: Int) -> Void {
+        print_int(x)
+    }
+
+    fn println(x: Int) -> Void {
+        println_int(x)
+    }
+}
+
+impl Printable<Long> {
+    fn print(x: Long) -> Void {
+        print_long(x)
+    }
+
+    fn println(x: Long) -> Void {
+        println_long(x)
+    }
+}
+
+impl Printable<Float> {
+    fn print(x: Float) -> Void {
+        print_float(x)
+    }
+
+    fn println(x: Float) -> Void {
+        println_float(x)
+    }
+}
+
+impl Printable<Double> {
+    fn print(x: Double) -> Void {
+        print_double(x)
+    }
+
+    fn println(x: Double) -> Void {
+        println_double(x)
+    }
+}
+
+impl Printable<Bool> {
+    fn print(x: Bool) -> Void {
+        print_bool(x)
+    }
+
+    fn println(x: Bool) -> Void {
+        println_bool(x)
+    }
+}
+
+impl Printable<Char> {
+    fn print(x: Char) -> Void {
+        print_char(x)
+    }
+
+    fn println(x: Char) -> Void {
+        println_char(x)
+    }
+}
+
+impl Printable<String> {
+    fn print(x: String) -> Void {
+        print_str(x)
+    }
+
+    fn println(x: String) -> Void {
+        println_str(x)
+    }
+}
+
+// ===== 用户可见的两个名字 =====
+fn print<T>(x: T) -> Void
+where T: Printable<T>
+{
+  Printable::print<T>(x)
+}
+
+fn println<T>(x: T) -> Void
+where T: Printable<T>
+{
+  Printable::println<T>(x)
+}
+

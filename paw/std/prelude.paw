@@ -28,21 +28,5 @@ extern fn paw_vec_i64_len(handle: String) -> Int;
 extern fn paw_vec_i64_get(handle: String, idx: Int, out_ptr: Int) -> Int;
 extern fn paw_vec_i64_free(handle: String) -> Int;
 
-// 打印
-extern fn print_int(x: Int) -> Void;
-extern fn println_int(x: Int) -> Void;
-extern fn print_long(x: Long) -> Void;
-extern fn println_long(x: Long) -> Void;
-extern fn print_bool(x: Bool) -> Void;
-extern fn println_bool(x: Bool) -> Void;
-extern fn print_char(x: Char) -> Void;
-extern fn println_char(x: Char) -> Void;
-extern fn print_float(x: Float) -> Void;
-extern fn println_float(x: Float) -> Void;
-extern fn print_double(x: Double) -> Void;
-extern fn println_double(x: Double) -> Void;
-extern fn print_str(p: String) -> Void;
-extern fn println_str(p: String) -> Void;
-
 // 进程退出
 extern fn paw_exit(code: Int) -> Void;

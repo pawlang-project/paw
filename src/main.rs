@@ -1,7 +1,7 @@
 // src/main.rs
 use anyhow::{Context, Result};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{env, process};
 
 mod ast;
@@ -14,7 +14,6 @@ mod link_zig;
 mod project;
 
 use ast::{Item, Program};
-use codegen::CLBackend;
 use link_zig::{link_with_zig, LinkInput, PawTarget};
 use project::{BuildProfile, Project};
 use typecheck::typecheck_program;
@@ -38,42 +37,16 @@ fn build_object(prog: &Program) -> Result<Vec<u8>> {
     // A) 类型检查：尽早发现 where / trait / impl / 泛型 等问题
     let _ = typecheck_program(prog)?;
 
-    // B) 初始化后端，收集可内联常量
-    let mut be = CLBackend::new()?;
-    be.set_globals_from_program(prog);
-
-    // C) 声明所有“非泛型/extern”函数（含运行时外部 API）
-    let funs: Vec<_> = prog
-        .items
-        .iter()
-        .filter_map(|it| if let Item::Fun(f) = it { Some(f.clone()) } else { None })
-        .collect();
-    let base_ids = be.declare_fns(&funs)?;
-
-    // D) 声明所有 impl 方法符号（__impl_{Trait}${Args}__{method}）
-    be.declare_impls_from_program(prog)?;
-
-    // E) 扫描所有**带显式类型实参**的泛型调用，声明对应的单态化实例函数
-    be.declare_mono_from_program(prog)?;
-
-    // F) 定义普通（非泛型、非 extern）函数体
-    for f in &funs {
-        be.define_fn(f, &base_ids)?;
-    }
-
-    // G) 定义 impl 方法体（把每个 ImplMethod 降为我们在 C 步骤声明的自由函数）
-    be.define_impls_from_program(prog)?;
-
-    // H) 定义之前声明的所有单态化实例函数体
-    be.define_mono_from_program(prog, &base_ids)?;
-
-    // I) 产出 .o 的字节
-    be.finish()
+    // B) 交给后端的统一入口（内部已经按正确顺序：
+    //    set_globals -> declare_fns -> declare_impls -> declare_mono(显式) ->
+    //    define_fns -> define_impls -> define_mono(显式) -> finish；
+    //    同时支持 codegen 阶段对 println 等“隐式泛型”进行按需单态化）
+    codegen::compile_program(prog)
 }
 
 fn main() -> Result<()> {
     // 仅支持：pawc build dev | pawc build release
-    let mut args = env::args().skip(1).collect::<Vec<_>>();
+    let args = env::args().skip(1).collect::<Vec<_>>();
     if args.len() != 2 || args[0].as_str() != "build" {
         eprintln!("usage: pawc build <dev|release>");
         process::exit(1);

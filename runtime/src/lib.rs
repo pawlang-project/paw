@@ -2,6 +2,7 @@
 
 use std::{ffi::CStr, io::{self, Write}, mem, os::raw::{c_char, c_int}};
 
+
 #[inline]
 fn write_bytes_no_nl(buf: &[u8]) {
     let _ = io::stdout().write_all(buf);
