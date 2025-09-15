@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::mangle::{mangle_name, mangle_impl_method}; // 统一使用全局搅拌
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Result, bail};
 use cranelift_codegen::{
     ir::{self, types, AbiParam, InstBuilder},
     ir::condcodes::{FloatCC, IntCC},
@@ -206,6 +206,61 @@ impl CLBackend {
             self.mono_specs.insert(mname.clone(), (base.clone(), targs.clone()));
         }
         Ok(())
+    }
+
+    /// 按需单态化：用于 **隐式泛型调用** 的即时实例生成/定义
+    pub fn ensure_monomorph(&mut self, base: &str, targs: &[Ty]) -> Result<(String, FuncId)> {
+        let mname = mangle_name(base, targs);
+        if let Some(&fid) = self.mono_func_ids.get(&mname) {
+            // 已声明；若未定义则补定义
+            if !self.mono_defined.contains(&mname) {
+                let (b, ta) = self.mono_specs.get(&mname)
+                    .cloned().unwrap_or((base.to_string(), targs.to_vec()));
+                let tpl = self.templates.get(&b)
+                    .ok_or_else(|| anyhow!("ensure_monomorph: template `{}` not found", b))?;
+                let subst = build_subst_map(&tpl.type_params, &ta);
+                let mf = specialize_fun(tpl, &subst, &mname)?;
+                self.define_fn_core(fid, &mf)?;
+                self.mono_defined.insert(mname.clone());
+            }
+            return Ok((mname, fid));
+        }
+
+        // 首次：声明 + 立刻定义
+        let tpl = self.templates.get(base)
+            .ok_or_else(|| anyhow!("call `{}`<...> but no generic template found", base))?;
+        if tpl.type_params.len() != targs.len() {
+            return Err(anyhow!(
+                "function `{}` expects {} type args, got {}",
+                base, tpl.type_params.len(), targs.len()
+            ));
+        }
+
+        let subst = build_subst_map(&tpl.type_params, targs);
+        let mut param_tys = Vec::<Ty>::new();
+        for (_, pty) in &tpl.params { param_tys.push(subst_ty(pty, &subst)); }
+        let ret_ty = subst_ty(&tpl.ret, &subst);
+
+        let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
+        for t in &param_tys {
+            let ct = cl_ty(t).ok_or_else(|| anyhow!("monomorph param type not ABI-legal: {:?}", t))?;
+            sig.params.push(AbiParam::new(ct));
+        }
+        if let Some(rt) = cl_ty(&ret_ty) {
+            sig.returns.push(AbiParam::new(rt));
+        }
+
+        let fid = self.module.declare_function(&mname, Linkage::Local, &sig)?;
+        self.fn_sig.insert(mname.clone(), (param_tys.clone(), ret_ty.clone()));
+        self.mono_func_ids.insert(mname.clone(), fid);
+        self.mono_specs.insert(mname.clone(), (base.to_string(), targs.to_vec()));
+        self.mono_declared.insert(mname.clone());
+
+        let mf = specialize_fun(tpl, &subst, &mname)?;
+        self.define_fn_core(fid, &mf)?;
+        self.mono_defined.insert(mname.clone());
+
+        Ok((mname, fid))
     }
 
     /// 定义**非泛型**函数体
@@ -623,6 +678,42 @@ impl<'a> ExprGen<'a> {
         Ok(out)
     }
 
+    /// 只处理最常见：模板 1 个类型参数，且唯一形参是裸 `T`；返回 [T := arg_ty]
+    fn infer_targs_for_simple_arity1(&mut self, base: &str, args: &[Expr]) -> Result<Vec<Ty>> {
+        let tpl = self.be.templates.get(base)
+            .ok_or_else(|| anyhow!("internal: no template for `{}`", base))?;
+
+        if tpl.type_params.len() != 1 || tpl.params.len() != 1 {
+            bail!("cannot infer type args for `{}`; add explicit `<...>`", base);
+        }
+        // 形参必须是裸 T
+        let tp0 = &tpl.type_params[0];
+        match &tpl.params[0].1 {
+            Ty::Var(v) if v == tp0 => {},
+            _ => bail!("cannot infer `{}`: param is not plain type variable", base),
+        }
+
+        // 尝试从实参表达式拿静态类型（字面量、变量等）
+        let at = self.static_ty_of_expr(&args[0])?;
+        Ok(vec![at])
+    }
+
+    /// 从表达式快速给出静态类型；用于推断 println<T>(...)
+    fn static_ty_of_expr(&mut self, e: &Expr) -> Result<Ty> {
+        Ok(match e {
+            Expr::Int(_)    => Ty::Int,
+            Expr::Long(_)   => Ty::Long,
+            Expr::Bool(_)   => Ty::Bool,
+            Expr::Char(_)   => Ty::Char,
+            Expr::Float(_)  => Ty::Float,
+            Expr::Double(_) => Ty::Double,
+            Expr::Str(_)    => Ty::String,
+            Expr::Var(n)    => self.lookup_ty(n)
+                .ok_or_else(|| anyhow!("cannot infer type of `{}` here; add explicit `<...>`", n))?,
+            _ => bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println"),
+        })
+    }
+
     fn emit_expr(&mut self, b:&mut FunctionBuilder, e:&Expr)->Result<ir::Value>{
         use BinOp::*; use UnOp::*;
         Ok(match e {
@@ -764,17 +855,24 @@ impl<'a> ExprGen<'a> {
             Expr::Call { callee, generics, args } => {
                 let (sym, fid) = match callee {
                     Callee::Name(name) => {
+                        // 三种路径：
+                        // A) 显式 `<...>` 的泛型调用 → 用 mangle_name
+                        // B) 非泛型的普通函数（base_func_ids 里有） → 直接调用
+                        // C) 隐式泛型：base 不在 base_func_ids，但在 templates → 现场推断 + ensure_monomorph
                         if !generics.is_empty() {
                             let mname = mangle_name(name, generics);
                             let fid  = *self.be.mono_func_ids.get(&mname)
                                 .ok_or_else(|| anyhow!("unknown monomorph function `{}`", mname))?;
                             (mname, fid)
-                        } else {
-                            let _ = self.be.fn_sig.get(name)
-                                .ok_or_else(|| anyhow!("unknown function `{}`", name))?;
-                            let fid = *self.be.base_func_ids.get(name)
-                                .ok_or_else(|| anyhow!("missing FuncId for base `{}`; did you call declare_fns()?", name))?;
+                        } else if let Some(&fid) = self.be.base_func_ids.get(name) {
                             (name.clone(), fid)
+                        } else if self.be.templates.contains_key(name) {
+                            // 隐式泛型：目前实现 arity=1 的常见形态（println<T>(x:T)）
+                            let targs = self.infer_targs_for_simple_arity1(name, args)?;
+                            let (mname, fid) = self.be.ensure_monomorph(name, &targs)?;
+                            (mname, fid)
+                        } else {
+                            return Err(anyhow!("unknown function in codegen `{}`", name));
                         }
                     }
                     Callee::Qualified { trait_name, method } => {
@@ -990,7 +1088,7 @@ pub fn compile_program(prog: &Program) -> Result<Vec<u8>> {
     // 2) 再把 impl 方法声明成普通符号（若 passes 已降解，会被上面的 declare_fns 覆盖；此处就跳过）
     be.declare_impls_from_program(prog)?;
 
-    // 3) 收集并声明所有需要的单态化实例（对 `foo<T>` 这类）
+    // 3) 收集并声明所有需要的单态化实例（对 `foo<T>` 这类：显式 `<...>`）
     be.declare_mono_from_program(prog)?;
 
     // 4) 定义自由函数（非泛型）
@@ -999,7 +1097,7 @@ pub fn compile_program(prog: &Program) -> Result<Vec<u8>> {
     // 5) 定义 impl 方法（若 passes 已降解为自由函数，这里会跳过）
     be.define_impls_from_program(prog)?;
 
-    // 6) 定义单态化实例
+    // 6) 定义单态化实例（显式 `<...>` 的）
     be.define_mono_from_program(prog, &base_ids)?;
 
     // 7) 输出 obj
