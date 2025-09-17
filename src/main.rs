@@ -4,6 +4,9 @@ use std::fs;
 use std::path::Path;
 use std::{env, process};
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 mod project;
 mod frontend;
 mod middle;
@@ -12,13 +15,16 @@ mod interner;
 mod utils;
 mod diag;
 
-use frontend::ast::Program;
 use backend::link_zig::{link_with_zig, LinkInput, PawTarget};
-use middle::passes;
-use project::{BuildProfile, Project};
-use middle::typecheck::typecheck_program;
 use crate::backend::codegen;
 use crate::frontend::parser;
+use frontend::ast::Program;
+use middle::passes;
+use middle::typecheck::typecheck_program;
+use project::{BuildProfile, Project};
+
+// 使用紧凑渲染器
+use crate::diag::{DiagSink, RenderSources, render_compact};
 
 /// 读取 entry 源码 -> 解析 -> 以工程根目录为搜索根展开 import
 fn load_and_expand_program(entry: &Path, project_root: &Path) -> Result<Program> {
@@ -35,15 +41,19 @@ fn load_and_expand_program(entry: &Path, project_root: &Path) -> Result<Program>
 }
 
 /// 把完整 Program 编译为 object bytes
-fn build_object(prog: &Program) -> Result<Vec<u8>> {
-    // A) 类型检查：尽早发现 where / trait / impl / 泛型 等问题
-    let _ = typecheck_program(prog)?;
+///
+/// - `file_id`: 类型检查阶段的“主文件名”，用入口路径字符串即可
+/// - `diag`:    共享诊断（typecheck / codegen 共用）
+fn build_object(prog: &Program, file_id: &str, diag: Rc<RefCell<DiagSink>>) -> Result<Vec<u8>> {
+    // 先类型检查（错误写入 diag，同时返回 Err）
+    {
+        // 注意作用域，确保可变借用在进入 codegen 前释放
+        let mut d = diag.borrow_mut();
+        let _ = typecheck_program(prog, file_id, &mut *d)?;
+    }
 
-    // B) 交给后端的统一入口（内部已经按正确顺序：
-    //    set_globals -> declare_fns -> declare_impls -> declare_mono(显式) ->
-    //    define_fns -> define_impls -> define_mono(显式) -> finish；
-    //    同时支持 codegen 阶段对 println 等“隐式泛型”进行按需单态化）
-    codegen::compile_program(prog)
+    // 后端生成对象文件（带同一个 diag，用于 codegen 期错误）
+    codegen::compile_program(prog, Some(diag))
 }
 
 fn main() -> Result<()> {
@@ -63,18 +73,37 @@ fn main() -> Result<()> {
         }
     };
 
-    // 1) 载入工程（强依赖 project）—— 工程根目录 = 当前工作目录；入口 = <root>/main.paw
+    // 1) 载入工程
     let proj: Project = project::load_from_cwd()
         .context("failed to load project (Paw.toml or defaults)")?;
 
-    // 2) 解析 + 展开 import（以工程根目录为搜索根）
+    // 2) 解析 + 展开 import
     let entry = proj.entry.clone(); // e.g. <root>/main.paw
     let program = load_and_expand_program(&entry, &proj.root)?;
 
-    // 3) 编译成 object bytes
-    let obj_bytes = build_object(&program)?;
+    // 3) 准备诊断收集器（typecheck + codegen 共用）
+    let diag = Rc::new(RefCell::new(DiagSink::default()));
+    let file_id = entry.to_string_lossy().to_string();
 
-    // 4) 准备输出目录 layout：<root>/build/<profile>/
+    // 4) 编译（失败则渲染紧凑样式并退出）
+    let obj_bytes = match build_object(&program, &file_id, diag.clone()) {
+        Ok(obj) => obj,
+        Err(e) => {
+            // 渲染需要的源：至少把入口文件放进来
+            let mut srcs = RenderSources::default();
+            if let Ok(text) = fs::read_to_string(&entry) {
+                srcs.insert(file_id.clone(), text);
+            }
+            // TODO: 如需把 import 的各源文件也渲染出来，可在 passes 中暴露源表，在此一并 insert
+
+            render_compact(&diag.borrow(), &srcs);
+
+            eprintln!("compilation failed: {e:#}");
+            process::exit(1);
+        }
+    };
+
+    // 5) 输出目录
     let profile_dir = match profile {
         BuildProfile::Dev => "dev",
         BuildProfile::Release => "release",
@@ -83,17 +112,15 @@ fn main() -> Result<()> {
     fs::create_dir_all(&out_dir)
         .with_context(|| format!("create_dir_all({})", out_dir.display()))?;
 
-    // 5) 写对象文件与可执行文件
+    // 6) 写对象文件与可执行文件
     let target = PawTarget::from_env_or_default();
     let obj_ext = target.obj_ext();
     let exe_ext = target.exe_ext();
 
-    // 对象文件固定名 out.<ext>
     let obj_path = out_dir.join(format!("out.{}", obj_ext));
     fs::write(&obj_path, &obj_bytes)
         .with_context(|| format!("write object `{}` failed", obj_path.display()))?;
 
-    // 可执行名：包名（或 fallback 到 "app"）
     let exe_stem = if proj.name.trim().is_empty() {
         "app".to_string()
     } else {
@@ -106,7 +133,7 @@ fn main() -> Result<()> {
     };
     let exe_path = out_dir.join(exe_file);
 
-    // 6) 调用 zig 链接（自动附带 libruntime.a）
+    // 7) 链接
     let inp = LinkInput {
         obj_files: vec![obj_path.to_string_lossy().to_string()],
         out_exe: exe_path.to_string_lossy().to_string(),

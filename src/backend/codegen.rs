@@ -1,3 +1,4 @@
+// src/backend/codegen.rs
 use anyhow::{anyhow, Result, bail};
 use cranelift_codegen::{
     ir::{self, types, AbiParam, InstBuilder},
@@ -8,10 +9,18 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{default_libcall_names, DataDescription as DataContext, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use cranelift_native;
-use std::collections::{HashMap, HashSet};
 use cranelift_codegen::settings::{Configurable, Flags};
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::backend::mangle::{mangle_impl_method, mangle_name};
 use crate::frontend::ast::*;
+use crate::utils::fast::{FastMap, FastSet};
+
+// —— 诊断（Ariadne sink，可选） —— //
+use crate::diag::DiagSink;
+
 /* ---------- 可内联注入的全局常量 ---------- */
 #[derive(Clone, Debug)]
 pub enum GConst {
@@ -26,21 +35,33 @@ pub struct CLBackend {
     pub module: ObjectModule,
 
     // name -> (Ty, const)
-    pub globals_val: HashMap<String, (Ty, GConst)>,
-    str_pool: HashMap<String, DataId>,
+    pub globals_val: FastMap<String, (Ty, GConst)>,
+    str_pool: FastMap<String, DataId>,
 
     // 符号名 -> (参数类型列表, 返回类型)
-    fn_sig: HashMap<String, (Vec<Ty>, Ty)>,
+    fn_sig: FastMap<String, (Vec<Ty>, Ty)>,
 
     // —— 单态化管理 —— //
-    templates: HashMap<String, FunDecl>,              // 基名 -> 模板
-    mono_declared: HashSet<String>,                   // 已声明专门化符号
-    mono_defined: HashSet<String>,                    // 已定义专门化符号
-    mono_func_ids: HashMap<String, FuncId>,           // 专门化名 -> FuncId
-    mono_specs: HashMap<String, (String, Vec<Ty>)>,   // 专门化名 -> (基名, 类型实参)
+    templates: FastMap<String, FunDecl>,            // 基名 -> 模板
+    mono_declared: FastSet<String>,                 // 已声明专门化符号
+    mono_defined: FastSet<String>,                  // 已定义专门化符号
+    mono_func_ids: FastMap<String, FuncId>,         // 专门化名 -> FuncId
+    mono_specs: FastMap<String, (String, Vec<Ty>)>, // 专门化名 -> (基名, 类型实参)
 
     // —— 基名函数缓存（修复调用处重新声明的问题） —— //
-    base_func_ids: HashMap<String, FuncId>,           // 基名或具体符号 -> FuncId
+    base_func_ids: FastMap<String, FuncId>,         // 基名或具体符号 -> FuncId
+
+    // —— 可选：诊断收集器（通过 Rc<RefCell<..>> 避免生命周期复杂度） —— //
+    diag: Option<Rc<RefCell<DiagSink>>>,
+}
+
+// 简单的诊断工具
+impl CLBackend {
+    fn diag_err(&self, code: &'static str, msg: impl AsRef<str>) {
+        if let Some(d) = &self.diag {
+            d.borrow_mut().error(code, "<codegen>", None, msg.as_ref().to_string());
+        }
+    }
 }
 
 impl CLBackend {
@@ -58,16 +79,21 @@ impl CLBackend {
         let obj = ObjectBuilder::new(isa, "paw_obj".to_string(), default_libcall_names())?;
         Ok(Self {
             module: ObjectModule::new(obj),
-            globals_val: HashMap::new(),
-            str_pool: HashMap::new(),
-            fn_sig: HashMap::new(),
-            templates: HashMap::new(),
-            mono_declared: HashSet::new(),
-            mono_defined: HashSet::new(),
-            mono_func_ids: HashMap::new(),
-            mono_specs: HashMap::new(),
-            base_func_ids: HashMap::new(),
+            globals_val: FastMap::default(),
+            str_pool: FastMap::default(),
+            fn_sig: FastMap::default(),
+            templates: FastMap::default(),
+            mono_declared: FastSet::default(),
+            mono_defined: FastSet::default(),
+            mono_func_ids: FastMap::default(),
+            mono_specs: FastMap::default(),
+            base_func_ids: FastMap::default(),
+            diag: None,
         })
+    }
+
+    pub fn set_diag(&mut self, sink: Rc<RefCell<DiagSink>>) {
+        self.diag = Some(sink);
     }
 
     pub fn set_globals_from_program(&mut self, prog: &Program) {
@@ -91,12 +117,11 @@ impl CLBackend {
     }
 
     /// 声明**非泛型/extern**函数；保存**泛型模板**
-    pub fn declare_fns<'a, I>(&mut self, funs: I) -> anyhow::Result<HashMap<String, FuncId>>
+    pub fn declare_fns<'a, I>(&mut self, funs: I) -> anyhow::Result<FastMap<String, FuncId>>
     where
         I: IntoIterator<Item = &'a FunDecl>,
     {
-        use cranelift_codegen::settings::Configurable;
-        let mut ids = HashMap::new();
+        let mut ids: FastMap<String, FuncId> = FastMap::default();
 
         for f in funs {
             if !f.type_params.is_empty() {
@@ -108,7 +133,14 @@ impl CLBackend {
             // 非泛型/extern 声明（以下与原逻辑相同）
             let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
             for (_, ty) in &f.params {
-                let t = cl_ty(ty).ok_or_else(|| anyhow!("param type `{:?}` cannot be used in ABI", ty))?;
+                let t = match cl_ty(ty) {
+                    Some(t) => t,
+                    None => {
+                        let msg = format!("param type `{:?}` cannot be used in ABI", ty);
+                        self.diag_err("CG0002", &msg);
+                        return Err(anyhow!(msg));
+                    }
+                };
                 sig.params.push(AbiParam::new(t));
             }
             if let Some(ret_t) = cl_ty(&f.ret) {
@@ -137,13 +169,20 @@ impl CLBackend {
                     let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
 
                     // 已存在（可能是降解后的自由函数或之前声明过），跳过
-                    if self.base_func_ids.contains_key(&sym) || self.base_func_ids.contains_key(&sym) {
+                    if self.base_func_ids.contains_key(&sym) {
                         continue;
                     }
 
                     let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
                     for (_, ty) in &m.params {
-                        let t = cl_ty(ty).ok_or_else(|| anyhow!("impl method param type not ABI-legal: {:?}", ty))?;
+                        let t = match cl_ty(ty) {
+                            Some(t) => t,
+                            None => {
+                                let msg = format!("impl method param type not ABI-legal: {:?}", ty);
+                                self.diag_err("CG0002", &msg);
+                                return Err(anyhow!(msg));
+                            }
+                        };
                         sig.params.push(AbiParam::new(t));
                     }
                     if let Some(rt) = cl_ty(&m.ret) {
@@ -171,13 +210,21 @@ impl CLBackend {
 
         for (base, targs) in calls {
             if targs.is_empty() { continue; }
-            let templ = self.templates.get(&base)
-                .ok_or_else(|| anyhow!("call `{}`<...> but no generic template found", base))?;
+            let templ = match self.templates.get(&base) {
+                Some(t) => t,
+                None => {
+                    let msg = format!("call `{}`<...> but no generic template found", base);
+                    self.diag_err("CG0004", &msg);
+                    return Err(anyhow!(msg));
+                }
+            };
             if templ.type_params.len() != targs.len() {
-                return Err(anyhow!(
+                let msg = format!(
                     "function `{}` expects {} type args, got {}",
                     base, templ.type_params.len(), targs.len()
-                ));
+                );
+                self.diag_err("CG0004", &msg);
+                return Err(anyhow!(msg));
             }
 
             let mname = mangle_name(&base, &targs);
@@ -192,7 +239,14 @@ impl CLBackend {
 
             let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
             for t in &param_tys {
-                let ct = cl_ty(t).ok_or_else(|| anyhow!("monomorph param type not ABI-legal: {:?}", t))?;
+                let ct = match cl_ty(t) {
+                    Some(t) => t,
+                    None => {
+                        let msg = format!("monomorph param type not ABI-legal: {:?}", t);
+                        self.diag_err("CG0002", &msg);
+                        return Err(anyhow!(msg));
+                    }
+                };
                 sig.params.push(AbiParam::new(ct));
             }
             if let Some(rt) = cl_ty(&ret_ty) {
@@ -215,8 +269,14 @@ impl CLBackend {
             if !self.mono_defined.contains(&mname) {
                 let (b, ta) = self.mono_specs.get(&mname)
                     .cloned().unwrap_or((base.to_string(), targs.to_vec()));
-                let tpl = self.templates.get(&b)
-                    .ok_or_else(|| anyhow!("ensure_monomorph: template `{}` not found", b))?;
+                let tpl = match self.templates.get(&b) {
+                    Some(t) => t,
+                    None => {
+                        let msg = format!("ensure_monomorph: template `{}` not found", b);
+                        self.diag_err("CG0004", &msg);
+                        return Err(anyhow!(msg));
+                    }
+                };
                 let subst = build_subst_map(&tpl.type_params, &ta);
                 let mf = specialize_fun(tpl, &subst, &mname)?;
                 self.define_fn_core(fid, &mf)?;
@@ -226,13 +286,21 @@ impl CLBackend {
         }
 
         // 首次：声明 + 立刻定义
-        let tpl = self.templates.get(base)
-            .ok_or_else(|| anyhow!("call `{}`<...> but no generic template found", base))?;
+        let tpl = match self.templates.get(base) {
+            Some(t) => t,
+            None => {
+                let msg = format!("call `{}`<...> but no generic template found", base);
+                self.diag_err("CG0004", &msg);
+                return Err(anyhow!(msg));
+            }
+        };
         if tpl.type_params.len() != targs.len() {
-            return Err(anyhow!(
+            let msg = format!(
                 "function `{}` expects {} type args, got {}",
                 base, tpl.type_params.len(), targs.len()
-            ));
+            );
+            self.diag_err("CG0004", &msg);
+            return Err(anyhow!(msg));
         }
 
         let subst = build_subst_map(&tpl.type_params, targs);
@@ -242,7 +310,14 @@ impl CLBackend {
 
         let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
         for t in &param_tys {
-            let ct = cl_ty(t).ok_or_else(|| anyhow!("monomorph param type not ABI-legal: {:?}", t))?;
+            let ct = match cl_ty(t) {
+                Some(t) => t,
+                None => {
+                    let msg = format!("monomorph param type not ABI-legal: {:?}", t);
+                    self.diag_err("CG0002", &msg);
+                    return Err(anyhow!(msg));
+                }
+            };
             sig.params.push(AbiParam::new(ct));
         }
         if let Some(rt) = cl_ty(&ret_ty) {
@@ -263,17 +338,24 @@ impl CLBackend {
     }
 
     /// 定义**非泛型**函数体
-    pub fn define_fn(&mut self, f: &FunDecl, ids: &HashMap<String, FuncId>) -> Result<()> {
+    pub fn define_fn(&mut self, f: &FunDecl, ids: &FastMap<String, FuncId>) -> Result<()> {
         if f.is_extern { return Ok(()); }
         if !f.type_params.is_empty() { return Ok(()); }
-        let fid = *ids.get(&f.name).ok_or_else(|| anyhow!("missing FuncId for `{}`", f.name))?;
+        let fid = match ids.get(&f.name) {
+            Some(id) => *id,
+            None => {
+                let msg = format!("missing FuncId for `{}`", f.name);
+                self.diag_err("CG0001", &msg);
+                return Err(anyhow!(msg));
+            }
+        };
         self.define_fn_core(fid, f)
     }
 
     /// 定义所有 impl 方法体（若 passes 已降解为自由函数则跳过）
     pub fn define_impls_from_program(&mut self, prog: &Program) -> Result<()> {
         // 收集 Program 里已有的自由函数名
-        let mut fun_names = HashSet::<String>::new();
+        let mut fun_names = FastSet::<String>::default();
         for it in &prog.items {
             if let Item::Fun(f) = it { fun_names.insert(f.name.clone()); }
         }
@@ -288,8 +370,14 @@ impl CLBackend {
                         continue;
                     }
 
-                    let fid = *self.base_func_ids.get(&sym)
-                        .ok_or_else(|| anyhow!("define_impls: missing FuncId for `{}`", sym))?;
+                    let fid = match self.base_func_ids.get(&sym) {
+                        Some(fid) => *fid,
+                        None => {
+                            let msg = format!("define_impls: missing FuncId for `{}`", sym);
+                            self.diag_err("CG0003", &msg);
+                            return Err(anyhow!(msg));
+                        }
+                    };
 
                     let fdecl = FunDecl {
                         name: sym.clone(),
@@ -308,19 +396,33 @@ impl CLBackend {
     }
 
     /// 定义所有已声明的**专门化**函数体
-    pub fn define_mono_from_program(&mut self, _prog: &Program, _base_ids: &HashMap<String, FuncId>) -> Result<()> {
+    pub fn define_mono_from_program(&mut self, _prog: &Program, _base_ids: &FastMap<String, FuncId>) -> Result<()> {
         let specs: Vec<(String, (String, Vec<Ty>))> =
             self.mono_specs.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         for (mname, (base, targs)) in specs {
             if !self.mono_defined.insert(mname.clone()) { continue; }
-            let templ = self.templates.get(&base)
-                .ok_or_else(|| anyhow!("monomorph define: template `{}` not found", base))?;
+            let templ = match self.templates.get(&base) {
+                Some(t) => t,
+                None => {
+                    let msg = format!("monomorph define: template `{}` not found", base);
+                    self.diag_err("CG0004", &msg);
+                    return Err(anyhow!(msg));
+                }
+            };
             if templ.type_params.len() != targs.len() {
-                return Err(anyhow!("template `{}` type params mismatch for `{}`", base, mname));
+                let msg = format!("template `{}` type params mismatch for `{}`", base, mname);
+                self.diag_err("CG0004", &msg);
+                return Err(anyhow!(msg));
             }
-            let fid = *self.mono_func_ids.get(&mname)
-                .ok_or_else(|| anyhow!("monomorph define: missing FuncId for `{}`", mname))?;
+            let fid = match self.mono_func_ids.get(&mname) {
+                Some(fid) => *fid,
+                None => {
+                    let msg = format!("monomorph define: missing FuncId for `{}`", mname);
+                    self.diag_err("CG0001", &msg);
+                    return Err(anyhow!(msg));
+                }
+            };
 
             let subst = build_subst_map(&templ.type_params, &targs);
             let mono_fun = specialize_fun(templ, &subst, &mname)?;
@@ -333,7 +435,15 @@ impl CLBackend {
     fn define_fn_core(&mut self, fid: FuncId, f: &FunDecl) -> Result<()> {
         let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
         for (_, ty) in &f.params {
-            sig.params.push(AbiParam::new(cl_ty(ty).ok_or_else(|| anyhow!("invalid param ty {:?}", ty))?));
+            let t = match cl_ty(ty) {
+                Some(t) => t,
+                None => {
+                    let msg = format!("invalid param ty {:?}", ty);
+                    self.diag_err("CG0002", &msg);
+                    return Err(anyhow!(msg));
+                }
+            };
+            sig.params.push(AbiParam::new(t));
         }
         if let Some(ret_t) = cl_ty(&f.ret) {
             sig.returns.push(AbiParam::new(ret_t));
@@ -349,8 +459,8 @@ impl CLBackend {
         b.switch_to_block(entry);
         b.seal_block(entry);
 
-        let mut scopes: Vec<HashMap<String, Variable>> = vec![HashMap::new()];
-        let mut scopes_ty: Vec<HashMap<String, Ty>>     = vec![HashMap::new()];
+        let mut scopes: Vec<FastMap<String, Variable>> = vec![FastMap::default()];
+        let mut scopes_ty: Vec<FastMap<String, Ty>>     = vec![FastMap::default()];
 
         for (i, (name, ty)) in f.params.iter().enumerate() {
             let v = b.declare_var(cl_ty(ty).unwrap());
@@ -446,15 +556,15 @@ fn cl_ty(t: &Ty) -> Option<ir::Type> {
  * --------------------------- */
 struct ExprGen<'a> {
     be: &'a mut CLBackend,
-    scopes: Vec<HashMap<String, Variable>>,
-    scopes_ty: Vec<HashMap<String, Ty>>,
+    scopes: Vec<FastMap<String, Variable>>,
+    scopes_ty: Vec<FastMap<String, Ty>>,
     // (continue_target, break_target)
     loop_stack: Vec<(ir::Block, ir::Block)>,
     fun_ret: Ty,
 }
 
 impl<'a> ExprGen<'a> {
-    fn push(&mut self){ self.scopes.push(HashMap::new()); self.scopes_ty.push(HashMap::new()); }
+    fn push(&mut self){ self.scopes.push(FastMap::default()); self.scopes_ty.push(FastMap::default()); }
     fn pop(&mut self){ self.scopes.pop(); self.scopes_ty.pop(); }
 
     fn declare_named(&mut self, b:&mut FunctionBuilder, name:&str, ty:&Ty) -> Variable {
@@ -710,18 +820,17 @@ impl<'a> ExprGen<'a> {
             Expr::Var(n)    => self.lookup_ty(n)
                 .ok_or_else(|| anyhow!("cannot infer type of `{}` here; add explicit `<...>`", n))?,
 
-            // NEW: allow inference through simple function calls like `println(sum_to(5))`
+            // 允许通过简单函数调用推断：println(sum_to(5))
             Expr::Call { callee, generics, args: _ } => {
                 match callee {
                     Callee::Name(name) => {
                         if generics.is_empty() {
-                            // Non-generic function: look up its signature
+                            // 非泛型函数：查签名
                             self.be.fn_sig.get(name)
                                 .map(|(_, ret)| ret.clone())
                                 .ok_or_else(|| anyhow!("cannot infer type from call to `{}`; add explicit `println<...>(...)`", name))?
                         } else {
-                            // Generic with explicit type args: substitute into template if available,
-                            // otherwise try a previously-declared specialization.
+                            // 泛型且显式类型实参：优先模板替换，否则尝试已声明的实例
                             if let Some(tpl) = self.be.templates.get(name) {
                                 if tpl.type_params.len() != generics.len() {
                                     bail!("cannot infer `{}`: type arg count mismatch", name);
@@ -736,7 +845,7 @@ impl<'a> ExprGen<'a> {
                             }
                         }
                     }
-                    // Qualified calls (Trait::method) require explicit type args elsewhere.
+                    // 合格名调用（Trait::method）在别处强制显式类型参数
                     _ => bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println"),
                 }
             }
@@ -892,8 +1001,14 @@ impl<'a> ExprGen<'a> {
                         // C) 隐式泛型：base 不在 base_func_ids，但在 templates → 现场推断 + ensure_monomorph
                         if !generics.is_empty() {
                             let mname = mangle_name(name, generics);
-                            let fid  = *self.be.mono_func_ids.get(&mname)
-                                .ok_or_else(|| anyhow!("unknown monomorph function `{}`", mname))?;
+                            let fid  = match self.be.mono_func_ids.get(&mname) {
+                                Some(fid) => *fid,
+                                None => {
+                                    let msg = format!("unknown monomorph function `{}`", mname);
+                                    self.be.diag_err("CG0001", &msg);
+                                    return Err(anyhow!(msg));
+                                }
+                            };
                             (mname, fid)
                         } else if let Some(&fid) = self.be.base_func_ids.get(name) {
                             (name.clone(), fid)
@@ -903,36 +1018,51 @@ impl<'a> ExprGen<'a> {
                             let (mname, fid) = self.be.ensure_monomorph(name, &targs)?;
                             (mname, fid)
                         } else {
-                            return Err(anyhow!("unknown function in codegen `{}`", name));
+                            let msg = format!("unknown function in codegen `{}`", name);
+                            self.be.diag_err("CG0001", &msg);
+                            return Err(anyhow!(msg));
                         }
                     }
                     Callee::Qualified { trait_name, method } => {
                         if generics.is_empty() {
-                            return Err(anyhow!("qualified call `{}::{}` needs explicit type args, e.g. `{}::{}<Int>(...)`",
-                                               trait_name, method, trait_name, method));
+                            let msg = format!(
+                                "qualified call `{}::{}` needs explicit type args, e.g. `{}::{}<Int>(...)`",
+                                trait_name, method, trait_name, method
+                            );
+                            self.be.diag_err("CG0001", &msg);
+                            return Err(anyhow!(msg));
                         }
                         let sym = mangle_impl_method(trait_name, generics, method);
                         let fid = match self.be.base_func_ids.get(&sym) {
                             Some(fid) => *fid,
                             None => {
-                                return Err(anyhow!(
+                                let msg = format!(
                                     "unknown impl method symbol `{}`; 确认你在 codegen 前调用了 \
                                      `declare_impls_from_program(&program)`，或已由 passes 降解为自由函数并调用了 \
                                      `declare_fns(&all_fun_decls)`",
                                     sym
-                                ));
+                                );
+                                self.be.diag_err("CG0003", &msg);
+                                return Err(anyhow!(msg));
                             }
                         };
                         (sym, fid)
                     }
                 };
 
-                let (param_tys, ret_ty) = self.be.fn_sig.get(&sym)
-                    .ok_or_else(|| anyhow!("missing signature for `{sym}`"))?
-                    .clone();
+                let (param_tys, ret_ty) = match self.be.fn_sig.get(&sym) {
+                    Some(sig) => sig.clone(),
+                    None => {
+                        let msg = format!("missing signature for `{sym}`");
+                        self.be.diag_err("CG0001", &msg);
+                        return Err(anyhow!(msg));
+                    }
+                };
 
                 if param_tys.len() != args.len() {
-                    return Err(anyhow!("function `{}` expects {} args, got {}", sym, param_tys.len(), args.len()));
+                    let msg = format!("function `{}` expects {} args, got {}", sym, param_tys.len(), args.len());
+                    self.be.diag_err("CG0001", &msg);
+                    return Err(anyhow!(msg));
                 }
 
                 let mut av = Vec::with_capacity(args.len());
@@ -959,19 +1089,19 @@ impl<'a> ExprGen<'a> {
 /* ----------------------------------
  * ----- 单态化：替换工具 -----
  * ---------------------------------- */
-fn build_subst_map(params: &[String], args: &[Ty]) -> HashMap<String, Ty> {
-    let mut m = HashMap::new();
+fn build_subst_map(params: &[String], args: &[Ty]) -> FastMap<String, Ty> {
+    let mut m = FastMap::default();
     for (p, a) in params.iter().zip(args.iter()) { m.insert(p.clone(), a.clone()); }
     m
 }
-fn subst_ty(t: &Ty, s: &HashMap<String, Ty>) -> Ty {
+fn subst_ty(t: &Ty, s: &FastMap<String, Ty>) -> Ty {
     match t {
         Ty::Var(n) => s.get(n).cloned().unwrap_or_else(|| Ty::Var(n.clone())),
         Ty::App { name, args } => Ty::App { name: name.clone(), args: args.iter().map(|x| subst_ty(x, s)).collect() },
         _ => t.clone(),
     }
 }
-fn subst_expr(e: &Expr, s: &HashMap<String, Ty>) -> Expr {
+fn subst_expr(e: &Expr, s: &FastMap<String, Ty>) -> Expr {
     match e {
         Expr::Call { callee, generics, args } => Expr::Call {
             callee: callee.clone(),
@@ -992,7 +1122,7 @@ fn subst_expr(e: &Expr, s: &HashMap<String, Ty>) -> Expr {
         _ => e.clone(),
     }
 }
-fn subst_stmt(st: &Stmt, s: &HashMap<String, Ty>) -> Stmt {
+fn subst_stmt(st: &Stmt, s: &FastMap<String, Ty>) -> Stmt {
     match st {
         Stmt::Let { name, ty, init, is_const } => Stmt::Let { name: name.clone(), ty: subst_ty(ty, s), init: subst_expr(init, s), is_const: *is_const },
         Stmt::Assign { name, expr } => Stmt::Assign { name: name.clone(), expr: subst_expr(expr, s) },
@@ -1016,10 +1146,10 @@ fn subst_stmt(st: &Stmt, s: &HashMap<String, Ty>) -> Stmt {
         Stmt::Break | Stmt::Continue => st.clone(),
     }
 }
-fn subst_block(b: &Block, s: &HashMap<String, Ty>) -> Block {
+fn subst_block(b: &Block, s: &FastMap<String, Ty>) -> Block {
     Block { stmts: b.stmts.iter().map(|st| subst_stmt(st, s)).collect(), tail: b.tail.as_ref().map(|e| Box::new(subst_expr(e, s))) }
 }
-fn specialize_fun(tpl: &FunDecl, subst: &HashMap<String, Ty>, mono_name: &str) -> Result<FunDecl> {
+fn specialize_fun(tpl: &FunDecl, subst: &FastMap<String, Ty>, mono_name: &str) -> Result<FunDecl> {
     let mut params = Vec::with_capacity(tpl.params.len());
     for (n, t) in &tpl.params {
         let nt = subst_ty(t, subst);
@@ -1104,10 +1234,11 @@ fn collect_calls_in_expr(e: &Expr, out: &mut Vec<(String, Vec<Ty>)>) {
 }
 
 /* ---------------------------
- * 可选：统一的编译入口（确保顺序）
+ * 统一的编译入口（确保顺序）
  * --------------------------- */
-pub fn compile_program(prog: &Program) -> Result<Vec<u8>> {
+pub fn compile_program(prog: &Program, diag: Option<Rc<RefCell<DiagSink>>>) -> Result<Vec<u8>> {
     let mut be = CLBackend::new()?;
+    if let Some(d) = diag { be.set_diag(d); }
     be.set_globals_from_program(prog);
 
     // 1) 先把“自由函数”（含 extern）全部声明
