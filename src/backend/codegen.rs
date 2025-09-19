@@ -821,9 +821,33 @@ impl<'a> ExprGen<'a> {
         Ok(vec![at])
     }
 
+    /// 数值提升：与 typecheck 中的规则一致（Byte/Char 先当作 Int）
+    #[inline]
+    fn num_promote_ty(&self, l: &Ty, r: &Ty) -> anyhow::Result<Ty> {
+        let to_intish = |t: &Ty| match t {
+            Ty::Char | Ty::Byte => Ty::Int,
+            _ => t.clone(),
+        };
+        let l = to_intish(l);
+        let r = to_intish(r);
+        use Ty::*;
+        if l == Double || r == Double { return Ok(Double); }
+        if l == Float  || r == Float  { return Ok(Float); }
+        if l == Long   || r == Long   { return Ok(Long); }
+        if l == Int    && r == Int    { return Ok(Int); }
+        Err(anyhow!("numeric types expected, got `{}` and `{}`", l, r))
+    }
+
+    #[inline]
+    fn static_ty_of_block(&mut self, b: &Block) -> anyhow::Result<Ty> {
+        if let Some(t) = &b.tail { self.static_ty_of_expr(t) } else { Ok(Ty::Int) }
+    }
+
     /// 从表达式快速给出静态类型；用于推断 println<T>(...)
     fn static_ty_of_expr(&mut self, e: &Expr) -> Result<Ty> {
+        use BinOp::*; use UnOp::*;
         Ok(match e {
+            // —— 字面量 & 变量 —— //
             Expr::Int(_)    => Ty::Int,
             Expr::Long(_)   => Ty::Long,
             Expr::Bool(_)   => Ty::Bool,
@@ -834,7 +858,60 @@ impl<'a> ExprGen<'a> {
             Expr::Var(n)    => self.lookup_ty(n)
                 .ok_or_else(|| anyhow!("cannot infer type of `{}` here; add explicit `<...>`", n))?,
 
-            // 允许通过简单函数调用推断：println(sum_to(5))
+            // —— 一元运算 —— //
+            Expr::Unary { op, rhs } => {
+                let t = self.static_ty_of_expr(rhs)?;
+                match op {
+                    Neg => match t { Ty::Byte | Ty::Char => Ty::Int, _ => t },
+                    Not => Ty::Bool,
+                }
+            }
+
+            // —— 二元运算 —— //
+            Expr::Binary { op, lhs, rhs } => {
+                let lt = self.static_ty_of_expr(lhs)?;
+                let rt = self.static_ty_of_expr(rhs)?;
+                match op {
+                    Add | Sub | Mul | Div => self.num_promote_ty(&lt, &rt)?,
+                    Lt | Le | Gt | Ge     => Ty::Bool,
+                    Eq | Ne               => Ty::Bool,
+                    And | Or              => Ty::Bool,
+                }
+            }
+
+            // —— 块 / if / match —— //
+            Expr::Block(b) => self.static_ty_of_block(b)?,
+
+            Expr::If { cond:_, then_b, else_b } => {
+                let tt = self.static_ty_of_block(then_b)?;
+                let et = self.static_ty_of_block(else_b)?;
+                if tt == et { tt } else {
+                    bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println");
+                }
+            }
+
+            Expr::Match { scrut:_, arms, default } => {
+                let mut out: Option<Ty> = None;
+                for (_, blk) in arms {
+                    let t = self.static_ty_of_block(blk)?;
+                    if let Some(prev) = &out {
+                        if *prev != t {
+                            bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println");
+                        }
+                    } else { out = Some(t); }
+                }
+                if let Some(d) = default {
+                    let t = self.static_ty_of_block(d)?;
+                    if let Some(prev) = &out {
+                        if *prev != t {
+                            bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println");
+                        }
+                    } else { out = Some(t); }
+                }
+                out.unwrap_or(Ty::Int)
+            }
+
+            // —— 调用（原逻辑保留） —— //
             Expr::Call { callee, generics, args: _ } => {
                 match callee {
                     Callee::Name(name) => {
@@ -859,12 +936,10 @@ impl<'a> ExprGen<'a> {
                             }
                         }
                     }
-                    // 合格名调用（Trait::method）在别处强制显式类型参数
+                    // 合格名调用需要显式类型参数
                     _ => bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println"),
                 }
             }
-
-            _ => bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println"),
         })
     }
 
