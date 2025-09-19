@@ -7,7 +7,7 @@ pub struct TyId(u32);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Type {
-    Int, Long, Bool, String, Double, Float, Char, Void,
+    Int, Long, Byte, Bool, String, Double, Float, Char, Void,
     Var(Sym),
     App { name: Sym, args: Box<[TyId]> },
 }
@@ -38,6 +38,7 @@ impl TyInterner {
     // 原子类型（复用同一个实例）
     pub fn int(&mut self)    -> TyId { self.intern_owned(Type::Int) }
     pub fn long(&mut self)   -> TyId { self.intern_owned(Type::Long) }
+    pub fn byte(&mut self) -> TyId { self.intern_owned(Type::Byte) }
     pub fn bool(&mut self)   -> TyId { self.intern_owned(Type::Bool) }
     pub fn string(&mut self) -> TyId { self.intern_owned(Type::String) }
     pub fn double(&mut self) -> TyId { self.intern_owned(Type::Double) }
@@ -63,6 +64,7 @@ impl Type {
                 match self.me {
                     Type::Int => write!(f, "Int"),
                     Type::Long => write!(f, "Long"),
+                    Type::Byte => write!(f, "Byte"),
                     Type::Bool => write!(f, "Bool"),
                     Type::String => write!(f, "String"),
                     Type::Double => write!(f, "Double"),

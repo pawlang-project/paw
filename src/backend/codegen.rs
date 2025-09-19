@@ -102,14 +102,15 @@ impl CLBackend {
             if let Item::Global { name, ty, init, is_const } = it {
                 if !*is_const { continue; }
                 match (ty, init) {
-                    (&Ty::Int,    &Expr::Int(n))    => { self.globals_val.insert(name.clone(), (Ty::Int,    GConst::I32(n))); }
-                    (&Ty::Long,   &Expr::Long(n))   => { self.globals_val.insert(name.clone(), (Ty::Long,   GConst::I64(n))); }
-                    (&Ty::Long,   &Expr::Int(n))    => { self.globals_val.insert(name.clone(), (Ty::Long,   GConst::I64(n as i64))); }
-                    (&Ty::Bool,   &Expr::Bool(b))   => { self.globals_val.insert(name.clone(), (Ty::Bool,   GConst::I8(if b {1} else {0}))); }
-                    (&Ty::Char,   &Expr::Char(u))   => { self.globals_val.insert(name.clone(), (Ty::Char,   GConst::I32(u as i32))); }
-                    (&Ty::Float,  &Expr::Float(x))  => { self.globals_val.insert(name.clone(), (Ty::Float,  GConst::F32(x))); }
-                    (&Ty::Double, &Expr::Double(x)) => { self.globals_val.insert(name.clone(), (Ty::Double, GConst::F64(x))); }
-                    (&Ty::String, &Expr::Str(_))    => {}
+                    (&Ty::Byte,  &Expr::Int(n))    => { self.globals_val.insert(name.clone(), (Ty::Byte,  GConst::I8(n as u8))); }
+                    (&Ty::Int,   &Expr::Int(n))    => { self.globals_val.insert(name.clone(), (Ty::Int,   GConst::I32(n))); }
+                    (&Ty::Long,  &Expr::Long(n))   => { self.globals_val.insert(name.clone(), (Ty::Long,  GConst::I64(n))); }
+                    (&Ty::Long,  &Expr::Int(n))    => { self.globals_val.insert(name.clone(), (Ty::Long,  GConst::I64(n as i64))); }
+                    (&Ty::Bool,  &Expr::Bool(b))   => { self.globals_val.insert(name.clone(), (Ty::Bool,  GConst::I8(if b {1} else {0}))); }
+                    (&Ty::Char,  &Expr::Char(u))   => { self.globals_val.insert(name.clone(), (Ty::Char,  GConst::I32(u as i32))); }
+                    (&Ty::Float, &Expr::Float(x))  => { self.globals_val.insert(name.clone(), (Ty::Float, GConst::F32(x))); }
+                    (&Ty::Double,&Expr::Double(x)) => { self.globals_val.insert(name.clone(), (Ty::Double,GConst::F64(x))); }
+                    (&Ty::String,&Expr::Str(_))    => {}
                     _ => {}
                 }
             }
@@ -477,12 +478,13 @@ impl CLBackend {
             for (gname, (gty, gval)) in &self.globals_val {
                 let v = b.declare_var(cl_ty(gty).unwrap());
                 let c = match (gty, gval) {
-                    (Ty::Int,    GConst::I32(n)) => b.ins().iconst(types::I32, *n as i64),
-                    (Ty::Long,   GConst::I64(n)) => b.ins().iconst(types::I64, *n),
-                    (Ty::Bool,   GConst::I8(n))  => b.ins().iconst(types::I8,  *n as i64),
-                    (Ty::Char,   GConst::I32(n)) => b.ins().iconst(types::I32, *n as i64),
-                    (Ty::Float,  GConst::F32(x)) => b.ins().f32const(*x),
-                    (Ty::Double, GConst::F64(x)) => b.ins().f64const(*x),
+                    (Ty::Byte,  GConst::I8(n))  => b.ins().iconst(types::I8,  *n as i64),
+                    (Ty::Int,   GConst::I32(n)) => b.ins().iconst(types::I32, *n as i64),
+                    (Ty::Long,  GConst::I64(n)) => b.ins().iconst(types::I64, *n),
+                    (Ty::Bool,  GConst::I8(n))  => b.ins().iconst(types::I8,  *n as i64),
+                    (Ty::Char,  GConst::I32(n)) => b.ins().iconst(types::I32, *n as i64),
+                    (Ty::Float, GConst::F32(x)) => b.ins().f32const(*x),
+                    (Ty::Double,GConst::F64(x)) => b.ins().f64const(*x),
                     (Ty::String, _) | (Ty::Void, _) => unreachable!(),
                     _ => unreachable!(),
                 };
@@ -539,6 +541,7 @@ impl CLBackend {
 /* Paw Ty → CLIF Type（Void -> None） */
 fn cl_ty(t: &Ty) -> Option<ir::Type> {
     match t {
+        Ty::Byte   => Some(types::I8),
         Ty::Int    => Some(types::I32),
         Ty::Long   => Some(types::I64),
         Ty::Bool   => Some(types::I8),
@@ -595,7 +598,7 @@ impl<'a> ExprGen<'a> {
     }
 
     #[inline]
-    fn val_ty(&self, b:&FunctionBuilder, v:ir::Value)->ir::Type { b.func.dfg.value_type(v) }
+    fn val_ty(&self, b:&mut FunctionBuilder, v:ir::Value)->ir::Type { b.func.dfg.value_type(v) }
 
     fn coerce_to_ty(&mut self, b:&mut FunctionBuilder, v: ir::Value, dst:&Ty)->ir::Value {
         let want = cl_ty(dst).expect("no void here");
@@ -607,7 +610,8 @@ impl<'a> ExprGen<'a> {
         if src == dst { return v; }
 
         if src.is_int() && dst.is_int() {
-            return if src.bits() < dst.bits() { b.ins().sextend(dst, v) } else { b.ins().ireduce(dst, v) }
+            // 对整数统一使用**零扩展**来放大位宽；I8 代表 Byte/Bool，均应零扩展
+            return if src.bits() < dst.bits() { b.ins().uextend(dst, v) } else { b.ins().ireduce(dst, v) }
         }
         if src.is_float() && dst.is_float() {
             return if src.bits() < dst.bits() { b.ins().fpromote(dst, v) } else { b.ins().fdemote(dst, v) }
@@ -629,20 +633,30 @@ impl<'a> ExprGen<'a> {
     )->(ir::Value, ir::Value, ir::Type){
         let lt = self.val_ty(b, l);
         let rt = self.val_ty(b, r);
-        if lt == rt { return (l, r, lt); }
+        if lt == rt {
+            // 若都为 i8（Byte/Bool），为了与类型系统的“整型提升到 Int”一致，提升到 i32 再算
+            if lt.is_int() && lt.bits() == 8 {
+                let nl = b.ins().uextend(types::I32, l);
+                let nr = b.ins().uextend(types::I32, r);
+                return (nl, nr, types::I32);
+            }
+            return (l, r, lt);
+        }
 
         if lt.is_int() && rt.is_int() {
-            let target = if lt.bits() >= rt.bits() { lt } else { rt };
-            if lt.bits() < target.bits() { l = b.ins().sextend(target, l); }
-            if rt.bits() < target.bits() { r = b.ins().sextend(target, r); }
+            // 若任一为 i8，遵循整型提升：最终至少到 i32
+            let max_bits = lt.bits().max(rt.bits());
+            let target = if max_bits <= 8 { types::I32 } else if lt.bits() >= rt.bits() { lt } else { rt };
+            if lt.bits() < target.bits() { l = b.ins().uextend(target, l); }
+            if rt.bits() < target.bits() { r = b.ins().uextend(target, r); }
             return (l, r, target);
         }
 
         if lt.is_float() && rt.is_float() {
             if lt == types::F64 || rt == types::F64 {
-                if lt == types::F32 { l = b.ins().fpromote(types::F64, l); }
-                if rt == types::F32 { r = b.ins().fpromote(types::F64, r); }
-                return (l, r, types::F64);
+                let nl = if lt == types::F32 { b.ins().fpromote(types::F64, l) } else { l };
+                let nr = if rt == types::F32 { b.ins().fpromote(types::F64, r) } else { r };
+                return (nl, nr, types::F64);
             } else { return (l, r, lt); }
         }
 
@@ -765,7 +779,7 @@ impl<'a> ExprGen<'a> {
                         (ret_ty, Some(e)) => { let raw = self.emit_expr(b, e)?; let v = self.coerce_to_ty(b, raw, &ret_ty); b.ins().return_(&[v]); }
                         (ret_ty, None) => {
                             match ret_ty {
-                                Ty::Bool => { let z = b.ins().iconst(types::I8, 0);  b.ins().return_(&[z]); }
+                                Ty::Bool | Ty::Byte => { let z = b.ins().iconst(types::I8, 0);  b.ins().return_(&[z]); }
                                 Ty::Int | Ty::Char => { let z = b.ins().iconst(types::I32, 0); b.ins().return_(&[z]); }
                                 Ty::Long | Ty::String => { let z = b.ins().iconst(types::I64, 0); b.ins().return_(&[z]); }
                                 Ty::Float => { let z = b.ins().f32const(0.0); b.ins().return_(&[z]); }

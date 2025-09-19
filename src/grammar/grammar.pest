@@ -39,7 +39,7 @@ ty_var = @{ UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
 ty_app   = { (qident | ident) ~ "<" ~ ty ~ ("," ~ ty)* ~ ">" }
 
 // 内建原子类型
-ty_prim = { KW_Int | KW_Long | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void }
+ty_prim = { KW_Int | KW_Long | KW_Byte | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void }
 
 // 顶层类型选择：应用类型 / 内建 / 类型变量 / 零参类型名
 ty = { ty_app | ty_prim | ty_var | ident }
@@ -183,7 +183,7 @@ keyword = {
       KW_FN | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST
     | KW_IF | KW_ELSE | KW_WHILE | KW_FOR | KW_BREAK | KW_CONTINUE | KW_MATCH
     | KW_RETURN | KW_TRAIT | KW_IMPL | KW_WHERE
-    | KW_Int | KW_Long | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void
+    | KW_Int | KW_Long | KW_Byte | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void
     | KW_true | KW_false
   ) ~ !IDENT_NEXT
 }
@@ -209,6 +209,7 @@ KW_WHERE    = @{ "where"   ~ !IDENT_NEXT }
 
 KW_Int    = @{ "Int"    ~ !IDENT_NEXT }
 KW_Long   = @{ "Long"   ~ !IDENT_NEXT }    // i64
+KW_Byte   = @{ "Byte"   ~ !IDENT_NEXT }
 KW_Bool   = @{ "Bool"   ~ !IDENT_NEXT }
 KW_String = @{ "String" ~ !IDENT_NEXT }
 KW_Double = @{ "Double" ~ !IDENT_NEXT }    // f64

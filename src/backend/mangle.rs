@@ -6,6 +6,7 @@ pub fn mangle_ty(t: &Ty) -> String {
     match t {
         Ty::Int    => "Int".into(),
         Ty::Long   => "Long".into(),
+        Ty::Byte => "Byte".into(),
         Ty::Bool   => "Bool".into(),
         Ty::String => "String".into(),
         Ty::Double => "Double".into(),
