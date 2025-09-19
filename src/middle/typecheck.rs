@@ -645,9 +645,6 @@ impl<'a> TyCk<'a> {
         if l == Int && r == Int {
             return Ok(Int);
         }
-        if l == Byte && r == Byte {
-            return Ok(Byte);
-        }
         Err(anyhow!(
             "numeric types expected, got `{}` and `{}`",
             l,
@@ -657,19 +654,29 @@ impl<'a> TyCk<'a> {
 
     fn require_assignable(&self, src: &Ty, dst: &Ty) -> Result<()> {
         use Ty::*;
+        // 完全相等直接通过
         if src == dst {
             return Ok(());
         }
         ensure_no_free_tyvar(src)?;
         ensure_no_free_tyvar(dst)?;
+
         let src_n = self.as_intish(src);
         let dst_n = self.as_intish(dst);
+
+        // 关键修复：若归一化后等价，并且涉及 Byte（如 Int→Byte / Byte→Int），放行
+        if src_n == dst_n && (matches!(src, Byte) || matches!(dst, Byte)) {
+            return Ok(());
+        }
 
         match (src_n, dst_n) {
             (Int, Long) => Ok(()),
             (Int, Float) | (Long, Float) => Ok(()),
             (Int, Double) | (Long, Double) | (Float, Double) => Ok(()),
+
+            // 便于 let/赋值到 Byte：允许常见整型收窄到 Byte
             (Int, Byte) | (Long, Byte) | (Char, Byte) => Ok(()),
+
             (s, d) => Err(anyhow!("expect `{}`, got `{}`", d, s)),
         }
     }
