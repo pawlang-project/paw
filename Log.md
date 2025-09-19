@@ -1,273 +1,285 @@
-# Paw 语言（PawLang）README
+# Paw
 
-> 一个带静态类型、泛型与 trait 的小型语言与编译器。
-> 目前编译后端使用 \[Cranelift] 生成目标文件，再由 \[Zig] 负责链接，内置一个用 Rust 写的运行时（打印、字符串与基础内存 API）。
-
----
-
-## ✨ 当前能力概览
-
-* **静态类型与数值提升**：`Int | Long | Float | Double | Bool | Char | String | Void`
-* **函数与泛型**：支持类型形参 `fn foo<T>(x: T) -> T`
-* **trait / impl / where**：可声明 trait、为具体类型实现，并在函数上施加 `where` 约束
-* **import / prelude / 标准库雏形**：`import "std::fmt"` 引入打印相关 API
-* **模式匹配**：`match`（当前支持对原生数值/布尔/字符）
-* **控制流**：`if/else`, `while`, `for`, `break`, `continue`, `return`
-* **全局常量内联**：常量全局会在后端被内联成字面量
-* **FFI（到运行时）**：通过一组 `extern` C ABI 函数与运行时交互（打印/内存/字符串等）
-* **单态化（Monomorphization）**：
-
-  * 对**显式**泛型调用（如 `foo<Int>(...)`）在编译声明期收集并生成实例；
-  * 对**隐式**泛型的**简单形态**（如 `println(x: T)` 这一元模板）在**codegen 阶段**按需推断并即时生成实例（详见下文）。
-* **跨平台链接**：使用 Zig 链接器并自动打包运行时静态库
+一个用 **Cranelift** 做后端的小型教学/实验语言编译器。
+目前已支持：**一等整数/浮点/布尔/字符/字符串、`Byte`（真 `u8`）、控制流（`if/while/for/match`）、函数/重载、泛型（单态化）、`trait/impl`、简单标准库 `std::fmt::println`**，并生成本机目标的 **object file**。
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
-### 1. 前置工具
+### 依赖
 
-* Rust 稳定版（用于构建编译器）
-* Zig（用作链接器）
-* （可选）本地 C 工具链，用于 Zig 在某些平台上的协作
+* Rust（建议 stable，`cargo` 可用）
+* 本机目标工具链（用于链接生成的对象文件，如果你要把 `.o` 链成可执行程序）
 
-### 2. 构建编译器
+### 构建
 
 ```bash
-# 在仓库根目录
-cargo build --release
-# 或开发版
+git clone <your-repo-url> paw
+cd paw
 cargo build
 ```
 
-编译器可执行一般叫 **`pawc`**（target 下的相应目录）。
+### 运行一个示例
 
-### 3. 工程结构与构建
-
-Paw 的项目根目录需要一个入口文件（默认 `main.paw`），以及可选的 `Paw.toml` 配置。构建命令：
+项目包含若干 `.paw` 示例/测试。假设驱动程序接收源文件路径：
 
 ```bash
-# 在项目根目录执行
-pawc build dev
-# 或
-pawc build release
+cargo run -- examples/hello.paw
 ```
 
-输出位于：
+### 运行测试
 
-```
-./build/dev/     # 或 ./build/release/
-  ├─ out.<obj>   # 编译生成的目标文件（平台相关扩展名）
-  └─ <name>[.exe]# 可执行文件（名称来自 Paw.toml 的包名；否则为 app）
+```bash
+cargo test
 ```
 
-> `pawc` 会自动展开 `import`（以项目根为搜索根），并使用 Zig 链接运行时静态库。
+> 关于如何把生成的 `.o` 链成可执行：取决于你的驱动实现。一般是把 `compile_program(...)` 返回的字节写成 `*.o`，再用系统链接器链接到运行时（`runtime`）产生的静态/动态库。
 
 ---
 
-## 🧪 一个最小示例
+## 目录结构（概览）
 
-`main.paw`：
+```
+src/
+  frontend/
+    ast.rs              # 语法树与语言节点
+  backend/
+    codegen.rs          # Cranelift IR 生成与单态化调度
+    mangle.rs           # 函数/impl 方法/泛型实例的符号整形
+  typecheck.rs          # 类型检查、重载解析、where 约束校验
+  runtime/
+    fmt_runtime.rs      # 与 println 等相关的最小运行时（extern "C"）
+  utils/
+    fast.rs             # 轻量数据结构：FastMap/FastSet/SmallVec4
+  diag/
+    mod.rs              # 诊断汇集（Ariadne sink）
+main.rs                 # 入口（可能根据你的仓库而定）
+```
+
+---
+
+## 语言速览
+
+### 基本类型
+
+* `Void`（仅用于函数返回）
+* `Bool`（内部用 `u8` 表示，0/非0）
+* `Byte`（**真 `u8`**）
+* `Char`（Unicode 标量，语义上对应 `u32`）
+* `Int`（i32）
+* `Long`（i64）
+* `Float`（f32）
+* `Double`（f64）
+* `String`（运行时以 C 字符串指针传递，打印时视为 UTF-8）
+
+### 字面量
+
+```
+0, 1, 123                 # Int
+0L, 123L                  # Long（如果语法支持后缀）
+true, false               # Bool
+'a', '\n'                 # Char
+"hello"                   # String
+1.0f, 2.3f                # Float（如果语法支持）
+1.0, 2.3                  # Double
+```
+
+### 变量与常量
+
+```paw
+let x: Int = 42;
+let y: Byte = 255;
+let z: Double = 3.14;
+```
+
+> `let ... is_const: true` 的形式在中间表示里存在；源语言层面与 `const` 等价。
+
+### 表达式与控制流
+
+* 算术：`+ - * /`
+* 比较：`< <= > >= == !=`
+* 逻辑：`&& || !`
+* 块/作用域：`{ ... }`（块表达式有值；无尾表达式时默认类型 `Int`）
+* `if .. else`、`while`、`for(init; cond; step)`、`match`
+
+### 函数 / 泛型 / 重载
+
+```paw
+fn add(x: Int, y: Int) -> Int { x + y }
+
+fn id<T>(x: T) -> T { x }
+
+trait Show<T> {
+    fn show(x: T) -> Void;
+}
+
+impl Show<Int> {
+    fn show(x: Int) -> Void { println(x); }
+}
+```
+
+* **泛型函数**采用**单态化**（monomorphization）：`foo<Int>` 会生成一个专门化符号。
+* **重载解析**在类型检查阶段完成：按参数个数筛选候选 → 用约束/统一与可赋值规则打分 → 选择唯一最佳项。
+* **trait/impl**：
+
+  * `impl Trait<Args...>` 会在 **类型检查**时校验 *arity*、方法集合相等性、签名与返回类型是否与 `trait` 匹配（经形参替换后）。
+  * **合格名调用** `Trait::<T...>::method(...)`：
+
+    * 当 `T...` **全为具体类型**：要求存在相应 `impl`（在 `ImplEnv` 中登记），再调用对应被降解后的自由函数符号（通过 `mangle_impl_method`）。
+    * 当 `T...` **含有类型形参**：必须在当前函数的 `where` 约束中显式允许该调用。
+
+### 标准库（fmt）
+
+导入：
+
+```paw
+import "std::fmt";
+```
+
+打印：
+
+```paw
+println(123);            // Int
+println(3.14);           // Double
+println(true);           // Bool -> "true"/"false"
+println('A');            // Char (UTF-8)
+println("hello");        // String (UTF-8)
+println<Byte>(255);      // 显式以 Byte 语境打印
+```
+
+`println` 的底层由运行时 `extern "C"` 导出的一组 `print_*` + `rt_println` 组成，类型检查会把不同类型求值后路由到相应符号（或在泛型情况下进行单态化）。
+
+---
+
+## `Byte`（u8）语义
+
+* **类型**：`Byte` 是**真 `u8`**，范围 0..=255。
+* **算术时的整型提升**：参与 `+ - * /` 等**二元数值运算**时，`Byte` 会**提升**到至少 `Int`（i32）再计算，以避免无意间的“隐式取模”。
+* **赋值/打印处的截断**：当结果被**赋值到 `Byte` 变量**或**以 `println<Byte>(...)` 打印**时，会在**代码生成**阶段以 `ireduce`/零扩展的方式截断到 8 位（等价 `mod 256`）。
+
+示例：
 
 ```paw
 import "std::fmt";
 
 fn main() -> Int {
-  println(42);          // 隐式：推断为 println<Int>
-  println("hello");     // 隐式：推断为 println<String>
-  print(3.14); println('\n');  // 混合使用
-  0
+    let x: Byte = 0;
+
+    println(x - 1);        // 提升到 Int 运算 → 打印 -1
+    println<Byte>(x - 1);  // 显式以 Byte 打印 → 255
+
+    let y: Byte = x - 1;   // 赋值到 Byte 截断 → y = 255
+    println(y);            // 打印 255
+
+    0
 }
 ```
 
-构建并运行：
+---
 
-```bash
-pawc build dev
-./build/dev/app     # 或你的包名
+## 典型输出（Byte 测试）
+
+```
+== Byte basics ==
+0
+5
+10
+== Byte arithmetic ==
+8
+3
+70
+1
+== Byte wrap (mod 256) ==
+4
+== Byte + Int -> Int ==
+107
+== for with Byte counter ==
+45
 ```
 
 ---
 
-## 🖨️ 打印系统（现在的行为）
+## 诊断与错误码（节选）
 
-运行时（Rust）里保留了**具体类型**的外部函数：
+**类型检查（`typecheck.rs`）**
 
-```
-print_int / println_int
-print_long / println_long
-print_bool / println_bool
-print_char / println_char
-print_float / println_float
-print_double / println_double
-print_str / println_str
-```
+* `E2101`：重复的局部变量名
+* `E2102`：未知变量
+* `E2103`：对常量赋值
+* `E2106`：函数外的 `return`
+* `E2200`：一元 `-` 需要数值类型
+* `E2210`：`if` 分支类型不一致
+* `E2311`：函数调用没有可匹配的重载
+* `E2303`：合格名调用缺少显式类型实参
+* `E2308`：合格名调用不被当前 `where` 约束允许
+* ……
 
-而在 Paw 的 **prelude / std::fmt** 中，提供了**用户态分发**：
+**代码生成（`backend/codegen.rs`）**
 
-```paw
-// 伪代码示意：泛型一元模板，用于分发到具体 extern 实现
-fn print<T>(x: T) -> Void { /* 根据 T 调用对应的 print_* */ }
-fn println<T>(x: T) -> Void { /* 根据 T 调用对应的 println_* */ }
-```
+* `CG0001`：缺失符号/函数 ID
+* `CG0002`：ABI 不可用的类型
+* `CG0003`：impl 方法符号未知（未声明）
+* `CG0004`：泛型模板/单态化问题
+* ……
 
-### 隐式泛型推断（对 println/print）
-
-* 只要函数模板是**单类型形参**且**唯一形参就是该形参**（典型：`fn println<T>(x: T) -> Void`），
-* 调用形如 `println(expr)` 时，**后端 codegen 会从 `expr` 的静态类型快速推断** `T`，
-* 然后**即时**生成并调用对应的实例（例如 `println$Int` / `println$String`），
-* 无需在源码处写 `println<Int>(...)`。
-
-> 对更复杂的泛型形态，请使用**显式**类型实参 `<...>`。
+当同时提供 `DiagSink` 时，错误会带文件名/位置（若可用）。
 
 ---
 
-## 🧩 语言速查
+## 实现细节（简述）
 
-### 基本类型
+* **Cranelift IR**：
 
-* `Int`(32 位), `Long`(64 位), `Float`(32 位), `Double`(64 位)
-* `Bool`(8 位，语义真/假), `Char`(32 位 Unicode 标量值)
-* `String`（运行时约定：指向以 `\0` 结尾的字节序列的指针）
-* `Void`（无返回）
+  * 各语言类型映射：
 
-### 变量与常量
+    * `Byte`/`Bool` → `i8`
+    * `Int` → `i32`，`Long` → `i64`
+    * `Float` → `f32`，`Double` → `f64`
+    * `Char` → `i32`（UTF-32 标量）
+    * `String` → `i64`（以指针传递到运行时）
+  * **布尔**在 IR 中使用 `b1` 进行条件判断，进/出位置做 `i8` 与 `b1` 的显式互转。
+  * **整数放大**：统一用 **零扩展**（`uextend`）以保持 `Byte` 的无符号语义。
+  * **整型统一规则**：二元整数运算时取更宽者；若两边都是 `i8`，先提升到 `i32` 再算（与类型规则一致）。
 
-```paw
-let x: Int = 1;
-const PI: Double = 3.14159;
-x = 2;        // 给 let 变量赋值
-// PI = 3.14; // ❌ 常量不可赋值
-```
+* **单态化**：
 
-### 表达式与控制流
+  * 预扫描显式 `<...>` 调用并声明所有实例（`declare_mono_from_program`）。
+  * 运行到\*\*隐式泛型（常见形态：`println<T>(x:T)`）\*\*时现场推断并 `ensure_monomorph`。
+  * 符号整形：`mangle_name` / `mangle_impl_method`。
 
-```paw
-if cond { ... } else { ... }
+* **运行时**（`runtime/fmt_runtime.rs`）：
 
-while cond { ... }
-
-for (let i: Int = 0; i < 10; i = i + 1) { ... }
-
-match x {
-  0 => { ... }
-  1 => { ... }
-  _ => { ... }
-}
-```
-
-### 函数与返回
-
-```paw
-fn add(a: Int, b: Int) -> Int {
-  a + b
-}
-
-fn noop() -> Void { }
-```
-
-### 泛型、trait、impl、where
-
-```paw
-trait Show<T> {
-  fn show(x: T) -> Void;
-}
-
-// 为具体类型实现
-impl Show<Int> {
-  fn show(x: Int) -> Void { println(x); }
-}
-
-fn dump<T>(x: T) -> Void
-where T: Show   // 一元 trait 可省略参数，表示作用于 T
-{
-  Show::show<T>(x);     // 合格名调用，复杂调用需显式 <T>
-}
-
-// 使用
-fn main() -> Int {
-  dump<Int>(42);
-  0
-}
-```
-
-> `typecheck` 会严格校验 trait/impl 的方法集合与签名、`where` 约束是否可满足、以及调用处是否给出了充分的信息（或属于隐式可推断的简单模板）。
-
-### 数值提升与比较
-
-* 算术运算会对参与类型做**公共数值类型**提升（例如 `Int + Double -> Double`）。
-* 比较与相等遵循数值/布尔/同类型比较的规则，其他类型需相等类型方可比较。
+  * 提供 `extern "C"` 的 `print_i32/i64/f32/f64/bool/char/str`、`rt_println`、`flush_*` 等。
+  * 布尔打印采用 `u8` 约定（0 → `false`，非 0 → `true`）。
+  * 使用 `BufWriter` + `once_cell::sync::Lazy` 做缓冲输出。
 
 ---
 
-## 📦 工程与标准库
+## 常见问题（FAQ）
 
-* `import "std::fmt"`：引入打印 API（`print/println`）
-* `prelude`：工程默认会引入 prelude（含基础内建/别名/便捷函数）
-* `Paw.toml`（可选）：提供包名等元信息（用于生成最终可执行名）
+**Q: 为何 `println(x - 1)` 打印 `-1` 而不是 `255`？**
+A: 因为 `Byte` 在二元算术中先**提升为 `Int`** 运算。若要得到 255，请用 `println<Byte>(x - 1)` 或先赋给 `Byte` 变量再打印。
 
-> import 展开由 `passes::expand_imports_with_loader` 完成，搜索根为**项目根目录**。
+**Q: 我能比较 `Byte` 和 `Int` 吗？**
+A: 可以。比较时遵循与算术相同的**数值统一规则**（先提升，后比较）。
 
----
-
-## 🏗️ 编译管线（实现细节）
-
-* **语法/解析**：`grammar.pest` + `parser.rs` → `ast.rs`
-* **Import 展开**：`passes.rs`
-* **类型检查**：`typecheck.rs`
-
-  * 构建 `TraitEnv/ImplEnv`、检查 `impl` 对应 `trait` 的**方法集合与签名一致性**
-  * 函数体内做**赋值兼容规则**、控制流与返回类型检查、`where` 约束验证等
-* **名称改写**：`mangle.rs`（函数/实例/impl 方法符号名）
-* **代码生成**：`codegen.rs`（Cranelift IR → 目标文件）
-
-  * **显式**泛型调用：在声明期收集并生成实例
-  * **隐式**泛型（如 `println<T>(x:T)`）：**codegen 阶段**从实参类型**即时推断并单态化**
-* **链接**：`link_zig.rs` 使用 Zig 把目标文件与运行时静态库链接为可执行
-* **项目与 CLI**：`project.rs`, `src/main.rs`（命令：`pawc build <dev|release>`）
+**Q: 字符与字符串打印是 UTF-8 吗？**
+A: 是。`Char` 会转 UTF-8 输出，`String` 假定为 UTF-8（运行时退化为 “尽量按字节输出” 的策略）。
 
 ---
 
-## 🧰 运行时（Rust 实现）
+## 路线图（可能）
 
-运行时以静态库形式链接，导出 C ABI：
-
-* **打印**：`print_*` / `println_*`（各具体类型）
-  在 Paw 层由 `print<T>/println<T>` 统一分发、并支持隐式推断。
-* **内存**：`paw_malloc` / `paw_free` / `paw_realloc`
-* **字符串**（UTF-8，`Vec<u8>` 为底）：
-  `paw_string_new/from_cstr/push_cstr/push_char/as_cstr/...`
-  约定导出到 `print_str` 之前会在末尾补 `\0`。
-* **通用容器**：`paw_vec_u8_*`, `paw_vec_i64_*`
-* **退出**：`paw_exit(code)`
-
-> 注意：`String` 底层以指针表示；向 `println` 传 `String` 时，由 `std::fmt` 分发到 `println_str`（C 字符串）完成输出。
+* 数组/切片与切片字面量
+* 结构体/枚举与模式匹配解构
+* 更完善的标准库与 I/O
+* 更强的常量折叠与 SSA 优化（基于 Cranelift 的 pass）
+* 更灵活的隐式泛型推断
 
 ---
 
-## ⚠️ 已知限制与后续方向
+## 致谢
 
-* **隐式泛型推断**目前只覆盖**一元模板且唯一参数为该类型形参**的场景（为 `print/println` 量身定制）。更复杂的泛型调用请写显式 `<...>`。
-* **模式匹配**暂只支持原生字面量与 `_`，尚不支持代数数据类型。
-* **类型系统**尚不包含用户结构体/枚举、自定义泛型类型构造等。
-* **字符串**以 C 风格 `\0` 结尾字节序列为主，与运行时互操作时请确保正确性。
-* **跨平台支持**依赖 Zig；某些平台上可能需要本地工具链辅助。
-
-**路线图（建议）**：
-
-* 统一的模块系统与包管理
-* 用户自定义聚合类型（record/enum）与模式匹配扩展
-* 更通用的类型推断（跨表达式流）
-* 更丰富的标准库（集合/IO/文件/时间等）
-* 更细粒度的错误报告与 IDE 友好性（位置、修复建议）
-
----
-
-## 🙌 贡献
-
-欢迎提交 Issue / PR！
-典型改动点：`grammar.pest`（语法）、`typecheck.rs`（规则/诊断）、`codegen.rs`（后端/优化）、`std/`（标准库）。
-
----
-
-如需帮助或想扩展某部分（比如把隐式泛型推断推广到多参数、多约束），可以直接给我一个目标用例，我会基于当前实现给出最稳的落地方案。
+* [Cranelift](https://github.com/bytecodealliance/wasmtime/tree/main/cranelift) 提供了优秀的后端基础设施。
+* 本项目许多命名与组织基于教学/实验用途，欢迎 issue/PR 讨论改进。
