@@ -246,6 +246,7 @@ fn build_ty(p: Pair<Rule>) -> Result<Ty> {
         }
         Rule::KW_Int    => Ty::Int,
         Rule::KW_Long   => Ty::Long,
+        Rule::KW_Byte => Ty::Byte,
         Rule::KW_Bool   => Ty::Bool,
         Rule::KW_String => Ty::String,
         Rule::KW_Double => Ty::Double,

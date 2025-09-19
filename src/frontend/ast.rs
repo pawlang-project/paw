@@ -12,6 +12,7 @@ use std::fmt;
 pub enum Ty {
     Int,
     Long,
+    Byte,
     Bool,
     String,
     Double,
@@ -29,6 +30,7 @@ impl fmt::Display for Ty {
         match self {
             Ty::Int => write!(f, "Int"),
             Ty::Long => write!(f, "Long"),
+            Ty::Byte => write!(f, "Byte"),
             Ty::Bool => write!(f, "Bool"),
             Ty::String => write!(f, "String"),
             Ty::Double => write!(f, "Double"),
@@ -53,7 +55,7 @@ impl fmt::Display for Ty {
 impl Ty {
     #[inline]
     pub fn is_intish(&self) -> bool {
-        matches!(self, Ty::Int | Ty::Long | Ty::Char)
+        matches!(self, Ty::Int | Ty::Long | Ty::Byte | Ty::Char)
     }
     #[inline]
     pub fn is_floatish(&self) -> bool {

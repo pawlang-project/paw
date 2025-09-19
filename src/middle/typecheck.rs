@@ -613,7 +613,8 @@ impl<'a> TyCk<'a> {
 
     #[inline]
     fn is_intish(&self, t: &Ty) -> bool {
-        matches!(t, Ty::Int | Ty::Long | Ty::Char)
+        // 加入 Byte：保持与 Char 相同的“整型家族”判定
+        matches!(t, Ty::Int | Ty::Long | Ty::Char | Ty::Byte)
     }
     #[inline]
     fn is_floatish(&self, t: &Ty) -> bool {
@@ -621,10 +622,10 @@ impl<'a> TyCk<'a> {
     }
     #[inline]
     fn as_intish(&self, t: &Ty) -> Ty {
-        if *t == Ty::Char {
-            Ty::Int
-        } else {
-            t.clone()
+        // Byte 与 Char 一样在数值运算判定中归一到 Int
+        match t {
+            Ty::Char | Ty::Byte => Ty::Int,
+            _ => t.clone(),
         }
     }
 
@@ -643,6 +644,9 @@ impl<'a> TyCk<'a> {
         }
         if l == Int && r == Int {
             return Ok(Int);
+        }
+        if l == Byte && r == Byte {
+            return Ok(Byte);
         }
         Err(anyhow!(
             "numeric types expected, got `{}` and `{}`",
@@ -665,6 +669,7 @@ impl<'a> TyCk<'a> {
             (Int, Long) => Ok(()),
             (Int, Float) | (Long, Float) => Ok(()),
             (Int, Double) | (Long, Double) | (Float, Double) => Ok(()),
+            (Int, Byte) | (Long, Byte) | (Char, Byte) => Ok(()),
             (s, d) => Err(anyhow!("expect `{}`, got `{}`", d, s)),
         }
     }

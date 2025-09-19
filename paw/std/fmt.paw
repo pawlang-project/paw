@@ -1,4 +1,5 @@
 // 打印
+extern fn print_u8(x: Byte) -> Void;
 extern fn print_i32(x: Int)   -> Void;
 extern fn print_i64(x: Long)  -> Void;
 extern fn print_f32(x: Float) -> Void;
@@ -15,6 +16,11 @@ trait Printable<T> {
 }
 
 // ===== 内置实现：转调新的运行时 =====
+
+impl Printable<Byte> {
+  fn print(x: Byte)   -> Void { print_u8(x); flush_stdout() }
+  fn println(x: Byte) -> Void { print_u8(x); rt_println(); flush_stdout() }
+}
 
 impl Printable<Int> {
   fn print(x: Int)   -> Void { print_i32(x); flush_stdout() }

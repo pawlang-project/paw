@@ -19,6 +19,7 @@ impl InternCtx {
         match t {
             Int    => self.tys.int(),
             Long   => self.tys.long(),
+            Byte => self.tys.byte(),
             Bool   => self.tys.bool(),
             String => self.tys.string(),
             Double => self.tys.double(),
