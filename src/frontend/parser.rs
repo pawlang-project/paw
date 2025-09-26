@@ -246,7 +246,7 @@ fn build_ty(p: Pair<Rule>) -> Result<Ty> {
         }
         Rule::KW_Int    => Ty::Int,
         Rule::KW_Long   => Ty::Long,
-        Rule::KW_Byte => Ty::Byte,
+        Rule::KW_Byte   => Ty::Byte,
         Rule::KW_Bool   => Ty::Bool,
         Rule::KW_String => Ty::String,
         Rule::KW_Double => Ty::Double,
@@ -431,7 +431,7 @@ fn build_for_step(p: Pair<Rule>) -> Result<ForStep> {
 }
 
 /* ================================
- * 表达式（含限定名调用）
+ * 表达式（含限定名调用 + 显式 as 转换）
  * ================================ */
 fn build_if_expr(p: Pair<Rule>) -> Result<Expr> {
     let mut it = p.into_inner();
@@ -499,9 +499,18 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
         // 包装层
         Rule::expr => build_expr(p.into_inner().next().unwrap())?,
 
-        // 二元优先级
+        // 二元优先级（含 add / mult 等）
         Rule::logic_or | Rule::logic_and | Rule::equality | Rule::compare | Rule::add | Rule::mult => {
             fold_binary(p)?
+        }
+
+        // as 转换层（放在 add 与 mult 之间，语义：1 + 2 as Long == 1 + (2 as Long)）
+        Rule::cast => build_cast(p)?,
+        Rule::cast_term => {
+            // cast_term = cast | mult
+            // 直接下钻到唯一子节点
+            let mut it = p.into_inner();
+            build_expr(it.next().unwrap())?
         }
 
         // 一元
@@ -660,6 +669,28 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
             }
         }
     })
+}
+
+fn build_cast(p: Pair<Rule>) -> Result<Expr> {
+    // cast = mult ~ (KW_AS ~ ty)+
+    let mut it = p.into_inner();
+    // 起始操作数：mult
+    let mut e = build_expr(it.next().ok_or_else(|| anyhow!("cast: missing base expr"))?)?;
+    // 后续重复：KW_AS ty
+    while let Some(tok) = it.next() {
+        match tok.as_rule() {
+            Rule::KW_AS => {
+                let ty_pair = it.next().ok_or_else(|| anyhow!("cast: missing target type after `as`"))?;
+                if ty_pair.as_rule() != Rule::ty {
+                    return Err(anyhow!("cast: expected type after `as`, got {:?}", ty_pair.as_rule()));
+                }
+                let ty = build_ty(ty_pair)?;
+                e = Expr::Cast { expr: Box::new(e), ty };
+            }
+            other => return Err(anyhow!("cast: unexpected piece {:?}", other)),
+        }
+    }
+    Ok(e)
 }
 
 fn build_arg_list(p: Pair<Rule>) -> Result<Vec<Expr>> {

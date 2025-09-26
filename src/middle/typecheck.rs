@@ -449,7 +449,7 @@ pub fn typecheck_program(
         }
     }
 
-    // 3) 检查全局初始化
+    // 3) 检查全局初始化（带“字面量 Byte 范围特判”）
     let mut ck = TyCk::new(
         &fnscheme,
         &tenv,
@@ -462,7 +462,7 @@ pub fn typecheck_program(
     for it in &p.items {
         if let Item::Global { name, ty, init, .. } = it {
             let t = ck.expr(init)?;
-            ck.require_assignable(&t, ty)
+            ck.require_assignable_from_expr(init, &t, ty)
                 .map_err(|e| anyhow!("global `{}` init: {}", name, e))?;
         }
     }
@@ -613,72 +613,86 @@ impl<'a> TyCk<'a> {
 
     #[inline]
     fn is_intish(&self, t: &Ty) -> bool {
-        // 加入 Byte：保持与 Char 相同的“整型家族”判定
-        matches!(t, Ty::Int | Ty::Long | Ty::Char | Ty::Byte)
+        // Byte/Char/Int/Long 归为整型家族（仅用于“是否数值”的判定；不做隐式提升）
+        matches!(t, Ty::Byte | Ty::Int | Ty::Long | Ty::Char)
     }
     #[inline]
     fn is_floatish(&self, t: &Ty) -> bool {
         matches!(t, Ty::Float | Ty::Double)
     }
     #[inline]
-    fn as_intish(&self, t: &Ty) -> Ty {
-        // Byte 与 Char 一样在数值运算判定中归一到 Int
-        match t {
-            Ty::Char | Ty::Byte => Ty::Int,
-            _ => t.clone(),
-        }
+    fn is_numeric_ty(&self, t: &Ty) -> bool {
+        self.is_intish(t) || self.is_floatish(t)
     }
 
-    fn common_numeric(&self, l: &Ty, r: &Ty) -> Result<Ty> {
-        use Ty::*;
-        let l = self.as_intish(l);
-        let r = self.as_intish(r);
-        if l == Double || r == Double {
-            return Ok(Double);
-        }
-        if l == Float || r == Float {
-            return Ok(Float);
-        }
-        if l == Long || r == Long {
-            return Ok(Long);
-        }
-        if l == Int && r == Int {
-            return Ok(Int);
-        }
-        Err(anyhow!(
-            "numeric types expected, got `{}` and `{}`",
-            l,
-            r
-        ))
-    }
-
+    /// 只允许“严格相等”的隐式赋值；其它一律提示使用 `as`
     fn require_assignable(&self, src: &Ty, dst: &Ty) -> Result<()> {
-        use Ty::*;
-        // 完全相等直接通过
         if src == dst {
             return Ok(());
         }
         ensure_no_free_tyvar(src)?;
         ensure_no_free_tyvar(dst)?;
+        Err(anyhow!(
+            "expect `{}`, got `{}` (use `as` for explicit conversion)",
+            show_ty(dst),
+            show_ty(src)
+        ))
+    }
 
-        let src_n = self.as_intish(src);
-        let dst_n = self.as_intish(dst);
+    /// —— 新增 ——：
+    /// 如果 `expr` 是 0..=255 的整数字面量，允许把 Int/Long 字面量隐式赋给 Byte；
+    /// 其它情况仍走严格规则。
+    fn require_assignable_from_expr(&self, expr: &Expr, src: &Ty, dst: &Ty) -> Result<()> {
+        if *dst == Ty::Byte && self.literal_fits_byte(expr) {
+            return Ok(());
+        }
+        self.require_assignable(src, dst)
+    }
 
-        // 关键修复：若归一化后等价，并且涉及 Byte（如 Int→Byte / Byte→Int），放行
-        if src_n == dst_n && (matches!(src, Byte) || matches!(dst, Byte)) {
+    /// 显式 as 转换的合法性检查（仅做类型层面的“是否允许”判断）
+    fn allow_as_cast(&self, src: &Ty, dst: &Ty) -> Result<()> {
+        use Ty::*;
+        if src == dst {
             return Ok(());
         }
 
-        match (src_n, dst_n) {
-            (Int, Long) => Ok(()),
-            (Int, Float) | (Long, Float) => Ok(()),
-            (Int, Double) | (Long, Double) | (Float, Double) => Ok(()),
+        // 目标与源都必须是“具体类型”
+        ensure_no_free_tyvar(src)
+            .map_err(|e| anyhow!("source of cast must be concrete: {}", e))?;
+        ensure_no_free_tyvar(dst)
+            .map_err(|e| anyhow!("target of cast must be concrete: {}", e))?;
 
-            // 便于 let/赋值到 Byte：允许常见整型收窄到 Byte
-            (Int, Byte) | (Long, Byte) | (Char, Byte) => Ok(()),
-
-            (s, d) => Err(anyhow!("expect `{}`, got `{}`", d, s)),
+        // 禁止与以下类型之间的普通 cast（除非同型）
+        if matches!(src, String | Bool | Void | App { .. })
+            || matches!(dst, String | Bool | Void | App { .. })
+        {
+            return Err(anyhow!(
+                "unsupported cast: `{}` as `{}` (use domain APIs/traits such as parse/Display)",
+                show_ty(src),
+                show_ty(dst)
+            ));
         }
+
+        let src_int = self.is_intish(src);
+        let dst_int = self.is_intish(dst);
+        let src_fp = self.is_floatish(src);
+        let dst_fp = self.is_floatish(dst);
+
+        if (src_int && dst_int) || (src_fp && dst_fp) {
+            return Ok(()); // 整数族内部、浮点族内部均可（宽/窄由后端语义决定）
+        }
+        if src_int && dst_fp {
+            return Ok(()); // 整→浮
+        }
+        if src_fp && dst_int {
+            return Ok(()); // 浮→整
+        }
+
+        Err(anyhow!(
+            "cannot cast from `{}` to `{}`",
+            show_ty(src),
+            show_ty(dst)
+        ))
     }
 
     fn check_fun(&mut self, f: &FunDecl) -> Result<()> {
@@ -728,7 +742,7 @@ impl<'a> TyCk<'a> {
                 is_const,
             } => {
                 let t = self.expr(init)?;
-                self.require_assignable(&t, ty)
+                self.require_assignable_from_expr(init, &t, ty)
                     .map_err(|e| anyhow!("let `{}`: {}", name, e))?;
                 if self.scopes.last().unwrap().contains_key(name) {
                     tc_bail!(self, "E2101", None, "dup local `{}`", name);
@@ -752,7 +766,7 @@ impl<'a> TyCk<'a> {
                     tc_bail!(self, "E2103", None, "cannot assign to const `{}`", name);
                 }
                 let rhs_ty = self.expr(expr)?;
-                self.require_assignable(&rhs_ty, &var_ty)?;
+                self.require_assignable_from_expr(expr, &rhs_ty, &var_ty)?;
                 Ok(())
             }
 
@@ -793,7 +807,7 @@ impl<'a> TyCk<'a> {
                             is_const,
                         } => {
                             let t = self.expr(init)?;
-                            self.require_assignable(&t, ty)?;
+                            self.require_assignable_from_expr(init, &t, ty)?;
                             if self.scopes.last().unwrap().contains_key(name) {
                                 tc_bail!(self, "E2101", None, "dup local `{}`", name);
                             }
@@ -811,7 +825,7 @@ impl<'a> TyCk<'a> {
                                 None => tc_bail!(self, "E2102", None, "unknown var `{}`", name),
                             };
                             let et = self.expr(expr)?;
-                            self.require_assignable(&et, &vt)?;
+                            self.require_assignable_from_expr(expr, &et, &vt)?;
                         }
                         ForInit::Expr(e) => {
                             let _ = self.expr(e)?;
@@ -831,7 +845,7 @@ impl<'a> TyCk<'a> {
                                 None => tc_bail!(self, "E2102", None, "unknown var `{}`", name),
                             };
                             let et = self.expr(expr)?;
-                            self.require_assignable(&et, &vt)?;
+                            self.require_assignable_from_expr(expr, &et, &vt)?;
                         }
                         ForStep::Expr(e) => {
                             let _ = self.expr(e)?;
@@ -869,7 +883,7 @@ impl<'a> TyCk<'a> {
                 };
                 if let Some(e) = opt {
                     let t = self.expr(e)?;
-                    self.require_assignable(&t, &ret_ty)?;
+                    self.require_assignable_from_expr(e, &t, &ret_ty)?;
                 } else if ret_ty != Ty::Void {
                     tc_bail!(
                         self,
@@ -904,8 +918,8 @@ impl<'a> TyCk<'a> {
                 let t = self.expr(rhs)?;
                 match op {
                     Neg => {
-                        if self.is_floatish(&t) || self.is_intish(&t) {
-                            self.as_intish(&t)
+                        if self.is_numeric_ty(&t) {
+                            t // 结果类型即操作数类型；不再做 Byte/Char→Int 的隐式归一
                         } else {
                             tc_bail!(self, "E2200", None, "unary `-` expects numeric, got `{}`", t);
                         }
@@ -930,48 +944,79 @@ impl<'a> TyCk<'a> {
                                 "numeric op requires concrete numeric types (consider adding a trait bound)"
                             );
                         }
-                        self.common_numeric(&lt, &rt)?
+                        if !self.is_numeric_ty(&lt) || !self.is_numeric_ty(&rt) {
+                            tc_bail!(self, "E2201", None, "numeric op expects numeric types");
+                        }
+                        if lt != rt {
+                            tc_bail!(
+                                self,
+                                "E2201",
+                                None,
+                                "operands must have the same type for arithmetic: `{}` vs `{}`; use `as`",
+                                lt,
+                                rt
+                            );
+                        }
+                        lt
                     }
                     Lt | Le | Gt | Ge => {
                         if has_free_tyvar(&lt) || has_free_tyvar(&rt) {
                             tc_bail!(self, "E2202", None, "comparison requires concrete numeric types");
                         }
-                        let _ = self.common_numeric(&lt, &rt)?;
+                        if !self.is_numeric_ty(&lt) || !self.is_numeric_ty(&rt) {
+                            tc_bail!(self, "E2202", None, "comparison expects numeric types");
+                        }
+                        if lt != rt {
+                            tc_bail!(
+                                self,
+                                "E2202",
+                                None,
+                                "comparison operands must have the same type: `{}` vs `{}`; use `as`",
+                                lt,
+                                rt
+                            );
+                        }
                         Ty::Bool
                     }
                     Eq | Ne => {
-                        if (self.is_intish(&lt) || self.is_floatish(&lt))
-                            && (self.is_intish(&rt) || self.is_floatish(&rt))
-                        {
-                            if has_free_tyvar(&lt) || has_free_tyvar(&rt) {
-                                tc_bail!(self, "E2203", None, "equality on numeric requires concrete types");
-                            }
-                            let _ = self.common_numeric(&lt, &rt)?;
-                            Ty::Bool
-                        } else if lt == Ty::Bool && rt == Ty::Bool {
-                            Ty::Bool
-                        } else {
-                            if lt != rt {
-                                tc_bail!(
-                                    self,
-                                    "E2204",
-                                    None,
-                                    "comparison requires same types: `{}` vs `{}`",
-                                    lt,
-                                    rt
-                                );
-                            }
-                            if has_free_tyvar(&lt) {
-                                tc_bail!(self, "E2205", None, "equality for generic type requires trait bound");
-                            }
-                            Ty::Bool
+                        // 等值比较：要求同型（包括 Bool/String/数值等）；不再允许“数值族混比”
+                        if lt != rt {
+                            tc_bail!(
+                                self,
+                                "E2204",
+                                None,
+                                "equality requires the same type: `{}` vs `{}`; use `as`",
+                                lt,
+                                rt
+                            );
                         }
+                        if has_free_tyvar(&lt) {
+                            tc_bail!(self, "E2205", None, "equality for generic type requires trait bound");
+                        }
+                        Ty::Bool
                     }
                     And | Or => {
                         self.require_assignable(&lt, &Ty::Bool)?;
                         self.require_assignable(&rt, &Ty::Bool)?;
                         Ty::Bool
                     }
+                }
+            }
+
+            // 显式 as：仅返回目标类型（语义在后端/运行时），这里做合法性与具体性检查
+            Expr::Cast { expr, ty } => {
+                let src_t = self.expr(expr)?;
+                match self.allow_as_cast(&src_t, ty) {
+                    Ok(()) => ty.clone(),
+                    Err(e) => tc_bail!(
+                        self,
+                        "E2400",
+                        None,
+                        "invalid `as` cast from `{}` to `{}`: {}",
+                        show_ty(&src_t),
+                        show_ty(ty),
+                        e
+                    ),
                 }
             }
 
@@ -1147,10 +1192,22 @@ impl<'a> TyCk<'a> {
                             arg_tys.push(self.expr(a)?);
                         }
 
-                        // 参数检查
+                        // 参数检查（严格同型，**但允许 Byte 形参 + 0..=255 字面量**）
                         for (i, (at, pt)) in arg_tys.iter().zip(sch.params.iter()).enumerate() {
-                            self.require_assignable(at, pt)
-                                .map_err(|e| anyhow!("arg#{i}: {e}"))?;
+                            if at == pt {
+                                continue;
+                            }
+                            if *pt == Ty::Byte && self.literal_fits_byte(&args[i]) {
+                                continue;
+                            }
+                            tc_bail!(
+                                self,
+                                "E2309",
+                                None,
+                                "arg#{i}: type mismatch: expect `{}`, got `{}`",
+                                show_ty(pt),
+                                show_ty(at)
+                            );
                         }
                         sch.ret
                     } else {
@@ -1227,23 +1284,23 @@ impl<'a> TyCk<'a> {
                             arg_tys.push(self.expr(a)?);
                         }
 
-                        // 参数检查：若涉及类型形参，做“严格相等”；纯具体类型则允许数值提升规则
+                        // 参数检查：涉及类型形参→严格相等；纯具体→也必须严格相等
+                        // 但允许 Byte 形参 + 0..=255 字面量
                         for (i, (at, want)) in arg_tys.iter().zip(want_params.iter()).enumerate() {
-                            if has_free_tyvar(at) || has_free_tyvar(want) {
-                                if *at != *want {
-                                    tc_bail!(
-                                        self,
-                                        "E2310",
-                                        None,
-                                        "arg#{i}: type mismatch: expect `{}`, got `{}`",
-                                        show_ty(want),
-                                        show_ty(at)
-                                    );
-                                }
-                            } else {
-                                self.require_assignable(at, want)
-                                    .map_err(|e| anyhow!("arg#{i}: {e}"))?;
+                            if *at == *want {
+                                continue;
                             }
+                            if *want == Ty::Byte && self.literal_fits_byte(&args[i]) {
+                                continue;
+                            }
+                            tc_bail!(
+                                self,
+                                "E2310",
+                                None,
+                                "arg#{i}: type mismatch: expect `{}`, got `{}`",
+                                show_ty(want),
+                                show_ty(at)
+                            );
                         }
 
                         // 返回类型也可能仍然带有 T/U；在泛型函数体中这是允许的
@@ -1311,22 +1368,6 @@ impl<'a> TyCk<'a> {
 
     /* ============ 重载/泛型 解析核心 ============ */
 
-    #[inline]
-    fn is_numeric_widen(&self, src: &Ty, dst: &Ty) -> bool {
-        use Ty::*;
-        let s = self.as_intish(src);
-        let d = self.as_intish(dst);
-        matches!(
-            (s, d),
-            (Int, Long)
-                | (Int, Float)
-                | (Long, Float)
-                | (Int, Double)
-                | (Long, Double)
-                | (Float, Double)
-        )
-    }
-
     /// 根据名字 / 显式类型实参 / 实参表达式，解析“最佳候选”，并返回其实例化后的返回类型
     fn resolve_fun_call(
         &mut self,
@@ -1375,7 +1416,7 @@ impl<'a> TyCk<'a> {
                         subst.insert(tp.clone(), ta.clone());
                     }
                 } else {
-                    // 从实参类型推断
+                    // 从实参类型推断（严格统一）
                     for (at, pty) in arg_tys.iter().zip(sch.params.iter()) {
                         if has_free_tyvar(at) {
                             continue 'CAND;
@@ -1400,23 +1441,20 @@ impl<'a> TyCk<'a> {
                 continue;
             }
 
-            // 参数检查 + 评分
+            // 参数检查 + 评分（只接受精确匹配；但允许 Byte 形参 + 0..=255 字面量）
             let mut score: usize = 0;
-            for (at, want) in arg_tys.iter().zip(inst_params.iter()) {
+            for (i, (at, want)) in arg_tys.iter().zip(inst_params.iter()).enumerate() {
                 if has_free_tyvar(at) || has_free_tyvar(want) {
                     if *at != *want {
                         continue 'CAND;
                     }
                 } else if at == want {
                     // exact：加 0 分
-                } else if self.is_numeric_widen(at, want) {
-                    score += 1;
+                } else if *want == Ty::Byte && self.literal_fits_byte(&args[i]) {
+                    // 形参是 Byte，且当前实参是 0..=255 的整数字面量 —— 允许，算“精确匹配”
                 } else {
-                    if let Err(_) = self.require_assignable(at, want) {
-                        continue 'CAND;
-                    } else {
-                        score += 2;
-                    }
+                    // 严格：其它一律不接受（不做隐式数值转换）
+                    continue 'CAND;
                 }
             }
 
@@ -1468,5 +1506,24 @@ impl<'a> TyCk<'a> {
 
         let (_sc, _sch, _subst, _inst_params, inst_ret) = viable.remove(0);
         Ok(inst_ret)
+    }
+
+    /* ---------- 字面量辅助：Byte 特判 ---------- */
+
+    /// 如果是整数字面量，取其值（用于常量范围判断）
+    fn int_literal_value(&self, e: &Expr) -> Option<i128> {
+        match e {
+            Expr::Int(n)  => Some(*n as i128),
+            Expr::Long(n) => Some(*n as i128),
+            _ => None,
+        }
+    }
+
+    /// “字面量是否可隐式收窄到 Byte(0..=255)”
+    fn literal_fits_byte(&self, e: &Expr) -> bool {
+        match self.int_literal_value(e) {
+            Some(v) if v >= 0 && v <= 255 => true,
+            _ => false,
+        }
     }
 }

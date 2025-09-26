@@ -3,6 +3,7 @@
 // - 支持 trait / impl / where
 // - 安全的泛型调用后缀：ty_args? "(" arg_list? ")"
 // - 类型：内建 + 类型变量 + 类型应用 + 零参类型名
+// - 新增：显式类型转换 as（低于算术优先级，右侧可链式 as）
 //////////////////////////////
 
 // ===== 基础/空白与注释 =====
@@ -96,12 +97,20 @@ expr_stmt   = { expr ~ ";" }
 tail_expr   = { expr }
 
 // ===== 表达式优先级 =====
+// 顶层
 expr        = { logic_or }
 logic_or    = { logic_and ~ (OP_OR  ~ logic_and)* }
 logic_and   = { equality  ~ (OP_AND ~ equality )* }
 equality    = { compare   ~ ((OP_EQ | OP_NE) ~ compare)* }
 compare     = { add       ~ ((OP_LE | OP_GE | OP_LT | OP_GT) ~ add)* }
-add         = { mult      ~ ((OP_ADD | OP_SUB) ~ mult)* }
+
+// 将显式类型转换 cast 插入到加法层与乘法层之间：
+// 使 `1 + 2 as Long` 解析为 `1 + (2 as Long)`（加法比 as 绑定更紧）
+add         = { cast_term ~ ((OP_ADD | OP_SUB) ~ cast_term)* }
+cast_term   = { cast | mult }
+// 链式 as：x as Int as Long
+cast        = { mult ~ (KW_AS ~ ty)+ }
+
 mult        = { unary     ~ ((OP_MUL | OP_DIV) ~ unary)* }
 unary       = { (OP_NOT | OP_SUB) ~ unary | postfix }
 
@@ -182,7 +191,7 @@ keyword = {
   (
       KW_FN | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST
     | KW_IF | KW_ELSE | KW_WHILE | KW_FOR | KW_BREAK | KW_CONTINUE | KW_MATCH
-    | KW_RETURN | KW_TRAIT | KW_IMPL | KW_WHERE
+    | KW_RETURN | KW_TRAIT | KW_IMPL | KW_WHERE | KW_AS
     | KW_Int | KW_Long | KW_Byte | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void
     | KW_true | KW_false
   ) ~ !IDENT_NEXT
@@ -190,34 +199,35 @@ keyword = {
 
 // 关键字
 KW_FN      = @{ "fn"      ~ !IDENT_NEXT }
-KW_EXTERN   = @{ "extern"  ~ !IDENT_NEXT }
-KW_IMPORT   = @{ "import"  ~ !IDENT_NEXT }
-KW_LET      = @{ "let"     ~ !IDENT_NEXT }
-KW_CONST    = @{ "const"   ~ !IDENT_NEXT }
-KW_IF       = @{ "if"      ~ !IDENT_NEXT }
-KW_ELSE     = @{ "else"    ~ !IDENT_NEXT }
-KW_WHILE    = @{ "while"   ~ !IDENT_NEXT }
-KW_FOR      = @{ "for"     ~ !IDENT_NEXT }
-KW_BREAK    = @{ "break"   ~ !IDENT_NEXT }
-KW_CONTINUE = @{ "continue"~ !IDENT_NEXT }
-KW_MATCH    = @{ "match"   ~ !IDENT_NEXT }
-KW_RETURN   = @{ "return"  ~ !IDENT_NEXT }
+KW_EXTERN  = @{ "extern"  ~ !IDENT_NEXT }
+KW_IMPORT  = @{ "import"  ~ !IDENT_NEXT }
+KW_LET     = @{ "let"     ~ !IDENT_NEXT }
+KW_CONST   = @{ "const"   ~ !IDENT_NEXT }
+KW_IF      = @{ "if"      ~ !IDENT_NEXT }
+KW_ELSE    = @{ "else"    ~ !IDENT_NEXT }
+KW_WHILE   = @{ "while"   ~ !IDENT_NEXT }
+KW_FOR     = @{ "for"     ~ !IDENT_NEXT }
+KW_BREAK   = @{ "break"   ~ !IDENT_NEXT }
+KW_CONTINUE= @{ "continue"~ !IDENT_NEXT }
+KW_MATCH   = @{ "match"   ~ !IDENT_NEXT }
+KW_RETURN  = @{ "return"  ~ !IDENT_NEXT }
 
-KW_TRAIT    = @{ "trait"   ~ !IDENT_NEXT }
-KW_IMPL     = @{ "impl"    ~ !IDENT_NEXT }
-KW_WHERE    = @{ "where"   ~ !IDENT_NEXT }
+KW_TRAIT   = @{ "trait"   ~ !IDENT_NEXT }
+KW_IMPL    = @{ "impl"    ~ !IDENT_NEXT }
+KW_WHERE   = @{ "where"   ~ !IDENT_NEXT }
+KW_AS      = @{ "as"      ~ !IDENT_NEXT }
 
-KW_Int    = @{ "Int"    ~ !IDENT_NEXT }
-KW_Long   = @{ "Long"   ~ !IDENT_NEXT }    // i64
-KW_Byte   = @{ "Byte"   ~ !IDENT_NEXT }
-KW_Bool   = @{ "Bool"   ~ !IDENT_NEXT }
-KW_String = @{ "String" ~ !IDENT_NEXT }
-KW_Double = @{ "Double" ~ !IDENT_NEXT }    // f64
-KW_Float  = @{ "Float"  ~ !IDENT_NEXT }    // f32
-KW_Char   = @{ "Char"   ~ !IDENT_NEXT }    // u32（ABI 用 i32）
-KW_Void   = @{ "Void"   ~ !IDENT_NEXT }
-KW_true   = @{ "true"   ~ !IDENT_NEXT }
-KW_false  = @{ "false"  ~ !IDENT_NEXT }
+KW_Int     = @{ "Int"    ~ !IDENT_NEXT }
+KW_Long    = @{ "Long"   ~ !IDENT_NEXT }    // i64
+KW_Byte    = @{ "Byte"   ~ !IDENT_NEXT }
+KW_Bool    = @{ "Bool"   ~ !IDENT_NEXT }
+KW_String  = @{ "String" ~ !IDENT_NEXT }
+KW_Double  = @{ "Double" ~ !IDENT_NEXT }    // f64
+KW_Float   = @{ "Float"  ~ !IDENT_NEXT }    // f32
+KW_Char    = @{ "Char"   ~ !IDENT_NEXT }    // u32（ABI 用 i32）
+KW_Void    = @{ "Void"   ~ !IDENT_NEXT }
+KW_true    = @{ "true"   ~ !IDENT_NEXT }
+KW_false   = @{ "false"  ~ !IDENT_NEXT }
 
 // 运算符（注意 <= / >= 在 < / > 之前）
 OP_OR  = { "||" }

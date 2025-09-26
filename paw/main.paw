@@ -1,6 +1,16 @@
 import "std::fmt";
 
 fn main() -> Int {
-    let x: Byte = 0; println<Byte>(x - 1);
-    0
+    let b: Byte = 250;
+    let i: Int = b as Int;          // Byte → Int
+    let l: Long = i as Long;        // Int  → Long
+    let f: Float = l as Float;      // Long → Float
+    let d: Double = f as Double;    // Float→ Double
+
+    let i2: Int = 300;
+    let b2: Byte = i2 as Byte;      // 300 -> 44 (截断)
+    let i3: Int = (b2 as Int) + 2;  // 44 + 2 = 46
+
+    println((d as Int) + i3 - 302); // 250 + 46 - 302 = -6
+    return (d as Int) + i3 - 302;
 }
