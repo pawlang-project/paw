@@ -508,8 +508,10 @@ impl CLBackend {
         if matches!(ret_ty, Ty::Void) {
             b.ins().return_(&[]);
         } else {
-            let v = cg.coerce_to_ty(&mut b, ret_val, &ret_ty);
-            b.ins().return_(&[v]);
+            // 返回值：绝大多数场景不允许隐式转换；
+            // 若返回目标是 Byte 且源表达式是 0..=255 的整数字面量，则发 i8 常量。
+            let final_v = cg.coerce_for_dst_from_expr(&mut b, &f.body.tail.as_deref().unwrap_or(&Expr::Int(0)), ret_val, &ret_ty)?;
+            b.ins().return_(&[final_v]);
         }
 
         b.finalize();
@@ -600,67 +602,115 @@ impl<'a> ExprGen<'a> {
     #[inline]
     fn val_ty(&self, b:&mut FunctionBuilder, v:ir::Value)->ir::Type { b.func.dfg.value_type(v) }
 
-    fn coerce_to_ty(&mut self, b:&mut FunctionBuilder, v: ir::Value, dst:&Ty)->ir::Value {
+    /* --------- 显式-only 关键工具（含 Byte 字面量例外） --------- */
+
+    /// 断言值的 IR 类型与目标 Ty 完全一致（不做转换）
+    fn expect_ty(&mut self, b:&mut FunctionBuilder, v: ir::Value, dst:&Ty) -> Result<()> {
         let want = cl_ty(dst).expect("no void here");
-        self.coerce_value_to_irtype(b, v, want)
+        self.expect_irtype(b, v, want)
     }
 
-    fn coerce_value_to_irtype(&mut self, b:&mut FunctionBuilder, v: ir::Value, dst: ir::Type) -> ir::Value {
-        let src = b.func.dfg.value_type(v);
+    /// 断言值的 IR 类型为 want（不做转换）
+    fn expect_irtype(&mut self, b:&mut FunctionBuilder, v: ir::Value, want: ir::Type) -> Result<()> {
+        let got = self.val_ty(b, v);
+        if got != want {
+            bail!("codegen internal: IR type mismatch (expect {:?}, got {:?})", want, got);
+        }
+        Ok(())
+    }
+
+    /// **仅用于显式 `as`**：按 IR 类型执行数值转换（支持：整↔整、浮↔浮、整↔浮）
+    fn cast_to_ty(&mut self, b:&mut FunctionBuilder, v: ir::Value, dst:&Ty)->Result<ir::Value>{
+        let want = cl_ty(dst).expect("no void here");
+        Ok(self.cast_value_to_irtype(b, v, want))
+    }
+
+    /// 低层 IR 类型转换（用于显式 cast / φ 合流时的同型断言场景）
+    fn cast_value_to_irtype(&mut self, b:&mut FunctionBuilder, v: ir::Value, dst: ir::Type) -> ir::Value {
+        let src = self.val_ty(b, v);
         if src == dst { return v; }
 
+        // 整数 <-> 整数
         if src.is_int() && dst.is_int() {
-            // 对整数统一使用**零扩展**来放大位宽；I8 代表 Byte/Bool，均应零扩展
-            return if src.bits() < dst.bits() { b.ins().uextend(dst, v) } else { b.ins().ireduce(dst, v) }
+            if src.bits() < dst.bits() {
+                // Byte/Bool(I8) 采用零扩展；其他整型用符号扩展
+                if src.bits() == 8 {
+                    return b.ins().uextend(dst, v);
+                } else {
+                    return b.ins().sextend(dst, v);
+                }
+            } else {
+                return b.ins().ireduce(dst, v);
+            }
         }
+
+        // 浮点 <-> 浮点
         if src.is_float() && dst.is_float() {
             return if src.bits() < dst.bits() { b.ins().fpromote(dst, v) } else { b.ins().fdemote(dst, v) }
         }
 
-        if dst == types::I8  { return b.ins().iconst(types::I8,  0); }
-        if dst == types::I32 { return b.ins().iconst(types::I32, 0); }
-        if dst == types::I64 { return b.ins().iconst(types::I64, 0); }
-        if dst == types::F32 { return b.ins().f32const(0.0); }
-        if dst == types::F64 { return b.ins().f64const(0.0); }
+        // 整数 -> 浮点
+        if src.is_int() && dst.is_float() {
+            if src.bits() == 8 {
+                return b.ins().fcvt_from_uint(dst, v);
+            } else {
+                return b.ins().fcvt_from_sint(dst, v);
+            }
+        }
+
+        // 浮点 -> 整数（朝零/有符号）
+        if src.is_float() && dst.is_int() {
+            return b.ins().fcvt_to_sint(dst, v);
+        }
+
+        // 兜底：未支持的转换，直接返回原值（理论上不应到这）
         v
     }
 
-    fn unify_values_for_numeric(
+    /// 算术/比较运算：要求两侧同型且为数值（不做隐式统一/提升）
+    fn require_same_numeric(
         &mut self,
         b:&mut FunctionBuilder,
-        mut l: ir::Value,
-        mut r: ir::Value,
-    )->(ir::Value, ir::Value, ir::Type){
+        l: ir::Value,
+        r: ir::Value,
+    )->Result<(ir::Value, ir::Value, ir::Type)>{
         let lt = self.val_ty(b, l);
         let rt = self.val_ty(b, r);
-        if lt == rt {
-            // 若都为 i8（Byte/Bool），为了与类型系统的“整型提升到 Int”一致，提升到 i32 再算
-            if lt.is_int() && lt.bits() == 8 {
-                let nl = b.ins().uextend(types::I32, l);
-                let nr = b.ins().uextend(types::I32, r);
-                return (nl, nr, types::I32);
+        if lt != rt {
+            bail!("codegen internal: arithmetic/compare expects same IR type, got {:?} vs {:?}", lt, rt);
+        }
+        if !(lt.is_int() || lt.is_float()) {
+            bail!("codegen internal: arithmetic/compare expects numeric IR type, got {:?}", lt);
+        }
+        Ok((l, r, lt))
+    }
+
+    /* ---------- Byte 字面量 0..=255 的目标类型协助 ---------- */
+
+    #[inline]
+    fn fits_byte_literal(&self, e: &Expr) -> Option<u8> {
+        match e {
+            Expr::Int(n)  if *n >= 0 && *n <= 255 => Some(*n as u8),
+            Expr::Long(n) if *n >= 0 && *n <= 255 => Some(*n as u8),
+            _ => None,
+        }
+    }
+
+    /// 若 `dst` 是 Byte 且 `src_expr` 是 0..=255 的整数字面量，则返回 I8 常量；否则要求 IR 同型。
+    fn coerce_for_dst_from_expr(
+        &mut self,
+        b:&mut FunctionBuilder,
+        src_expr: &Expr,
+        v_raw: ir::Value,
+        dst:&Ty
+    ) -> Result<ir::Value> {
+        if matches!(dst, Ty::Byte) {
+            if let Some(u) = self.fits_byte_literal(src_expr) {
+                return Ok(b.ins().iconst(types::I8, u as i64));
             }
-            return (l, r, lt);
         }
-
-        if lt.is_int() && rt.is_int() {
-            // 若任一为 i8，遵循整型提升：最终至少到 i32
-            let max_bits = lt.bits().max(rt.bits());
-            let target = if max_bits <= 8 { types::I32 } else if lt.bits() >= rt.bits() { lt } else { rt };
-            if lt.bits() < target.bits() { l = b.ins().uextend(target, l); }
-            if rt.bits() < target.bits() { r = b.ins().uextend(target, r); }
-            return (l, r, target);
-        }
-
-        if lt.is_float() && rt.is_float() {
-            if lt == types::F64 || rt == types::F64 {
-                let nl = if lt == types::F32 { b.ins().fpromote(types::F64, l) } else { l };
-                let nr = if rt == types::F32 { b.ins().fpromote(types::F64, r) } else { r };
-                return (nl, nr, types::F64);
-            } else { return (l, r, lt); }
-        }
-
-        (l, r, lt)
+        self.expect_ty(b, v_raw, dst)?;
+        Ok(v_raw)
     }
 
     fn emit_block(&mut self, b:&mut FunctionBuilder, blk:&Block)->Result<ir::Value>{
@@ -669,9 +719,11 @@ impl<'a> ExprGen<'a> {
             match s {
                 Stmt::Let { name, ty, init, .. } => {
                     let v0 = self.emit_expr(b, init)?;
+                    // Bool 走一次规范化到 {0,1}；Byte + 字面量 0..=255 走 I8 常量；其余断言同型
                     let v  = match ty {
                         Ty::Bool => { let b1 = self.bool_i8_to_b1(b, v0); self.bool_b1_to_i8(b, b1) }
-                        _ => self.coerce_to_ty(b, v0, ty),
+                        Ty::Byte => { self.coerce_for_dst_from_expr(b, init, v0, ty)? }
+                        _ => { self.expect_ty(b, v0, ty)?; v0 }
                     };
                     let var = self.declare_named(b, name, ty);
                     b.def_var(var, v);
@@ -681,8 +733,8 @@ impl<'a> ExprGen<'a> {
                     let var = self.lookup(name).ok_or_else(|| anyhow!("unknown var `{name}`"))?;
                     let ty = self.lookup_ty(name).ok_or_else(|| anyhow!("no type for `{name}`"))?;
                     let rhs = self.emit_expr(b, expr)?;
-                    let v = self.coerce_to_ty(b, rhs, &ty);
-                    b.def_var(var, v);
+                    let rhs_fixed = self.coerce_for_dst_from_expr(b, expr, rhs, &ty)?;
+                    b.def_var(var, rhs_fixed);
                 }
 
                 // 表达式语句——**始终**实际求值（即使返回 Void），确保诸如 println_int(...) 的副作用发生
@@ -712,7 +764,12 @@ impl<'a> ExprGen<'a> {
                     if let Some(fi) = init {
                         match fi {
                             ForInit::Let { name, ty, init, .. } => {
-                                let rhs = self.emit_expr(b, init)?; let v = self.coerce_to_ty(b, rhs, ty);
+                                let rhs = self.emit_expr(b, init)?;
+                                let v = match ty {
+                                    Ty::Bool => { let b1 = self.bool_i8_to_b1(b, rhs); self.bool_b1_to_i8(b, b1) }
+                                    Ty::Byte => { self.coerce_for_dst_from_expr(b, init, rhs, ty)? }
+                                    _ => { self.expect_ty(b, rhs, ty)?; rhs }
+                                };
                                 let var = self.declare_named(b, name, ty); b.def_var(var, v);
                             }
                             ForInit::Assign { name, expr } => {
@@ -721,8 +778,8 @@ impl<'a> ExprGen<'a> {
                                     let ty = self.lookup_ty(name).ok_or_else(|| anyhow!("no type for `{name}`"))?;
                                     (v, ty)
                                 };
-                                let rhs = self.emit_expr(b, expr)?; let v   = self.coerce_to_ty(b, rhs, &ty);
-                                b.def_var(var, v);
+                                let rhs = self.emit_expr(b, expr)?; let rv = self.coerce_for_dst_from_expr(b, expr, rhs, &ty)?;
+                                b.def_var(var, rv);
                             }
                             ForInit::Expr(e) => { let _ = self.emit_expr(b, e)?; }
                         }
@@ -752,8 +809,8 @@ impl<'a> ExprGen<'a> {
                                     let ty = self.lookup_ty(name).ok_or_else(|| anyhow!("no type for `{name}`"))?;
                                     (v, ty)
                                 };
-                                let rhs = self.emit_expr(b, expr)?; let v   = self.coerce_to_ty(b, rhs, &ty);
-                                b.def_var(var, v);
+                                let rhs = self.emit_expr(b, expr)?; let rv = self.coerce_for_dst_from_expr(b, expr, rhs, &ty)?;
+                                b.def_var(var, rv);
                             }
                             ForStep::Expr(e) => { let _ = self.emit_expr(b, e)?; }
                         }
@@ -776,7 +833,11 @@ impl<'a> ExprGen<'a> {
                 Stmt::Return(opt) => {
                     match (self.fun_ret.clone(), opt) {
                         (Ty::Void, Some(e)) => { let _ = self.emit_expr(b, e)?; b.ins().return_(&[]); }
-                        (ret_ty, Some(e)) => { let raw = self.emit_expr(b, e)?; let v = self.coerce_to_ty(b, raw, &ret_ty); b.ins().return_(&[v]); }
+                        (ret_ty, Some(e)) => {
+                            let raw = self.emit_expr(b, e)?;
+                            let rv = self.coerce_for_dst_from_expr(b, e, raw, &ret_ty)?;
+                            b.ins().return_(&[rv]);
+                        }
                         (ret_ty, None) => {
                             match ret_ty {
                                 Ty::Bool | Ty::Byte => { let z = b.ins().iconst(types::I8, 0);  b.ins().return_(&[z]); }
@@ -821,29 +882,13 @@ impl<'a> ExprGen<'a> {
         Ok(vec![at])
     }
 
-    /// 数值提升：与 typecheck 中的规则一致（Byte/Char 先当作 Int）
-    #[inline]
-    fn num_promote_ty(&self, l: &Ty, r: &Ty) -> anyhow::Result<Ty> {
-        let to_intish = |t: &Ty| match t {
-            Ty::Char | Ty::Byte => Ty::Int,
-            _ => t.clone(),
-        };
-        let l = to_intish(l);
-        let r = to_intish(r);
-        use Ty::*;
-        if l == Double || r == Double { return Ok(Double); }
-        if l == Float  || r == Float  { return Ok(Float); }
-        if l == Long   || r == Long   { return Ok(Long); }
-        if l == Int    && r == Int    { return Ok(Int); }
-        Err(anyhow!("numeric types expected, got `{}` and `{}`", l, r))
-    }
-
     #[inline]
     fn static_ty_of_block(&mut self, b: &Block) -> anyhow::Result<Ty> {
         if let Some(t) = &b.tail { self.static_ty_of_expr(t) } else { Ok(Ty::Int) }
     }
 
     /// 从表达式快速给出静态类型；用于推断 println<T>(...)
+    /// 注意：已对齐“只允许显式转换”，不做数值提升推断。
     fn static_ty_of_expr(&mut self, e: &Expr) -> Result<Ty> {
         use BinOp::*; use UnOp::*;
         Ok(match e {
@@ -862,17 +907,22 @@ impl<'a> ExprGen<'a> {
             Expr::Unary { op, rhs } => {
                 let t = self.static_ty_of_expr(rhs)?;
                 match op {
-                    Neg => match t { Ty::Byte | Ty::Char => Ty::Int, _ => t },
+                    Neg => t, // 不再对 Byte/Char 做提升
                     Not => Ty::Bool,
                 }
             }
+
+            // —— 显式 as 转换 —— //
+            Expr::Cast { expr: _, ty } => ty.clone(),
 
             // —— 二元运算 —— //
             Expr::Binary { op, lhs, rhs } => {
                 let lt = self.static_ty_of_expr(lhs)?;
                 let rt = self.static_ty_of_expr(rhs)?;
                 match op {
-                    Add | Sub | Mul | Div => self.num_promote_ty(&lt, &rt)?,
+                    Add | Sub | Mul | Div => {
+                        if lt == rt { lt } else { bail!("cannot infer type from mixed arithmetic; add explicit cast") }
+                    }
                     Lt | Le | Gt | Ge     => Ty::Bool,
                     Eq | Ne               => Ty::Bool,
                     And | Or              => Ty::Bool,
@@ -970,6 +1020,12 @@ impl<'a> ExprGen<'a> {
                 }
             }
 
+            // 显式 as 转换
+            Expr::Cast { expr, ty } => {
+                let v = self.emit_expr(b, expr)?;
+                self.cast_to_ty(b, v, ty)?
+            }
+
             Expr::Binary{op,lhs,rhs}=>{
                 match op {
                     And => {
@@ -991,7 +1047,10 @@ impl<'a> ExprGen<'a> {
                         b.switch_to_block(out);   b.seal_block(out);   b.use_var(res)
                     }
                     _ => {
-                        let l = self.emit_expr(b, lhs)?; let r = self.emit_expr(b, rhs)?; let (l, r, ty) = self.unify_values_for_numeric(b, l, r);
+                        let l0 = self.emit_expr(b, lhs)?;
+                        let r0 = self.emit_expr(b, rhs)?;
+                        let (l, r, ty) = self.require_same_numeric(b, l0, r0)?;
+
                         match op {
                             Add => if ty.is_int() { b.ins().iadd(l, r) } else { b.ins().fadd(l, r) },
                             Sub => if ty.is_int() { b.ins().isub(l, r) } else { b.ins().fsub(l, r) },
@@ -1042,12 +1101,17 @@ impl<'a> ExprGen<'a> {
                 b.switch_to_block(tbb); b.seal_block(tbb);
                 let tv0 = self.emit_block(b, then_b)?; let tv_ty = self.val_ty(b, tv0); let phi = b.declare_var(tv_ty); b.def_var(phi, tv0); b.ins().jump(mb, &[]);
                 b.switch_to_block(ebb); b.seal_block(ebb);
-                let ev0 = self.emit_block(b, else_b)?; let ev  = self.coerce_value_to_irtype(b, ev0, tv_ty); b.def_var(phi, ev); b.ins().jump(mb, &[]);
+                let ev0 = self.emit_block(b, else_b)?;
+                // 显式-only：两分支 IR 类型必须一致
+                self.expect_irtype(b, ev0, tv_ty)?;
+                b.def_var(phi, ev0); b.ins().jump(mb, &[]);
                 b.switch_to_block(mb);  b.seal_block(mb); b.use_var(phi)
             }
 
             Expr::Match { scrut, arms, default } => {
-                let sv = self.emit_expr(b, scrut)?; let out = b.create_block(); let mut phi: Option<Variable> = None;
+                let sv = self.emit_expr(b, scrut)?;
+                let svt = self.val_ty(b, sv);
+                let out = b.create_block(); let mut phi: Option<Variable> = None;
                 let mut next: Option<ir::Block> = None;
                 for (pat, blk) in arms {
                     let this  = b.create_block(); let thenb = b.create_block(); let cont  = b.create_block();
@@ -1055,10 +1119,22 @@ impl<'a> ExprGen<'a> {
                     else { b.ins().jump(this, &[]); }
                     b.switch_to_block(this); b.seal_block(this);
                     let hit_b1 = match pat {
-                        Pattern::Int(n) => { let cn = b.ins().iconst(types::I32, *n as i64); let s  = if self.val_ty(b, sv) == types::I32 { sv } else { b.ins().ireduce(types::I32, sv) }; b.ins().icmp(IntCC::Equal, s, cn) }
-                        Pattern::Long(n) => { let cn = b.ins().iconst(types::I64, *n); let s  = if self.val_ty(b, sv) == types::I64 { sv } else { b.ins().sextend(types::I64, sv) }; b.ins().icmp(IntCC::Equal, s, cn) }
-                        Pattern::Char(u) => { let cn = b.ins().iconst(types::I32, *u as i64); let s  = if self.val_ty(b, sv) == types::I32 { sv } else { b.ins().ireduce(types::I32, sv) }; b.ins().icmp(IntCC::Equal, s, cn) }
-                        Pattern::Bool(bt) => { let cn = b.ins().iconst(types::I8, if *bt {1} else {0}); let s  = if self.val_ty(b, sv) == types::I8 { sv } else { b.ins().ireduce(types::I8, sv) }; b.ins().icmp(IntCC::Equal, s, cn) }
+                        Pattern::Int(n) => {
+                            if svt != types::I32 { bail!("codegen internal: match scrutinee type mismatch (expect I32)"); }
+                            let cn = b.ins().iconst(types::I32, *n as i64); b.ins().icmp(IntCC::Equal, sv, cn)
+                        }
+                        Pattern::Long(n) => {
+                            if svt != types::I64 { bail!("codegen internal: match scrutinee type mismatch (expect I64)"); }
+                            let cn = b.ins().iconst(types::I64, *n); b.ins().icmp(IntCC::Equal, sv, cn)
+                        }
+                        Pattern::Char(u) => {
+                            if svt != types::I32 { bail!("codegen internal: match scrutinee type mismatch (expect I32)"); }
+                            let cn = b.ins().iconst(types::I32, *u as i64); b.ins().icmp(IntCC::Equal, sv, cn)
+                        }
+                        Pattern::Bool(bt) => {
+                            if svt != types::I8 { bail!("codegen internal: match scrutinee type mismatch (expect I8)"); }
+                            let cn = b.ins().iconst(types::I8, if *bt {1} else {0}); b.ins().icmp(IntCC::Equal, sv, cn)
+                        }
                         Pattern::Wild => { let one = b.ins().iconst(types::I8, 1); self.bool_i8_to_b1(b, one) }
                     };
                     b.ins().brif(hit_b1, thenb, &[], cont, &[]);
@@ -1080,7 +1156,7 @@ impl<'a> ExprGen<'a> {
                 b.switch_to_block(out); b.seal_block(out); b.use_var(phi.unwrap())
             }
 
-            // 调用：支持 Name 与 Qualified
+            // 调用：支持 Name 与 Qualified；参数位置若目标是 Byte 且实参是 0..=255 字面量，直接用 I8 常量
             Expr::Call { callee, generics, args } => {
                 let (sym, fid) = match callee {
                     Callee::Name(name) => {
@@ -1156,7 +1232,10 @@ impl<'a> ExprGen<'a> {
 
                 let mut av = Vec::with_capacity(args.len());
                 for (a, pt) in args.iter().zip(param_tys.iter()) {
-                    let v0 = self.emit_expr(b, a)?; let v  = self.coerce_to_ty(b, v0, pt); av.push(v);
+                    let v0 = self.emit_expr(b, a)?;
+                    // 对于 Byte 形参 + 0..=255 的字面量，使用 I8 常量；其余要求 IR 同型
+                    let vi = self.coerce_for_dst_from_expr(b, a, v0, pt)?;
+                    av.push(vi);
                 }
 
                 let fref = self.be.module.declare_func_in_func(fid, b.func);
@@ -1207,6 +1286,7 @@ fn subst_expr(e: &Expr, s: &FastMap<String, Ty>) -> Expr {
             let def = default.as_ref().map(|b| subst_block(b, s));
             Expr::Match { scrut: scr, arms: new_arms, default: def }
         }
+        Expr::Cast { expr, ty } => Expr::Cast { expr: Box::new(subst_expr(expr, s)), ty: subst_ty(ty, s) },
         Expr::Block(b) => Expr::Block(subst_block(b, s)),
         _ => e.clone(),
     }
@@ -1221,12 +1301,12 @@ fn subst_stmt(st: &Stmt, s: &FastMap<String, Ty>) -> Stmt {
                 ForInit::Let { name, ty, init, is_const } => ForInit::Let { name: name.clone(), ty: subst_ty(ty, s), init: subst_expr(init, s), is_const: *is_const },
                 ForInit::Assign { name, expr } => ForInit::Assign { name: name.clone(), expr: subst_expr(expr, s) },
                 ForInit::Expr(e) => ForInit::Expr(subst_expr(e, s)),
-            }),
+            } ),
             cond: cond.as_ref().map(|c| subst_expr(c, s)),
             step: step.as_ref().map(|stp| match stp {
                 ForStep::Assign { name, expr } => ForStep::Assign { name: name.clone(), expr: subst_expr(expr, s) },
                 ForStep::Expr(e) => ForStep::Expr(subst_expr(e, s)),
-            }),
+            } ),
             body: subst_block(body, s),
         },
         Stmt::If { cond, then_b, else_b } => Stmt::If { cond: subst_expr(cond, s), then_b: subst_block(then_b, s), else_b: else_b.as_ref().map(|b| subst_block(b, s)) },
@@ -1317,6 +1397,7 @@ fn collect_calls_in_expr(e: &Expr, out: &mut Vec<(String, Vec<Ty>)>) {
             for (_, b) in arms { collect_calls_in_block(b, out); }
             if let Some(b) = default { collect_calls_in_block(b, out); }
         }
+        Expr::Cast { expr, .. } => collect_calls_in_expr(expr, out),
         Expr::Block(b) => collect_calls_in_block(b, out),
         _ => {}
     }

@@ -1,6 +1,7 @@
 //! Paw AST 定义（保持和现有 parser/typecheck/codegen 完全兼容）
 //! - 语义不变：字段/枚举名与原版一致
 //! - 补充：更多的派生（Eq/Hash）、Display 实现与便捷构造方法
+//! - 新增：显式类型转换表达式 Expr::Cast { expr, ty }（用于 `as`）
 
 use std::fmt;
 
@@ -271,6 +272,12 @@ pub enum Expr {
         rhs: Box<Expr>,
     },
 
+    /// 显式类型转换（支持链式）：`expr as Ty`
+    Cast {
+        expr: Box<Expr>,
+        ty: Ty,
+    },
+
     /// 表达式 if（必须有 else；产生值）
     If {
         cond: Box<Expr>,
@@ -326,6 +333,13 @@ impl Expr {
             },
             generics,
             args,
+        }
+    }
+    #[inline]
+    pub fn cast(expr: Expr, ty: Ty) -> Self {
+        Expr::Cast {
+            expr: Box::new(expr),
+            ty,
         }
     }
 }
