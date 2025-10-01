@@ -1,21 +1,21 @@
 // src/backend/codegen.rs
-use anyhow::{anyhow, Result, bail};
+use anyhow::{anyhow, bail, Result};
 use cranelift_codegen::{
-    ir::{self, types, AbiParam, InstBuilder},
-    ir::condcodes::{FloatCC, IntCC},
+    ir::{self, condcodes::{FloatCC, IntCC}, types, AbiParam, InstBuilder},
     settings,
 };
+use cranelift_codegen::settings::{Configurable, Flags};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{default_libcall_names, DataDescription as DataContext, DataId, FuncId, Linkage, Module};
-use cranelift_object::{ObjectBuilder, ObjectModule};
 use cranelift_native;
-use cranelift_codegen::settings::{Configurable, Flags};
+use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::mangle::{mangle_impl_method, mangle_name};
 use crate::frontend::ast::*;
+use crate::frontend::span::Span;
 use crate::utils::fast::{FastMap, FastSet};
 
 // —— 诊断（Ariadne sink，可选） —— //
@@ -99,18 +99,18 @@ impl CLBackend {
     pub fn set_globals_from_program(&mut self, prog: &Program) {
         self.globals_val.clear();
         for it in &prog.items {
-            if let Item::Global { name, ty, init, is_const } = it {
+            if let Item::Global { name, ty, init, is_const, .. } = it {
                 if !*is_const { continue; }
                 match (ty, init) {
-                    (&Ty::Byte,  &Expr::Int(n))    => { self.globals_val.insert(name.clone(), (Ty::Byte,  GConst::I8(n as u8))); }
-                    (&Ty::Int,   &Expr::Int(n))    => { self.globals_val.insert(name.clone(), (Ty::Int,   GConst::I32(n))); }
-                    (&Ty::Long,  &Expr::Long(n))   => { self.globals_val.insert(name.clone(), (Ty::Long,  GConst::I64(n))); }
-                    (&Ty::Long,  &Expr::Int(n))    => { self.globals_val.insert(name.clone(), (Ty::Long,  GConst::I64(n as i64))); }
-                    (&Ty::Bool,  &Expr::Bool(b))   => { self.globals_val.insert(name.clone(), (Ty::Bool,  GConst::I8(if b {1} else {0}))); }
-                    (&Ty::Char,  &Expr::Char(u))   => { self.globals_val.insert(name.clone(), (Ty::Char,  GConst::I32(u as i32))); }
-                    (&Ty::Float, &Expr::Float(x))  => { self.globals_val.insert(name.clone(), (Ty::Float, GConst::F32(x))); }
-                    (&Ty::Double,&Expr::Double(x)) => { self.globals_val.insert(name.clone(), (Ty::Double,GConst::F64(x))); }
-                    (&Ty::String,&Expr::Str(_))    => {}
+                    (Ty::Byte,   Expr::Int   { value: n, .. }) => { self.globals_val.insert(name.clone(), (Ty::Byte,  GConst::I8(*n as u8))); }
+                    (Ty::Int,    Expr::Int   { value: n, .. }) => { self.globals_val.insert(name.clone(), (Ty::Int,   GConst::I32(*n))); }
+                    (Ty::Long,   Expr::Long  { value: n, .. }) => { self.globals_val.insert(name.clone(), (Ty::Long,  GConst::I64(*n))); }
+                    (Ty::Long,   Expr::Int   { value: n, .. }) => { self.globals_val.insert(name.clone(), (Ty::Long,  GConst::I64(*n as i64))); }
+                    (Ty::Bool,   Expr::Bool  { value: b, .. }) => { self.globals_val.insert(name.clone(), (Ty::Bool,  GConst::I8(if *b {1} else {0}))); }
+                    (Ty::Char,   Expr::Char  { value: u, .. }) => { self.globals_val.insert(name.clone(), (Ty::Char,  GConst::I32(*u as i32))); }
+                    (Ty::Float,  Expr::Float { value: x, .. }) => { self.globals_val.insert(name.clone(), (Ty::Float, GConst::F32(*x))); }
+                    (Ty::Double, Expr::Double{ value: x, .. }) => { self.globals_val.insert(name.clone(), (Ty::Double,GConst::F64(*x))); }
+                    (Ty::String, Expr::Str   { .. })           => { /* 字符串常量单独驻留 */ }
                     _ => {}
                 }
             }
@@ -165,7 +165,7 @@ impl CLBackend {
     /// 幂等：若 passes 已经把 impl 方法降解为 `FunDecl` 并被 declare_fns 处理过，这里直接跳过。
     pub fn declare_impls_from_program(&mut self, prog: &Program) -> Result<()> {
         for it in &prog.items {
-            if let Item::Impl(id) = it {
+            if let Item::Impl(id, _) = it {
                 for m in &id.items {
                     let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
 
@@ -358,11 +358,11 @@ impl CLBackend {
         // 收集 Program 里已有的自由函数名
         let mut fun_names = FastSet::<String>::default();
         for it in &prog.items {
-            if let Item::Fun(f) = it { fun_names.insert(f.name.clone()); }
+            if let Item::Fun(f, _) = it { fun_names.insert(f.name.clone()); }
         }
 
         for it in &prog.items {
-            if let Item::Impl(id) = it {
+            if let Item::Impl(id, _) = it {
                 for m in &id.items {
                     let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
 
@@ -388,6 +388,7 @@ impl CLBackend {
                         where_bounds: vec![],
                         body: m.body.clone(),
                         is_extern: false,
+                        span: Span::DUMMY,
                     };
                     self.define_fn_core(fid, &fdecl)?;
                 }
@@ -510,7 +511,9 @@ impl CLBackend {
         } else {
             // 返回值：绝大多数场景不允许隐式转换；
             // 若返回目标是 Byte 且源表达式是 0..=255 的整数字面量，则发 i8 常量。
-            let final_v = cg.coerce_for_dst_from_expr(&mut b, &f.body.tail.as_deref().unwrap_or(&Expr::Int(0)), ret_val, &ret_ty)?;
+            let dummy0 = Expr::Int { value: 0, span: Span::DUMMY };
+            let src_expr = f.body.tail.as_deref().unwrap_or(&dummy0);
+            let final_v = cg.coerce_for_dst_from_expr(&mut b, src_expr, ret_val, &ret_ty)?;
             b.ins().return_(&[final_v]);
         }
 
@@ -690,8 +693,8 @@ impl<'a> ExprGen<'a> {
     #[inline]
     fn fits_byte_literal(&self, e: &Expr) -> Option<u8> {
         match e {
-            Expr::Int(n)  if *n >= 0 && *n <= 255 => Some(*n as u8),
-            Expr::Long(n) if *n >= 0 && *n <= 255 => Some(*n as u8),
+            Expr::Int  { value: n, .. } if *n >= 0 && *n <= 255 => Some(*n as u8),
+            Expr::Long { value: n, .. } if *n >= 0 && *n <= 255 => Some(*n as u8),
             _ => None,
         }
     }
@@ -729,7 +732,7 @@ impl<'a> ExprGen<'a> {
                     b.def_var(var, v);
                 }
 
-                Stmt::Assign { name, expr } => {
+                Stmt::Assign { name, expr, .. } => {
                     let var = self.lookup(name).ok_or_else(|| anyhow!("unknown var `{name}`"))?;
                     let ty = self.lookup_ty(name).ok_or_else(|| anyhow!("no type for `{name}`"))?;
                     let rhs = self.emit_expr(b, expr)?;
@@ -738,9 +741,9 @@ impl<'a> ExprGen<'a> {
                 }
 
                 // 表达式语句——**始终**实际求值（即使返回 Void），确保诸如 println_int(...) 的副作用发生
-                Stmt::Expr(e) => { let _ = self.emit_expr(b, e)?; }
+                Stmt::Expr { expr, .. } => { let _ = self.emit_expr(b, expr)?; }
 
-                Stmt::If { cond, then_b, else_b } => {
+                Stmt::If { cond, then_b, else_b, .. } => {
                     let cv  = self.emit_expr(b, cond)?; let c1  = self.bool_i8_to_b1(b, cv);
                     let tbb = b.create_block(); let ebb = b.create_block(); let out = b.create_block();
                     b.ins().brif(c1, tbb, &[], ebb, &[]);
@@ -749,7 +752,7 @@ impl<'a> ExprGen<'a> {
                     b.switch_to_block(out); b.seal_block(out);
                 }
 
-                Stmt::While { cond, body } => {
+                Stmt::While { cond, body, .. } => {
                     let hdr = b.create_block(); let bb  = b.create_block(); let out = b.create_block();
                     b.ins().jump(hdr, &[]); b.switch_to_block(hdr);
                     let cv = self.emit_expr(b, cond)?; let c  = self.bool_i8_to_b1(b, cv);
@@ -760,7 +763,7 @@ impl<'a> ExprGen<'a> {
                     b.switch_to_block(out); b.seal_block(out);
                 }
 
-                Stmt::For { init, cond, step, body } => {
+                Stmt::For { init, cond, step, body, .. } => {
                     if let Some(fi) = init {
                         match fi {
                             ForInit::Let { name, ty, init, .. } => {
@@ -772,7 +775,7 @@ impl<'a> ExprGen<'a> {
                                 };
                                 let var = self.declare_named(b, name, ty); b.def_var(var, v);
                             }
-                            ForInit::Assign { name, expr } => {
+                            ForInit::Assign { name, expr, .. } => {
                                 let (var, ty) = {
                                     let v  = self.lookup(name).ok_or_else(|| anyhow!("unknown var `{name}`"))?;
                                     let ty = self.lookup_ty(name).ok_or_else(|| anyhow!("no type for `{name}`"))?;
@@ -781,7 +784,7 @@ impl<'a> ExprGen<'a> {
                                 let rhs = self.emit_expr(b, expr)?; let rv = self.coerce_for_dst_from_expr(b, expr, rhs, &ty)?;
                                 b.def_var(var, rv);
                             }
-                            ForInit::Expr(e) => { let _ = self.emit_expr(b, e)?; }
+                            ForInit::Expr(e, ..) => { let _ = self.emit_expr(b, e)?; }
                         }
                     }
 
@@ -803,7 +806,7 @@ impl<'a> ExprGen<'a> {
                     b.switch_to_block(stepb); b.seal_block(stepb);
                     if let Some(st) = step {
                         match st {
-                            ForStep::Assign { name, expr } => {
+                            ForStep::Assign { name, expr, .. } => {
                                 let (var, ty) = {
                                     let v  = self.lookup(name).ok_or_else(|| anyhow!("unknown var `{name}`"))?;
                                     let ty = self.lookup_ty(name).ok_or_else(|| anyhow!("no type for `{name}`"))?;
@@ -812,7 +815,7 @@ impl<'a> ExprGen<'a> {
                                 let rhs = self.emit_expr(b, expr)?; let rv = self.coerce_for_dst_from_expr(b, expr, rhs, &ty)?;
                                 b.def_var(var, rv);
                             }
-                            ForStep::Expr(e) => { let _ = self.emit_expr(b, e)?; }
+                            ForStep::Expr(e, ..) => { let _ = self.emit_expr(b, e)?; }
                         }
                     }
 
@@ -820,17 +823,17 @@ impl<'a> ExprGen<'a> {
                     b.switch_to_block(out); b.seal_block(out);
                 }
 
-                Stmt::Break => {
+                Stmt::Break { .. } => {
                     let &(_, out) = self.loop_stack.last().ok_or_else(|| anyhow!("`break` outside loop"))?;
                     b.ins().jump(out, &[]); let cont = b.create_block(); b.switch_to_block(cont); b.seal_block(cont);
                 }
 
-                Stmt::Continue => {
+                Stmt::Continue { .. } => {
                     let &(cont_tgt, _) = self.loop_stack.last().ok_or_else(|| anyhow!("`continue` outside loop"))?;
                     b.ins().jump(cont_tgt, &[]); let cont = b.create_block(); b.switch_to_block(cont); b.seal_block(cont);
                 }
 
-                Stmt::Return(opt) => {
+                Stmt::Return { expr: opt, .. } => {
                     match (self.fun_ret.clone(), opt) {
                         (Ty::Void, Some(e)) => { let _ = self.emit_expr(b, e)?; b.ins().return_(&[]); }
                         (ret_ty, Some(e)) => {
@@ -893,18 +896,18 @@ impl<'a> ExprGen<'a> {
         use BinOp::*; use UnOp::*;
         Ok(match e {
             // —— 字面量 & 变量 —— //
-            Expr::Int(_)    => Ty::Int,
-            Expr::Long(_)   => Ty::Long,
-            Expr::Bool(_)   => Ty::Bool,
-            Expr::Char(_)   => Ty::Char,
-            Expr::Float(_)  => Ty::Float,
-            Expr::Double(_) => Ty::Double,
-            Expr::Str(_)    => Ty::String,
-            Expr::Var(n)    => self.lookup_ty(n)
-                .ok_or_else(|| anyhow!("cannot infer type of `{}` here; add explicit `<...>`", n))?,
+            Expr::Int   { .. } => Ty::Int,
+            Expr::Long  { .. } => Ty::Long,
+            Expr::Bool  { .. } => Ty::Bool,
+            Expr::Char  { .. } => Ty::Char,
+            Expr::Float { .. } => Ty::Float,
+            Expr::Double{ .. } => Ty::Double,
+            Expr::Str   { .. } => Ty::String,
+            Expr::Var   { name, .. } => self.lookup_ty(name)
+                .ok_or_else(|| anyhow!("cannot infer type of `{}` here; add explicit `<...>`", name))?,
 
             // —— 一元运算 —— //
-            Expr::Unary { op, rhs } => {
+            Expr::Unary { op, rhs, .. } => {
                 let t = self.static_ty_of_expr(rhs)?;
                 match op {
                     Neg => t, // 不再对 Byte/Char 做提升
@@ -913,10 +916,10 @@ impl<'a> ExprGen<'a> {
             }
 
             // —— 显式 as 转换 —— //
-            Expr::Cast { expr: _, ty } => ty.clone(),
+            Expr::Cast { expr: _, ty, .. } => ty.clone(),
 
             // —— 二元运算 —— //
-            Expr::Binary { op, lhs, rhs } => {
+            Expr::Binary { op, lhs, rhs, .. } => {
                 let lt = self.static_ty_of_expr(lhs)?;
                 let rt = self.static_ty_of_expr(rhs)?;
                 match op {
@@ -930,9 +933,9 @@ impl<'a> ExprGen<'a> {
             }
 
             // —— 块 / if / match —— //
-            Expr::Block(b) => self.static_ty_of_block(b)?,
+            Expr::Block { block, .. } => self.static_ty_of_block(block)?,
 
-            Expr::If { cond:_, then_b, else_b } => {
+            Expr::If { cond:_, then_b, else_b, .. } => {
                 let tt = self.static_ty_of_block(then_b)?;
                 let et = self.static_ty_of_block(else_b)?;
                 if tt == et { tt } else {
@@ -940,7 +943,7 @@ impl<'a> ExprGen<'a> {
                 }
             }
 
-            Expr::Match { scrut:_, arms, default } => {
+            Expr::Match { scrut:_, arms, default, .. } => {
                 let mut out: Option<Ty> = None;
                 for (_, blk) in arms {
                     let t = self.static_ty_of_block(blk)?;
@@ -962,7 +965,7 @@ impl<'a> ExprGen<'a> {
             }
 
             // —— 调用（原逻辑保留） —— //
-            Expr::Call { callee, generics, args: _ } => {
+            Expr::Call { callee, generics, args: _, .. } => {
                 match callee {
                     Callee::Name(name) => {
                         if generics.is_empty() {
@@ -996,39 +999,39 @@ impl<'a> ExprGen<'a> {
     fn emit_expr(&mut self, b:&mut FunctionBuilder, e:&Expr)->Result<ir::Value>{
         use BinOp::*; use UnOp::*;
         Ok(match e {
-            Expr::Int(n)    => b.ins().iconst(types::I32, *n as i64),
-            Expr::Long(n)   => b.ins().iconst(types::I64, *n),
-            Expr::Float(x)  => b.ins().f32const(*x),
-            Expr::Double(x) => b.ins().f64const(*x),
-            Expr::Char(u)   => b.ins().iconst(types::I32, *u as i64),
-            Expr::Bool(bi)  => b.ins().iconst(types::I8, if *bi {1} else {0}),
-            Expr::Str(s)    => {
+            Expr::Int    { value: n, .. } => b.ins().iconst(types::I32, *n as i64),
+            Expr::Long   { value: n, .. } => b.ins().iconst(types::I64, *n),
+            Expr::Float  { value: x, .. } => b.ins().f32const(*x),
+            Expr::Double { value: x, .. } => b.ins().f64const(*x),
+            Expr::Char   { value: u, .. } => b.ins().iconst(types::I32, *u as i64),
+            Expr::Bool   { value: bi, .. } => b.ins().iconst(types::I8, if *bi {1} else {0}),
+            Expr::Str    { value: s, .. } => {
                 let did = self.be.intern_str(s)?; let gv  = self.be.module.declare_data_in_func(did, b.func);
                 b.ins().global_value(types::I64, gv)
             }
 
-            Expr::Var(name) => {
+            Expr::Var { name, .. } => {
                 let v = self.lookup(name).ok_or_else(|| anyhow!("unknown var in codegen `{name}`"))?;
                 b.use_var(v)
             }
 
-            Expr::Unary{op, rhs} => {
+            Expr::Unary{ op, rhs, .. } => {
                 let r = self.emit_expr(b, rhs)?; let rt = self.val_ty(b, r);
                 match op {
-                    Neg => if rt.is_int() { b.ins().ineg(r) } else { b.ins().fneg(r) },
-                    Not => { let b1 = self.bool_i8_to_b1(b, r); let nb = b.ins().bnot(b1); self.bool_b1_to_i8(b, nb) }
+                    UnOp::Neg => if rt.is_int() { b.ins().ineg(r) } else { b.ins().fneg(r) },
+                    UnOp::Not => { let b1 = self.bool_i8_to_b1(b, r); let nb = b.ins().bnot(b1); self.bool_b1_to_i8(b, nb) }
                 }
             }
 
             // 显式 as 转换
-            Expr::Cast { expr, ty } => {
+            Expr::Cast { expr, ty, .. } => {
                 let v = self.emit_expr(b, expr)?;
                 self.cast_to_ty(b, v, ty)?
             }
 
-            Expr::Binary{op,lhs,rhs}=>{
+            Expr::Binary{ op, lhs, rhs, .. }=>{
                 match op {
-                    And => {
+                    BinOp::And => {
                         let l  = self.emit_expr(b, lhs)?; let l1 = self.bool_i8_to_b1(b, l);
                         let rhsb   = b.create_block(); let falseb = b.create_block(); let out = b.create_block();
                         let res = b.declare_var(types::I8);
@@ -1037,7 +1040,7 @@ impl<'a> ExprGen<'a> {
                         b.switch_to_block(rhsb);  b.seal_block(rhsb);  let r  = self.emit_expr(b, rhs)?; let r1 = self.bool_i8_to_b1(b, r); let ri = self.bool_b1_to_i8(b, r1); b.def_var(res, ri); b.ins().jump(out, &[]);
                         b.switch_to_block(out);   b.seal_block(out);   b.use_var(res)
                     }
-                    Or => {
+                    BinOp::Or => {
                         let l  = self.emit_expr(b, lhs)?; let l1 = self.bool_i8_to_b1(b, l);
                         let trueb = b.create_block(); let rhsb  = b.create_block(); let out   = b.create_block();
                         let res = b.declare_var(types::I8);
@@ -1052,49 +1055,49 @@ impl<'a> ExprGen<'a> {
                         let (l, r, ty) = self.require_same_numeric(b, l0, r0)?;
 
                         match op {
-                            Add => if ty.is_int() { b.ins().iadd(l, r) } else { b.ins().fadd(l, r) },
-                            Sub => if ty.is_int() { b.ins().isub(l, r) } else { b.ins().fsub(l, r) },
-                            Mul => if ty.is_int() { b.ins().imul(l, r) } else { b.ins().fmul(l, r) },
-                            Div => if ty.is_int() { b.ins().sdiv(l, r) } else { b.ins().fdiv(l, r) },
-                            Lt | Le | Gt | Ge => {
+                            BinOp::Add => if ty.is_int() { b.ins().iadd(l, r) } else { b.ins().fadd(l, r) },
+                            BinOp::Sub => if ty.is_int() { b.ins().isub(l, r) } else { b.ins().fsub(l, r) },
+                            BinOp::Mul => if ty.is_int() { b.ins().imul(l, r) } else { b.ins().fmul(l, r) },
+                            BinOp::Div => if ty.is_int() { b.ins().sdiv(l, r) } else { b.ins().fdiv(l, r) },
+                            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                                 let b1 = if ty.is_int() {
                                     let cc = match op {
-                                        Lt => IntCC::SignedLessThan,
-                                        Le => IntCC::SignedLessThanOrEqual,
-                                        Gt => IntCC::SignedGreaterThan,
-                                        Ge => IntCC::SignedGreaterThanOrEqual,
+                                        BinOp::Lt => IntCC::SignedLessThan,
+                                        BinOp::Le => IntCC::SignedLessThanOrEqual,
+                                        BinOp::Gt => IntCC::SignedGreaterThan,
+                                        BinOp::Ge => IntCC::SignedGreaterThanOrEqual,
                                         _  => unreachable!(),
                                     };
                                     b.ins().icmp(cc, l, r)
                                 } else {
                                     let cc = match op {
-                                        Lt => FloatCC::LessThan,
-                                        Le => FloatCC::LessThanOrEqual,
-                                        Gt => FloatCC::GreaterThan,
-                                        Ge => FloatCC::GreaterThanOrEqual,
+                                        BinOp::Lt => FloatCC::LessThan,
+                                        BinOp::Le => FloatCC::LessThanOrEqual,
+                                        BinOp::Gt => FloatCC::GreaterThan,
+                                        BinOp::Ge => FloatCC::GreaterThanOrEqual,
                                         _  => unreachable!(),
                                     };
                                     b.ins().fcmp(cc, l, r)
                                 };
                                 self.bool_b1_to_i8(b, b1)
                             }
-                            Eq | Ne => {
+                            BinOp::Eq | BinOp::Ne => {
                                 let b1 = if ty.is_float() {
-                                    let cc = if matches!(op, Eq) { FloatCC::Equal } else { FloatCC::NotEqual };
+                                    let cc = if matches!(op, BinOp::Eq) { FloatCC::Equal } else { FloatCC::NotEqual };
                                     b.ins().fcmp(cc, l, r)
                                 } else {
-                                    let cc = if matches!(op, Eq) { IntCC::Equal } else { IntCC::NotEqual };
+                                    let cc = if matches!(op, BinOp::Eq) { IntCC::Equal } else { IntCC::NotEqual };
                                     b.ins().icmp(cc, l, r)
                                 };
                                 self.bool_b1_to_i8(b, b1)
                             }
-                            And | Or => unreachable!(),
+                            BinOp::And | BinOp::Or => unreachable!(),
                         }
                     }
                 }
             }
 
-            Expr::If { cond, then_b, else_b } => {
+            Expr::If { cond, then_b, else_b, .. } => {
                 let cv = self.emit_expr(b, cond)?; let c1 = self.bool_i8_to_b1(b, cv);
                 let tbb = b.create_block(); let ebb = b.create_block(); let mb  = b.create_block();
                 b.ins().brif(c1, tbb, &[], ebb, &[]);
@@ -1108,7 +1111,7 @@ impl<'a> ExprGen<'a> {
                 b.switch_to_block(mb);  b.seal_block(mb); b.use_var(phi)
             }
 
-            Expr::Match { scrut, arms, default } => {
+            Expr::Match { scrut, arms, default, .. } => {
                 let sv = self.emit_expr(b, scrut)?;
                 let svt = self.val_ty(b, sv);
                 let out = b.create_block(); let mut phi: Option<Variable> = None;
@@ -1156,8 +1159,8 @@ impl<'a> ExprGen<'a> {
                 b.switch_to_block(out); b.seal_block(out); b.use_var(phi.unwrap())
             }
 
-            // 调用：支持 Name 与 Qualified；参数位置若目标是 Byte 且实参是 0..=255 字面量，直接用 I8 常量
-            Expr::Call { callee, generics, args } => {
+            // 调用：支持 Name 与 Qualified；参数位置若目标是 Byte 且实参是 0..=255 的字面量，直接用 I8 常量
+            Expr::Call { callee, generics, args, .. } => {
                 let (sym, fid) = match callee {
                     Callee::Name(name) => {
                         // 三种路径：
@@ -1249,7 +1252,7 @@ impl<'a> ExprGen<'a> {
                 }
             }
 
-            Expr::Block(blk) => self.emit_block(b, blk)?,
+            Expr::Block { block: blk, .. } => self.emit_block(b, blk)?,
         })
     }
 }
@@ -1271,52 +1274,70 @@ fn subst_ty(t: &Ty, s: &FastMap<String, Ty>) -> Ty {
 }
 fn subst_expr(e: &Expr, s: &FastMap<String, Ty>) -> Expr {
     match e {
-        Expr::Call { callee, generics, args } => Expr::Call {
+        Expr::Call { callee, generics, args, span } => Expr::Call {
             callee: callee.clone(),
             generics: generics.iter().map(|t| subst_ty(t, s)).collect(),
             args: args.iter().map(|a| subst_expr(a, s)).collect(),
+            span: *span,
         },
-        Expr::Unary { op, rhs } => Expr::Unary { op: *op, rhs: Box::new(subst_expr(rhs, s)) },
-        Expr::Binary { op, lhs, rhs } => Expr::Binary { op: *op, lhs: Box::new(subst_expr(lhs, s)), rhs: Box::new(subst_expr(rhs, s)) },
-        Expr::If { cond, then_b, else_b } => Expr::If { cond: Box::new(subst_expr(cond, s)), then_b: subst_block(then_b, s), else_b: subst_block(else_b, s) },
-        Expr::Match { scrut, arms, default } => {
+        Expr::Unary { op, rhs, span } =>
+            Expr::Unary { op: *op, rhs: Box::new(subst_expr(rhs, s)), span: *span },
+        Expr::Binary { op, lhs, rhs, span } =>
+            Expr::Binary { op: *op, lhs: Box::new(subst_expr(lhs, s)), rhs: Box::new(subst_expr(rhs, s)), span: *span },
+        Expr::If { cond, then_b, else_b, span } =>
+            Expr::If { cond: Box::new(subst_expr(cond, s)), then_b: subst_block(then_b, s), else_b: subst_block(else_b, s), span: *span },
+        Expr::Match { scrut, arms, default, span } => {
             let scr = Box::new(subst_expr(scrut, s));
             let mut new_arms = Vec::with_capacity(arms.len());
             for (pat, blk) in arms { new_arms.push((pat.clone(), subst_block(blk, s))); }
             let def = default.as_ref().map(|b| subst_block(b, s));
-            Expr::Match { scrut: scr, arms: new_arms, default: def }
+            Expr::Match { scrut: scr, arms: new_arms, default: def, span: *span }
         }
-        Expr::Cast { expr, ty } => Expr::Cast { expr: Box::new(subst_expr(expr, s)), ty: subst_ty(ty, s) },
-        Expr::Block(b) => Expr::Block(subst_block(b, s)),
+        Expr::Cast { expr, ty, span } =>
+            Expr::Cast { expr: Box::new(subst_expr(expr, s)), ty: subst_ty(ty, s), span: *span },
+        Expr::Block { block, span } =>
+            Expr::Block { block: subst_block(block, s), span: *span },
         _ => e.clone(),
     }
 }
 fn subst_stmt(st: &Stmt, s: &FastMap<String, Ty>) -> Stmt {
     match st {
-        Stmt::Let { name, ty, init, is_const } => Stmt::Let { name: name.clone(), ty: subst_ty(ty, s), init: subst_expr(init, s), is_const: *is_const },
-        Stmt::Assign { name, expr } => Stmt::Assign { name: name.clone(), expr: subst_expr(expr, s) },
-        Stmt::While { cond, body } => Stmt::While { cond: subst_expr(cond, s), body: subst_block(body, s) },
-        Stmt::For { init, cond, step, body } => Stmt::For {
+        Stmt::Let { name, ty, init, is_const, span } =>
+            Stmt::Let { name: name.clone(), ty: subst_ty(ty, s), init: subst_expr(init, s), is_const: *is_const, span: *span },
+        Stmt::Assign { name, expr, span } =>
+            Stmt::Assign { name: name.clone(), expr: subst_expr(expr, s), span: *span },
+        Stmt::While { cond, body, span } =>
+            Stmt::While { cond: subst_expr(cond, s), body: subst_block(body, s), span: *span },
+        Stmt::For { init, cond, step, body, span } => Stmt::For {
             init: init.as_ref().map(|fi| match fi {
-                ForInit::Let { name, ty, init, is_const } => ForInit::Let { name: name.clone(), ty: subst_ty(ty, s), init: subst_expr(init, s), is_const: *is_const },
-                ForInit::Assign { name, expr } => ForInit::Assign { name: name.clone(), expr: subst_expr(expr, s) },
-                ForInit::Expr(e) => ForInit::Expr(subst_expr(e, s)),
+                ForInit::Let { name, ty, init, is_const, span } =>
+                    ForInit::Let { name: name.clone(), ty: subst_ty(ty, s), init: subst_expr(init, s), is_const: *is_const, span: *span },
+                ForInit::Assign { name, expr, span } =>
+                    ForInit::Assign { name: name.clone(), expr: subst_expr(expr, s), span: *span },
+                ForInit::Expr(e, sp) => ForInit::Expr(subst_expr(e, s), *sp),
             } ),
             cond: cond.as_ref().map(|c| subst_expr(c, s)),
             step: step.as_ref().map(|stp| match stp {
-                ForStep::Assign { name, expr } => ForStep::Assign { name: name.clone(), expr: subst_expr(expr, s) },
-                ForStep::Expr(e) => ForStep::Expr(subst_expr(e, s)),
+                ForStep::Assign { name, expr, span } =>
+                    ForStep::Assign { name: name.clone(), expr: subst_expr(expr, s), span: *span },
+                ForStep::Expr(e, sp) => ForStep::Expr(subst_expr(e, s), *sp),
             } ),
             body: subst_block(body, s),
+            span: *span,
         },
-        Stmt::If { cond, then_b, else_b } => Stmt::If { cond: subst_expr(cond, s), then_b: subst_block(then_b, s), else_b: else_b.as_ref().map(|b| subst_block(b, s)) },
-        Stmt::Expr(e) => Stmt::Expr(subst_expr(e, s)),
-        Stmt::Return(e) => Stmt::Return(e.as_ref().map(|x| subst_expr(x, s))),
-        Stmt::Break | Stmt::Continue => st.clone(),
+        Stmt::If { cond, then_b, else_b, span } =>
+            Stmt::If { cond: subst_expr(cond, s), then_b: subst_block(then_b, s), else_b: else_b.as_ref().map(|b| subst_block(b, s)), span: *span },
+        Stmt::Expr { expr, span } => Stmt::Expr { expr: subst_expr(expr, s), span: *span },
+        Stmt::Return { expr, span } => Stmt::Return { expr: expr.as_ref().map(|x| subst_expr(x, s)), span: *span },
+        Stmt::Break { .. } | Stmt::Continue { .. } => st.clone(),
     }
 }
 fn subst_block(b: &Block, s: &FastMap<String, Ty>) -> Block {
-    Block { stmts: b.stmts.iter().map(|st| subst_stmt(st, s)).collect(), tail: b.tail.as_ref().map(|e| Box::new(subst_expr(e, s))) }
+    Block {
+        stmts: b.stmts.iter().map(|st| subst_stmt(st, s)).collect(),
+        tail:  b.tail.as_ref().map(|e| Box::new(subst_expr(e, s))),
+        span:  b.span,
+    }
 }
 fn specialize_fun(tpl: &FunDecl, subst: &FastMap<String, Ty>, mono_name: &str) -> Result<FunDecl> {
     let mut params = Vec::with_capacity(tpl.params.len());
@@ -1328,7 +1349,16 @@ fn specialize_fun(tpl: &FunDecl, subst: &FastMap<String, Ty>, mono_name: &str) -
     let ret = subst_ty(&tpl.ret, subst);
     if !matches!(ret, Ty::Void) && cl_ty(&ret).is_none() { return Err(anyhow!("monomorph return type not concrete/ABI-legal in `{}`: {:?}", mono_name, ret)); }
     let body = subst_block(&tpl.body, subst);
-    Ok(FunDecl { name: mono_name.to_string(), type_params: vec![], params, ret, where_bounds: vec![], body, is_extern: false })
+    Ok(FunDecl {
+        name: mono_name.to_string(),
+        type_params: vec![],
+        params,
+        ret,
+        where_bounds: vec![],
+        body,
+        is_extern: false,
+        span: Span::DUMMY,
+    })
 }
 
 /* ----------------------------------
@@ -1337,10 +1367,10 @@ fn specialize_fun(tpl: &FunDecl, subst: &FastMap<String, Ty>, mono_name: &str) -
 fn collect_calls_with_generics_in_program(p: &Program, out: &mut Vec<(String, Vec<Ty>)>) {
     for it in &p.items {
         match it {
-            Item::Fun(f) => collect_calls_in_block(&f.body, out),
+            Item::Fun(f, _) => collect_calls_in_block(&f.body, out),
             Item::Global { init, .. } => collect_calls_in_expr(init, out),
-            Item::Import(_) => {}
-            Item::Trait(_) | Item::Impl(_) => {}
+            Item::Import(_, _) => {}
+            Item::Trait(_, _) | Item::Impl(_, _) => {}
         }
     }
 }
@@ -1349,39 +1379,39 @@ fn collect_calls_in_block(b: &Block, out: &mut Vec<(String, Vec<Ty>)>) {
         match s {
             Stmt::Let { init, .. } => collect_calls_in_expr(init, out),
             Stmt::Assign { expr, .. } => collect_calls_in_expr(expr, out),
-            Stmt::While { cond, body } => { collect_calls_in_expr(cond, out); collect_calls_in_block(body, out); }
-            Stmt::For { init, cond, step, body } => {
+            Stmt::While { cond, body, .. } => { collect_calls_in_expr(cond, out); collect_calls_in_block(body, out); }
+            Stmt::For { init, cond, step, body, .. } => {
                 if let Some(fi) = init {
                     match fi {
                         ForInit::Let { init, .. } => collect_calls_in_expr(init, out),
                         ForInit::Assign { expr, .. } => collect_calls_in_expr(expr, out),
-                        ForInit::Expr(e) => collect_calls_in_expr(e, out),
+                        ForInit::Expr(e, ..) => collect_calls_in_expr(e, out),
                     }
                 }
                 if let Some(c) = cond { collect_calls_in_expr(c, out); }
                 if let Some(st) = step {
                     match st {
                         ForStep::Assign { expr, .. } => collect_calls_in_expr(expr, out),
-                        ForStep::Expr(e) => collect_calls_in_expr(e, out),
+                        ForStep::Expr(e, ..) => collect_calls_in_expr(e, out),
                     }
                 }
                 collect_calls_in_block(body, out);
             }
-            Stmt::If { cond, then_b, else_b } => {
+            Stmt::If { cond, then_b, else_b, .. } => {
                 collect_calls_in_expr(cond, out);
                 collect_calls_in_block(then_b, out);
                 if let Some(b) = else_b { collect_calls_in_block(b, out); }
             }
-            Stmt::Expr(e) => collect_calls_in_expr(e, out),
-            Stmt::Return(opt) => if let Some(e) = opt { collect_calls_in_expr(e, out); },
-            Stmt::Break | Stmt::Continue => {}
+            Stmt::Expr { expr, .. } => collect_calls_in_expr(expr, out),
+            Stmt::Return { expr: opt, .. } => if let Some(e) = opt { collect_calls_in_expr(e, out); },
+            Stmt::Break { .. } | Stmt::Continue { .. } => {}
         }
     }
     if let Some(t) = &b.tail { collect_calls_in_expr(t, out); }
 }
 fn collect_calls_in_expr(e: &Expr, out: &mut Vec<(String, Vec<Ty>)>) {
     match e {
-        Expr::Call { callee, generics, args } => {
+        Expr::Call { callee, generics, args, .. } => {
             if !generics.is_empty() {
                 if let Callee::Name(nm) = callee { out.push((nm.clone(), generics.clone())); }
             }
@@ -1389,16 +1419,16 @@ fn collect_calls_in_expr(e: &Expr, out: &mut Vec<(String, Vec<Ty>)>) {
         }
         Expr::Unary { rhs, .. } => collect_calls_in_expr(rhs, out),
         Expr::Binary { lhs, rhs, .. } => { collect_calls_in_expr(lhs, out); collect_calls_in_expr(rhs, out); }
-        Expr::If { cond, then_b, else_b } => {
+        Expr::If { cond, then_b, else_b, .. } => {
             collect_calls_in_expr(cond, out); collect_calls_in_block(then_b, out); collect_calls_in_block(else_b, out);
         }
-        Expr::Match { scrut, arms, default } => {
+        Expr::Match { scrut, arms, default, .. } => {
             collect_calls_in_expr(scrut, out);
             for (_, b) in arms { collect_calls_in_block(b, out); }
             if let Some(b) = default { collect_calls_in_block(b, out); }
         }
         Expr::Cast { expr, .. } => collect_calls_in_expr(expr, out),
-        Expr::Block(b) => collect_calls_in_block(b, out),
+        Expr::Block { block, .. } => collect_calls_in_block(block, out),
         _ => {}
     }
 }
@@ -1413,7 +1443,7 @@ pub fn compile_program(prog: &Program, diag: Option<Rc<RefCell<DiagSink>>>) -> R
 
     // 1) 先把“自由函数”（含 extern）全部声明
     let funs: Vec<&FunDecl> = prog.items.iter().filter_map(|it| {
-        if let Item::Fun(f) = it { Some(f) } else { None }
+        if let Item::Fun(f, _) = it { Some(f) } else { None }
     }).collect();
     let base_ids = be.declare_fns(funs.clone())?;
 

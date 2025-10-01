@@ -1,4 +1,6 @@
+// src/parser.rs
 use crate::frontend::ast::*;
+use crate::frontend::span::{FileId, Span};
 use anyhow::{anyhow, bail, Result};
 use pest::iterators::Pair;
 use pest::Parser;
@@ -7,10 +9,39 @@ use pest::Parser;
 #[grammar = "./grammar/grammar.pest"]
 pub struct PawParser;
 
+/* ============ 小工具：Span/Expr Span ============ */
+
+#[inline]
+fn sp_of(rule: &Pair<Rule>, file: FileId) -> Span {
+    let s = rule.as_span();
+    Span { file, start: s.start(), end: s.end() }
+}
+
+#[inline]
+fn span_of_expr(e: &Expr) -> Span {
+    match e {
+        Expr::Int   { span, .. }
+        | Expr::Long  { span, .. }
+        | Expr::Float { span, .. }
+        | Expr::Double{ span, .. }
+        | Expr::Char  { span, .. }
+        | Expr::Bool  { span, .. }
+        | Expr::Str   { span, .. }
+        | Expr::Var   { span, .. }
+        | Expr::Unary { span, .. }
+        | Expr::Binary{ span, .. }
+        | Expr::Cast  { span, .. }
+        | Expr::If    { span, .. }
+        | Expr::Match { span, .. }
+        | Expr::Call  { span, .. }
+        | Expr::Block { span, .. } => *span,
+    }
+}
+
 /* ================================
  * program / item 顶层入口
  * ================================ */
-pub fn parse_program(src: &str) -> Result<Program> {
+pub fn parse_program(src: &str, file: FileId) -> Result<Program> {
     let mut items = Vec::new();
     let mut pairs = PawParser::parse(Rule::program, src)?;
     let root = pairs.next().ok_or_else(|| anyhow!("empty program"))?;
@@ -20,7 +51,7 @@ pub fn parse_program(src: &str) -> Result<Program> {
         match it.as_rule() {
             Rule::item => {
                 let inner = it.into_inner().next().ok_or_else(|| anyhow!("empty item"))?;
-                items.push(build_item(inner)?);
+                items.push(build_item(inner, file)?);
             }
             Rule::EOI => { /* ignore */ }
             other => return Err(anyhow!("program: unexpected node: {:?}", other)),
@@ -29,14 +60,22 @@ pub fn parse_program(src: &str) -> Result<Program> {
     Ok(Program { items })
 }
 
-fn build_item(p: Pair<Rule>) -> Result<Item> {
+fn build_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
     match p.as_rule() {
-        Rule::fun_decl    => build_fun_item(p),
-        Rule::extern_fun  => build_extern_fun_item(p),
-        Rule::import_decl => build_import_item(p),
-        Rule::let_decl    => build_global_item(p),
-        Rule::trait_decl  => build_trait_decl(p).map(Item::Trait),
-        Rule::impl_decl   => build_impl_decl(p).map(Item::Impl),
+        Rule::fun_decl    => build_fun_item(p, file),
+        Rule::extern_fun  => build_extern_fun_item(p, file),
+        Rule::import_decl => build_import_item(p, file),
+        Rule::let_decl    => build_global_item(p, file),
+        Rule::trait_decl => {
+            let sp = sp_of(&p, file);
+            let td = build_trait_decl(p, file)?;
+            Ok(Item::Trait(td, sp))
+        }
+        Rule::impl_decl => {
+            let sp = sp_of(&p, file);
+            let id = build_impl_decl(p, file)?;
+            Ok(Item::Impl(id, sp))
+        }
         other => Err(anyhow!("item: unsupported top-level rule: {:?}", other)),
     }
 }
@@ -44,7 +83,7 @@ fn build_item(p: Pair<Rule>) -> Result<Item> {
 /* ================================
  * fun_decl / extern_fun / import / global
  * ================================ */
-fn build_fun_item(p: Pair<Rule>) -> Result<Item> {
+fn build_fun_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
     let mut name: Option<String> = None;
     let mut type_params: Vec<String> = Vec::new();
     let mut params: Vec<(String, Ty)> = Vec::new();
@@ -52,24 +91,25 @@ fn build_fun_item(p: Pair<Rule>) -> Result<Item> {
     let mut where_bounds: Vec<WherePred> = Vec::new();
     let mut body: Option<Block> = None;
 
-    for child in p.into_inner() {
+    for child in p.clone().into_inner() {
         match child.as_rule() {
             Rule::KW_FN => {}
             Rule::ident        => name = Some(child.as_str().to_string()),
             Rule::ty_params    => type_params = build_ty_params(child)?,
             Rule::param_list   => params = build_params(child)?,
             Rule::ty           => ret = Some(build_ty(child)?),
-            Rule::where_clause => where_bounds = build_where_clause(child)?,
-            Rule::block        => body = Some(build_block(child)?),
+            Rule::where_clause => where_bounds = build_where_clause(child, file)?,
+            Rule::block        => body = Some(build_block(child, file)?),
             r => return Err(anyhow!("fun_decl: unexpected piece {:?}", r)),
         }
     }
 
+    let sp = sp_of(&p, file);
     let name = name.ok_or_else(|| anyhow!("fun_decl: missing name"))?;
     let ret  = ret.ok_or_else(|| anyhow!("fun_decl `{}` missing return type", &name))?;
     let body = body.ok_or_else(|| anyhow!("fun_decl `{}` missing body", &name))?;
 
-    Ok(Item::Fun(FunDecl {
+    let f = FunDecl {
         name,
         type_params,
         params,
@@ -77,77 +117,81 @@ fn build_fun_item(p: Pair<Rule>) -> Result<Item> {
         where_bounds,
         body,
         is_extern: false,
-    }))
+        span: sp,
+    };
+    Ok(Item::Fun(f, sp))
 }
 
-fn build_extern_fun_item(p: Pair<Rule>) -> Result<Item> {
+fn build_extern_fun_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
     let mut name: Option<String> = None;
     let mut params: Vec<(String, Ty)> = Vec::new();
     let mut ret: Option<Ty> = None;
 
-    for child in p.into_inner() {
+    for child in p.clone().into_inner() {
         match child.as_rule() {
             Rule::KW_EXTERN | Rule::KW_FN => {}
             Rule::ident      => name = Some(child.as_str().to_string()),
             Rule::param_list => params = build_params(child)?,
             Rule::ty         => ret = Some(build_ty(child)?),
-            // 分号是字面量，pest 不会作为子节点返回，这里无需匹配
             _other => {}
         }
     }
+    let sp = sp_of(&p, file);
     let name = name.ok_or_else(|| anyhow!("extern_fun: missing name"))?;
     let ret  = ret.ok_or_else(|| anyhow!("extern_fun `{}` missing return type", &name))?;
-    Ok(Item::Fun(FunDecl {
+    let f = FunDecl {
         name,
         type_params: vec![],
         params,
         ret,
         where_bounds: vec![],
-        body: Block { stmts: vec![], tail: None }, // 外部函数无函数体
+        body: Block { stmts: vec![], tail: None, span: sp }, // 外部函数无函数体
         is_extern: true,
-    }))
+        span: sp,
+    };
+    Ok(Item::Fun(f, sp))
 }
 
-fn build_import_item(p: Pair<Rule>) -> Result<Item> {
+fn build_import_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
+    let sp = sp_of(&p, file);
     for x in p.into_inner() {
         if x.as_rule() == Rule::string_lit {
-            return Ok(Item::Import(unescape_string(x.as_str())));
+            return Ok(Item::Import(unescape_string(x.as_str()), sp));
         }
     }
     Err(anyhow!("import: missing string path"))
 }
 
-fn build_global_item(p: Pair<Rule>) -> Result<Item> {
+fn build_global_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
     // let_decl = (KW_LET|KW_CONST) ident ":" ty "=" expr ";"
+    let sp = sp_of(&p, file);
     let mut it = p.into_inner();
     let kw = it.next().ok_or_else(|| anyhow!("let_decl: missing kw"))?;
     let is_const = kw.as_rule() == Rule::KW_CONST;
     let name = it.next().ok_or_else(|| anyhow!("let_decl: missing ident"))?.as_str().to_string();
     let ty   = build_ty(it.next().ok_or_else(|| anyhow!("let_decl: missing type"))?)?;
-    let init = build_expr(it.next().ok_or_else(|| anyhow!("let_decl: missing init expr"))?)?;
-    Ok(Item::Global { name, ty, init, is_const })
+    let init = build_expr(it.next().ok_or_else(|| anyhow!("let_decl: missing init expr"))?, file)?;
+    Ok(Item::Global { name, ty, init, is_const, span: sp })
 }
 
 /* ================================
  * where 子句
  * ================================ */
-fn build_where_clause(p: Pair<Rule>) -> Result<Vec<WherePred>> {
+fn build_where_clause(p: Pair<Rule>, file: FileId) -> Result<Vec<WherePred>> {
     let mut preds = Vec::new();
     for child in p.into_inner() {
         if child.as_rule() != Rule::where_item { continue; }
         let mut it = child.into_inner();
         let first = it.next().ok_or_else(|| anyhow!("where_item empty"))?;
         match first.as_rule() {
-            // where_pred = ty ":" bound ("+" bound)*
-            Rule::where_pred => preds.push(build_where_pred(first)?),
-
-            // 简写：直接写一个 bound（如 PairEq<T,U>）
-            // 使用占位类型 __Self 表示“谓词约束”
+            Rule::where_pred => preds.push(build_where_pred(first, file)?),
             Rule::bound => {
-                let tref = build_bound_as_traitref(first)?;
+                let tref = build_bound_as_traitref(first.clone())?;
+                let sp = sp_of(&first, file);
                 preds.push(WherePred {
                     ty: Ty::App { name: "__Self".to_string(), args: vec![] },
                     bounds: vec![tref],
+                    span: sp,
                 });
             }
             r => return Err(anyhow!("where_item: unexpected {:?}", r)),
@@ -156,7 +200,8 @@ fn build_where_clause(p: Pair<Rule>) -> Result<Vec<WherePred>> {
     Ok(preds)
 }
 
-fn build_where_pred(p: Pair<Rule>) -> Result<WherePred> {
+fn build_where_pred(p: Pair<Rule>, file: FileId) -> Result<WherePred> {
+    let sp = sp_of(&p, file);
     let mut it = p.into_inner();
     let ty = build_ty(it.next().ok_or_else(|| anyhow!("where_pred: missing ty"))?)?;
     let mut bounds = Vec::new();
@@ -165,7 +210,7 @@ fn build_where_pred(p: Pair<Rule>) -> Result<WherePred> {
             bounds.push(build_bound_as_traitref(b)?);
         }
     }
-    Ok(WherePred { ty, bounds })
+    Ok(WherePred { ty, bounds, span: sp })
 }
 
 fn build_bound_as_traitref(p: Pair<Rule>) -> Result<TraitRef> {
@@ -174,8 +219,6 @@ fn build_bound_as_traitref(p: Pair<Rule>) -> Result<TraitRef> {
     let head = it.next().ok_or_else(|| anyhow!("bound: missing head"))?;
     let name = match head.as_rule() {
         Rule::ident => head.as_str().to_string(),
-        // 若将来扩到 qident，在此放宽：
-        // Rule::qident => head.as_str().to_string(),
         other => return Err(anyhow!("bound head not ident: {:?}", other)),
     };
     let mut args = Vec::new();
@@ -268,34 +311,35 @@ fn build_ty(p: Pair<Rule>) -> Result<Ty> {
 /* ================================
  * block / stmt（函数体内部）
  * ================================ */
-fn build_block(p: Pair<Rule>) -> Result<Block> {
+fn build_block(p: Pair<Rule>, file: FileId) -> Result<Block> {
     let mut stmts = Vec::new();
     let mut tail = None;
-    for x in p.into_inner() {
+    for x in p.clone().into_inner() {
         match x.as_rule() {
-            Rule::stmt => stmts.push(build_stmt(x)?),
+            Rule::stmt => stmts.push(build_stmt(x, file)?),
             Rule::tail_expr => {
-                let e = build_expr(x.into_inner().next().unwrap())?;
+                let e = build_expr(x.into_inner().next().unwrap(), file)?;
                 tail = Some(Box::new(e));
             }
             _ => {}
         }
     }
-    Ok(Block { stmts, tail })
+    Ok(Block { stmts, tail, span: sp_of(&p, file) })
 }
 
-fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
+fn build_stmt(p: Pair<Rule>, file: FileId) -> Result<Stmt> {
     if p.as_rule() != Rule::stmt {
         return Err(anyhow!("build_stmt expects Rule::stmt"));
     }
+    let stmt_span = sp_of(&p, file);
     let mut it = p.clone().into_inner();
     let first = it.next().ok_or_else(|| anyhow!("empty stmt"))?;
 
     match first.as_rule() {
         // 显式 let_decl 分支（顶层/块内统一）
         Rule::let_decl => {
-            if let Item::Global { name, ty, init, is_const } = build_global_item(first)? {
-                return Ok(Stmt::Let { name, ty, init, is_const });
+            if let Item::Global { name, ty, init, is_const, .. } = build_global_item(first, file)? {
+                return Ok(Stmt::Let { name, ty, init, is_const, span: stmt_span });
             } else {
                 unreachable!()
             }
@@ -305,36 +349,36 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
         Rule::assign_stmt => {
             let mut ii = first.into_inner();
             let name = ii.next().unwrap().as_str().to_string();
-            let expr = build_expr(ii.next().unwrap())?;
-            Ok(Stmt::Assign { name, expr })
+            let expr = build_expr(ii.next().unwrap(), file)?;
+            Ok(Stmt::Assign { name, expr, span: stmt_span })
         }
         Rule::while_stmt => {
             let mut ii = first.into_inner();
             let _kw = ii.next();
-            let cond = build_expr(ii.next().unwrap())?;
-            let body = build_block(ii.next().unwrap())?;
-            Ok(Stmt::While { cond, body })
+            let cond = build_expr(ii.next().unwrap(), file)?;
+            let body = build_block(ii.next().unwrap(), file)?;
+            Ok(Stmt::While { cond, body, span: stmt_span })
         }
-        Rule::for_stmt => build_for_stmt(first),
+        Rule::for_stmt => build_for_stmt(first, file),
         Rule::if_stmt => {
             let mut ii = first.into_inner();
             let _kw = ii.next();
-            let cond = build_expr(ii.next().unwrap())?;
-            let then_b = build_block(ii.next().unwrap())?;
-            let else_b = ii.next().map(build_block).transpose()?;
-            Ok(Stmt::If { cond, then_b, else_b })
+            let cond = build_expr(ii.next().unwrap(), file)?;
+            let then_b = build_block(ii.next().unwrap(), file)?;
+            let else_b = ii.next().map(|q| build_block(q, file)).transpose()?;
+            Ok(Stmt::If { cond, then_b, else_b, span: stmt_span })
         }
-        Rule::break_stmt => Ok(Stmt::Break),
-        Rule::continue_stmt => Ok(Stmt::Continue),
+        Rule::break_stmt => Ok(Stmt::Break { span: stmt_span }),
+        Rule::continue_stmt => Ok(Stmt::Continue { span: stmt_span }),
         Rule::return_stmt => {
             let mut ii = first.into_inner();
             let _kw = ii.next();
-            let expr = ii.next().map(build_expr).transpose()?;
-            Ok(Stmt::Return(expr))
+            let expr = ii.next().map(|q| build_expr(q, file)).transpose()?;
+            Ok(Stmt::Return { expr, span: stmt_span })
         }
         Rule::expr_stmt => {
-            let e = build_expr(first.into_inner().next().unwrap())?;
-            Ok(Stmt::Expr(e))
+            let e = build_expr(first.into_inner().next().unwrap(), file)?;
+            Ok(Stmt::Expr { expr: e, span: stmt_span })
         }
 
         // 兼容：let/const 直接作为 stmt 的一部分（无 let_decl 包装）
@@ -342,8 +386,8 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
             let is_const = first.as_rule() == Rule::KW_CONST;
             let name = it.next().ok_or_else(|| anyhow!("let: missing ident"))?.as_str().to_string();
             let ty   = build_ty(it.next().ok_or_else(|| anyhow!("let: missing type"))?)?;
-            let init = build_expr(it.next().ok_or_else(|| anyhow!("let: missing init expr"))?)?;
-            Ok(Stmt::Let { name, ty, init, is_const })
+            let init = build_expr(it.next().ok_or_else(|| anyhow!("let: missing init expr"))?, file)?;
+            Ok(Stmt::Let { name, ty, init, is_const, span: stmt_span })
         }
 
         // 兼容：赋值语句无 assign_stmt 包装： ident "=" expr ";"
@@ -351,16 +395,16 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
             if let Some(second) = it.next() {
                 if second.as_rule() == Rule::expr {
                     let name = first.as_str().to_string();
-                    let expr = build_expr(second)?;
-                    return Ok(Stmt::Assign { name, expr });
+                    let expr = build_expr(second, file)?;
+                    return Ok(Stmt::Assign { name, expr, span: stmt_span });
                 }
             }
             // 退化为普通表达式语句
             let mut again = p.into_inner();
             let only = again.next().unwrap();
             if only.as_rule() == Rule::expr {
-                let e = build_expr(only)?;
-                Ok(Stmt::Expr(e))
+                let e = build_expr(only, file)?;
+                Ok(Stmt::Expr { expr: e, span: stmt_span })
             } else {
                 Err(anyhow!("stmt starting with ident but not assign/expr"))
             }
@@ -368,15 +412,16 @@ fn build_stmt(p: Pair<Rule>) -> Result<Stmt> {
 
         // 兜底：如果第一个就是 expr，则为表达式语句
         Rule::expr => {
-            let e = build_expr(first)?;
-            Ok(Stmt::Expr(e))
+            let e = build_expr(first, file)?;
+            Ok(Stmt::Expr { expr: e, span: stmt_span })
         }
 
         r => Err(anyhow!("build_stmt: unexpected first piece {:?}", r)),
     }
 }
 
-fn build_for_stmt(p: Pair<Rule>) -> Result<Stmt> {
+fn build_for_stmt(p: Pair<Rule>, file: FileId) -> Result<Stmt> {
+    let sp = sp_of(&p, file);
     let mut init: Option<ForInit> = None;
     let mut cond: Option<Expr> = None;
     let mut step: Option<ForStep> = None;
@@ -384,18 +429,19 @@ fn build_for_stmt(p: Pair<Rule>) -> Result<Stmt> {
 
     for x in p.into_inner() {
         match x.as_rule() {
-            Rule::for_init => init = Some(build_for_init(x)?),
-            Rule::for_step => step = Some(build_for_step(x)?),
-            Rule::expr     => cond = Some(build_expr(x)?),
-            Rule::block    => body = Some(build_block(x)?),
+            Rule::for_init => init = Some(build_for_init(x, file)?),
+            Rule::for_step => step = Some(build_for_step(x, file)?),
+            Rule::expr     => cond = Some(build_expr(x, file)?),
+            Rule::block    => body = Some(build_block(x, file)?),
             _ => {}
         }
     }
     let body = body.ok_or_else(|| anyhow!("for_stmt: missing body"))?;
-    Ok(Stmt::For { init, cond, step, body })
+    Ok(Stmt::For { init, cond, step, body, span: sp })
 }
 
-fn build_for_init(p: Pair<Rule>) -> Result<ForInit> {
+fn build_for_init(p: Pair<Rule>, file: FileId) -> Result<ForInit> {
+    let sp = sp_of(&p, file);
     let mut it = p.into_inner();
     let first = it.next().unwrap();
     Ok(match first.as_rule() {
@@ -403,29 +449,36 @@ fn build_for_init(p: Pair<Rule>) -> Result<ForInit> {
             let is_const = first.as_rule() == Rule::KW_CONST;
             let name = it.next().unwrap().as_str().to_string();
             let ty   = build_ty(it.next().unwrap())?;
-            let init = build_expr(it.next().unwrap())?;
-            ForInit::Let { name, ty, init, is_const }
+            let init = build_expr(it.next().unwrap(), file)?;
+            ForInit::Let { name, ty, init, is_const, span: sp }
         }
         Rule::ident => {
             let name = first.as_str().to_string();
-            let expr = build_expr(it.next().unwrap())?;
-            ForInit::Assign { name, expr }
+            let expr = build_expr(it.next().unwrap(), file)?;
+            ForInit::Assign { name, expr, span: sp }
         }
-        Rule::expr => ForInit::Expr(build_expr(first)?),
+        Rule::expr => {
+            let e = build_expr(first, file)?;
+            ForInit::Expr(e, sp)
+        }
         r => return Err(anyhow!("unexpected for_init: {:?}", r)),
     })
 }
 
-fn build_for_step(p: Pair<Rule>) -> Result<ForStep> {
+fn build_for_step(p: Pair<Rule>, file: FileId) -> Result<ForStep> {
+    let sp = sp_of(&p, file);
     let mut it = p.into_inner();
     let first = it.next().unwrap();
     Ok(match first.as_rule() {
         Rule::ident => {
             let name = first.as_str().to_string();
-            let expr = build_expr(it.next().unwrap())?;
-            ForStep::Assign { name, expr }
+            let expr = build_expr(it.next().unwrap(), file)?;
+            ForStep::Assign { name, expr, span: sp }
         }
-        Rule::expr => ForStep::Expr(build_expr(first)?),
+        Rule::expr => {
+            let e = build_expr(first, file)?;
+            ForStep::Expr(e, sp)
+        }
         r => return Err(anyhow!("unexpected for_step: {:?}", r)),
     })
 }
@@ -433,36 +486,38 @@ fn build_for_step(p: Pair<Rule>) -> Result<ForStep> {
 /* ================================
  * 表达式（含限定名调用 + 显式 as 转换）
  * ================================ */
-fn build_if_expr(p: Pair<Rule>) -> Result<Expr> {
+fn build_if_expr(p: Pair<Rule>, file: FileId) -> Result<Expr> {
+    let sp = sp_of(&p, file);
     let mut it = p.into_inner();
     let _if = it.next();
-    let cond = build_expr(it.next().unwrap())?;
-    let then_b = build_block(it.next().unwrap())?;
+    let cond = build_expr(it.next().unwrap(), file)?;
+    let then_b = build_block(it.next().unwrap(), file)?;
     let _else = it.next();
-    let else_b = build_block(it.next().unwrap())?;
-    Ok(Expr::If { cond: Box::new(cond), then_b, else_b })
+    let else_b = build_block(it.next().unwrap(), file)?;
+    Ok(Expr::If { cond: Box::new(cond), then_b, else_b, span: sp })
 }
 
-fn build_match_expr(p: Pair<Rule>) -> Result<Expr> {
+fn build_match_expr(p: Pair<Rule>, file: FileId) -> Result<Expr> {
+    let sp = sp_of(&p, file);
     let mut scrut: Option<Expr> = None;
     let mut arms: Vec<(Pattern, Block)> = Vec::new();
     let mut default: Option<Block> = None;
 
     for x in p.into_inner() {
         match x.as_rule() {
-            Rule::expr => scrut = Some(build_expr(x)?),
+            Rule::expr => scrut = Some(build_expr(x, file)?),
             Rule::match_arms => {
                 for a in x.into_inner() {
                     match a.as_rule() {
                         Rule::match_arm => {
                             let mut ii = a.into_inner();
                             let pat = build_pattern(ii.next().unwrap())?;
-                            let blk = build_block(ii.next().unwrap())?;
+                            let blk = build_block(ii.next().unwrap(), file)?;
                             arms.push((pat, blk));
                         }
                         Rule::match_default => {
                             let mut ii = a.into_inner();
-                            let blk = build_block(ii.next().unwrap())?;
+                            let blk = build_block(ii.next().unwrap(), file)?;
                             default = Some(blk);
                         }
                         _ => {}
@@ -473,7 +528,7 @@ fn build_match_expr(p: Pair<Rule>) -> Result<Expr> {
         }
     }
     let scrut = scrut.ok_or_else(|| anyhow!("match: missing scrutinee"))?;
-    Ok(Expr::Match { scrut: Box::new(scrut), arms, default })
+    Ok(Expr::Match { scrut: Box::new(scrut), arms, default, span: sp })
 }
 
 fn build_pattern(p: Pair<Rule>) -> Result<Pattern> {
@@ -494,38 +549,39 @@ fn build_pattern(p: Pair<Rule>) -> Result<Pattern> {
     })
 }
 
-fn build_expr(p: Pair<Rule>) -> Result<Expr> {
+fn build_expr(p: Pair<Rule>, file: FileId) -> Result<Expr> {
     Ok(match p.as_rule() {
         // 包装层
-        Rule::expr => build_expr(p.into_inner().next().unwrap())?,
+        Rule::expr => build_expr(p.into_inner().next().unwrap(), file)?,
 
         // 二元优先级（含 add / mult 等）
         Rule::logic_or | Rule::logic_and | Rule::equality | Rule::compare | Rule::add | Rule::mult => {
-            fold_binary(p)?
+            fold_binary(p, file)?
         }
 
         // as 转换层（放在 add 与 mult 之间，语义：1 + 2 as Long == 1 + (2 as Long)）
-        Rule::cast => build_cast(p)?,
+        Rule::cast => build_cast(p, file)?,
         Rule::cast_term => {
             // cast_term = cast | mult
-            // 直接下钻到唯一子节点
             let mut it = p.into_inner();
-            build_expr(it.next().unwrap())?
+            build_expr(it.next().unwrap(), file)?
         }
 
         // 一元
         Rule::unary => {
+            let sp = sp_of(&p, file);
             let mut it = p.into_inner();
             let first = it.next().unwrap();
             match first.as_rule() {
-                Rule::OP_NOT => Expr::Unary { op: UnOp::Not, rhs: Box::new(build_expr(it.next().unwrap())?) },
-                Rule::OP_SUB => Expr::Unary { op: UnOp::Neg, rhs: Box::new(build_expr(it.next().unwrap())?) },
-                _ => build_expr(first)?,
+                Rule::OP_NOT => Expr::Unary { op: UnOp::Not, rhs: Box::new(build_expr(it.next().unwrap(), file)?), span: sp },
+                Rule::OP_SUB => Expr::Unary { op: UnOp::Neg, rhs: Box::new(build_expr(it.next().unwrap(), file)?), span: sp },
+                _ => build_expr(first, file)?,
             }
         }
 
         // 后缀（函数/方法调用）
         Rule::postfix => {
+            let sp_post = sp_of(&p, file);
             let mut it = p.into_inner();
 
             // 读取头
@@ -557,9 +613,8 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
                         other => return Err(anyhow!("name_ref unexpected: {:?}", other)),
                     }
                 }
-                // 其他原子表达式：group/block/字面量 等
                 _ => {
-                    base_expr = Some(build_expr(head)?);
+                    base_expr = Some(build_expr(head, file)?);
                 }
             }
 
@@ -580,12 +635,12 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
                             generics = build_ty_args(first)?;
                             if let Some(maybe_args) = ii.next() {
                                 if maybe_args.as_rule() == Rule::arg_list {
-                                    args = build_arg_list(maybe_args)?;
+                                    args = build_arg_list(maybe_args, file)?;
                                 }
                             }
                         }
                         Rule::arg_list => {
-                            args = build_arg_list(first)?;
+                            args = build_arg_list(first, file)?;
                         }
                         r => return Err(anyhow!("call_suffix: unexpected {:?}", r)),
                     }
@@ -596,22 +651,21 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
                     c.clone()
                 } else {
                     match base_expr.take() {
-                        Some(Expr::Var(name)) => Callee::Name(name),
+                        Some(Expr::Var { name, span: _ }) => Callee::Name(name),
                         _ => return Err(anyhow!("call on non-ident expression")),
                     }
                 };
 
-                out_call = Some(Expr::Call { callee, generics, args });
+                out_call = Some(Expr::Call { callee, generics, args, span: sp_post });
                 // 形成调用后，不再把结果当“可继续作为函数名”的头
                 callee_opt = None;
             }
 
-            // 无任何 call_suffix：把“头部”直接作为表达式返回
             if let Some(e) = out_call {
                 e
             } else if let Some(c) = callee_opt {
                 match c {
-                    Callee::Name(n) => Expr::Var(n), // 变量引用
+                    Callee::Name(n) => Expr::Var { name: n, span: sp_post }, // 变量引用
                     Callee::Qualified { .. } => {
                         return Err(anyhow!(
                             "qualified path cannot be used as a value; call it like `Trait::method<...>(...)`"
@@ -627,9 +681,10 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
 
         // 直接出现的 name_ref（不用作调用）→ ident 作为变量，qident 禁止当值
         Rule::name_ref => {
+            let sp = sp_of(&p, file);
             let node = p.into_inner().next().unwrap();
             match node.as_rule() {
-                Rule::ident => Expr::Var(node.as_str().to_string()),
+                Rule::ident => Expr::Var { name: node.as_str().to_string(), span: sp },
                 Rule::qident => {
                     return Err(anyhow!(
                         "qualified path cannot be used as a value; call it like `Trait::method<...>(...)`"
@@ -645,25 +700,29 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
         }
 
         // 其它原子
-        Rule::group      => build_expr(p.into_inner().next().unwrap())?,
-        Rule::if_expr    => build_if_expr(p)?,
-        Rule::match_expr => build_match_expr(p)?,
-        Rule::int_lit    => parse_int_expr(p.as_str())?,
-        Rule::long_lit   => { let n: i64 = parse_long_lit(p.as_str())?; Expr::Long(n) }
+        Rule::group      => build_expr(p.into_inner().next().unwrap(), file)?,
+        Rule::if_expr    => build_if_expr(p, file)?,
+        Rule::match_expr => build_match_expr(p, file)?,
+        Rule::int_lit    => { let sp = sp_of(&p, file); parse_int_expr(p.as_str(), sp)? }
+        Rule::long_lit   => { let n: i64 = parse_long_lit(p.as_str())?; Expr::Long { value: n, span: sp_of(&p, file) } }
 
-        Rule::float_lit  => Expr::Float(parse_float32_lit(p.as_str())?),
-        Rule::double_lit => Expr::Double(parse_float_lit(p.as_str())?),
+        Rule::float_lit  => { let v = parse_float32_lit(p.as_str())?; Expr::Float { value: v, span: sp_of(&p, file) } }
+        Rule::double_lit => { let v = parse_float_lit(p.as_str())?;   Expr::Double{ value: v, span: sp_of(&p, file) } }
 
-        Rule::char_lit   => Expr::Char(parse_char_lit(p.as_str())?),
-        Rule::bool_lit   => Expr::Bool(p.as_str() == "true"),
-        Rule::string_lit => Expr::Str(unescape_string(p.as_str())),
-        Rule::ident      => Expr::Var(p.as_str().to_string()),
-        Rule::block      => Expr::Block(build_block(p)?),
+        Rule::char_lit   => { let u = parse_char_lit(p.as_str())?; Expr::Char { value: u, span: sp_of(&p, file) } }
+        Rule::bool_lit   => Expr::Bool { value: p.as_str() == "true", span: sp_of(&p, file) },
+        Rule::string_lit => Expr::Str  { value: unescape_string(p.as_str()), span: sp_of(&p, file) },
+        Rule::ident      => Expr::Var  { name: p.as_str().to_string(), span: sp_of(&p, file) },
+        Rule::block      => {
+            let sp = sp_of(&p, file);
+            let b  = build_block(p, file)?;
+            Expr::Block { block: b, span: sp }
+        }
 
         other => {
             let mut it = p.clone().into_inner();
             if let Some(q) = it.next() {
-                build_expr(q)?
+                build_expr(q, file)?
             } else {
                 return Err(anyhow!("unexpected expr rule: {:?}", other));
             }
@@ -671,11 +730,12 @@ fn build_expr(p: Pair<Rule>) -> Result<Expr> {
     })
 }
 
-fn build_cast(p: Pair<Rule>) -> Result<Expr> {
+fn build_cast(p: Pair<Rule>, file: FileId) -> Result<Expr> {
     // cast = mult ~ (KW_AS ~ ty)+
+    let sp = sp_of(&p, file);
     let mut it = p.into_inner();
     // 起始操作数：mult
-    let mut e = build_expr(it.next().ok_or_else(|| anyhow!("cast: missing base expr"))?)?;
+    let mut e = build_expr(it.next().ok_or_else(|| anyhow!("cast: missing base expr"))?, file)?;
     // 后续重复：KW_AS ty
     while let Some(tok) = it.next() {
         match tok.as_rule() {
@@ -685,7 +745,8 @@ fn build_cast(p: Pair<Rule>) -> Result<Expr> {
                     return Err(anyhow!("cast: expected type after `as`, got {:?}", ty_pair.as_rule()));
                 }
                 let ty = build_ty(ty_pair)?;
-                e = Expr::Cast { expr: Box::new(e), ty };
+                let merged = Span::merge(span_of_expr(&e), sp);
+                e = Expr::Cast { expr: Box::new(e), ty, span: merged };
             }
             other => return Err(anyhow!("cast: unexpected piece {:?}", other)),
         }
@@ -693,20 +754,20 @@ fn build_cast(p: Pair<Rule>) -> Result<Expr> {
     Ok(e)
 }
 
-fn build_arg_list(p: Pair<Rule>) -> Result<Vec<Expr>> {
+fn build_arg_list(p: Pair<Rule>, file: FileId) -> Result<Vec<Expr>> {
     let mut args = Vec::new();
     for ae in p.into_inner() {
-        args.push(build_expr(ae)?);
+        args.push(build_expr(ae, file)?);
     }
     Ok(args)
 }
 
-fn fold_binary(p: Pair<Rule>) -> Result<Expr> {
+fn fold_binary(p: Pair<Rule>, file: FileId) -> Result<Expr> {
     use BinOp::*;
     let mut it = p.into_inner();
-    let mut lhs = build_expr(it.next().unwrap())?;
+    let mut lhs = build_expr(it.next().unwrap(), file)?;
     while let Some(op) = it.next() {
-        let rhs = build_expr(it.next().unwrap())?;
+        let rhs = build_expr(it.next().unwrap(), file)?;
         let bop = match op.as_rule() {
             Rule::OP_ADD => Add,
             Rule::OP_SUB => Sub,
@@ -722,7 +783,8 @@ fn fold_binary(p: Pair<Rule>) -> Result<Expr> {
             Rule::OP_OR  => Or,
             r => return Err(anyhow!("binary op {:?} not expected", r)),
         };
-        lhs = Expr::Binary { op: bop, lhs: Box::new(lhs), rhs: Box::new(rhs) };
+        let span = Span::merge(span_of_expr(&lhs), span_of_expr(&rhs));
+        lhs = Expr::Binary { op: bop, lhs: Box::new(lhs), rhs: Box::new(rhs), span };
     }
     Ok(lhs)
 }
@@ -730,7 +792,8 @@ fn fold_binary(p: Pair<Rule>) -> Result<Expr> {
 /* ================================
  * trait / impl
  * ================================ */
-fn build_trait_decl(p: Pair<Rule>) -> Result<TraitDecl> {
+fn build_trait_decl(p: Pair<Rule>, file: FileId) -> Result<TraitDecl> {
+    let sp = sp_of(&p, file);
     let mut name: Option<String> = None;
     let mut tparams: Vec<String> = Vec::new();
     let mut methods: Vec<TraitMethodSig> = Vec::new();
@@ -740,7 +803,7 @@ fn build_trait_decl(p: Pair<Rule>) -> Result<TraitDecl> {
             Rule::KW_TRAIT => {}
             Rule::ident     => name = Some(x.as_str().to_string()),
             Rule::ty_params => tparams = build_ty_params(x)?,
-            Rule::trait_item => methods.push(build_trait_item(x)?),
+            Rule::trait_item => methods.push(build_trait_item(x, file)?),
             other => return Err(anyhow!("trait_decl: unexpected {:?}", other)),
         }
     }
@@ -748,10 +811,12 @@ fn build_trait_decl(p: Pair<Rule>) -> Result<TraitDecl> {
         name: name.ok_or_else(|| anyhow!("trait_decl: missing name"))?,
         type_params: tparams,
         items: methods,
+        span: sp,
     })
 }
 
-fn build_trait_item(p: Pair<Rule>) -> Result<TraitMethodSig> {
+fn build_trait_item(p: Pair<Rule>, file: FileId) -> Result<TraitMethodSig> {
+    let sp = sp_of(&p, file);
     let mut name: Option<String> = None;
     let mut params: Vec<(String, Ty)> = Vec::new();
     let mut ret: Option<Ty> = None;
@@ -769,11 +834,13 @@ fn build_trait_item(p: Pair<Rule>) -> Result<TraitMethodSig> {
         name: name.ok_or_else(|| anyhow!("trait_item: missing name"))?,
         params,
         ret: ret.ok_or_else(|| anyhow!("trait_item: missing return type"))?,
+        span: sp,
     })
 }
 
-fn build_impl_decl(p: Pair<Rule>) -> Result<ImplDecl> {
+fn build_impl_decl(p: Pair<Rule>, file: FileId) -> Result<ImplDecl> {
     // impl_decl = KW_IMPL ident ty_args? "{" impl_item* "}"
+    let sp = sp_of(&p, file);
     let mut trait_name: Option<String> = None;
     let mut trait_args: Vec<Ty> = Vec::new();
     let mut items: Vec<ImplMethod> = Vec::new();
@@ -783,7 +850,7 @@ fn build_impl_decl(p: Pair<Rule>) -> Result<ImplDecl> {
             Rule::KW_IMPL => {}
             Rule::ident   => trait_name = Some(x.as_str().to_string()),
             Rule::ty_args => trait_args = build_ty_args(x)?,
-            Rule::impl_item => items.push(build_impl_item(x)?),
+            Rule::impl_item => items.push(build_impl_item(x, file)?),
             _ => {}
         }
     }
@@ -791,11 +858,13 @@ fn build_impl_decl(p: Pair<Rule>) -> Result<ImplDecl> {
         trait_name: trait_name.ok_or_else(|| anyhow!("impl: missing trait name"))?,
         trait_args,
         items,
+        span: sp,
     })
 }
 
-fn build_impl_item(p: Pair<Rule>) -> Result<ImplMethod> {
+fn build_impl_item(p: Pair<Rule>, file: FileId) -> Result<ImplMethod> {
     // impl_item = "fn name(params) -> ty block"
+    let sp = sp_of(&p, file);
     let mut name: Option<String> = None;
     let mut params: Vec<(String, Ty)> = Vec::new();
     let mut ret: Option<Ty> = None;
@@ -807,7 +876,7 @@ fn build_impl_item(p: Pair<Rule>) -> Result<ImplMethod> {
             Rule::ident      => name = Some(x.as_str().to_string()),
             Rule::param_list => params = build_params(x)?,
             Rule::ty         => ret = Some(build_ty(x)?),
-            Rule::block      => body = Some(build_block(x)?),
+            Rule::block      => body = Some(build_block(x, file)?),
             _ => {}
         }
     }
@@ -817,18 +886,19 @@ fn build_impl_item(p: Pair<Rule>) -> Result<ImplMethod> {
         params,
         ret: ret.ok_or_else(|| anyhow!("impl fn: missing return type"))?,
         body: body.ok_or_else(|| anyhow!("impl fn: missing body"))?,
+        span: sp,
     })
 }
 
 /* ================================
  * 字面量解析 & 工具
  * ================================ */
-fn parse_int_expr(s: &str) -> Result<Expr> {
+fn parse_int_expr(s: &str, span: Span) -> Result<Expr> {
     let v = s.parse::<i128>()?;
     if v >= i32::MIN as i128 && v <= i32::MAX as i128 {
-        Ok(Expr::Int(v as i32))
+        Ok(Expr::Int { value: v as i32, span })
     } else if v >= i64::MIN as i128 && v <= i64::MAX as i128 {
-        Ok(Expr::Long(v as i64))
+        Ok(Expr::Long { value: v as i64, span })
     } else {
         bail!("integer literal out of i64 range: {}", s);
     }

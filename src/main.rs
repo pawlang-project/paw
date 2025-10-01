@@ -19,25 +19,30 @@ use backend::link_zig::{link_with_zig, LinkInput, PawTarget};
 use crate::backend::codegen;
 use crate::frontend::parser;
 use frontend::ast::Program;
+use frontend::span::FileId;
 use middle::passes;
 use middle::typecheck::typecheck_program;
 use project::{BuildProfile, Project};
 
-// 使用紧凑渲染器
-use crate::diag::{DiagSink, RenderSources, render_compact};
+use crate::diag::DiagSink;
 
-/// 读取 entry 源码 -> 解析 -> 以工程根目录为搜索根展开 import
+/// 读取 entry 源码 -> 解析 -> 以工程根目录为搜索根展开 import -> impl 降解
 fn load_and_expand_program(entry: &Path, project_root: &Path) -> Result<Program> {
     let src = fs::read_to_string(entry)
         .with_context(|| format!("read_to_string({}) failed", entry.display()))?;
 
-    let root = parser::parse_program(&src)
+    // 解析器现在需要 (src, FileId)。先用占位 DUMMY（如有全局文件表，可替换为真实 FileId）。
+    let root = parser::parse_program(&src, FileId::DUMMY)
         .with_context(|| format!("parse `{}` failed", entry.display()))?;
 
+    // 展开 import（a::b::c -> <root>/a/b/c.paw）
     let merged = passes::expand_imports_with_loader(&root, project_root)
         .context("expand imports failed")?;
 
-    Ok(merged)
+    // 将 impl 方法降解为自由函数，便于后续类型检查/后端处理
+    let lowered = passes::declare_impls_from_program(merged);
+
+    Ok(lowered)
 }
 
 /// 把完整 Program 编译为 object bytes
@@ -77,7 +82,7 @@ fn main() -> Result<()> {
     let proj: Project = project::load_from_cwd()
         .context("failed to load project (Paw.toml or defaults)")?;
 
-    // 2) 解析 + 展开 import
+    // 2) 解析 + 展开 import + impl 降解
     let entry = proj.entry.clone(); // e.g. <root>/main.paw
     let program = load_and_expand_program(&entry, &proj.root)?;
 
@@ -85,19 +90,16 @@ fn main() -> Result<()> {
     let diag = Rc::new(RefCell::new(DiagSink::default()));
     let file_id = entry.to_string_lossy().to_string();
 
-    // 4) 编译（失败则渲染紧凑样式并退出）
+    // 4) 编译（失败则打印收集到的诊断并退出）
     let obj_bytes = match build_object(&program, &file_id, diag.clone()) {
         Ok(obj) => obj,
         Err(e) => {
-            // 渲染需要的源：至少把入口文件放进来
-            let mut srcs = RenderSources::default();
-            if let Ok(text) = fs::read_to_string(&entry) {
-                srcs.insert(file_id.clone(), text);
+            let d = diag.borrow();
+            eprintln!("--- diagnostics ({} total) ---", d.len());
+            for rec in d.iter() {
+                // 依赖于你在 diag.rs 为 Diagnostic 实现的 Display
+                eprintln!("{rec}");
             }
-            // TODO: 如需把 import 的各源文件也渲染出来，可在 passes 中暴露源表，在此一并 insert
-
-            render_compact(&diag.borrow(), &srcs);
-
             eprintln!("compilation failed: {e:#}");
             process::exit(1);
         }

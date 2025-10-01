@@ -1,6 +1,7 @@
 // src/passes.rs
-use crate::frontend::ast::*;
 use crate::backend::mangle::mangle_impl_method;
+use crate::frontend::ast::*;
+use crate::frontend::span::FileId;
 use crate::parser;
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashSet;
@@ -8,25 +9,28 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// ===============================
-/// 1) 把 impl 方法降解为自由函数（保持你原有功能）
+/// 1) 把 impl 方法降解为自由函数
 ///    例如：impl Eq<Int> { fn eq(x:Int,y:Int)->Bool {...} }
 ///    生成一个自由函数：__impl_Eq$Int__eq(x:Int,y:Int)->Bool
+///    注意：为新生成的 FunDecl / Item 赋上合适的 span（沿用 impl 方法的 span）
 /// ===============================
 pub fn declare_impls_from_program(mut p: Program) -> Program {
+    // 收集已有自由函数名
     let mut existing: HashSet<String> = p
         .items
         .iter()
-        .filter_map(|it| if let Item::Fun(f) = it { Some(f.name.clone()) } else { None })
+        .filter_map(|it| if let Item::Fun(f, _) = it { Some(f.name.clone()) } else { None })
         .collect();
 
     let mut extra: Vec<Item> = Vec::new();
 
     for it in &p.items {
-        if let Item::Impl(id) = it {
+        if let Item::Impl(id, impl_span) = it {
             for m in &id.items {
                 let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
                 if existing.insert(sym.clone()) {
-                    extra.push(Item::Fun(FunDecl {
+                    // 降解：用 impl 方法体/签名构造一个自由函数；span 使用方法定义的 span
+                    let f = FunDecl {
                         name: sym,
                         type_params: vec![],
                         params: m.params.clone(),
@@ -34,11 +38,18 @@ pub fn declare_impls_from_program(mut p: Program) -> Program {
                         where_bounds: vec![],
                         body: m.body.clone(),
                         is_extern: false,
-                    }));
+                        span: m.span, // 方法定义处的 span
+                    };
+                    extra.push(Item::Fun(f, m.span));
                 }
             }
+
+            // 如果你希望把 impl 自身也转为一个“标记性” item，可在此处额外推入；
+            // 但通常 passes 只是“降解方法”，不移除 impl 壳；这里保持原状：既保留原 impl，又额外补自由函数。
+            let _ = impl_span; // 仅为强调：此 span 若将来要改策略可用上
         }
     }
+
     p.items.extend(extra);
     p
 }
@@ -71,25 +82,29 @@ fn expand_prog_recursive(
 
     for it in &prog.items {
         match it {
-            Item::Import(spec) => {
+            Item::Import(spec, import_span) => {
                 // 仅允许 "a::b::c" 形式
                 let path = resolve_double_colon_import(spec, roots)
                     .with_context(|| format!("while importing `{}`", spec))?;
 
                 let cano = canonicalize_lossy(&path)?;
                 if !visited.insert(cano.clone()) {
-                    // 已导入过，跳过
+                    // 已导入过，跳过（防环 & 去重）
                     continue;
                 }
 
                 let src = fs::read_to_string(&path)
                     .with_context(|| format!("read_to_string({})", path.display()))?;
-                let sub = parser::parse_program(&src)
+
+                // 解析子文件。若你维护了 FileId 映射，请换成真实 FileId；这里先用 DUMMY。
+                let sub = parser::parse_program(&src, FileId::DUMMY)
                     .with_context(|| format!("parse `{}` failed", path.display()))?;
 
                 // 递归展开子 Program
                 let sub_expanded = expand_prog_recursive(&sub, roots, visited)?;
                 out_items.extend(sub_expanded.items);
+
+                let _ = import_span; // 如需把 import 保留在输出里，可在此处 push(Item::Import(spec.clone(), *import_span))
             }
             _ => out_items.push(it.clone()),
         }
@@ -137,15 +152,22 @@ fn resolve_double_colon_import(spec: &str, roots: &[PathBuf]) -> Result<PathBuf>
 
 /// 判断是否为合法的 a::b::c 模块路径（每段都是合法标识符）
 fn is_double_colon_mod_path(s: &str) -> bool {
-    if s.is_empty() { return false; }
+    if s.is_empty() {
+        return false;
+    }
     // 不允许以 "::" 开头/结尾，也不允许出现空段
-    if s.starts_with("::") || s.ends_with("::") { return false; }
+    if s.starts_with("::") || s.ends_with("::") {
+        return false;
+    }
     s.split("::").all(|seg| {
-        if seg.is_empty() { return false; }
+        if seg.is_empty() {
+            return false;
+        }
         let mut it = seg.chars();
         match it.next() {
-            Some(c0) if c0.is_ascii_alphabetic() || c0 == '_' =>
-                it.all(|ch| ch.is_ascii_alphanumeric() || ch == '_'),
+            Some(c0) if c0.is_ascii_alphabetic() || c0 == '_' => {
+                it.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            }
             _ => false,
         }
     })
@@ -161,7 +183,9 @@ fn canonicalize_lossy(p: &Path) -> Result<PathBuf> {
 fn format_roots(roots: &[PathBuf]) -> String {
     let mut s = String::new();
     for (i, r) in roots.iter().enumerate() {
-        if i > 0 { s.push_str(", "); }
+        if i > 0 {
+            s.push_str(", ");
+        }
         s.push_str(&r.display().to_string());
     }
     s
