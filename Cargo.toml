@@ -21,12 +21,12 @@ cranelift-native = { version = "0.124.1", default-features = true }
 hashbrown = "0.16"
 ahash = "0.8"
 
-smallvec = "1.13"
+smallvec = "1.15.1"
 
 nohash-hasher = "0.2"
 
-serde = { version = "1.0.219", features = ["derive"] }
-toml = "0.9.5"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.9.7"
 
 [build-dependencies]
 

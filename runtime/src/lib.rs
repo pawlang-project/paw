@@ -1,4 +1,5 @@
 mod io;
+mod mem;
 
 pub use io::{
     print_u8, print_i32, print_i64, print_f32, print_f64,
