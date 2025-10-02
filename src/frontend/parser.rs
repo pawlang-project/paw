@@ -66,7 +66,7 @@ fn build_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
         Rule::extern_fun  => build_extern_fun_item(p, file),
         Rule::import_decl => build_import_item(p, file),
         Rule::let_decl    => build_global_item(p, file),
-        Rule::trait_decl => {
+        Rule::trait_decl  => {
             let sp = sp_of(&p, file);
             let td = build_trait_decl(p, file)?;
             Ok(Item::Trait(td, sp))
@@ -83,21 +83,38 @@ fn build_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
 /* ================================
  * fun_decl / extern_fun / import / global
  * ================================ */
+
+/// 解析返回类型：`ret_type = "->" ~ ty`；若缺省，返回 `Void`
+fn parse_ret_type_pair(ret_type_pair: Option<Pair<Rule>>, _file: FileId) -> Result<Ty> {
+    if let Some(rt) = ret_type_pair {
+        let mut it = rt.into_inner();
+        let ty_pair = it.next().ok_or_else(|| anyhow!("ret_type without ty"))?;
+        if ty_pair.as_rule() != Rule::ty {
+            return Err(anyhow!("ret_type: expected ty, got {:?}", ty_pair.as_rule()));
+        }
+        build_ty(ty_pair)
+    } else {
+        Ok(Ty::Void)
+    }
+}
+
 fn build_fun_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
+    let mut vis: Visibility = Visibility::Private;
     let mut name: Option<String> = None;
     let mut type_params: Vec<String> = Vec::new();
     let mut params: Vec<(String, Ty)> = Vec::new();
-    let mut ret: Option<Ty> = None;
+    let mut ret_pair: Option<Pair<Rule>> = None;
     let mut where_bounds: Vec<WherePred> = Vec::new();
     let mut body: Option<Block> = None;
 
     for child in p.clone().into_inner() {
         match child.as_rule() {
+            Rule::KW_PUB => { vis = Visibility::Public; }
             Rule::KW_FN => {}
             Rule::ident        => name = Some(child.as_str().to_string()),
             Rule::ty_params    => type_params = build_ty_params(child)?,
             Rule::param_list   => params = build_params(child)?,
-            Rule::ty           => ret = Some(build_ty(child)?),
+            Rule::ret_type     => ret_pair = Some(child),
             Rule::where_clause => where_bounds = build_where_clause(child, file)?,
             Rule::block        => body = Some(build_block(child, file)?),
             r => return Err(anyhow!("fun_decl: unexpected piece {:?}", r)),
@@ -106,10 +123,11 @@ fn build_fun_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
 
     let sp = sp_of(&p, file);
     let name = name.ok_or_else(|| anyhow!("fun_decl: missing name"))?;
-    let ret  = ret.ok_or_else(|| anyhow!("fun_decl `{}` missing return type", &name))?;
+    let ret  = parse_ret_type_pair(ret_pair, file)?;
     let body = body.ok_or_else(|| anyhow!("fun_decl `{}` missing body", &name))?;
 
     let f = FunDecl {
+        vis,
         name,
         type_params,
         params,
@@ -123,23 +141,26 @@ fn build_fun_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
 }
 
 fn build_extern_fun_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
+    let mut vis: Visibility = Visibility::Private;
     let mut name: Option<String> = None;
     let mut params: Vec<(String, Ty)> = Vec::new();
-    let mut ret: Option<Ty> = None;
+    let mut ret_pair: Option<Pair<Rule>> = None;
 
     for child in p.clone().into_inner() {
         match child.as_rule() {
+            Rule::KW_PUB => { vis = Visibility::Public; }
             Rule::KW_EXTERN | Rule::KW_FN => {}
             Rule::ident      => name = Some(child.as_str().to_string()),
             Rule::param_list => params = build_params(child)?,
-            Rule::ty         => ret = Some(build_ty(child)?),
+            Rule::ret_type   => ret_pair = Some(child),
             _other => {}
         }
     }
     let sp = sp_of(&p, file);
     let name = name.ok_or_else(|| anyhow!("extern_fun: missing name"))?;
-    let ret  = ret.ok_or_else(|| anyhow!("extern_fun `{}` missing return type", &name))?;
+    let ret  = parse_ret_type_pair(ret_pair, file)?;
     let f = FunDecl {
+        vis,
         name,
         type_params: vec![],
         params,
@@ -214,12 +235,12 @@ fn build_where_pred(p: Pair<Rule>, file: FileId) -> Result<WherePred> {
 }
 
 fn build_bound_as_traitref(p: Pair<Rule>) -> Result<TraitRef> {
-    // bound = ident ("<" ~ ty ~ ("," ~ ty)* ~ ">")?
+    // bound = (qident | ident) ("<" ~ ty ~ ("," ~ ty)* ~ ">")?
     let mut it = p.into_inner();
     let head = it.next().ok_or_else(|| anyhow!("bound: missing head"))?;
     let name = match head.as_rule() {
-        Rule::ident => head.as_str().to_string(),
-        other => return Err(anyhow!("bound head not ident: {:?}", other)),
+        Rule::ident | Rule::qident => head.as_str().to_string(),
+        other => return Err(anyhow!("bound head not ident/qident: {:?}", other)),
     };
     let mut args = Vec::new();
     for t in it {
@@ -272,12 +293,12 @@ fn build_ty(p: Pair<Rule>) -> Result<Ty> {
         }
         Rule::ty_var => Ty::Var(p.as_str().to_string()),
         Rule::ty_app => {
-            // ty_app = ident "<" ty ("," ty)* ">"
+            // ty_app = (qident | ident) "<" ty ("," ~ ty)* ">"
             let mut it = p.into_inner();
-            let head = it.next().ok_or_else(|| anyhow!("ty_app: missing head ident"))?;
+            let head = it.next().ok_or_else(|| anyhow!("ty_app: missing head"))?;
             let name = match head.as_rule() {
-                Rule::ident => head.as_str().to_string(),
-                other => return Err(anyhow!("ty_app head not ident: {:?}", other)),
+                Rule::ident | Rule::qident => head.as_str().to_string(),
+                other => return Err(anyhow!("ty_app head not ident/qident: {:?}", other)),
             };
             let mut args = Vec::<Ty>::new();
             for a in it {
@@ -559,10 +580,9 @@ fn build_expr(p: Pair<Rule>, file: FileId) -> Result<Expr> {
             fold_binary(p, file)?
         }
 
-        // as 转换层（放在 add 与 mult 之间，语义：1 + 2 as Long == 1 + (2 as Long)）
+        // as 转换层
         Rule::cast => build_cast(p, file)?,
         Rule::cast_term => {
-            // cast_term = cast | mult
             let mut it = p.into_inner();
             build_expr(it.next().unwrap(), file)?
         }
@@ -600,7 +620,7 @@ fn build_expr(p: Pair<Rule>, file: FileId) -> Result<Expr> {
                         Rule::qident => {
                             let s = node.as_str();
                             if let Some(pos) = s.rfind("::") {
-                                let trait_path = &s[..pos];      // 可能为多段路径 A::B::C
+                                let trait_path = &s[..pos];      // 可为多段
                                 let method     = &s[pos+2..];    // 末段
                                 callee_opt = Some(Callee::Qualified {
                                     trait_name: trait_path.to_string(),
@@ -704,12 +724,10 @@ fn build_expr(p: Pair<Rule>, file: FileId) -> Result<Expr> {
         Rule::if_expr    => build_if_expr(p, file)?,
         Rule::match_expr => build_match_expr(p, file)?,
         Rule::int_lit    => { let sp = sp_of(&p, file); parse_int_expr(p.as_str(), sp)? }
-        Rule::long_lit   => { let n: i64 = parse_long_lit(p.as_str())?; Expr::Long { value: n, span: sp_of(&p, file) } }
-
-        Rule::float_lit  => { let v = parse_float32_lit(p.as_str())?; Expr::Float { value: v, span: sp_of(&p, file) } }
-        Rule::double_lit => { let v = parse_float_lit(p.as_str())?;   Expr::Double{ value: v, span: sp_of(&p, file) } }
-
-        Rule::char_lit   => { let u = parse_char_lit(p.as_str())?; Expr::Char { value: u, span: sp_of(&p, file) } }
+        Rule::long_lit   => { let n: i64 = parse_long_lit(p.as_str())?; Expr::Long  { value: n, span: sp_of(&p, file) } }
+        Rule::float_lit  => { let v = parse_float32_lit(p.as_str())?;   Expr::Float { value: v, span: sp_of(&p, file) } }
+        Rule::double_lit => { let v = parse_float_lit(p.as_str())?;     Expr::Double{ value: v, span: sp_of(&p, file) } }
+        Rule::char_lit   => { let u = parse_char_lit(p.as_str())?;      Expr::Char  { value: u, span: sp_of(&p, file) } }
         Rule::bool_lit   => Expr::Bool { value: p.as_str() == "true", span: sp_of(&p, file) },
         Rule::string_lit => Expr::Str  { value: unescape_string(p.as_str()), span: sp_of(&p, file) },
         Rule::ident      => Expr::Var  { name: p.as_str().to_string(), span: sp_of(&p, file) },
@@ -792,102 +810,212 @@ fn fold_binary(p: Pair<Rule>, file: FileId) -> Result<Expr> {
 /* ================================
  * trait / impl
  * ================================ */
+
 fn build_trait_decl(p: Pair<Rule>, file: FileId) -> Result<TraitDecl> {
+    // grammar:
+    // trait_decl = { KW_PUB? ~ KW_TRAIT ~ ident ~ ty_params? ~ "{" ~ trait_item* ~ "}" }
     let sp = sp_of(&p, file);
+    let mut vis: Visibility = Visibility::Private;
     let mut name: Option<String> = None;
     let mut tparams: Vec<String> = Vec::new();
-    let mut methods: Vec<TraitMethodSig> = Vec::new();
+    let mut items: Vec<TraitItem> = Vec::new();
 
     for x in p.into_inner() {
         match x.as_rule() {
+            Rule::KW_PUB => { vis = Visibility::Public; }
             Rule::KW_TRAIT => {}
-            Rule::ident     => name = Some(x.as_str().to_string()),
-            Rule::ty_params => tparams = build_ty_params(x)?,
-            Rule::trait_item => methods.push(build_trait_item(x, file)?),
+            Rule::ident      => name = Some(x.as_str().to_string()),
+            Rule::ty_params  => tparams = build_ty_params(x)?,
+            Rule::trait_item => items.push(build_trait_item(x, file)?),
             other => return Err(anyhow!("trait_decl: unexpected {:?}", other)),
         }
     }
     Ok(TraitDecl {
+        vis,
         name: name.ok_or_else(|| anyhow!("trait_decl: missing name"))?,
         type_params: tparams,
-        items: methods,
-        span: sp,
-    })
-}
-
-fn build_trait_item(p: Pair<Rule>, file: FileId) -> Result<TraitMethodSig> {
-    let sp = sp_of(&p, file);
-    let mut name: Option<String> = None;
-    let mut params: Vec<(String, Ty)> = Vec::new();
-    let mut ret: Option<Ty> = None;
-
-    for x in p.into_inner() {
-        match x.as_rule() {
-            Rule::KW_FN => {}
-            Rule::ident      => name = Some(x.as_str().to_string()),
-            Rule::param_list => params = build_params(x)?,
-            Rule::ty         => ret = Some(build_ty(x)?),
-            _ => {}
-        }
-    }
-    Ok(TraitMethodSig {
-        name: name.ok_or_else(|| anyhow!("trait_item: missing name"))?,
-        params,
-        ret: ret.ok_or_else(|| anyhow!("trait_item: missing return type"))?,
-        span: sp,
-    })
-}
-
-fn build_impl_decl(p: Pair<Rule>, file: FileId) -> Result<ImplDecl> {
-    // impl_decl = KW_IMPL ident ty_args? "{" impl_item* "}"
-    let sp = sp_of(&p, file);
-    let mut trait_name: Option<String> = None;
-    let mut trait_args: Vec<Ty> = Vec::new();
-    let mut items: Vec<ImplMethod> = Vec::new();
-
-    for x in p.into_inner() {
-        match x.as_rule() {
-            Rule::KW_IMPL => {}
-            Rule::ident   => trait_name = Some(x.as_str().to_string()),
-            Rule::ty_args => trait_args = build_ty_args(x)?,
-            Rule::impl_item => items.push(build_impl_item(x, file)?),
-            _ => {}
-        }
-    }
-    Ok(ImplDecl {
-        trait_name: trait_name.ok_or_else(|| anyhow!("impl: missing trait name"))?,
-        trait_args,
         items,
         span: sp,
     })
 }
 
-fn build_impl_item(p: Pair<Rule>, file: FileId) -> Result<ImplMethod> {
-    // impl_item = "fn name(params) -> ty block"
+fn build_trait_item(p: Pair<Rule>, file: FileId) -> Result<TraitItem> {
+    // trait_item:
+    // 1) 方法：KW_PUB? KW_FN ident "(" param_list? ")" ret_type ";"
+    // 2) 关联类型：KW_PUB? KW_TYPE ident ty_params? ( ":" bound ("+" bound)* )? ";"
     let sp = sp_of(&p, file);
-    let mut name: Option<String> = None;
-    let mut params: Vec<(String, Ty)> = Vec::new();
-    let mut ret: Option<Ty> = None;
-    let mut body: Option<Block> = None;
+    let mut kind: Option<&'static str> = None;
+    for x in p.clone().into_inner() {
+        match x.as_rule() {
+            Rule::KW_FN => { kind = Some("fn"); break; }
+            Rule::KW_TYPE => { kind = Some("type"); break; }
+            _ => {}
+        }
+    }
+    match kind {
+        Some("fn") => {
+            let mut vis: Visibility = Visibility::Private;
+            let mut name: Option<String> = None;
+            let mut params: Vec<(String, Ty)> = Vec::new();
+            let mut ret_pair: Option<Pair<Rule>> = None;
+
+            for x in p.into_inner() {
+                match x.as_rule() {
+                    Rule::KW_PUB => { vis = Visibility::Public; }
+                    Rule::KW_FN => {}
+                    Rule::ident      => name = Some(x.as_str().to_string()),
+                    Rule::param_list => params = build_params(x)?,
+                    Rule::ret_type   => ret_pair = Some(x),
+                    // 注：grammar 中 ; 是 silent（_）规则，这里不会出现 Rule::SEMICOLON
+                    _ => {}
+                }
+            }
+            let ret = parse_ret_type_pair(ret_pair, file)?;
+            Ok(TraitItem::Method(TraitMethodSig {
+                vis,
+                name: name.ok_or_else(|| anyhow!("trait method: missing name"))?,
+                params,
+                ret,
+                span: sp,
+            }))
+        }
+        Some("type") => {
+            let mut vis: Visibility = Visibility::Private;
+            let mut name: Option<String> = None;
+            let mut type_params: Vec<String> = Vec::new();
+            let mut bounds: Vec<TraitRef> = Vec::new();
+
+            for x in p.into_inner() {
+                match x.as_rule() {
+                    Rule::KW_PUB  => { vis = Visibility::Public; }
+                    Rule::KW_TYPE => {}
+                    Rule::ident   => name = Some(x.as_str().to_string()),
+                    Rule::ty_params => type_params = build_ty_params(x)?,
+                    Rule::bound     => bounds.push(build_bound_as_traitref(x)?),
+                    // ":" 与 ";" 同样是 silent，不会出现在 parse 树里
+                    _ => {}
+                }
+            }
+
+            Ok(TraitItem::AssocType(TraitAssocTypeDecl {
+                vis,
+                name: name.ok_or_else(|| anyhow!("trait assoc type: missing name"))?,
+                type_params,
+                bounds,
+                span: sp,
+            }))
+        }
+        _ => Err(anyhow!("trait_item: neither fn nor type")),
+    }
+}
+
+fn build_impl_decl(p: Pair<Rule>, file: FileId) -> Result<ImplDecl> {
+    // impl_decl = { KW_PUB? ~ KW_IMPL ~ ty_params? ~ (qident|ident) ~ ty_args? ~ where_clause? ~ "{" ~ impl_item* ~ "}" }
+    let sp = sp_of(&p, file);
+    let mut vis: Visibility = Visibility::Private;
+    let mut type_params: Vec<String> = Vec::new();
+    let mut trait_name: Option<String> = None;
+    let mut trait_args: Vec<Ty> = Vec::new();
+    let mut where_bounds: Vec<WherePred> = Vec::new();
+    let mut items: Vec<ImplItem> = Vec::new();
 
     for x in p.into_inner() {
         match x.as_rule() {
-            Rule::KW_FN => {}
-            Rule::ident      => name = Some(x.as_str().to_string()),
-            Rule::param_list => params = build_params(x)?,
-            Rule::ty         => ret = Some(build_ty(x)?),
-            Rule::block      => body = Some(build_block(x, file)?),
+            Rule::KW_PUB   => { vis = Visibility::Public; }
+            Rule::KW_IMPL  => {}
+            Rule::ty_params => type_params = build_ty_params(x)?,
+            Rule::ident | Rule::qident => {
+                if trait_name.is_none() {
+                    trait_name = Some(x.as_str().to_string());
+                } else {
+                    // 若 grammar 把路径拆成多个 token，这里忽略后续
+                }
+            }
+            Rule::ty_args       => trait_args = build_ty_args(x)?,
+            Rule::where_clause  => where_bounds = build_where_clause(x, file)?,
+            Rule::impl_item     => items.push(build_impl_item(x, file)?),
+            _ => {}
+        }
+    }
+    Ok(ImplDecl {
+        vis,
+        type_params,
+        trait_name: trait_name.ok_or_else(|| anyhow!("impl: missing trait name"))?,
+        trait_args,
+        where_bounds,
+        items,
+        span: sp,
+    })
+}
+
+fn build_impl_item(p: Pair<Rule>, file: FileId) -> Result<ImplItem> {
+    // impl_item:
+    // 1) 方法：KW_PUB? KW_FN ident "(" param_list? ")" ret_type block
+    // 2) 关联类型：KW_PUB? KW_TYPE ident "=" ty ";"
+    let sp = sp_of(&p, file);
+    let mut kind: Option<&'static str> = None;
+    for x in p.clone().into_inner() {
+        match x.as_rule() {
+            Rule::KW_FN => { kind = Some("fn"); break; }
+            Rule::KW_TYPE => { kind = Some("type"); break; }
             _ => {}
         }
     }
 
-    Ok(ImplMethod {
-        name: name.ok_or_else(|| anyhow!("impl fn: missing name"))?,
-        params,
-        ret: ret.ok_or_else(|| anyhow!("impl fn: missing return type"))?,
-        body: body.ok_or_else(|| anyhow!("impl fn: missing body"))?,
-        span: sp,
-    })
+    match kind {
+        Some("fn") => {
+            let mut vis: Visibility = Visibility::Private;
+            let mut name: Option<String> = None;
+            let mut params: Vec<(String, Ty)> = Vec::new();
+            let mut ret_pair: Option<Pair<Rule>> = None;
+            let mut body: Option<Block> = None;
+
+            for x in p.into_inner() {
+                match x.as_rule() {
+                    Rule::KW_PUB      => { vis = Visibility::Public; }
+                    Rule::KW_FN       => {}
+                    Rule::ident       => name = Some(x.as_str().to_string()),
+                    Rule::param_list  => params = build_params(x)?,
+                    Rule::ret_type    => ret_pair = Some(x),
+                    Rule::block       => body = Some(build_block(x, file)?),
+                    _ => {}
+                }
+            }
+
+            Ok(ImplItem::Method(ImplMethod {
+                vis,
+                name: name.ok_or_else(|| anyhow!("impl fn: missing name"))?,
+                params,
+                ret: parse_ret_type_pair(ret_pair, file)?,
+                body: body.ok_or_else(|| anyhow!("impl fn: missing body"))?,
+                span: sp,
+            }))
+        }
+        Some("type") => {
+            let mut vis: Visibility = Visibility::Private;
+            let mut name: Option<String> = None;
+            let mut ty_opt: Option<Ty> = None;
+
+            for x in p.into_inner() {
+                match x.as_rule() {
+                    Rule::KW_PUB  => { vis = Visibility::Public; }
+                    Rule::KW_TYPE => {}
+                    Rule::ident   => name = Some(x.as_str().to_string()),
+                    Rule::ty      => ty_opt = Some(build_ty(x)?),
+                    // "=" 与 ";" 在 grammar 中是 silent 规则
+                    _ => {}
+                }
+            }
+
+            Ok(ImplItem::AssocType(ImplAssocType {
+                vis,
+                name: name.ok_or_else(|| anyhow!("impl assoc type: missing name"))?,
+                ty: ty_opt.ok_or_else(|| anyhow!("impl assoc type: missing type rhs"))?,
+                span: sp,
+            }))
+        }
+        _ => Err(anyhow!("impl_item: neither fn nor type")),
+    }
 }
 
 /* ================================

@@ -10,9 +10,11 @@ use std::path::{Path, PathBuf};
 
 /// ===============================
 /// 1) 把 impl 方法降解为自由函数
-///    例如：impl Eq<Int> { fn eq(x:Int,y:Int)->Bool {...} }
-///    生成一个自由函数：__impl_Eq$Int__eq(x:Int,y:Int)->Bool
-///    注意：为新生成的 FunDecl / Item 赋上合适的 span（沿用 impl 方法的 span）
+///    例如：impl Eq<Int> { pub fn eq(x:Int,y:Int)->Bool {...} }
+///    生成自由函数：__impl_Eq$Int__eq(x:Int,y:Int)->Bool
+///    - 新函数 FunDecl.vis 继承 ImplMethod.vis
+///    - span 继承方法定义处的 span
+///    - 仅处理 ImplItem::Method；关联类型 ImplItem::AssocType 忽略
 /// ===============================
 pub fn declare_impls_from_program(mut p: Program) -> Program {
     // 收集已有自由函数名
@@ -25,28 +27,33 @@ pub fn declare_impls_from_program(mut p: Program) -> Program {
     let mut extra: Vec<Item> = Vec::new();
 
     for it in &p.items {
-        if let Item::Impl(id, impl_span) = it {
-            for m in &id.items {
-                let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
-                if existing.insert(sym.clone()) {
-                    // 降解：用 impl 方法体/签名构造一个自由函数；span 使用方法定义的 span
-                    let f = FunDecl {
-                        name: sym,
-                        type_params: vec![],
-                        params: m.params.clone(),
-                        ret: m.ret.clone(),
-                        where_bounds: vec![],
-                        body: m.body.clone(),
-                        is_extern: false,
-                        span: m.span, // 方法定义处的 span
-                    };
-                    extra.push(Item::Fun(f, m.span));
+        if let Item::Impl(id, _impl_span) = it {
+            for item in &id.items {
+                match item {
+                    ImplItem::Method(m) => {
+                        let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
+                        if existing.insert(sym.clone()) {
+                            // 降解：用 impl 方法体/签名构造一个自由函数；span/vis 使用方法定义的属性
+                            let f = FunDecl {
+                                vis: m.vis,                  // 继承可见性
+                                name: sym,
+                                type_params: vec![],         // 这里认为已单态化/或库层不暴露
+                                params: m.params.clone(),
+                                ret: m.ret.clone(),
+                                where_bounds: vec![],        // 降解后不带 where
+                                body: m.body.clone(),
+                                is_extern: false,
+                                span: m.span,                // 继承方法 span
+                            };
+                            extra.push(Item::Fun(f, m.span));
+                        }
+                    }
+                    ImplItem::AssocType(_a) => {
+                        // 关联类型不会降解为函数：跳过
+                    }
                 }
             }
-
-            // 如果你希望把 impl 自身也转为一个“标记性” item，可在此处额外推入；
-            // 但通常 passes 只是“降解方法”，不移除 impl 壳；这里保持原状：既保留原 impl，又额外补自由函数。
-            let _ = impl_span; // 仅为强调：此 span 若将来要改策略可用上
+            // 这里保留原 impl 壳，仅额外补自由函数
         }
     }
 
@@ -104,7 +111,7 @@ fn expand_prog_recursive(
                 let sub_expanded = expand_prog_recursive(&sub, roots, visited)?;
                 out_items.extend(sub_expanded.items);
 
-                let _ = import_span; // 如需把 import 保留在输出里，可在此处 push(Item::Import(spec.clone(), *import_span))
+                let _ = import_span; // 如需保留 import，可在此 push 回去
             }
             _ => out_items.push(it.clone()),
         }

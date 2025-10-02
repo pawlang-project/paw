@@ -1,0 +1,369 @@
+pub trait Box<T> {
+    pub fn new(x: T) -> Box<T>;
+    pub fn get(b: Box<T>) -> T;
+    pub fn set(b: Box<T>, x: T) -> Void;
+    pub fn free(b: Box<T>) -> Void;
+}
+
+pub trait Rc<T> {
+    pub fn new(x: T) -> Rc<T>;
+    pub fn clone(b: Rc<T>) -> Rc<T>;
+    pub fn get(b: Rc<T>) -> T;
+    pub fn set(b: Rc<T>, x: T) -> Void;
+    pub fn drop(b: Rc<T>) -> Void;
+    pub fn strong_count(b: Rc<T>) -> Int;
+}
+
+pub trait Arc<T> {
+    pub fn new(x: T) -> Arc<T>;
+    pub fn clone(b: Arc<T>) -> Arc<T>;
+    pub fn get(b: Arc<T>) -> T;
+    pub fn set(b: Arc<T>, x: T) -> Void;
+    pub fn drop(b: Arc<T>) -> Void;
+    pub fn strong_count(b: Arc<T>) -> Int;
+}
+
+// ===== Byte =====
+extern fn box_new_Byte(x: Byte) -> Box<Byte>;
+extern fn box_get_Byte(b: Box<Byte>) -> Byte;
+extern fn box_set_Byte(b: Box<Byte>, x: Byte) -> Void;
+extern fn box_free_Byte(b: Box<Byte>) -> Void;
+
+extern fn rc_new_Byte(x: Byte) -> Rc<Byte>;
+extern fn rc_clone_Byte(b: Rc<Byte>) -> Rc<Byte>;
+extern fn rc_get_Byte(b: Rc<Byte>) -> Byte;
+extern fn rc_set_Byte(b: Rc<Byte>, x: Byte) -> Void;
+extern fn rc_drop_Byte(b: Rc<Byte>) -> Void;
+extern fn rc_strong_count_Byte(b: Rc<Byte>) -> Int;
+
+extern fn arc_new_Byte(x: Byte) -> Arc<Byte>;
+extern fn arc_clone_Byte(b: Arc<Byte>) -> Arc<Byte>;
+extern fn arc_get_Byte(b: Arc<Byte>) -> Byte;
+extern fn arc_set_Byte(b: Arc<Byte>, x: Byte) -> Void;
+extern fn arc_drop_Byte(b: Arc<Byte>) -> Void;
+extern fn arc_strong_count_Byte(b: Arc<Byte>) -> Int;
+
+pub impl Box<Byte> {
+    pub fn new(x: Byte) -> Box<Byte> { box_new_Byte(x) }
+    pub fn get(b: Box<Byte>) -> Byte { box_get_Byte(b) }
+    pub fn set(b: Box<Byte>, x: Byte) -> Void { box_set_Byte(b, x) }
+    pub fn free(b: Box<Byte>) -> Void { box_free_Byte(b) }
+}
+pub impl Rc<Byte> {
+    pub fn new(x: Byte) -> Rc<Byte> { rc_new_Byte(x) }
+    pub fn clone(b: Rc<Byte>) -> Rc<Byte> { rc_clone_Byte(b) }
+    pub fn get(b: Rc<Byte>) -> Byte { rc_get_Byte(b) }
+    pub fn set(b: Rc<Byte>, x: Byte) -> Void { rc_set_Byte(b, x) }
+    pub fn drop(b: Rc<Byte>) -> Void { rc_drop_Byte(b) }
+    pub fn strong_count(b: Rc<Byte>) -> Int { rc_strong_count_Byte(b) }
+}
+pub impl Arc<Byte> {
+    pub fn new(x: Byte) -> Arc<Byte> { arc_new_Byte(x) }
+    pub fn clone(b: Arc<Byte>) -> Arc<Byte> { arc_clone_Byte(b) }
+    pub fn get(b: Arc<Byte>) -> Byte { arc_get_Byte(b) }
+    pub fn set(b: Arc<Byte>, x: Byte) -> Void { arc_set_Byte(b, x) }
+    pub fn drop(b: Arc<Byte>) -> Void { arc_drop_Byte(b) }
+    pub fn strong_count(b: Arc<Byte>) -> Int { arc_strong_count_Byte(b) }
+}
+
+// ===== Int =====
+pub extern fn box_new_Int(x: Int) -> Box<Int>;
+pub extern fn box_get_Int(b: Box<Int>) -> Int;
+pub extern fn box_set_Int(b: Box<Int>, x: Int) -> Void;
+pub extern fn box_free_Int(b: Box<Int>) -> Void;
+
+pub extern fn rc_new_Int(x: Int) -> Rc<Int>;
+pub extern fn rc_clone_Int(b: Rc<Int>) -> Rc<Int>;
+pub extern fn rc_get_Int(b: Rc<Int>) -> Int;
+pub extern fn rc_set_Int(b: Rc<Int>, x: Int) -> Void;
+pub extern fn rc_drop_Int(b: Rc<Int>) -> Void;
+pub extern fn rc_strong_count_Int(b: Rc<Int>) -> Int;
+
+pub extern fn arc_new_Int(x: Int) -> Arc<Int>;
+pub extern fn arc_clone_Int(b: Arc<Int>) -> Arc<Int>;
+pub extern fn arc_get_Int(b: Arc<Int>) -> Int;
+pub extern fn arc_set_Int(b: Arc<Int>, x: Int) -> Void;
+pub extern fn arc_drop_Int(b: Arc<Int>) -> Void;
+pub extern fn arc_strong_count_Int(b: Arc<Int>) -> Int;
+
+pub impl Box<Int> {
+    pub fn new(x: Int) -> Box<Int> { box_new_Int(x) }
+    pub fn get(b: Box<Int>) -> Int { box_get_Int(b) }
+    pub fn set(b: Box<Int>, x: Int) -> Void { box_set_Int(b, x) }
+    pub fn free(b: Box<Int>) -> Void { box_free_Int(b) }
+}
+pub impl Rc<Int> {
+    pub fn new(x: Int) -> Rc<Int> { rc_new_Int(x) }
+    pub fn clone(b: Rc<Int>) -> Rc<Int> { rc_clone_Int(b) }
+    pub fn get(b: Rc<Int>) -> Int { rc_get_Int(b) }
+    pub fn set(b: Rc<Int>, x: Int) -> Void { rc_set_Int(b, x) }
+    pub fn drop(b: Rc<Int>) -> Void { rc_drop_Int(b) }
+    pub fn strong_count(b: Rc<Int>) -> Int { rc_strong_count_Int(b) }
+}
+pub impl Arc<Int> {
+    pub fn new(x: Int) -> Arc<Int> { arc_new_Int(x) }
+    pub fn clone(b: Arc<Int>) -> Arc<Int> { arc_clone_Int(b) }
+    pub fn get(b: Arc<Int>) -> Int { arc_get_Int(b) }
+    pub fn set(b: Arc<Int>, x: Int) -> Void { arc_set_Int(b, x) }
+    pub fn drop(b: Arc<Int>) -> Void { arc_drop_Int(b) }
+    pub fn strong_count(b: Arc<Int>) -> Int { arc_strong_count_Int(b) }
+}
+
+// ===== Long =====
+pub extern fn box_new_Long(x: Long) -> Box<Long>;
+pub extern fn box_get_Long(b: Box<Long>) -> Long;
+pub extern fn box_set_Long(b: Box<Long>, x: Long) -> Void;
+pub extern fn box_free_Long(b: Box<Long>) -> Void;
+
+pub extern fn rc_new_Long(x: Long) -> Rc<Long>;
+pub extern fn rc_clone_Long(b: Rc<Long>) -> Rc<Long>;
+pub extern fn rc_get_Long(b: Rc<Long>) -> Long;
+pub extern fn rc_set_Long(b: Rc<Long>, x: Long) -> Void;
+pub extern fn rc_drop_Long(b: Rc<Long>) -> Void;
+pub extern fn rc_strong_count_Long(b: Rc<Long>) -> Int;
+
+pub extern fn arc_new_Long(x: Long) -> Arc<Long>;
+pub extern fn arc_clone_Long(b: Arc<Long>) -> Arc<Long>;
+pub extern fn arc_get_Long(b: Arc<Long>) -> Long;
+pub extern fn arc_set_Long(b: Arc<Long>, x: Long) -> Void;
+pub extern fn arc_drop_Long(b: Arc<Long>) -> Void;
+pub extern fn arc_strong_count_Long(b: Arc<Long>) -> Int;
+
+pub impl Box<Long> {
+    pub fn new(x: Long) -> Box<Long> { box_new_Long(x) }
+    pub fn get(b: Box<Long>) -> Long { box_get_Long(b) }
+    pub fn set(b: Box<Long>, x: Long) -> Void { box_set_Long(b, x) }
+    pub fn free(b: Box<Long>) -> Void { box_free_Long(b) }
+}
+pub impl Rc<Long> {
+    pub fn new(x: Long) -> Rc<Long> { rc_new_Long(x) }
+    pub fn clone(b: Rc<Long>) -> Rc<Long> { rc_clone_Long(b) }
+    pub fn get(b: Rc<Long>) -> Long { rc_get_Long(b) }
+    pub fn set(b: Rc<Long>, x: Long) -> Void { rc_set_Long(b, x) }
+    pub fn drop(b: Rc<Long>) -> Void { rc_drop_Long(b) }
+    pub fn strong_count(b: Rc<Long>) -> Int { rc_strong_count_Long(b) }
+}
+pub impl Arc<Long> {
+    pub fn new(x: Long) -> Arc<Long> { arc_new_Long(x) }
+    pub fn clone(b: Arc<Long>) -> Arc<Long> { arc_clone_Long(b) }
+    pub fn get(b: Arc<Long>) -> Long { arc_get_Long(b) }
+    pub fn set(b: Arc<Long>, x: Long) -> Void { arc_set_Long(b, x) }
+    pub fn drop(b: Arc<Long>) -> Void { arc_drop_Long(b) }
+    pub fn strong_count(b: Arc<Long>) -> Int { arc_strong_count_Long(b) }
+}
+
+// ===== Bool =====
+pub extern fn box_new_Bool(x: Bool) -> Box<Bool>;
+pub extern fn box_get_Bool(b: Box<Bool>) -> Bool;
+pub extern fn box_set_Bool(b: Box<Bool>, x: Bool) -> Void;
+pub extern fn box_free_Bool(b: Box<Bool>) -> Void;
+
+pub extern fn rc_new_Bool(x: Bool) -> Rc<Bool>;
+pub extern fn rc_clone_Bool(b: Rc<Bool>) -> Rc<Bool>;
+pub extern fn rc_get_Bool(b: Rc<Bool>) -> Bool;
+pub extern fn rc_set_Bool(b: Rc<Bool>, x: Bool) -> Void;
+pub extern fn rc_drop_Bool(b: Rc<Bool>) -> Void;
+pub extern fn rc_strong_count_Bool(b: Rc<Bool>) -> Int;
+
+pub extern fn arc_new_Bool(x: Bool) -> Arc<Bool>;
+pub extern fn arc_clone_Bool(b: Arc<Bool>) -> Arc<Bool>;
+pub extern fn arc_get_Bool(b: Arc<Bool>) -> Bool;
+pub extern fn arc_set_Bool(b: Arc<Bool>, x: Bool) -> Void;
+pub extern fn arc_drop_Bool(b: Arc<Bool>) -> Void;
+pub extern fn arc_strong_count_Bool(b: Arc<Bool>) -> Int;
+
+pub impl Box<Bool> {
+    pub fn new(x: Bool) -> Box<Bool> { box_new_Bool(x) }
+    pub fn get(b: Box<Bool>) -> Bool { box_get_Bool(b) }
+    pub fn set(b: Box<Bool>, x: Bool) -> Void { box_set_Bool(b, x) }
+    pub fn free(b: Box<Bool>) -> Void { box_free_Bool(b) }
+}
+pub impl Rc<Bool> {
+    pub fn new(x: Bool) -> Rc<Bool> { rc_new_Bool(x) }
+    pub fn clone(b: Rc<Bool>) -> Rc<Bool> { rc_clone_Bool(b) }
+    pub fn get(b: Rc<Bool>) -> Bool { rc_get_Bool(b) }
+    pub fn set(b: Rc<Bool>, x: Bool) -> Void { rc_set_Bool(b, x) }
+    pub fn drop(b: Rc<Bool>) -> Void { rc_drop_Bool(b) }
+    pub fn strong_count(b: Rc<Bool>) -> Int { rc_strong_count_Bool(b) }
+}
+pub impl Arc<Bool> {
+    pub fn new(x: Bool) -> Arc<Bool> { arc_new_Bool(x) }
+    pub fn clone(b: Arc<Bool>) -> Arc<Bool> { arc_clone_Bool(b) }
+    pub fn get(b: Arc<Bool>) -> Bool { arc_get_Bool(b) }
+    pub fn set(b: Arc<Bool>, x: Bool) -> Void { arc_set_Bool(b, x) }
+    pub fn drop(b: Arc<Bool>) -> Void { arc_drop_Bool(b) }
+    pub fn strong_count(b: Arc<Bool>) -> Int { arc_strong_count_Bool(b) }
+}
+
+// ===== Float =====
+pub extern fn box_new_Float(x: Float) -> Box<Float>;
+pub extern fn box_get_Float(b: Box<Float>) -> Float;
+pub extern fn box_set_Float(b: Box<Float>, x: Float) -> Void;
+pub extern fn box_free_Float(b: Box<Float>) -> Void;
+
+pub extern fn rc_new_Float(x: Float) -> Rc<Float>;
+pub extern fn rc_clone_Float(b: Rc<Float>) -> Rc<Float>;
+pub extern fn rc_get_Float(b: Rc<Float>) -> Float;
+pub extern fn rc_set_Float(b: Rc<Float>, x: Float) -> Void;
+pub extern fn rc_drop_Float(b: Rc<Float>) -> Void;
+pub extern fn rc_strong_count_Float(b: Rc<Float>) -> Int;
+
+pub extern fn arc_new_Float(x: Float) -> Arc<Float>;
+pub extern fn arc_clone_Float(b: Arc<Float>) -> Arc<Float>;
+pub extern fn arc_get_Float(b: Arc<Float>) -> Float;
+pub extern fn arc_set_Float(b: Arc<Float>, x: Float) -> Void;
+pub extern fn arc_drop_Float(b: Arc<Float>) -> Void;
+pub extern fn arc_strong_count_Float(b: Arc<Float>) -> Int;
+
+pub impl Box<Float> {
+    pub fn new(x: Float) -> Box<Float> { box_new_Float(x) }
+    pub fn get(b: Box<Float>) -> Float { box_get_Float(b) }
+    pub fn set(b: Box<Float>, x: Float) -> Void { box_set_Float(b, x) }
+    pub fn free(b: Box<Float>) -> Void { box_free_Float(b) }
+}
+pub impl Rc<Float> {
+    pub fn new(x: Float) -> Rc<Float> { rc_new_Float(x) }
+    pub fn clone(b: Rc<Float>) -> Rc<Float> { rc_clone_Float(b) }
+    pub fn get(b: Rc<Float>) -> Float { rc_get_Float(b) }
+    pub fn set(b: Rc<Float>, x: Float) -> Void { rc_set_Float(b, x) }
+    pub fn drop(b: Rc<Float>) -> Void { rc_drop_Float(b) }
+    pub fn strong_count(b: Rc<Float>) -> Int { rc_strong_count_Float(b) }
+}
+pub impl Arc<Float> {
+    pub fn new(x: Float) -> Arc<Float> { arc_new_Float(x) }
+    pub fn clone(b: Arc<Float>) -> Arc<Float> { arc_clone_Float(b) }
+    pub fn get(b: Arc<Float>) -> Float { arc_get_Float(b) }
+    pub fn set(b: Arc<Float>, x: Float) -> Void { arc_set_Float(b, x) }
+    pub fn drop(b: Arc<Float>) -> Void { arc_drop_Float(b) }
+    pub fn strong_count(b: Arc<Float>) -> Int { arc_strong_count_Float(b) }
+}
+
+// ===== Double =====
+pub extern fn box_new_Double(x: Double) -> Box<Double>;
+pub extern fn box_get_Double(b: Box<Double>) -> Double;
+pub extern fn box_set_Double(b: Box<Double>, x: Double) -> Void;
+pub extern fn box_free_Double(b: Box<Double>) -> Void;
+
+pub extern fn rc_new_Double(x: Double) -> Rc<Double>;
+pub extern fn rc_clone_Double(b: Rc<Double>) -> Rc<Double>;
+pub extern fn rc_get_Double(b: Rc<Double>) -> Double;
+pub extern fn rc_set_Double(b: Rc<Double>, x: Double) -> Void;
+pub extern fn rc_drop_Double(b: Rc<Double>) -> Void;
+pub extern fn rc_strong_count_Double(b: Rc<Double>) -> Int;
+
+pub extern fn arc_new_Double(x: Double) -> Arc<Double>;
+pub extern fn arc_clone_Double(b: Arc<Double>) -> Arc<Double>;
+pub extern fn arc_get_Double(b: Arc<Double>) -> Double;
+pub extern fn arc_set_Double(b: Arc<Double>, x: Double) -> Void;
+pub extern fn arc_drop_Double(b: Arc<Double>) -> Void;
+pub extern fn arc_strong_count_Double(b: Arc<Double>) -> Int;
+
+pub impl Box<Double> {
+    pub fn new(x: Double) -> Box<Double> { box_new_Double(x) }
+    pub fn get(b: Box<Double>) -> Double { box_get_Double(b) }
+    pub fn set(b: Box<Double>, x: Double) -> Void { box_set_Double(b, x) }
+    pub fn free(b: Box<Double>) -> Void { box_free_Double(b) }
+}
+pub impl Rc<Double> {
+    pub fn new(x: Double) -> Rc<Double> { rc_new_Double(x) }
+    pub fn clone(b: Rc<Double>) -> Rc<Double> { rc_clone_Double(b) }
+    pub fn get(b: Rc<Double>) -> Double { rc_get_Double(b) }
+    pub fn set(b: Rc<Double>, x: Double) -> Void { rc_set_Double(b, x) }
+    pub fn drop(b: Rc<Double>) -> Void { rc_drop_Double(b) }
+    pub fn strong_count(b: Rc<Double>) -> Int { rc_strong_count_Double(b) }
+}
+pub impl Arc<Double> {
+    pub fn new(x: Double) -> Arc<Double> { arc_new_Double(x) }
+    pub fn clone(b: Arc<Double>) -> Arc<Double> { arc_clone_Double(b) }
+    pub fn get(b: Arc<Double>) -> Double { arc_get_Double(b) }
+    pub fn set(b: Arc<Double>, x: Double) -> Void { arc_set_Double(b, x) }
+    pub fn drop(b: Arc<Double>) -> Void { arc_drop_Double(b) }
+    pub fn strong_count(b: Arc<Double>) -> Int { arc_strong_count_Double(b) }
+}
+
+// ===== Char =====
+pub extern fn box_new_Char(x: Char) -> Box<Char>;
+pub extern fn box_get_Char(b: Box<Char>) -> Char;
+pub extern fn box_set_Char(b: Box<Char>, x: Char) -> Void;
+pub extern fn box_free_Char(b: Box<Char>) -> Void;
+
+pub extern fn rc_new_Char(x: Char) -> Rc<Char>;
+pub extern fn rc_clone_Char(b: Rc<Char>) -> Rc<Char>;
+pub extern fn rc_get_Char(b: Rc<Char>) -> Char;
+pub extern fn rc_set_Char(b: Rc<Char>, x: Char) -> Void;
+pub extern fn rc_drop_Char(b: Rc<Char>) -> Void;
+pub extern fn rc_strong_count_Char(b: Rc<Char>) -> Int;
+
+pub extern fn arc_new_Char(x: Char) -> Arc<Char>;
+pub extern fn arc_clone_Char(b: Arc<Char>) -> Arc<Char>;
+pub extern fn arc_get_Char(b: Arc<Char>) -> Char;
+pub extern fn arc_set_Char(b: Arc<Char>, x: Char) -> Void;
+pub extern fn arc_drop_Char(b: Arc<Char>) -> Void;
+pub extern fn arc_strong_count_Char(b: Arc<Char>) -> Int;
+
+pub impl Box<Char> {
+    pub fn new(x: Char) -> Box<Char> { box_new_Char(x) }
+    pub fn get(b: Box<Char>) -> Char { box_get_Char(b) }
+    pub fn set(b: Box<Char>, x: Char) -> Void { box_set_Char(b, x) }
+    pub fn free(b: Box<Char>) -> Void { box_free_Char(b) }
+}
+pub impl Rc<Char> {
+    pub fn new(x: Char) -> Rc<Char> { rc_new_Char(x) }
+    pub fn clone(b: Rc<Char>) -> Rc<Char> { rc_clone_Char(b) }
+    pub fn get(b: Rc<Char>) -> Char { rc_get_Char(b) }
+    pub fn set(b: Rc<Char>, x: Char) -> Void { rc_set_Char(b, x) }
+    pub fn drop(b: Rc<Char>) -> Void { rc_drop_Char(b) }
+    pub fn strong_count(b: Rc<Char>) -> Int { rc_strong_count_Char(b) }
+}
+pub impl Arc<Char> {
+    pub fn new(x: Char) -> Arc<Char> { arc_new_Char(x) }
+    pub fn clone(b: Arc<Char>) -> Arc<Char> { arc_clone_Char(b) }
+    pub fn get(b: Arc<Char>) -> Char { arc_get_Char(b) }
+    pub fn set(b: Arc<Char>, x: Char) -> Void { arc_set_Char(b, x) }
+    pub fn drop(b: Arc<Char>) -> Void { arc_drop_Char(b) }
+    pub fn strong_count(b: Arc<Char>) -> Int { arc_strong_count_Char(b) }
+}
+
+// ===== String =====
+// String 在 Paw ABI 中是 I64 指针（C 字符串）。这些 API 只管理“外层盒子/计数结构”本身，不释放内部指针。
+pub extern fn box_new_String(x: String) -> Box<String>;
+pub extern fn box_get_String(b: Box<String>) -> String;
+pub extern fn box_set_String(b: Box<String>, x: String) -> Void;
+pub extern fn box_free_String(b: Box<String>) -> Void;
+
+pub extern fn rc_new_String(x: String) -> Rc<String>;
+pub extern fn rc_clone_String(b: Rc<String>) -> Rc<String>;
+pub extern fn rc_get_String(b: Rc<String>) -> String;
+pub extern fn rc_set_String(b: Rc<String>, x: String) -> Void;
+pub extern fn rc_drop_String(b: Rc<String>) -> Void;
+pub extern fn rc_strong_count_String(b: Rc<String>) -> Int;
+
+pub extern fn arc_new_String(x: String) -> Arc<String>;
+pub extern fn arc_clone_String(b: Arc<String>) -> Arc<String>;
+pub extern fn arc_get_String(b: Arc<String>) -> String;
+pub extern fn arc_set_String(b: Arc<String>, x: String) -> Void;
+pub extern fn arc_drop_String(b: Arc<String>) -> Void;
+pub extern fn arc_strong_count_String(b: Arc<String>) -> Int;
+
+pub impl Box<String> {
+    pub fn new(x: String) -> Box<String> { box_new_String(x) }
+    pub fn get(b: Box<String>) -> String { box_get_String(b) }
+    pub fn set(b: Box<String>, x: String) -> Void { box_set_String(b, x) }
+    pub fn free(b: Box<String>) -> Void { box_free_String(b) }
+}
+pub impl Rc<String> {
+    pub fn new(x: String) -> Rc<String> { rc_new_String(x) }
+    pub fn clone(b: Rc<String>) -> Rc<String> { rc_clone_String(b) }
+    pub fn get(b: Rc<String>) -> String { rc_get_String(b) }
+    pub fn set(b: Rc<String>, x: String) -> Void { rc_set_String(b, x) }
+    pub fn drop(b: Rc<String>) -> Void { rc_drop_String(b) }
+    pub fn strong_count(b: Rc<String>) -> Int { rc_strong_count_String(b) }
+}
+pub impl Arc<String> {
+    pub fn new(x: String) -> Arc<String> { arc_new_String(x) }
+    pub fn clone(b: Arc<String>) -> Arc<String> { arc_clone_String(b) }
+    pub fn get(b: Arc<String>) -> String { arc_get_String(b) }
+    pub fn set(b: Arc<String>, x: String) -> Void { arc_set_String(b, x) }
+    pub fn drop(b: Arc<String>) -> Void { arc_drop_String(b) }
+    pub fn strong_count(b: Arc<String>) -> Int { arc_strong_count_String(b) }
+}

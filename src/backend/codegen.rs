@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::mangle::{mangle_impl_method, mangle_name};
-use crate::frontend::ast::*;
+use crate::frontend::ast::*; // Visibility / ImplItem / TraitItem
 use crate::frontend::span::Span;
 use crate::utils::fast::{FastMap, FastSet};
 
@@ -31,6 +31,18 @@ pub enum GConst {
     F64(f64),
 }
 
+/* ---------- impl 模板：用于按需单态化的方法 ---------- */
+#[derive(Clone)]
+struct ImplMethodTpl {
+    trait_name: String,
+    type_params: Vec<String>,   // 从 trait_args 中抽取的去重 type vars（出现顺序）
+    trait_args_tpl: Vec<Ty>,    // impl 头部里写的 trait 实参模板（可能含 Ty::Var）
+    method_name: String,
+    params: Vec<(String, Ty)>,
+    ret: Ty,
+    body: Block,
+}
+
 pub struct CLBackend {
     pub module: ObjectModule,
 
@@ -38,20 +50,27 @@ pub struct CLBackend {
     pub globals_val: FastMap<String, (Ty, GConst)>,
     str_pool: FastMap<String, DataId>,
 
-    // 符号名 -> (参数类型列表, 返回类型)
+    // 符号名(已mangle) -> (参数类型列表, 返回类型)
     fn_sig: FastMap<String, (Vec<Ty>, Ty)>,
 
-    // —— 单态化管理 —— //
+    // —— 单态化管理（自由函数） —— //
     templates: FastMap<String, FunDecl>,            // 基名 -> 模板
-    mono_declared: FastSet<String>,                 // 已声明专门化符号
-    mono_defined: FastSet<String>,                  // 已定义专门化符号
-    mono_func_ids: FastMap<String, FuncId>,         // 专门化名 -> FuncId
-    mono_specs: FastMap<String, (String, Vec<Ty>)>, // 专门化名 -> (基名, 类型实参)
+    mono_declared: FastSet<String>,                 // 已声明专门化符号(已mangle)
+    mono_defined: FastSet<String>,                  // 已定义专门化符号(已mangle)
+    mono_func_ids: FastMap<String, FuncId>,         // 专门化符号 -> FuncId
+    mono_specs: FastMap<String, (String, Vec<Ty>)>, // 专门化符号 -> (基名, 类型实参)
 
-    // —— 基名函数缓存（修复调用处重新声明的问题） —— //
-    base_func_ids: FastMap<String, FuncId>,         // 基名或具体符号 -> FuncId
+    // —— 已声明函数符号（包含：extern 原名、impl 降解名、重载mangle名、单态化名） -> FuncId —— //
+    base_func_ids: FastMap<String, FuncId>,
 
-    // —— 可选：诊断收集器（通过 Rc<RefCell<..>> 避免生命周期复杂度） —— //
+    // —— 重载索引：源代码里的“基名” -> 本模块所有重载符号名 —— //
+    overloads: FastMap<String, Vec<String>>,
+    declared_symbols: FastSet<String>,
+
+    // —— impl 模板（泛型 impl 方法） —— //
+    impl_templates: FastMap<(String, String), ImplMethodTpl>, // (trait_name, method) -> 模板
+
+    // —— 可选：诊断收集器 —— //
     diag: Option<Rc<RefCell<DiagSink>>>,
 }
 
@@ -88,6 +107,9 @@ impl CLBackend {
             mono_func_ids: FastMap::default(),
             mono_specs: FastMap::default(),
             base_func_ids: FastMap::default(),
+            overloads: FastMap::default(),
+            declared_symbols: FastSet::default(),
+            impl_templates: FastMap::default(),
             diag: None,
         })
     }
@@ -117,7 +139,69 @@ impl CLBackend {
         }
     }
 
-    /// 声明**非泛型/extern**函数；保存**泛型模板**
+    /* ---------------------------
+     * 工具：类型变量判定/收集
+     * --------------------------- */
+    fn has_tyvar(t: &Ty) -> bool {
+        match t {
+            Ty::Var(_) => true,
+            Ty::App { args, .. } => args.iter().any(Self::has_tyvar),
+            _ => false,
+        }
+    }
+    fn collect_unique_tyvars(ts: &[Ty]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        fn walk(t: &Ty, seen: &mut Vec<String>) {
+            match t {
+                Ty::Var(v) => if !seen.iter().any(|x| x == v) { seen.push(v.clone()); },
+                Ty::App { args, .. } => for a in args { walk(a, seen); },
+                _ => {}
+            }
+        }
+        for t in ts { walk(t, &mut out); }
+        out
+    }
+
+    /* ---------------------------
+     * 重载：类型编码 + 符号名mangle
+     * --------------------------- */
+    fn enc_ty(t: &Ty) -> String {
+        match t {
+            Ty::Byte   => "u8".into(),
+            Ty::Int    => "i32".into(),
+            Ty::Long   => "i64".into(),
+            Ty::Bool   => "bool".into(),
+            Ty::Char   => "char".into(),
+            Ty::Float  => "f32".into(),
+            Ty::Double => "f64".into(),
+            Ty::String => "str".into(),
+            Ty::Void   => "void".into(),
+            Ty::App { name, args } => {
+                let inner = if args.is_empty() { "unit".into() } else { Self::enc_ty(&args[0]) };
+                match name.as_str() {
+                    "Box" => format!("box_{}", inner),
+                    "Rc"  => format!("rc_{}", inner),
+                    "Arc" => format!("arc_{}", inner),
+                    other => format!("app{}_{}", other, inner),
+                }
+            }
+            Ty::Var(v) => format!("tv_{}", v),
+        }
+    }
+
+    fn mangle_overload(base: &str, params: &[Ty], ret: &Ty) -> String {
+        let p = params.iter().map(Self::enc_ty).collect::<Vec<_>>().join("_");
+        let r = Self::enc_ty(ret);
+        format!("{base}__ol__P{p}__R{r}")
+    }
+
+    #[inline]
+    fn is_lowered_impl_name(name: &str) -> bool {
+        name.starts_with("__impl_")
+    }
+
+    /// 声明**非泛型/extern**函数；保存**泛型模板**；对非泛型自由函数进行**重载mangle**。
+    /// 特殊：名字恰为 "main" 的非泛型函数不做重载 mangle；名字以 "__impl_" 开头的**保持原名**。
     pub fn declare_fns<'a, I>(&mut self, funs: I) -> anyhow::Result<FastMap<String, FuncId>>
     where
         I: IntoIterator<Item = &'a FunDecl>,
@@ -131,7 +215,7 @@ impl CLBackend {
                 continue;
             }
 
-            // 非泛型/extern 声明（以下与原逻辑相同）
+            // 构建CLIF签名
             let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
             for (_, ty) in &f.params {
                 let t = match cl_ty(ty) {
@@ -147,29 +231,87 @@ impl CLBackend {
             if let Some(ret_t) = cl_ty(&f.ret) {
                 sig.returns.push(AbiParam::new(ret_t));
             }
-            let linkage = if f.is_extern { Linkage::Import } else { Linkage::Export };
-            let id = self.module.declare_function(&f.name, linkage, &sig)?;
-            ids.insert(f.name.clone(), id);
-            self.base_func_ids.insert(f.name.clone(), id);
 
+            // 链接属性 & 目标符号名
+            let (linkage, sym) = if f.is_extern {
+                (Linkage::Import, f.name.clone())
+            } else if f.name == "main" {
+                (Linkage::Export, "main".to_string())
+            } else if Self::is_lowered_impl_name(&f.name) {
+                // 已由 passes 降解的 impl 自由函数：保持原名，不做重载 mangle
+                (Linkage::Local, f.name.clone())
+            } else {
+                let sym = Self::mangle_overload(
+                    &f.name,
+                    &f.params.iter().map(|(_,t)| t.clone()).collect::<Vec<_>>(),
+                    &f.ret
+                );
+                (match f.vis {
+                    Visibility::Public  => Linkage::Export,
+                    Visibility::Private => Linkage::Local,
+                }, sym)
+            };
+
+            // 去重 & 声明
+            if !self.declared_symbols.insert(sym.clone()) {
+                continue;
+            }
+            let id = self.module.declare_function(&sym, linkage, &sig)?;
+            ids.insert(sym.clone(), id);
+            self.base_func_ids.insert(sym.clone(), id);
+
+            // 记录签名
             self.fn_sig.insert(
-                f.name.clone(),
+                sym.clone(),
                 (f.params.iter().map(|(_, t)| t.clone()).collect(), f.ret.clone()),
             );
+
+            // 记录重载集合（main / extern / 已降解 impl 不加入）
+            if !f.is_extern && f.name != "main" && !Self::is_lowered_impl_name(&f.name) {
+                self.overloads.entry(f.name.clone()).or_default().push(sym.clone());
+            }
         }
 
         Ok(ids)
     }
 
-    /// 扫描程序，声明所有 impl 方法（作为普通函数符号）
-    /// 幂等：若 passes 已经把 impl 方法降解为 `FunDecl` 并被 declare_fns 处理过，这里直接跳过。
+    /// 扫描程序，声明所有 impl 方法（作为普通函数符号）。
+    /// 对 trait 实参**全为具体类型**的 impl：直接声明为具体符号；
+    /// 对**含类型变量**的 impl：只登记模板（不声明具体符号），调用时按需单态化。
     pub fn declare_impls_from_program(&mut self, prog: &Program) -> Result<()> {
         for it in &prog.items {
             if let Item::Impl(id, _) = it {
-                for m in &id.items {
-                    let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
+                let is_generic_impl = id.trait_args.iter().any(Self::has_tyvar);
+                if is_generic_impl {
+                    // 记录成模板
+                    let tvars = Self::collect_unique_tyvars(&id.trait_args);
+                    for item in &id.items {
+                        let m = match item {
+                            ImplItem::Method(m) => m,
+                            ImplItem::AssocType(_) => continue,
+                        };
+                        let key = (id.trait_name.clone(), m.name.clone());
+                        self.impl_templates.insert(key, ImplMethodTpl {
+                            trait_name: id.trait_name.clone(),
+                            type_params: tvars.clone(),
+                            trait_args_tpl: id.trait_args.clone(),
+                            method_name: m.name.clone(),
+                            params: m.params.clone(),
+                            ret: m.ret.clone(),
+                            body: m.body.clone(),
+                        });
+                    }
+                    continue;
+                }
 
-                    // 已存在（可能是降解后的自由函数或之前声明过），跳过
+                // 非泛型 impl：直接声明具体符号
+                for item in &id.items {
+                    let m = match item {
+                        ImplItem::Method(m) => m,
+                        ImplItem::AssocType(_) => continue,
+                    };
+
+                    let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
                     if self.base_func_ids.contains_key(&sym) {
                         continue;
                     }
@@ -190,9 +332,7 @@ impl CLBackend {
                         sig.returns.push(AbiParam::new(rt));
                     }
 
-                    // 对外可见与否均可，这里用 Local
                     let fid = self.module.declare_function(&sym, Linkage::Local, &sig)?;
-
                     self.base_func_ids.insert(sym.clone(), fid);
                     self.fn_sig.insert(
                         sym.clone(),
@@ -204,7 +344,84 @@ impl CLBackend {
         Ok(())
     }
 
-    /// 扫描程序并声明所有**带显式类型实参**的专门化符号
+    /// 在限定名调用处按需对 **泛型 impl 方法** 单态化并声明/定义
+    pub fn ensure_impl_monomorph(&mut self, trait_name: &str, targs: &[Ty], method: &str) -> Result<(String, FuncId)> {
+        let sym = mangle_impl_method(trait_name, targs, method);
+
+        if let Some(&fid) = self.base_func_ids.get(&sym) {
+            return Ok((sym, fid));
+        }
+
+        // 找模板
+        let key = (trait_name.to_string(), method.to_string());
+        let tpl = match self.impl_templates.get(&key) {
+            Some(t) => t.clone(),
+            None => {
+                let msg = format!("unknown impl method template `{}::{}` for monomorph", trait_name, method);
+                self.diag_err("CG0003", &msg);
+                return Err(anyhow!(msg));
+            }
+        };
+
+        if tpl.type_params.len() != targs.len() {
+            let msg = format!(
+                "impl `{}`::{} expects {} type args, got {}",
+                trait_name, method, tpl.type_params.len(), targs.len()
+            );
+            self.diag_err("CG0004", &msg);
+            return Err(anyhow!(msg));
+        }
+
+        // 建 substitution：trait 层类型变量 -> 调用时实参
+        let subst = build_subst_map(&tpl.type_params, targs);
+
+        // 计算方法参数/返回类型
+        let mut param_tys = Vec::<Ty>::new();
+        for (_, pty) in &tpl.params { param_tys.push(subst_ty(pty, &subst)); }
+        let ret_ty = subst_ty(&tpl.ret, &subst);
+
+        // 声明签名
+        let mut sig = ir::Signature::new(self.module.isa().default_call_conv());
+        for t in &param_tys {
+            let ct = match cl_ty(t) {
+                Some(t) => t,
+                None => {
+                    let msg = format!("impl monomorph param type not ABI-legal: {:?}", t);
+                    self.diag_err("CG0002", &msg);
+                    return Err(anyhow!(msg));
+                }
+            };
+            sig.params.push(AbiParam::new(ct));
+        }
+        if let Some(rt) = cl_ty(&ret_ty) {
+            sig.returns.push(AbiParam::new(rt));
+        }
+
+        let fid = self.module.declare_function(&sym, Linkage::Local, &sig)?;
+        self.base_func_ids.insert(sym.clone(), fid);
+        self.fn_sig.insert(sym.clone(), (param_tys.clone(), ret_ty.clone()));
+
+        // 定义：把模板方法体做一次类型替换
+        let body = subst_block(&tpl.body, &subst);
+        let fdecl = FunDecl {
+            name: sym.clone(),
+            vis: Visibility::Private,
+            type_params: vec![],
+            params: tpl.params.clone().into_iter()
+                .zip(param_tys.into_iter())
+                .map(|((n,_), t)| (n, t)).collect(),
+            ret: ret_ty,
+            where_bounds: vec![],
+            body,
+            is_extern: false,
+            span: Span::DUMMY,
+        };
+        self.define_fn_core(fid, &fdecl)?;
+
+        Ok((sym, fid))
+    }
+
+    /// 扫描程序并声明所有**带显式类型实参**的专门化符号（自由函数）
     pub fn declare_mono_from_program(&mut self, prog: &Program) -> Result<()> {
         let mut calls: Vec<(String, Vec<Ty>)> = Vec::new();
         collect_calls_with_generics_in_program(prog, &mut calls);
@@ -262,11 +479,10 @@ impl CLBackend {
         Ok(())
     }
 
-    /// 按需单态化：用于 **隐式泛型调用** 的即时实例生成/定义
+    /// 按需单态化：用于 **隐式泛型调用** 的即时实例生成/定义（自由函数）
     pub fn ensure_monomorph(&mut self, base: &str, targs: &[Ty]) -> Result<(String, FuncId)> {
         let mname = mangle_name(base, targs);
         if let Some(&fid) = self.mono_func_ids.get(&mname) {
-            // 已声明；若未定义则补定义
             if !self.mono_defined.contains(&mname) {
                 let (b, ta) = self.mono_specs.get(&mname)
                     .cloned().unwrap_or((base.to_string(), targs.to_vec()));
@@ -286,7 +502,6 @@ impl CLBackend {
             return Ok((mname, fid));
         }
 
-        // 首次：声明 + 立刻定义
         let tpl = match self.templates.get(base) {
             Some(t) => t,
             None => {
@@ -338,14 +553,29 @@ impl CLBackend {
         Ok((mname, fid))
     }
 
-    /// 定义**非泛型**函数体
+    /// 定义**非泛型**函数体（注意：按与 declare_fns 相同的取名规则；main/extern/__impl_* 例外）
     pub fn define_fn(&mut self, f: &FunDecl, ids: &FastMap<String, FuncId>) -> Result<()> {
         if f.is_extern { return Ok(()); }
         if !f.type_params.is_empty() { return Ok(()); }
-        let fid = match ids.get(&f.name) {
+
+        let sym = if f.is_extern {
+            f.name.clone()
+        } else if f.name == "main" {
+            "main".to_string()
+        } else if Self::is_lowered_impl_name(&f.name) {
+            f.name.clone()
+        } else {
+            Self::mangle_overload(
+                &f.name,
+                &f.params.iter().map(|(_,t)| t.clone()).collect::<Vec<_>>(),
+                &f.ret
+            )
+        };
+
+        let fid = match ids.get(&sym) {
             Some(id) => *id,
             None => {
-                let msg = format!("missing FuncId for `{}`", f.name);
+                let msg = format!("missing FuncId for `{}`", sym);
                 self.diag_err("CG0001", &msg);
                 return Err(anyhow!(msg));
             }
@@ -353,9 +583,8 @@ impl CLBackend {
         self.define_fn_core(fid, f)
     }
 
-    /// 定义所有 impl 方法体（若 passes 已降解为自由函数则跳过）
+    /// 定义所有 impl 方法体（若 passes 已降解为自由函数则跳过；对非泛型 impl）
     pub fn define_impls_from_program(&mut self, prog: &Program) -> Result<()> {
-        // 收集 Program 里已有的自由函数名
         let mut fun_names = FastSet::<String>::default();
         for it in &prog.items {
             if let Item::Fun(f, _) = it { fun_names.insert(f.name.clone()); }
@@ -363,10 +592,17 @@ impl CLBackend {
 
         for it in &prog.items {
             if let Item::Impl(id, _) = it {
-                for m in &id.items {
+                // 泛型 impl 的定义由 ensure_impl_monomorph 按需完成，这里只处理非泛型 impl
+                if id.trait_args.iter().any(Self::has_tyvar) { continue; }
+
+                for item in &id.items {
+                    let m = match item {
+                        ImplItem::Method(m) => m,
+                        ImplItem::AssocType(_) => continue,
+                    };
+
                     let sym = mangle_impl_method(&id.trait_name, &id.trait_args, &m.name);
 
-                    // 已有同名自由函数（passes 降解），交给 define_fn 处理，这里跳过
                     if fun_names.contains(&sym) {
                         continue;
                     }
@@ -382,6 +618,7 @@ impl CLBackend {
 
                     let fdecl = FunDecl {
                         name: sym.clone(),
+                        vis: Visibility::Private,
                         type_params: vec![],
                         params: m.params.clone(),
                         ret: m.ret.clone(),
@@ -397,7 +634,7 @@ impl CLBackend {
         Ok(())
     }
 
-    /// 定义所有已声明的**专门化**函数体
+    /// 定义所有已声明的**专门化**函数体（自由函数）
     pub fn define_mono_from_program(&mut self, _prog: &Program, _base_ids: &FastMap<String, FuncId>) -> Result<()> {
         let specs: Vec<(String, (String, Vec<Ty>))> =
             self.mono_specs.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -509,8 +746,6 @@ impl CLBackend {
         if matches!(ret_ty, Ty::Void) {
             b.ins().return_(&[]);
         } else {
-            // 返回值：绝大多数场景不允许隐式转换；
-            // 若返回目标是 Byte 且源表达式是 0..=255 的整数字面量，则发 i8 常量。
             let dummy0 = Expr::Int { value: 0, span: Span::DUMMY };
             let src_expr = f.body.tail.as_deref().unwrap_or(&dummy0);
             let final_v = cg.coerce_for_dst_from_expr(&mut b, src_expr, ret_val, &ret_ty)?;
@@ -554,6 +789,9 @@ fn cl_ty(t: &Ty) -> Option<ir::Type> {
         Ty::Float  => Some(types::F32),
         Ty::Double => Some(types::F64),
         Ty::String => Some(types::I64),
+        Ty::App { name, args } if (name == "Box" || name == "Rc" || name == "Arc") && args.len() == 1 => {
+            Some(types::I64)
+        }
         Ty::Void   => None,
         Ty::Var(_) | Ty::App { .. } => None,
     }
@@ -605,15 +843,30 @@ impl<'a> ExprGen<'a> {
     #[inline]
     fn val_ty(&self, b:&mut FunctionBuilder, v:ir::Value)->ir::Type { b.func.dfg.value_type(v) }
 
+    /* --------- 新增：数值“落位”收敛工具 --------- */
+
+    fn coerce_ir_numeric(&mut self, b:&mut FunctionBuilder, v: ir::Value, want: ir::Type) -> Result<ir::Value> {
+        let got = self.val_ty(b, v);
+        if got == want { return Ok(v); }
+        let both_int   = got.is_int()   && want.is_int();
+        let both_float = got.is_float() && want.is_float();
+        let int_to_f   = got.is_int()   && want.is_float();
+        let f_to_int   = got.is_float() && want.is_int();
+
+        if both_int || both_float || int_to_f || f_to_int {
+            Ok(self.cast_value_to_irtype(b, v, want))
+        } else {
+            self.expect_irtype(b, v, want)?;
+            Ok(v)
+        }
+    }
+
     /* --------- 显式-only 关键工具（含 Byte 字面量例外） --------- */
 
-    /// 断言值的 IR 类型与目标 Ty 完全一致（不做转换）
     fn expect_ty(&mut self, b:&mut FunctionBuilder, v: ir::Value, dst:&Ty) -> Result<()> {
         let want = cl_ty(dst).expect("no void here");
         self.expect_irtype(b, v, want)
     }
-
-    /// 断言值的 IR 类型为 want（不做转换）
     fn expect_irtype(&mut self, b:&mut FunctionBuilder, v: ir::Value, want: ir::Type) -> Result<()> {
         let got = self.val_ty(b, v);
         if got != want {
@@ -621,22 +874,16 @@ impl<'a> ExprGen<'a> {
         }
         Ok(())
     }
-
-    /// **仅用于显式 `as`**：按 IR 类型执行数值转换（支持：整↔整、浮↔浮、整↔浮）
     fn cast_to_ty(&mut self, b:&mut FunctionBuilder, v: ir::Value, dst:&Ty)->Result<ir::Value>{
         let want = cl_ty(dst).expect("no void here");
         Ok(self.cast_value_to_irtype(b, v, want))
     }
-
-    /// 低层 IR 类型转换（用于显式 cast / φ 合流时的同型断言场景）
     fn cast_value_to_irtype(&mut self, b:&mut FunctionBuilder, v: ir::Value, dst: ir::Type) -> ir::Value {
         let src = self.val_ty(b, v);
         if src == dst { return v; }
 
-        // 整数 <-> 整数
         if src.is_int() && dst.is_int() {
             if src.bits() < dst.bits() {
-                // Byte/Bool(I8) 采用零扩展；其他整型用符号扩展
                 if src.bits() == 8 {
                     return b.ins().uextend(dst, v);
                 } else {
@@ -646,31 +893,16 @@ impl<'a> ExprGen<'a> {
                 return b.ins().ireduce(dst, v);
             }
         }
-
-        // 浮点 <-> 浮点
         if src.is_float() && dst.is_float() {
             return if src.bits() < dst.bits() { b.ins().fpromote(dst, v) } else { b.ins().fdemote(dst, v) }
         }
-
-        // 整数 -> 浮点
         if src.is_int() && dst.is_float() {
-            if src.bits() == 8 {
-                return b.ins().fcvt_from_uint(dst, v);
-            } else {
-                return b.ins().fcvt_from_sint(dst, v);
-            }
-        }
-
-        // 浮点 -> 整数（朝零/有符号）
-        if src.is_float() && dst.is_int() {
+            if src.bits() == 8 { return b.ins().fcvt_from_uint(dst, v); } else { return b.ins().fcvt_from_sint(dst, v); }
+        } else if src.is_float() && dst.is_int() {
             return b.ins().fcvt_to_sint(dst, v);
         }
-
-        // 兜底：未支持的转换，直接返回原值（理论上不应到这）
         v
     }
-
-    /// 算术/比较运算：要求两侧同型且为数值（不做隐式统一/提升）
     fn require_same_numeric(
         &mut self,
         b:&mut FunctionBuilder,
@@ -689,7 +921,6 @@ impl<'a> ExprGen<'a> {
     }
 
     /* ---------- Byte 字面量 0..=255 的目标类型协助 ---------- */
-
     #[inline]
     fn fits_byte_literal(&self, e: &Expr) -> Option<u8> {
         match e {
@@ -698,8 +929,6 @@ impl<'a> ExprGen<'a> {
             _ => None,
         }
     }
-
-    /// 若 `dst` 是 Byte 且 `src_expr` 是 0..=255 的整数字面量，则返回 I8 常量；否则要求 IR 同型。
     fn coerce_for_dst_from_expr(
         &mut self,
         b:&mut FunctionBuilder,
@@ -707,13 +936,14 @@ impl<'a> ExprGen<'a> {
         v_raw: ir::Value,
         dst:&Ty
     ) -> Result<ir::Value> {
+        // Byte 字面量的特例（保持原有语义）
         if matches!(dst, Ty::Byte) {
             if let Some(u) = self.fits_byte_literal(src_expr) {
                 return Ok(b.ins().iconst(types::I8, u as i64));
             }
         }
-        self.expect_ty(b, v_raw, dst)?;
-        Ok(v_raw)
+        let want = cl_ty(dst).expect("no void here");
+        self.coerce_ir_numeric(b, v_raw, want)
     }
 
     fn emit_block(&mut self, b:&mut FunctionBuilder, blk:&Block)->Result<ir::Value>{
@@ -722,16 +952,14 @@ impl<'a> ExprGen<'a> {
             match s {
                 Stmt::Let { name, ty, init, .. } => {
                     let v0 = self.emit_expr(b, init)?;
-                    // Bool 走一次规范化到 {0,1}；Byte + 字面量 0..=255 走 I8 常量；其余断言同型
                     let v  = match ty {
                         Ty::Bool => { let b1 = self.bool_i8_to_b1(b, v0); self.bool_b1_to_i8(b, b1) }
                         Ty::Byte => { self.coerce_for_dst_from_expr(b, init, v0, ty)? }
-                        _ => { self.expect_ty(b, v0, ty)?; v0 }
+                        _ => { self.coerce_for_dst_from_expr(b, init, v0, ty)? }
                     };
                     let var = self.declare_named(b, name, ty);
                     b.def_var(var, v);
                 }
-
                 Stmt::Assign { name, expr, .. } => {
                     let var = self.lookup(name).ok_or_else(|| anyhow!("unknown var `{name}`"))?;
                     let ty = self.lookup_ty(name).ok_or_else(|| anyhow!("no type for `{name}`"))?;
@@ -739,10 +967,7 @@ impl<'a> ExprGen<'a> {
                     let rhs_fixed = self.coerce_for_dst_from_expr(b, expr, rhs, &ty)?;
                     b.def_var(var, rhs_fixed);
                 }
-
-                // 表达式语句——**始终**实际求值（即使返回 Void），确保诸如 println_int(...) 的副作用发生
                 Stmt::Expr { expr, .. } => { let _ = self.emit_expr(b, expr)?; }
-
                 Stmt::If { cond, then_b, else_b, .. } => {
                     let cv  = self.emit_expr(b, cond)?; let c1  = self.bool_i8_to_b1(b, cv);
                     let tbb = b.create_block(); let ebb = b.create_block(); let out = b.create_block();
@@ -751,7 +976,6 @@ impl<'a> ExprGen<'a> {
                     b.switch_to_block(ebb); b.seal_block(ebb); if let Some(eb) = else_b { let _ = self.emit_block(b, eb)?; } b.ins().jump(out, &[]);
                     b.switch_to_block(out); b.seal_block(out);
                 }
-
                 Stmt::While { cond, body, .. } => {
                     let hdr = b.create_block(); let bb  = b.create_block(); let out = b.create_block();
                     b.ins().jump(hdr, &[]); b.switch_to_block(hdr);
@@ -762,7 +986,6 @@ impl<'a> ExprGen<'a> {
                     b.ins().jump(hdr, &[]); b.seal_block(hdr);
                     b.switch_to_block(out); b.seal_block(out);
                 }
-
                 Stmt::For { init, cond, step, body, .. } => {
                     if let Some(fi) = init {
                         match fi {
@@ -771,7 +994,7 @@ impl<'a> ExprGen<'a> {
                                 let v = match ty {
                                     Ty::Bool => { let b1 = self.bool_i8_to_b1(b, rhs); self.bool_b1_to_i8(b, b1) }
                                     Ty::Byte => { self.coerce_for_dst_from_expr(b, init, rhs, ty)? }
-                                    _ => { self.expect_ty(b, rhs, ty)?; rhs }
+                                    _ => { self.coerce_for_dst_from_expr(b, init, rhs, ty)? }
                                 };
                                 let var = self.declare_named(b, name, ty); b.def_var(var, v);
                             }
@@ -822,17 +1045,14 @@ impl<'a> ExprGen<'a> {
                     b.ins().jump(hdr, &[]); b.seal_block(hdr);
                     b.switch_to_block(out); b.seal_block(out);
                 }
-
                 Stmt::Break { .. } => {
                     let &(_, out) = self.loop_stack.last().ok_or_else(|| anyhow!("`break` outside loop"))?;
                     b.ins().jump(out, &[]); let cont = b.create_block(); b.switch_to_block(cont); b.seal_block(cont);
                 }
-
                 Stmt::Continue { .. } => {
                     let &(cont_tgt, _) = self.loop_stack.last().ok_or_else(|| anyhow!("`continue` outside loop"))?;
                     b.ins().jump(cont_tgt, &[]); let cont = b.create_block(); b.switch_to_block(cont); b.seal_block(cont);
                 }
-
                 Stmt::Return { expr: opt, .. } => {
                     match (self.fun_ret.clone(), opt) {
                         (Ty::Void, Some(e)) => { let _ = self.emit_expr(b, e)?; b.ins().return_(&[]); }
@@ -855,7 +1075,6 @@ impl<'a> ExprGen<'a> {
                             }
                         }
                     }
-                    // return 后开新块，容忍死代码继续生成
                     let cont = b.create_block(); b.switch_to_block(cont); b.seal_block(cont);
                 }
             }
@@ -873,14 +1092,12 @@ impl<'a> ExprGen<'a> {
         if tpl.type_params.len() != 1 || tpl.params.len() != 1 {
             bail!("cannot infer type args for `{}`; add explicit `<...>`", base);
         }
-        // 形参必须是裸 T
         let tp0 = &tpl.type_params[0];
         match &tpl.params[0].1 {
             Ty::Var(v) if v == tp0 => {},
             _ => bail!("cannot infer `{}`: param is not plain type variable", base),
         }
 
-        // 尝试从实参表达式拿静态类型（字面量、变量等）
         let at = self.static_ty_of_expr(&args[0])?;
         Ok(vec![at])
     }
@@ -891,11 +1108,9 @@ impl<'a> ExprGen<'a> {
     }
 
     /// 从表达式快速给出静态类型；用于推断 println<T>(...)
-    /// 注意：已对齐“只允许显式转换”，不做数值提升推断。
     fn static_ty_of_expr(&mut self, e: &Expr) -> Result<Ty> {
         use BinOp::*; use UnOp::*;
         Ok(match e {
-            // —— 字面量 & 变量 —— //
             Expr::Int   { .. } => Ty::Int,
             Expr::Long  { .. } => Ty::Long,
             Expr::Bool  { .. } => Ty::Bool,
@@ -906,91 +1121,58 @@ impl<'a> ExprGen<'a> {
             Expr::Var   { name, .. } => self.lookup_ty(name)
                 .ok_or_else(|| anyhow!("cannot infer type of `{}` here; add explicit `<...>`", name))?,
 
-            // —— 一元运算 —— //
             Expr::Unary { op, rhs, .. } => {
                 let t = self.static_ty_of_expr(rhs)?;
-                match op {
-                    Neg => t, // 不再对 Byte/Char 做提升
-                    Not => Ty::Bool,
-                }
+                match op { Neg => t, Not => Ty::Bool }
             }
 
-            // —— 显式 as 转换 —— //
             Expr::Cast { expr: _, ty, .. } => ty.clone(),
 
-            // —— 二元运算 —— //
             Expr::Binary { op, lhs, rhs, .. } => {
-                let lt = self.static_ty_of_expr(lhs)?;
-                let rt = self.static_ty_of_expr(rhs)?;
+                let lt = self.static_ty_of_expr(lhs)?; let rt = self.static_ty_of_expr(rhs)?;
                 match op {
-                    Add | Sub | Mul | Div => {
-                        if lt == rt { lt } else { bail!("cannot infer type from mixed arithmetic; add explicit cast") }
-                    }
-                    Lt | Le | Gt | Ge     => Ty::Bool,
-                    Eq | Ne               => Ty::Bool,
-                    And | Or              => Ty::Bool,
+                    Add | Sub | Mul | Div => if lt == rt { lt } else { bail!("cannot infer type from mixed arithmetic; add explicit cast") },
+                    Lt | Le | Gt | Ge | Eq | Ne | And | Or => Ty::Bool,
                 }
             }
 
-            // —— 块 / if / match —— //
             Expr::Block { block, .. } => self.static_ty_of_block(block)?,
 
-            Expr::If { cond:_, then_b, else_b, .. } => {
-                let tt = self.static_ty_of_block(then_b)?;
-                let et = self.static_ty_of_block(else_b)?;
-                if tt == et { tt } else {
-                    bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println");
-                }
+            Expr::If { then_b, else_b, .. } => {
+                let tt = self.static_ty_of_block(then_b)?; let et = self.static_ty_of_block(else_b)?;
+                if tt == et { tt } else { bail!("cannot infer type from this expression; please write `println`<...>(...)") }
             }
 
-            Expr::Match { scrut:_, arms, default, .. } => {
+            Expr::Match { arms, default, .. } => {
                 let mut out: Option<Ty> = None;
                 for (_, blk) in arms {
-                    let t = self.static_ty_of_block(blk)?;
-                    if let Some(prev) = &out {
-                        if *prev != t {
-                            bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println");
-                        }
-                    } else { out = Some(t); }
+                    let t = self.static_ty_of_block(blk)?; if let Some(prev) = &out { if *prev != t { bail!("cannot infer type from this expression; please write `println`<...>(...)"); } } else { out = Some(t); }
                 }
                 if let Some(d) = default {
-                    let t = self.static_ty_of_block(d)?;
-                    if let Some(prev) = &out {
-                        if *prev != t {
-                            bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println");
-                        }
-                    } else { out = Some(t); }
+                    let t = self.static_ty_of_block(d)?; if let Some(prev) = &out { if *prev != t { bail!("cannot infer type from this expression; please write `println`<...>(...)"); } } else { out = Some(t); }
                 }
                 out.unwrap_or(Ty::Int)
             }
 
-            // —— 调用（原逻辑保留） —— //
-            Expr::Call { callee, generics, args: _, .. } => {
+            // 调用：这里仅用在类型推断的辅助，不去解析重载
+            Expr::Call { callee, generics, .. } => {
                 match callee {
                     Callee::Name(name) => {
-                        if generics.is_empty() {
-                            // 非泛型函数：查签名
-                            self.be.fn_sig.get(name)
-                                .map(|(_, ret)| ret.clone())
-                                .ok_or_else(|| anyhow!("cannot infer type from call to `{}`; add explicit `println<...>(...)`", name))?
-                        } else {
-                            // 泛型且显式类型实参：优先模板替换，否则尝试已声明的实例
+                        if !generics.is_empty() {
                             if let Some(tpl) = self.be.templates.get(name) {
-                                if tpl.type_params.len() != generics.len() {
-                                    bail!("cannot infer `{}`: type arg count mismatch", name);
-                                }
                                 let subst = build_subst_map(&tpl.type_params, generics);
                                 subst_ty(&tpl.ret, &subst)
                             } else {
                                 let mname = mangle_name(name, generics);
                                 self.be.fn_sig.get(&mname)
                                     .map(|(_, ret)| ret.clone())
-                                    .ok_or_else(|| anyhow!("cannot infer type from call to `{}`; add explicit `println<...>(...)`", name))?
+                                    .ok_or_else(|| anyhow!("cannot infer type from call to `{}`; add explicit `<...>`", name))?
                             }
+                        } else {
+                            bail!("cannot infer type from this call; please write explicit type args");
                         }
                     }
-                    // 合格名调用需要显式类型参数
-                    _ => bail!("cannot infer type from this expression; please write `{}`<...>(...)", "println"),
+                    _ => bail!("cannot infer type from this expression; please write explicit type args"),
                 }
             }
         })
@@ -1105,9 +1287,8 @@ impl<'a> ExprGen<'a> {
                 let tv0 = self.emit_block(b, then_b)?; let tv_ty = self.val_ty(b, tv0); let phi = b.declare_var(tv_ty); b.def_var(phi, tv0); b.ins().jump(mb, &[]);
                 b.switch_to_block(ebb); b.seal_block(ebb);
                 let ev0 = self.emit_block(b, else_b)?;
-                // 显式-only：两分支 IR 类型必须一致
-                self.expect_irtype(b, ev0, tv_ty)?;
-                b.def_var(phi, ev0); b.ins().jump(mb, &[]);
+                let ev  = self.coerce_ir_numeric(b, ev0, tv_ty)?;
+                b.def_var(phi, ev); b.ins().jump(mb, &[]);
                 b.switch_to_block(mb);  b.seal_block(mb); b.use_var(phi)
             }
 
@@ -1115,6 +1296,7 @@ impl<'a> ExprGen<'a> {
                 let sv = self.emit_expr(b, scrut)?;
                 let svt = self.val_ty(b, sv);
                 let out = b.create_block(); let mut phi: Option<Variable> = None;
+                let mut phi_ty: Option<ir::Type> = None;
                 let mut next: Option<ir::Block> = None;
                 for (pat, blk) in arms {
                     let this  = b.create_block(); let thenb = b.create_block(); let cont  = b.create_block();
@@ -1142,31 +1324,52 @@ impl<'a> ExprGen<'a> {
                     };
                     b.ins().brif(hit_b1, thenb, &[], cont, &[]);
                     b.switch_to_block(thenb); b.seal_block(thenb);
-                    let v = self.emit_block(b, blk)?; if phi.is_none() { let vt = self.val_ty(b, v); phi = Some(b.declare_var(vt)); }
-                    b.def_var(phi.unwrap(), v); b.ins().jump(out, &[]);
+                    let v = self.emit_block(b, blk)?;
+                    if phi.is_none() {
+                        let vt = self.val_ty(b, v);
+                        phi = Some(b.declare_var(vt));
+                        phi_ty = Some(vt);
+                        b.def_var(phi.unwrap(), v);
+                    } else {
+                        let want = phi_ty.unwrap();
+                        let vv = self.coerce_ir_numeric(b, v, want)?;
+                        b.def_var(phi.unwrap(), vv);
+                    }
+                    b.ins().jump(out, &[]);
                     next = Some(cont);
                 }
                 if let Some(last) = next.take() {
                     b.switch_to_block(last); b.seal_block(last);
                     if let Some(db) = default {
-                        let v = self.emit_block(b, db)?; if phi.is_none() { let vt = self.val_ty(b, v); phi = Some(b.declare_var(vt)); }
-                        b.def_var(phi.unwrap(), v); b.ins().jump(out, &[]);
+                        let v = self.emit_block(b, db)?;
+                        if phi.is_none() {
+                            let vt = self.val_ty(b, v);
+                            phi = Some(b.declare_var(vt));
+                            phi_ty = Some(vt);
+                            b.def_var(phi.unwrap(), v);
+                        } else {
+                            let want = phi_ty.unwrap();
+                            let vv = self.coerce_ir_numeric(b, v, want)?;
+                            b.def_var(phi.unwrap(), vv);
+                        }
+                        b.ins().jump(out, &[]);
                     } else {
-                        if phi.is_none() { phi = Some(b.declare_var(types::I32)); }
-                        let z = b.ins().iconst(types::I32, 0); b.def_var(phi.unwrap(), z); b.ins().jump(out, &[]);
+                        if phi.is_none() {
+                            phi = Some(b.declare_var(types::I32));
+                            phi_ty = Some(types::I32);
+                            let z = b.ins().iconst(types::I32, 0);
+                            b.def_var(phi.unwrap(), z);
+                        }
+                        b.ins().jump(out, &[]);
                     }
                 }
                 b.switch_to_block(out); b.seal_block(out); b.use_var(phi.unwrap())
             }
 
-            // 调用：支持 Name 与 Qualified；参数位置若目标是 Byte 且实参是 0..=255 的字面量，直接用 I8 常量
+            // 调用：支持 Name 与 Qualified；Name 情况下若命中重载集合，则按静态类型精确选择重载符号
             Expr::Call { callee, generics, args, .. } => {
                 let (sym, fid) = match callee {
                     Callee::Name(name) => {
-                        // 三种路径：
-                        // A) 显式 `<...>` 的泛型调用 → 用 mangle_name
-                        // B) 非泛型的普通函数（base_func_ids 里有） → 直接调用
-                        // C) 隐式泛型：base 不在 base_func_ids，但在 templates → 现场推断 + ensure_monomorph
                         if !generics.is_empty() {
                             let mname = mangle_name(name, generics);
                             let fid  = match self.be.mono_func_ids.get(&mname) {
@@ -1178,13 +1381,51 @@ impl<'a> ExprGen<'a> {
                                 }
                             };
                             (mname, fid)
-                        } else if let Some(&fid) = self.be.base_func_ids.get(name) {
-                            (name.clone(), fid)
                         } else if self.be.templates.contains_key(name) {
                             // 隐式泛型：目前实现 arity=1 的常见形态（println<T>(x:T)）
                             let targs = self.infer_targs_for_simple_arity1(name, args)?;
                             let (mname, fid) = self.be.ensure_monomorph(name, &targs)?;
                             (mname, fid)
+                        } else if let Some(over_syms) = self.be.overloads.get(name).cloned() {
+                            // 2) 重载解析：用实参静态类型匹配唯一候选
+                            let mut arg_tys: Vec<Ty> = Vec::with_capacity(args.len());
+                            for i in 0..args.len() { arg_tys.push(self.static_ty_of_expr(&args[i])?); }
+
+                            let mut hits: Vec<String> = Vec::new();
+                            for s in over_syms {
+                                if let Some((ptys, _ret)) = self.be.fn_sig.get(&s) {
+                                    if ptys.len() != arg_tys.len() { continue; }
+                                    let mut ok = true;
+                                    for (i, (want, got)) in ptys.iter().zip(arg_tys.iter()).enumerate() {
+                                        if want == got { continue; }
+                                        if *want == Ty::Byte {
+                                            if self.fits_byte_literal(&args[i]).is_some() { continue; }
+                                        }
+                                        ok = false; break;
+                                    }
+                                    if ok { hits.push(s.clone()); }
+                                }
+                            }
+                            match hits.len() {
+                                0 => {
+                                    let msg = format!("no overload of `{}` matches given argument types", name);
+                                    self.be.diag_err("CG0005", &msg);
+                                    return Err(anyhow!(msg));
+                                }
+                                1 => {
+                                    let s = hits.remove(0);
+                                    let fid = *self.be.base_func_ids.get(&s).ok_or_else(|| anyhow!("missing FuncId for `{}`", s))?;
+                                    (s, fid)
+                                }
+                                _ => {
+                                    let msg = format!("ambiguous call to `{}`: {} candidates match", name, hits.len());
+                                    self.be.diag_err("CG0005", &msg);
+                                    return Err(anyhow!(msg));
+                                }
+                            }
+                        } else if let Some(&fid) = self.be.base_func_ids.get(name) {
+                            // 3) 普通非重载（比如 extern 打印函数）
+                            (name.clone(), fid)
                         } else {
                             let msg = format!("unknown function in codegen `{}`", name);
                             self.be.diag_err("CG0001", &msg);
@@ -1200,14 +1441,13 @@ impl<'a> ExprGen<'a> {
                             self.be.diag_err("CG0001", &msg);
                             return Err(anyhow!(msg));
                         }
-                        let sym = mangle_impl_method(trait_name, generics, method);
+                        // 按需单态化泛型 impl 方法
+                        let (sym, _fid) = self.be.ensure_impl_monomorph(trait_name, generics, method)?;
                         let fid = match self.be.base_func_ids.get(&sym) {
                             Some(fid) => *fid,
                             None => {
                                 let msg = format!(
-                                    "unknown impl method symbol `{}`; 确认你在 codegen 前调用了 \
-                                     `declare_impls_from_program(&program)`，或已由 passes 降解为自由函数并调用了 \
-                                     `declare_fns(&all_fun_decls)`",
+                                    "unknown impl method symbol `{}` after monomorph; did you call declare_impls_from_program?",
                                     sym
                                 );
                                 self.be.diag_err("CG0003", &msg);
@@ -1234,10 +1474,9 @@ impl<'a> ExprGen<'a> {
                 }
 
                 let mut av = Vec::with_capacity(args.len());
-                for (a, pt) in args.iter().zip(param_tys.iter()) {
-                    let v0 = self.emit_expr(b, a)?;
-                    // 对于 Byte 形参 + 0..=255 的字面量，使用 I8 常量；其余要求 IR 同型
-                    let vi = self.coerce_for_dst_from_expr(b, a, v0, pt)?;
+                for (i, pt) in param_tys.iter().enumerate() {
+                    let v0 = self.emit_expr(b, &args[i])?;
+                    let vi = self.coerce_for_dst_from_expr(b, &args[i], v0, pt)?;
                     av.push(vi);
                 }
 
@@ -1245,7 +1484,6 @@ impl<'a> ExprGen<'a> {
                 let call = b.ins().call(fref, &av);
 
                 if matches!(ret_ty, Ty::Void) {
-                    // 即使返回 Void，也已 **发起调用**，副作用（println）将发生。
                     b.ins().iconst(types::I32, 0)
                 } else {
                     b.inst_results(call)[0]
@@ -1351,6 +1589,7 @@ fn specialize_fun(tpl: &FunDecl, subst: &FastMap<String, Ty>, mono_name: &str) -
     let body = subst_block(&tpl.body, subst);
     Ok(FunDecl {
         name: mono_name.to_string(),
+        vis: Visibility::Private,
         type_params: vec![],
         params,
         ret,
@@ -1414,6 +1653,7 @@ fn collect_calls_in_expr(e: &Expr, out: &mut Vec<(String, Vec<Ty>)>) {
         Expr::Call { callee, generics, args, .. } => {
             if !generics.is_empty() {
                 if let Callee::Name(nm) = callee { out.push((nm.clone(), generics.clone())); }
+                // 限定名调用（impl 方法）按需实例化，这里不用收集
             }
             for a in args { collect_calls_in_expr(a, out); }
         }
@@ -1441,25 +1681,25 @@ pub fn compile_program(prog: &Program, diag: Option<Rc<RefCell<DiagSink>>>) -> R
     if let Some(d) = diag { be.set_diag(d); }
     be.set_globals_from_program(prog);
 
-    // 1) 先把“自由函数”（含 extern）全部声明
+    // 1) 自由函数（含 extern、非泛型重载；main 保持原名；__impl_* 保持原名）声明
     let funs: Vec<&FunDecl> = prog.items.iter().filter_map(|it| {
         if let Item::Fun(f, _) = it { Some(f) } else { None }
     }).collect();
     let base_ids = be.declare_fns(funs.clone())?;
 
-    // 2) 再把 impl 方法声明成普通符号（若 passes 已降解，会被上面的 declare_fns 覆盖；此处就跳过）
+    // 2) impl 方法：声明非泛型具体符号 + 记录泛型模板
     be.declare_impls_from_program(prog)?;
 
-    // 3) 收集并声明所有需要的单态化实例（对 `foo<T>` 这类：显式 `<...>`）
+    // 3) 收集并声明所有需要的单态化实例（自由函数，显式 `<...>`）
     be.declare_mono_from_program(prog)?;
 
-    // 4) 定义自由函数（非泛型）
+    // 4) 定义自由函数（非泛型；使用与声明一致的命名规则）
     for f in &funs { be.define_fn(f, &base_ids)?; }
 
-    // 5) 定义 impl 方法（若 passes 已降解为自由函数，这里会跳过）
+    // 5) 定义非泛型 impl 方法（泛型 impl 由调用时 ensure_impl_monomorph 定义）
     be.define_impls_from_program(prog)?;
 
-    // 6) 定义单态化实例（显式 `<...>` 的）
+    // 6) 定义单态化实例（自由函数）
     be.define_mono_from_program(prog, &base_ids)?;
 
     // 7) 输出 obj

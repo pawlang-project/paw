@@ -1,16 +1,166 @@
+// main.paw
+import "std::mem";
 import "std::fmt";
 
+fn over(x: Int) -> Int { x + 1 }
+fn over(x: Double) -> Double { x + 0.5 }
+
+fn demo_casts() -> Void {
+  let a: Int = 3;
+  let b: Long = a as Long;
+  let c: Float = 3.25;
+  let d: Int = c as Int;
+  let e: Double = b as Double;
+  println<String>("[casts]");
+  println<Int>(b as Int);
+  println<Int>(d);
+  println<Double>(e);
+}
+
+fn demo_ctrlflow() -> Void {
+  println<String>("[ctrlflow]");
+
+  if (true) {
+    println<String>("if-true");
+  } else {
+    println<String>("if-false");
+  }
+
+  let sum: Int = 0;
+  let i: Int = 1;
+  while (i <= 5) {
+    let tmp: Int = sum + i;
+    sum = tmp;
+    i = i + 1;
+  }
+  println<Int>(15);
+
+  for (let j: Int = 0; j < 5; j = j + 1) {
+    if (j == 3) { continue; }
+    if (j == 4) { break; }
+    println<Int>(j);
+  }
+}
+
+fn demo_match(v: Int) -> Int {
+  let r: Int =
+    match (v) {
+      0 => { 100 },
+      1 => { 200 },
+      _ => { 999 }
+    };
+  r
+}
+
+fn echo_and_print<T>(x: T) -> T
+where T: Printable<T>
+{
+  Printable::println<T>(x);
+  println(x);
+  x
+}
+
+fn demo_mem() -> Void {
+  println<String>("[mem]");
+
+  let b: Box<Int> = Box::new<Int>(42);
+  println<Int>(Box::get<Int>(b));
+  Box::set<Int>(b, 99);
+  println<Int>(Box::get<Int>(b));
+  Box::free<Int>(b);
+
+  let r1: Rc<Int> = Rc::new<Int>(123);
+  let r2: Rc<Int> = Rc::clone<Int>(r1);
+  println<Int>(Rc::strong_count<Int>(r1));
+  println<Int>(Rc::get<Int>(r1));
+  println<Int>(Rc::get<Int>(r2));
+  Rc::drop<Int>(r2);
+  println<Int>(Rc::strong_count<Int>(r1));
+  Rc::drop<Int>(r1);
+
+  let a1: Arc<Double> = Arc::new<Double>(3.5);
+  let a2: Arc<Double> = Arc::clone<Double>(a1);
+  println<Int>(Arc::strong_count<Double>(a1));
+  println<Double>(Arc::get<Double>(a2));
+  Arc::drop<Double>(a2);
+  Arc::drop<Double>(a1);
+
+  let sbox: Box<String> = Box::new<String>("mem + fmt OK");
+  println<String>(Box::get<String>(sbox));
+  Box::free<String>(sbox);
+
+  let bb: Byte = 255;
+  println<Byte>(bb);
+}
+
+fn demo_ops() -> Void {
+  println<String>("[ops]");
+
+  let x: Int = 7;
+  let y: Int = 5;
+  println<Int>(x + y);
+  println<Int>(x - y);
+  println<Int>(x * y);
+  println<Int>(x / y);
+
+  let fx: Float = 3.0;
+  let fy: Float = 0.5;
+  println<Float>(fx + fy);
+  println<Float>(fx - fy);
+  println<Float>(fx * fy);
+  println<Float>(fx / fy);
+
+  println<Bool>(x < y);
+  println<Bool>(x <= y);
+  println<Bool>(x > y);
+  println<Bool>(x >= y);
+  println<Bool>(x == y);
+  println<Bool>(x != y);
+
+  let t: Bool = true;
+  let f: Bool = false;
+  println<Bool>(t && f);
+  println<Bool>(t || f);
+  println<Bool>(!t);
+
+  println<Int>(over(10));
+  println<Double>(over(2.0));
+}
+
+fn demo_block_expr() -> Void {
+  println<String>("[block-expr]");
+  let v: Int = {
+    let a: Int = 10;
+    let b: Int = 20;
+    a + b
+  };
+  println<Int>(v);
+}
+
+fn abs_i32(x: Int) -> Int {
+  if (x < 0) { return -x; }
+  return x;
+}
+
 fn main() -> Int {
-    let b: Byte = 250;
-    let i: Int = b as Int;          // Byte → Int
-    let l: Long = i as Long;        // Int  → Long
-    let f: Float = l as Float;      // Long → Float
-    let d: Double = f as Double;    // Float→ Double
+  println<String>("[TEST] mem + fmt + syntax begin");
 
-    let i2: Int = 300;
-    let b2: Byte = i2 as Byte;      // 300 -> 44 (截断)
-    let i3: Int = (b2 as Int) + 2;  // 44 + 2 = 46
+  demo_casts();
+  demo_ctrlflow();
 
-    println((d as Int) + i3 - 302); // 250 + 46 - 302 = -6
-    return (d as Int) + i3 - 302;
+  println<Int>(demo_match(0));
+  println<Int>(demo_match(1));
+  println<Int>(demo_match(9));
+
+  let _e1: Int = echo_and_print<Int>(314);
+  let _e2: String = echo_and_print<String>("echo!");
+
+  demo_mem();
+  demo_ops();
+  demo_block_expr();
+
+  println<Int>(abs_i32(-42));
+
+  println<String>("[TEST] mem + fmt + syntax end");
+  0
 }

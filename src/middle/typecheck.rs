@@ -18,6 +18,7 @@ macro_rules! tc_bail {
     }}; }
 macro_rules! tc_err {
     ($self:ident, $code:expr, $span:expr, $($arg:tt)*) => {{
+// 不中断，仅记录
         $self.diags.error($code, $self.file_id, $span, format!($($arg)*));
     }}; }
 
@@ -53,8 +54,8 @@ pub struct ImplKey {
 }
 impl ImplKey {
     #[inline]
-    pub fn new(trait_name: &str, args: &[Ty]) -> Self {
-        ImplKey { trait_key: TraitKey::from(trait_name), args: args.to_vec().into_boxed_slice() }
+    pub fn new(tr: &str, args: &[Ty]) -> Self {
+        ImplKey { trait_key: TraitKey::from(tr), args: args.to_vec().into_boxed_slice() }
     }
 }
 impl fmt::Display for ImplKey {
@@ -126,6 +127,7 @@ fn occurs(v: &str, ty: &Ty) -> bool {
     }
 }
 fn unify(lhs: &Ty, rhs: &Ty, s: &mut Subst) -> Result<()> {
+    // CHG: 放宽绑定，允许把类型形参绑定到包含自由类型变量的类型（只做 occurs-check）
     use Ty::*;
     let l = apply_subst(lhs, s);
     let r = apply_subst(rhs, s);
@@ -133,7 +135,6 @@ fn unify(lhs: &Ty, rhs: &Ty, s: &mut Subst) -> Result<()> {
         (a, b) if a == b => Ok(()),
         (Var(v), t) | (t, Var(v)) => {
             if occurs(v, t) { bail!("occurs check failed: `{}` in `{}`", v, show_ty(t)); }
-            if has_free_tyvar(t) { bail!("cannot bind type variable `{}` to generic `{}`", v, show_ty(t)); }
             s.insert(v.clone(), t.clone());
             Ok(())
         }
@@ -166,11 +167,7 @@ fn show_ty(t: &Ty) -> String {
 }
 
 /* ===================== 对外入口 ===================== */
-/* 返回：(函数方案们, 全局类型, TraitEnv, ImplEnv)
- * 新增参数：
- * - file_id: 用于诊断展示（比如 "main.paw"）
- * - diags:   收集诊断
- */
+/* 返回：(函数方案们, 全局类型, TraitEnv, ImplEnv) */
 pub fn typecheck_program(
     p: &Program,
     file_id: &str,
@@ -193,18 +190,43 @@ pub fn typecheck_program(
                 diags.error("E2001", file_id, Some(*tspan), format!("duplicate trait `{}`", td.name));
                 bail!("duplicate trait `{}`", td.name);
             }
-            // 基本自检：方法名重复？
+            // 基本自检：方法名/关联类型名重复？
             {
-                let mut seen = FastSet::<String>::default();
-                for m in &td.items {
-                    if !seen.insert(m.name.clone()) {
-                        diags.error(
-                            "E2001",
-                            file_id,
-                            Some(m.span),
-                            format!("trait `{}` has duplicate method `{}`", td.name, m.name),
-                        );
-                        bail!("trait `{}` has duplicate method `{}`", td.name, m.name);
+                let mut seen_m = FastSet::<String>::default();
+                let mut seen_a = FastSet::<String>::default();
+                for it in &td.items {
+                    match it {
+                        TraitItem::Method(m) => {
+                            if !seen_m.insert(m.name.clone()) {
+                                diags.error(
+                                    "E2001",
+                                    file_id,
+                                    Some(m.span),
+                                    format!("trait `{}` has duplicate method `{}`", td.name, m.name),
+                                );
+                                bail!("trait `{}` has duplicate method `{}`", td.name, m.name);
+                            }
+                        }
+                        TraitItem::AssocType(a) => {
+                            if !a.type_params.is_empty() {
+                                diags.error(
+                                    "E2014",
+                                    file_id,
+                                    Some(a.span),
+                                    format!("trait `{}` associated type `{}` with type params is not supported yet", td.name, a.name),
+                                );
+                                bail!("unsupported generic associated type `{}` in trait `{}`", a.name, td.name);
+                            }
+                            if !seen_a.insert(a.name.clone()) {
+                                diags.error(
+                                    "E2001",
+                                    file_id,
+                                    Some(a.span),
+                                    format!("trait `{}` has duplicate associated type `{}`", td.name, a.name),
+                                );
+                                bail!("trait `{}` has duplicate associated type `{}`", td.name, a.name);
+                            }
+                        }
                     }
                 }
             }
@@ -212,7 +234,7 @@ pub fn typecheck_program(
         }
     }
 
-    // 校验 impl：trait 存在、元数匹配、方法签名匹配、实参具体；同时注册到 ImplEnv
+    // 校验 impl：trait 存在、元数匹配、方法/关联类型集合匹配、方法签名匹配、实参具体；同时注册到 ImplEnv
     for it in &p.items {
         if let Item::Impl(id, ispan) = it {
             let td = match tenv.get(&id.trait_name) {
@@ -262,9 +284,20 @@ pub fn typecheck_program(
                 subst.insert(tp.clone(), ta.clone());
             }
 
-            // 方法集合相等性检查（不多不少）
-            let trait_method_names: FastSet<_> = td.items.iter().map(|m| m.name.clone()).collect();
-            let impl_method_names: FastSet<_> = id.items.iter().map(|m| m.name.clone()).collect();
+            // 方法/关联类型集合相等性检查（不多不少）
+            let trait_method_names: FastSet<_> = td.items.iter()
+                .filter_map(|it| if let TraitItem::Method(m) = it { Some(m.name.clone()) } else { None })
+                .collect();
+            let trait_assoc_names: FastSet<_> = td.items.iter()
+                .filter_map(|it| if let TraitItem::AssocType(a) = it { Some(a.name.clone()) } else { None })
+                .collect();
+
+            let impl_method_names: FastSet<_> = id.items.iter()
+                .filter_map(|it| if let ImplItem::Method(m) = it { Some(m.name.clone()) } else { None })
+                .collect();
+            let impl_assoc_names: FastSet<_> = id.items.iter()
+                .filter_map(|it| if let ImplItem::AssocType(a) = it { Some(a.name.clone()) } else { None })
+                .collect();
 
             for extra in impl_method_names.difference(&trait_method_names) {
                 diags.error(
@@ -284,10 +317,33 @@ pub fn typecheck_program(
                 );
                 bail!("impl `{}` missing method `{}`", id.trait_name, miss);
             }
+            for extra in impl_assoc_names.difference(&trait_assoc_names) {
+                diags.error(
+                    "E2005",
+                    file_id,
+                    Some(*ispan),
+                    format!("impl `{}` provides unknown associated type `{}`", id.trait_name, extra),
+                );
+                bail!("impl `{}` provides unknown associated type `{}`", id.trait_name, extra);
+            }
+            for miss in trait_assoc_names.difference(&impl_assoc_names) {
+                diags.error(
+                    "E2006",
+                    file_id,
+                    Some(*ispan),
+                    format!("impl `{}` missing associated type `{}`", id.trait_name, miss),
+                );
+                bail!("impl `{}` missing associated type `{}`", id.trait_name, miss);
+            }
 
             // 每个方法签名与 trait 一致（经替换后）
-            for m in &id.items {
-                let decl = td.items.iter().find(|d| d.name == m.name).unwrap();
+            for it2 in &id.items {
+                let ImplItem::Method(m) = it2 else { continue };
+                let decl = td.items.iter().find_map(|ti| match ti {
+                    TraitItem::Method(mm) if mm.name == m.name => Some(mm.clone()),
+                    _ => None,
+                }).unwrap();
+
                 let want_params: Vec<Ty> =
                     decl.params.iter().map(|(_, t)| apply_subst(t, &subst)).collect();
                 let want_ret: Ty = apply_subst(&decl.ret, &subst);
@@ -349,6 +405,76 @@ pub fn typecheck_program(
                         want_ret,
                         m.ret
                     );
+                }
+            }
+
+            // 关联类型：具体性 + bound 满足性
+            for it2 in &id.items {
+                let ImplItem::AssocType(a) = it2 else { continue };
+                // impl 侧类型必须具体
+                ensure_no_free_tyvar(&a.ty).map_err(|e| {
+                    diags.error(
+                        "E2012A",
+                        file_id,
+                        Some(a.span),
+                        format!("impl `{}` associated type `{}` must be concrete: {}", id.trait_name, a.name, e),
+                    );
+                    e
+                })?;
+
+                // 找到 trait 中该关联类型的 bound，并检查
+                let Some(tr_a) = td.items.iter().find_map(|ti| match ti {
+                    TraitItem::AssocType(x) if x.name == a.name => Some(x.clone()),
+                    _ => None,
+                }) else {
+                    continue; // 前面集合相等性已经保证必然存在，这里只是稳妥
+                };
+
+                // bound 中可能引用 trait 形参，这里用 subst 替换
+                for b in &tr_a.bounds {
+                    let ar = match tenv.arity(&b.name) {
+                        Some(n) => n,
+                        None => {
+                            diags.error("E2013A", file_id, Some(a.span),
+                                        format!("unknown trait `{}` in bound of associated type `{}`", b.name, a.name));
+                            bail!("unknown trait `{}` in assoc bound", b.name);
+                        }
+                    };
+
+                    // 构造实参：若 bound 未显式提供实参（零长度），当作一元，把关联类型 a.ty 作为唯一实参
+                    let args_full: Vec<Ty> = if b.args.is_empty() {
+                        if ar != 1 {
+                            diags.error("E2013B", file_id, Some(a.span),
+                                        format!("trait `{}` expects {} type args in bound, got 0", b.name, ar));
+                            bail!("arity mismatch in assoc bound");
+                        }
+                        vec![a.ty.clone()]
+                    } else {
+                        if b.args.len() != ar {
+                            diags.error("E2013C", file_id, Some(a.span),
+                                        format!("trait `{}` expects {} type args in bound, got {}", b.name, ar, b.args.len()));
+                            bail!("arity mismatch in assoc bound");
+                        }
+                        b.args.iter().map(|t| apply_subst(t, &subst)).collect()
+                    };
+
+                    // 要求具体并且存在 impl
+                    if args_full.iter().any(has_free_tyvar) {
+                        diags.error("E2013D", file_id, Some(a.span),
+                                    format!("bound `{0}<{1}>` not concrete for associated type `{2}`",
+                                            b.name,
+                                            args_full.iter().map(show_ty).collect::<Vec<_>>().join(", "),
+                                            a.name));
+                        bail!("assoc bound not concrete");
+                    }
+                    if !ienv.has_impl(&b.name, &args_full) {
+                        diags.error("E2013E", file_id, Some(a.span),
+                                    format!("missing `impl {0}<...>` for bound `{0}<{1}>` (associated type `{2}`)",
+                                            b.name,
+                                            args_full.iter().map(show_ty).collect::<Vec<_>>().join(", "),
+                                            a.name));
+                        bail!("missing impl for assoc bound");
+                    }
                 }
             }
 
@@ -535,6 +661,22 @@ impl<'a> TyCk<'a> {
         Ok(false)
     }
 
+    // NEW: 供被调函数 where 检查使用——若不具体，允许通过调用者 where 满足
+    fn caller_where_satisfies(&self, trait_name: &str, args: &[Ty]) -> bool {
+        let ar = match self.tenv.arity(trait_name) { Some(n) => n, None => return false };
+        for wp in &self.current_where {
+            for b in &wp.bounds {
+                if b.name != trait_name { continue; }
+                if ar == 1 && b.args.is_empty() {
+                    if args.len()==1 && args[0] == wp.ty { return true; }
+                } else if !b.args.is_empty() && b.args == args {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     fn is_const_name(&self, n: &str) -> bool {
         for cset in self.locals_const.iter().rev() {
             if cset.contains(n) { return true; }
@@ -560,9 +702,9 @@ impl<'a> TyCk<'a> {
         Err(anyhow!("expect `{}`, got `{}` (use `as` for explicit conversion)", show_ty(dst), show_ty(src)))
     }
 
-    /// 如果 `expr` 是 0..=255 的整数字面量，允许把 Int/Long 字面量隐式赋给 Byte
+    /// CHG: 根据“字面量→目标类型”的放宽规则放行（Byte/Float/Double）
     fn require_assignable_from_expr(&self, expr: &Expr, src: &Ty, dst: &Ty) -> Result<()> {
-        if *dst == Ty::Byte && self.literal_fits_byte(expr) { return Ok(()); }
+        if self.literal_coerces_to(expr, dst) { return Ok(()); }
         self.require_assignable(src, dst)
     }
 
@@ -951,10 +1093,10 @@ impl<'a> TyCk<'a> {
                         let mut arg_tys = Vec::with_capacity(args.len());
                         for a in args { arg_tys.push(self.expr(a)?); }
 
-                        // 参数检查（严格同型，但允许 Byte 形参 + 0..=255 字面量）
+                        // 参数检查（严格同型，但允许“字面量→目标类型”的放宽）
                         for (i, (at, pt)) in arg_tys.iter().zip(sch.params.iter()).enumerate() {
                             if at == pt { continue; }
-                            if *pt == Ty::Byte && self.literal_fits_byte(&args[i]) { continue; }
+                            if self.literal_coerces_to(&args[i], pt) { continue; }
                             tc_bail!(self, "E2309", Some(*span),
                                 "arg#{i}: type mismatch: expect `{}`, got `{}`", show_ty(pt), show_ty(at));
                         }
@@ -964,10 +1106,11 @@ impl<'a> TyCk<'a> {
                         let (arity, md, tparams): (usize, TraitMethodSig, Vec<String>) = {
                             let td = self.tenv.get(trait_name)
                                 .ok_or_else(|| anyhow!("unknown trait `{}`", trait_name))?;
-                            let md_ref = td.items.iter()
-                                .find(|m| m.name == *method)
-                                .ok_or_else(|| anyhow!("trait `{}` has no method `{}`", trait_name, method))?;
-                            (td.type_params.len(), md_ref.clone(), td.type_params.clone())
+                            let md_ref = td.items.iter().find_map(|ti| match ti {
+                                TraitItem::Method(m) if m.name == *method => Some(m.clone()),
+                                _ => None,
+                            }).ok_or_else(|| anyhow!("trait `{}` has no method `{}`", trait_name, method))?;
+                            (td.type_params.len(), md_ref, td.type_params.clone())
                         };
 
                         if arity != generics.len() {
@@ -1002,7 +1145,7 @@ impl<'a> TyCk<'a> {
 
                         for (i, (at, want)) in arg_tys.iter().zip(want_params.iter()).enumerate() {
                             if *at == *want { continue; }
-                            if *want == Ty::Byte && self.literal_fits_byte(&args[i]) { continue; }
+                            if self.literal_coerces_to(&args[i], want) { continue; }
                             tc_bail!(self, "E2310", Some(*span),
                                 "arg#{i}: type mismatch: expect `{}`, got `{}`", show_ty(want), show_ty(at));
                         }
@@ -1015,10 +1158,11 @@ impl<'a> TyCk<'a> {
         })
     }
 
+    // CHG: where 检查允许通过“调用者 where”满足不具体的情形
     fn check_where_bounds(&self, preds: &[WherePred], subst: &Subst) -> Result<()> {
         for wp in preds {
             let ty_i = apply_subst(&wp.ty, subst);
-            if has_free_tyvar(&ty_i) { bail!("unresolved type parameter in where: `{}`", ty_i); }
+            // `ty_i` 可能仍含自由类型变量（比如由调用者的 T 替换进来），这里不强制具体
             for b in &wp.bounds {
                 let ar = self.tenv.arity(&b.name).ok_or_else(|| anyhow!("unknown trait `{}` in where", b.name))?;
                 // 按元数构造完整实参列表
@@ -1030,11 +1174,20 @@ impl<'a> TyCk<'a> {
                     b.args.iter().map(|a| apply_subst(a, subst)).collect()
                 };
 
-                if all_args.iter().any(has_free_tyvar) { bail!("where bound has unresolved generic: {}<...>", b.name); }
-                if !self.ienv.has_impl(&b.name, &all_args) {
-                    bail!("missing `impl {0}<...>` for `{0}<{1}>`",
-                        b.name,
-                        all_args.iter().map(show_ty).collect::<Vec<_>>().join(", "));
+                if all_args.iter().any(has_free_tyvar) {
+                    // 不具体：要求“调用者 where”可满足
+                    if !self.caller_where_satisfies(&b.name, &all_args) {
+                        bail!("missing where bound for `{0}<{1}>` in current context",
+                            b.name,
+                            all_args.iter().map(show_ty).collect::<Vec<_>>().join(", "));
+                    }
+                } else {
+                    // 具体：必须在全局 impl 表里有实例
+                    if !self.ienv.has_impl(&b.name, &all_args) {
+                        bail!("missing `impl {0}<...>` for `{0}<{1}>`",
+                            b.name,
+                            all_args.iter().map(show_ty).collect::<Vec<_>>().join(", "));
+                    }
                 }
             }
         }
@@ -1075,13 +1228,12 @@ impl<'a> TyCk<'a> {
                 if !generics.is_empty() {
                     if generics.len() != sch.tparams.len() { continue; }
                     for (tp, ta) in sch.tparams.iter().zip(generics.iter()) {
-                        if has_free_tyvar(ta) { continue 'CAND; }
+                        // 允许 ta 中含自由类型变量（由调用者提供）
                         subst.insert(tp.clone(), ta.clone());
                     }
                 } else {
                     // 从实参类型推断（严格统一）
                     for (at, pty) in arg_tys.iter().zip(sch.params.iter()) {
-                        if has_free_tyvar(at) { continue 'CAND; }
                         let mut s_local = subst.clone();
                         if let Err(_) = unify(pty, at, &mut s_local) { continue 'CAND; }
                         subst = s_local;
@@ -1095,18 +1247,22 @@ impl<'a> TyCk<'a> {
             let inst_params: Vec<Ty> = sch.params.iter().map(|t| apply_subst(t, &subst)).collect();
             let inst_ret: Ty = apply_subst(&sch.ret, &subst);
 
-            // where 检查
+            // where 检查（NEW: 允许由“调用者 where”满足不具体的约束）
             if let Err(_) = self.check_where_bounds(&sch.where_bounds, &subst) { continue; }
 
-            // 参数检查 + 评分（严格匹配，Byte+字面量特判）
+            // 参数检查 + 评分（严格匹配，但允许字面量受控放宽）
             let mut score: usize = 0;
             for (i, (at, want)) in arg_tys.iter().zip(inst_params.iter()).enumerate() {
                 if has_free_tyvar(at) || has_free_tyvar(want) {
-                    if *at != *want { continue 'CAND; }
+                    if *at != *want {
+                        if !self.literal_coerces_to(&args[i], want) {
+                            continue 'CAND;
+                        }
+                    }
                 } else if at == want {
                     // exact：0 分
-                } else if *want == Ty::Byte && self.literal_fits_byte(&args[i]) {
-                    // Byte + 0..=255 字面量：允许
+                } else if self.literal_coerces_to(&args[i], want) {
+                    // 字面量 → 目标类型：允许
                 } else {
                     continue 'CAND;
                 }
@@ -1122,7 +1278,7 @@ impl<'a> TyCk<'a> {
                     "no matching overload for `{}`{}",
                     name,
                     if generics.is_empty() {
-                        " (try adding explicit type arguments, or ensure a proper trait/impl is in scope)"
+                        " (try adding explicit type arguments, or ensure a proper where-bound/impl is in scope)"
                     } else { "" }
                 );
             } else {
@@ -1147,7 +1303,7 @@ impl<'a> TyCk<'a> {
         Ok(inst_ret)
     }
 
-    /* ---------- 字面量辅助：Byte 特判 ---------- */
+    /* ---------- 字面量辅助：Byte / Float / Double ---------- */
 
     /// 如果是整数字面量，取其值（用于常量范围判断）
     fn int_literal_value(&self, e: &Expr) -> Option<i128> {
@@ -1157,10 +1313,36 @@ impl<'a> TyCk<'a> {
             _ => None,
         }
     }
+
     /// “字面量是否可隐式收窄到 Byte(0..=255)”
     fn literal_fits_byte(&self, e: &Expr) -> bool {
         match self.int_literal_value(e) {
             Some(v) if v >= 0 && v <= 255 => true,
+            _ => false,
+        }
+    }
+
+    /// 是否是浮点字面量
+    fn is_float_literal(&self, e: &Expr) -> bool {
+        matches!(e, Expr::Float{..} | Expr::Double{..})
+    }
+
+    /// Double 字面量能否精确表示为 Float
+    fn double_literal_exact_fits_f32(&self, e: &Expr) -> bool {
+        if let Expr::Double { value: x, .. } = e {
+            let v32 = *x as f32;
+            (v32 as f64) == *x
+        } else {
+            false
+        }
+    }
+
+    /// 通用放宽：字面量能否隐式“直接视作”目标类型
+    fn literal_coerces_to(&self, expr: &Expr, dst: &Ty) -> bool {
+        match dst {
+            Ty::Byte   => self.literal_fits_byte(expr),
+            Ty::Float  => matches!(expr, Expr::Float{..}) || self.double_literal_exact_fits_f32(expr),
+            Ty::Double => self.is_float_literal(expr), // Float 或 Double 字面量都可提升到 Double
             _ => false,
         }
     }

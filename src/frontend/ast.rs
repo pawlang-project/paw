@@ -1,12 +1,23 @@
-//! Paw AST 定义（在保持语义/命名尽量一致的前提下，**为主要节点增加 span**）
-//! - 语义不变：字段/枚举名与原版一致（仅新增 `span: Span`）
-//! - 派生增强：Eq/Hash/Display/便捷构造
-//! - 新增：显式类型转换表达式 `Expr::Cast { expr, ty, span }`（已包含）
-//! - 迁移建议：原有 `match` 如 `Stmt::Let { name, ty, init, is_const }` 请改为
-//!   `Stmt::Let { name, ty, init, is_const, .. }` 以忽略新增的 `span`
+//! Paw AST 定义（为主要节点增加 span / 可见性 / 关联类型 / impl 泛型与 where）
+//! - 兼容策略：字段/枚举名基本与之前一致；新增字段建议用 `..` 忽略方式逐步适配
+//! - 新增：Visibility；Trait/Impl 的 vis；Impl 的 ty params + where；关联类型（trait/impl）
+//! - 显式 as 转换：Expr::Cast { expr, ty, span }
 
 use std::fmt;
 use crate::frontend::span::Span;
+
+/* =========================
+ *        可见性
+ * ========================= */
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Visibility {
+    Public,
+    Private,
+}
+impl Default for Visibility {
+    fn default() -> Self { Visibility::Private }
+}
 
 /* =========================
  *        类型系统
@@ -351,40 +362,127 @@ pub struct TraitRef {
     pub args: Vec<Ty>,
 }
 
+/* ---------- trait: 方法签名 & 关联类型声明 ---------- */
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TraitMethodSig {
+    pub vis: Visibility,        // 方法可见性（默认 Private）
     pub name: String,
     pub params: Vec<(String, Ty)>,
     pub ret: Ty,
     pub span: Span,
 }
+impl Default for TraitMethodSig {
+    fn default() -> Self {
+        Self {
+            vis: Visibility::Private,
+            name: String::new(),
+            params: Vec::new(),
+            ret: Ty::Void,
+            span: Span::DUMMY,
+        }
+    }
+}
+
+/// 关联类型声明：`type Owned;` 或 `type Owned: Bound + ...;`
+/// 预留 `type_params`，若不支持可在语义层限制为 0
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TraitAssocTypeDecl {
+    pub vis: Visibility,
+    pub name: String,
+    pub type_params: Vec<String>,
+    pub bounds: Vec<TraitRef>,
+    pub span: Span,
+}
+impl Default for TraitAssocTypeDecl {
+    fn default() -> Self {
+        Self {
+            vis: Visibility::Private,
+            name: String::new(),
+            type_params: Vec::new(),
+            bounds: Vec::new(),
+            span: Span::DUMMY,
+        }
+    }
+}
+
+/// trait 内的条目：方法 or 关联类型
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TraitItem {
+    Method(TraitMethodSig),
+    AssocType(TraitAssocTypeDecl),
+}
 
 /// trait 支持多类型形参
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TraitDecl {
+    pub vis: Visibility,
     pub name: String,
     pub type_params: Vec<String>, // 例如 ["T"] 或 ["A","B"]
-    pub items: Vec<TraitMethodSig>,
+    pub items: Vec<TraitItem>,
     pub span: Span,
 }
 
+/* ---------- impl: 方法体 & 关联类型定义 ---------- */
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImplMethod {
+    pub vis: Visibility,         // impl 方法可见性
     pub name: String,
     pub params: Vec<(String, Ty)>,
     pub ret: Ty,
     pub body: Block,
     pub span: Span,
 }
+impl Default for ImplMethod {
+    fn default() -> Self {
+        Self {
+            vis: Visibility::Private,
+            name: String::new(),
+            params: Vec::new(),
+            ret: Ty::Void,
+            body: Block::default(),
+            span: Span::DUMMY,
+        }
+    }
+}
 
-/// impl 存整个 trait 的“实参列表”
-/// 例：impl Eq<Int> { ... }  → trait_name="Eq", trait_args=[Int]
-///     impl PairEq<Int,Long> → trait_args=[Int, Long]
+/// impl 内的关联类型定义：`type Owned = SomeTy;`
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImplAssocType {
+    pub vis: Visibility,
+    pub name: String,
+    pub ty: Ty,
+    pub span: Span,
+}
+impl Default for ImplAssocType {
+    fn default() -> Self {
+        Self {
+            vis: Visibility::Private,
+            name: String::new(),
+            ty: Ty::Void,
+            span: Span::DUMMY,
+        }
+    }
+}
+
+/// impl 的条目：方法 or 关联类型定义
+#[derive(Clone, Debug, PartialEq)]
+pub enum ImplItem {
+    Method(ImplMethod),
+    AssocType(ImplAssocType),
+}
+
+/// impl 支持泛型形参与 where 约束；同时存储 trait 实参列表
+/// 例：impl<T> Eq<Int> where ... { ... }
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImplDecl {
+    pub vis: Visibility,
+    pub type_params: Vec<String>,     // impl 自身的类型形参（可能为空）
     pub trait_name: String,
     pub trait_args: Vec<Ty>,
-    pub items: Vec<ImplMethod>,
+    pub where_bounds: Vec<WherePred>, // impl 头部的 where
+    pub items: Vec<ImplItem>,
     pub span: Span,
 }
 
@@ -394,6 +492,7 @@ pub struct ImplDecl {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FunDecl {
+    pub vis: Visibility,         // 函数/extern fn 可见性
     pub name: String,
     pub type_params: Vec<String>, // 函数类型形参
     pub params: Vec<(String, Ty)>,
@@ -402,6 +501,21 @@ pub struct FunDecl {
     pub body: Block,
     pub is_extern: bool,
     pub span: Span,
+}
+impl Default for FunDecl {
+    fn default() -> Self {
+        Self {
+            vis: Visibility::Private,
+            name: String::new(),
+            type_params: Vec::new(),
+            params: Vec::new(),
+            ret: Ty::Void,
+            where_bounds: Vec::new(),
+            body: Block::default(),
+            is_extern: false,
+            span: Span::DUMMY,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
