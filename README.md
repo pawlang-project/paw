@@ -39,27 +39,6 @@ cargo test
 
 ---
 
-## 目录结构（概览）
-
-```
-src/
-  frontend/
-    ast.rs              # 语法树与语言节点
-  backend/
-    codegen.rs          # Cranelift IR 生成与单态化调度
-    mangle.rs           # 函数/impl 方法/泛型实例的符号整形
-  typecheck.rs          # 类型检查、重载解析、where 约束校验
-  runtime/
-    fmt_runtime.rs      # 与 println 等相关的最小运行时（extern "C"）
-  utils/
-    fast.rs             # 轻量数据结构：FastMap/FastSet
-  diag/
-    mod.rs              # 诊断汇集（Ariadne sink）
-main.rs                 # 入口（可能根据你的仓库而定）
-```
-
----
-
 ## 语言速览
 
 ### 基本类型
