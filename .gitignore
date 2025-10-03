@@ -2,3 +2,5 @@
 /runtime/target/
 /build/
 /paw/build/
+
+.idea/
