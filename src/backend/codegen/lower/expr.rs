@@ -218,7 +218,7 @@ impl<'a> ExprGen<'a> {
     }
 
     fn emit_expr(&mut self, b:&mut FunctionBuilder, e:&Expr)->Result<ir::Value>{
-        use BinOp::*; use UnOp::*;
+         
         Ok(match e {
             Expr::Int    { value: n, .. } => b.ins().iconst(types::I32, *n as i64),
             Expr::Long   { value: n, .. } => b.ins().iconst(types::I64, *n),

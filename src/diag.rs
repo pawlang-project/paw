@@ -2,7 +2,7 @@
 use std::fmt;
 
 // 统一复用 frontend 的 Span / FileId，并沿用 crate::diag::Span 的访问路径
-pub use crate::frontend::span::{FileId, Span};
+pub use crate::frontend::span::Span;
 
 #[derive(Clone, Debug)]
 pub enum Severity {
