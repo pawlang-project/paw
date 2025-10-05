@@ -21,7 +21,9 @@ fn span_of_expr(e: &Expr) -> Span {
         | Expr::If    { span, .. }
         | Expr::Match { span, .. }
         | Expr::Call  { span, .. }
-        | Expr::Block { span, .. } => *span,
+        | Expr::Block { span, .. }
+        | Expr::Field { span, .. }
+        | Expr::StructLit { span, .. } => *span,
     }
 }
 

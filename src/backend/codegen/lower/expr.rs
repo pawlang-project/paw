@@ -101,6 +101,44 @@ impl<'a> ExprGen<'a> {
         v
     }
 
+    #[inline]
+    fn ty_size_align(&self, t: &Ty) -> (u32, u32) {
+        match t {
+            Ty::Byte | Ty::Bool => (1, 1),
+            Ty::Int  | Ty::Char => (4, 4),
+            Ty::Long | Ty::String => (8, 8),
+            Ty::Float => (4, 4),
+            Ty::Double=> (8, 8),
+            Ty::Void  => (0, 1),
+            Ty::Var(_) => (8, 8),
+            Ty::App { .. } => (8, 8), // MVP: 聚合与应用类型按指针
+        }
+    }
+
+    fn layout_struct_fields(&mut self, b:&mut FunctionBuilder, fields: &[(String, Expr)]) -> Result<(u32 /*size*/, u32 /*align*/, Vec<(u32 /*offset*/, ir::Value, ir::Type)>)> {
+        // 顺序布局 + 自然对齐，整体对齐为最大字段对齐
+        let mut offset: u32 = 0;
+        let mut max_align: u32 = 1;
+        let mut out: Vec<(u32, ir::Value, ir::Type)> = Vec::with_capacity(fields.len());
+        for (_name, expr) in fields {
+            let v  = self.emit_expr(b, expr)?;
+            let ty = self.val_ty(b, v);
+            let (sz, al) = if ty == types::I8 { (1,1) }
+                else if ty == types::I32 { (4,4) }
+                else if ty == types::I64 { (8,8) }
+                else if ty == types::F32 { (4,4) }
+                else if ty == types::F64 { (8,8) }
+                else { (8,8) };
+            // 对齐
+            if al > 0 && (offset % al) != 0 { offset = ((offset + al - 1) / al) * al; }
+            out.push((offset, v, ty));
+            if al > max_align { max_align = al; }
+            offset += sz;
+        }
+        if max_align > 0 && (offset % max_align) != 0 { offset = ((offset + max_align - 1) / max_align) * max_align; }
+        Ok((offset, max_align, out))
+    }
+
     fn require_same_numeric(
         &mut self,
         b:&mut FunctionBuilder,
@@ -213,6 +251,20 @@ impl<'a> ExprGen<'a> {
                     }
                     _ => bail!("cannot infer type from this expression; please write explicit type args"),
                 }
+            }
+            Expr::Field { base, field, .. } => {
+                let base_ty = self.static_ty_of_expr(base)?;
+                match base_ty {
+                    Ty::App { name, args } => {
+                        // 这里需要从结构体定义中查找字段类型
+                        // 暂时返回一个占位符类型
+                        Ty::Int // TODO: 实现正确的字段类型推断
+                    }
+                    _ => bail!("cannot access field on non-struct type"),
+                }
+            }
+            Expr::StructLit { name, generics, .. } => {
+                Ty::App { name: name.clone(), args: generics.clone() }
             }
         })
     }
@@ -534,6 +586,66 @@ impl<'a> ExprGen<'a> {
             }
 
             Expr::Block { block: blk, .. } => self.emit_block(b, blk)?,
+
+            // MVP: 字段访问仅支持对同一表达式中的结构体字面量做编译期展开
+            Expr::Field { base, field, span } => {
+                let base_ptr = self.emit_expr(b, base)?; // I64 pointer
+                // 尝试从静态类型推断结构体名与实参，进而查布局
+                let bt = self.static_ty_of_expr(base)?;
+                let (sname, sargs) = match bt {
+                    Ty::App { name, args } => (name, args),
+                    other => {
+                        let msg = format!("field access on non-struct type `{}`", other);
+                        self.be.diag_err_span("CG0006", *span, &msg);
+                        return Err(anyhow!(msg));
+                    }
+                };
+                let lay = self.be.layout_for_app_ty(&sname, &sargs)?;
+                let (off, fty) = lay.fields.iter().find_map(|(n, o, t)| if n==field { Some((*o, t.clone())) } else { None })
+                    .ok_or_else(|| {
+                        let msg = format!("unknown field `{}` on `{}`", field, sname);
+                        self.be.diag_err_span("CG0006", *span, &msg);
+                        anyhow!(msg)
+                    })?;
+                let addr = {
+                    let offv = b.ins().iconst(types::I64, off as i64);
+                    b.ins().iadd(base_ptr, offv)
+                };
+                let irt = cl_ty(&fty).expect("struct field ABI type");
+                b.ins().load(irt, cranelift_codegen::ir::MemFlags::new(), addr, 0)
+            }
+
+            // 结构体字面量：在栈上分配空间并逐字段写入，返回指针（I64）
+            Expr::StructLit { name, generics, fields, span } => {
+                let struct_ty = Ty::App { name: name.clone(), args: generics.clone() };
+                let layout = self.be.layout_for_app_ty(&name, &generics)?;
+                let size = layout.size as u32;
+                if size == 0 {
+                    let msg = "empty struct literal unsupported in MVP".to_string();
+                    self.be.diag_err_span("CG0006", *span, &msg);
+                    return Err(anyhow!(msg));
+                }
+                let ss = b.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+                    cranelift_codegen::ir::StackSlotKind::ExplicitSlot,
+                    size as u32,
+                    0, // align_shift
+                ));
+                let base = b.ins().stack_addr(types::I64, ss, 0);
+                // 写入各字段
+                for (field_name, field_expr) in fields {
+                    let field_val = self.emit_expr(b, field_expr)?;
+                    let field_ty = self.static_ty_of_expr(field_expr)?;
+                    let field_cl_ty = cl_ty(&field_ty).ok_or_else(|| anyhow!("internal: field type {:?} not ABI-legal", field_ty))?;
+                    let offset = layout.field_offsets.get(field_name)
+                        .ok_or_else(|| anyhow!("internal: field `{}` offset not found in layout", field_name))?;
+                    let coerced_val = self.coerce_for_dst_from_expr(b, field_expr, field_val, &field_ty)?;
+                    let offv = b.ins().iconst(types::I64, *offset as i64);
+                    let addr = b.ins().iadd(base, offv);
+                    b.ins().store(cranelift_codegen::ir::MemFlags::new(), coerced_val, addr, 0);
+                }
+                // 返回指针（I64）
+                base
+            }
         })
     }
 }

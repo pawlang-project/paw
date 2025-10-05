@@ -4,6 +4,11 @@ fn build_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
         Rule::extern_fun  => build_extern_fun_item(p, file),
         Rule::import_decl => build_import_item(p, file),
         Rule::let_decl    => build_global_item(p, file),
+        Rule::struct_decl => {
+            let sp = sp_of(&p, file);
+            let sd = build_struct_decl(p, file)?;
+            Ok(Item::Struct(sd, sp))
+        }
         Rule::trait_decl  => {
             let sp = sp_of(&p, file);
             let td = build_trait_decl(p, file)?;
@@ -320,4 +325,40 @@ fn build_impl_item(p: Pair<Rule>, file: FileId) -> Result<ImplItem> {
         }
         _ => Err(anyhow!("impl_item: neither fn nor type")),
     }
+}
+
+fn build_struct_decl(p: Pair<Rule>, file: FileId) -> Result<StructDecl> {
+    // struct_decl = { KW_PUB? ~ KW_STRUCT ~ ident ~ ty_params? ~ "{" ~ struct_field_list? ~ "}" }
+    let sp = sp_of(&p, file);
+    let mut vis: Visibility = Visibility::Private;
+    let mut name: Option<String> = None;
+    let mut type_params: Vec<String> = Vec::new();
+    let mut fields: Vec<(String, Ty)> = Vec::new();
+
+    for x in p.into_inner() {
+        match x.as_rule() {
+            Rule::KW_PUB => { vis = Visibility::Public; }
+            Rule::KW_STRUCT => {}
+            Rule::ident => { if name.is_none() { name = Some(x.as_str().to_string()); } }
+            Rule::ty_params => { type_params = build_ty_params(x)?; }
+            Rule::struct_field_list => {
+                for f in x.into_inner() {
+                    if f.as_rule() != Rule::struct_field { continue; }
+                    let mut it = f.into_inner();
+                    let fname = it.next().ok_or_else(|| anyhow!("struct field: missing ident"))?.as_str().to_string();
+                    let fty = build_ty(it.next().ok_or_else(|| anyhow!("struct field: missing type"))?)?;
+                    fields.push((fname, fty));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(StructDecl {
+        vis,
+        name: name.ok_or_else(|| anyhow!("struct: missing name"))?,
+        type_params,
+        fields,
+        span: sp,
+    })
 }

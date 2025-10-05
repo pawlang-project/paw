@@ -1,3 +1,20 @@
+use crate::frontend::ast::*;
+use crate::utils::fast::*;
+
+#[derive(Clone, Debug)]
+pub struct StructLayout {
+    pub size: u32,
+    pub align: u32,
+    pub fields: Vec<(String, u32 /*offset*/, Ty)>,
+    pub field_offsets: FastMap<String, u32>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StructTpl {
+    pub type_params: Vec<String>,
+    pub fields: Vec<(String, Ty)>, // 字段类型可能含 Ty::Var
+}
+
 #[derive(Clone, Debug)]
 pub enum GConst {
     I8(u8),
@@ -48,6 +65,11 @@ pub struct CLBackend {
     // —— 可选：诊断收集器 —— //
     diag: Option<Rc<RefCell<DiagSink>>>,
     file_names: Vec<String>,
+
+    // —— 结构体模板与布局缓存 —— //
+    struct_templates: FastMap<String, StructTpl>,
+    // key = Name<args...>
+    struct_layouts: FastMap<String, StructLayout>,
 }
 
 impl CLBackend {
@@ -79,6 +101,8 @@ impl CLBackend {
             impl_templates: FastMap::default(),
             diag: None,
             file_names: Vec::new(),
+            struct_templates: FastMap::default(),
+            struct_layouts: FastMap::default(),
         })
     }
 
@@ -101,4 +125,50 @@ impl CLBackend {
     }
 
     pub fn set_file_names(&mut self, names: Vec<String>) { self.file_names = names; }
+
+    pub fn layout_for_app_ty(&mut self, name: &str, args: &[Ty]) -> Result<StructLayout> {
+        let key = Self::key_of_app(name, args);
+        if let Some(l) = self.struct_layouts.get(&key) { return Ok(l.clone()); }
+
+        let tpl = self.struct_templates.get(name)
+            .ok_or_else(|| anyhow!("unknown struct `{}` (no template)", name))?.clone();
+        if tpl.type_params.len() != args.len() {
+            return Err(anyhow!("struct `{}` expects {} type args, got {}", name, tpl.type_params.len(), args.len()));
+        }
+        // 替换形参为实参
+        let subst = build_subst_map(&tpl.type_params, args);
+        let mut lay = StructLayout { 
+            size: 0, 
+            align: 1, 
+            fields: Vec::new(),
+            field_offsets: FastMap::default() 
+        };
+
+        for (fname, fty_tpl) in &tpl.fields {
+            let fty = subst_ty(fty_tpl, &subst);
+            let (fsz, fal) = match &fty {
+                Ty::Byte | Ty::Bool => (1,1),
+                Ty::Int | Ty::Char  => (4,4),
+                Ty::Long | Ty::String => (8,8),
+                Ty::Float => (4,4), Ty::Double => (8,8),
+                Ty::App { .. } => (8,8), // byref
+                Ty::Void => (0,1),
+                Ty::Var(_) => (8,8),
+            };
+            if fal > 0 && (lay.size % fal) != 0 { lay.size = ((lay.size + fal - 1) / fal) * fal; }
+            let off = lay.size;
+            lay.fields.push((fname.clone(), off, fty.clone()));
+            lay.field_offsets.insert(fname.clone(), off);
+            if fal > lay.align { lay.align = fal; }
+            lay.size += fsz;
+        }
+        if lay.align > 0 && (lay.size % lay.align) != 0 { lay.size = ((lay.size + lay.align - 1) / lay.align) * lay.align; }
+
+        self.struct_layouts.insert(key.clone(), lay.clone());
+        Ok(lay)
+    }
+
+    fn key_of_app(name: &str, args: &[Ty]) -> String {
+        if args.is_empty() { name.to_string() } else { format!("{}<{}>", name, args.iter().map(|t| crate::backend::mangle::mangle_ty(t)).collect::<Vec<_>>().join(",")) }
+    }
 }

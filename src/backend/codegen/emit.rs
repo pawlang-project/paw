@@ -218,6 +218,9 @@ pub fn compile_program(prog: &Program, diag: Option<Rc<RefCell<DiagSink>>>, file
     be.set_file_names(file_names);
     be.set_globals_from_program(prog);
 
+    // 收集 struct 模板（为布局做准备）
+    be.declare_structs_from_program(prog)?;
+
     // 1) 自由函数（含 extern、非泛型重载；main 保持原名；__impl_* 保持原名）声明
     let funs: Vec<&FunDecl> = prog.items.iter().filter_map(|it| {
         if let Item::Fun(f, _) = it { Some(f) } else { None }

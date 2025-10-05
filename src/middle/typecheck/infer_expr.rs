@@ -254,6 +254,61 @@ impl<'a> TyCk<'a> {
                 }
             },
 
+            // 字段访问：检查 base 为具体结构体实例，字段存在并返回字段类型（经实参替换）
+            Expr::Field { base, field, span } => {
+                let bt = self.expr(base)?;
+                // 仅支持 Ty::App{name,args} 形式的具体化结构体实例
+                let (sname, sargs) = match &bt {
+                    Ty::App { name, args } => (name.clone(), args.clone()),
+                    other => tc_bail!(self, "E2601", Some(*span), "field access on non-struct type `{}`", other),
+                };
+                let sdecl = self.senv.get(&sname)
+                    .ok_or_else(|| anyhow!("unknown struct `{}` in field access", sname))?;
+                if sdecl.type_params.len() != sargs.len() {
+                    tc_bail!(self, "E2602", Some(*span), "struct `{}` expects {} type args, got {}", sname, sdecl.type_params.len(), sargs.len());
+                }
+                // 构建替换：形参 -> 实参
+                let mut subst: Subst = Subst::default();
+                for (tp, ta) in sdecl.type_params.iter().zip(sargs.iter()) { subst.insert(tp.clone(), ta.clone()); }
+                let fty = sdecl.fields.iter().find_map(|(n, t)| if n == field { Some(apply_subst(t, &subst)) } else { None })
+                    .ok_or_else(|| anyhow!("unknown field `{}` on struct `{}`", field, sname))?;
+                fty
+            }
+
+            // 结构体字面量：检查类型实参与字段完备性/类型一致
+            Expr::StructLit { name, generics, fields, span } => {
+                let sdecl = self.senv.get(name)
+                    .ok_or_else(|| anyhow!("unknown struct `{}`", name))?;
+                if sdecl.type_params.len() != generics.len() {
+                    tc_bail!(self, "E2603", Some(*span), "struct `{}` expects {} type args, got {}", name, sdecl.type_params.len(), generics.len());
+                }
+                // 替换表：形参 -> 实参
+                let mut subst: Subst = Subst::default();
+                for (tp, ta) in sdecl.type_params.iter().zip(generics.iter()) { subst.insert(tp.clone(), ta.clone()); }
+                // 字段集合检查
+                for (fname, fty) in &sdecl.fields {
+                    let got = fields.iter().find_map(|(n, e)| if n == fname { Some(e) } else { None });
+                    if got.is_none() {
+                        tc_bail!(self, "E2604", Some(*span), "missing field `{}` for struct `{}`", fname, name);
+                    }
+                    let expr = got.unwrap();
+                    let ety = self.expr(expr)?;
+                    let want = apply_subst(fty, &subst);
+                    self.require_assignable_from_expr(expr, &ety, &want).map_err(|e| {
+                        tc_err!(self, "E2605", Some(*span), "field `{}` type mismatch: {}", fname, e);
+                        e
+                    })?;
+                }
+                // 多余字段报错
+                for (n, _e) in fields {
+                    if !sdecl.fields.iter().any(|(fnm, _)| fnm == n) {
+                        tc_bail!(self, "E2606", Some(*span), "unknown field `{}` for struct `{}`", n, name);
+                    }
+                }
+                // 返回实例化后的结构体类型
+                Ty::App { name: name.clone(), args: generics.clone() }
+            }
+
             Expr::Block { block, .. } => self.block(block)?,
         })
     }

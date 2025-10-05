@@ -8,10 +8,8 @@ fn cl_ty(t: &Ty) -> Option<ir::Type> {
         Ty::Float  => Some(types::F32),
         Ty::Double => Some(types::F64),
         Ty::String => Some(types::I64),
-        Ty::App { name, args } if (name == "Box" || name == "Rc" || name == "Arc") && args.len() == 1 => {
-            Some(types::I64)
-        }
+        Ty::App { .. } => Some(types::I64), // MVP：所有应用类型按指针（I64）传递/返回
         Ty::Void   => None,
-        Ty::Var(_) | Ty::App { .. } => None,
+        Ty::Var(_) => None,
     }
 }

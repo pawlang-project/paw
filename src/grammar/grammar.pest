@@ -24,8 +24,8 @@ COLON         = _{ ":" }
 // ===== 程序结构 =====
 program = { SOI ~ item* ~ EOI }
 
-// 顶层项：函数 / 外部函数 / 变量声明 / 导入 / trait / impl
-item = { extern_fun | fun_decl | let_decl | import_decl | trait_decl | impl_decl }
+// 顶层项：函数 / 外部函数 / 变量声明 / 导入 / trait / impl / struct
+item = { extern_fun | fun_decl | let_decl | import_decl | trait_decl | impl_decl | struct_decl }
 
 // ===== 函数 / 外部函数 / 导入 / 参数 =====
 ret_type   = { "->" ~ ty }
@@ -110,20 +110,32 @@ unary       = { (OP_NOT | OP_SUB) ~ unary | postfix }
 
 // 可调用名：单段 ident 或 多段 qident（Trait::method）
 qident   = @{ ident ~ ("::" ~ ident)+ }
+// 带类型参数的标识符：Point::<Int> 或 Point<Int>
+qident_with_ty = { ident ~ "::" ~ ty_args }
 name_ref = { qident | ident }
 
-// 后缀调用（安全泛型后缀）
-postfix       = { name_ref ~ call_suffix+ | primary_head ~ call_suffix* }
+// 后缀：支持混合链式 `foo.bar<Baz>(x).y`
+postfix       = { name_ref ~ (field_suffix | call_suffix)+ | primary_head ~ (field_suffix | call_suffix)* }
 primary_head  = { float_lit | double_lit | long_lit | int_lit | bool_lit | string_lit | char_lit
-                | if_expr | match_expr | name_ref | group | block
+                | if_expr | match_expr | struct_lit | name_ref | group | block
                 }
 primary       = { primary_head }
 
-call_suffix = { ty_args? ~ "(" ~ arg_list? ~ ")" }
+call_suffix  = { ty_args? ~ "(" ~ arg_list? ~ ")" }
+field_suffix = { "." ~ ident }
 arg_list    = { expr ~ ("," ~ expr)* }
 
 // ===== 原子表达式 =====
 group   = { "(" ~ expr ~ ")" }
+
+// 结构体字面量：Name<...>? { k: v, ... }
+struct_lit = { (ident_with_ty | ident) ~ "{" ~ struct_init_list? ~ "}" }
+ident_with_ty = { ident ~ ty_args }
+struct_init_list = { struct_init ~ ("," ~ struct_init)* ~ (",")? }
+struct_init = { ident ~ COLON ~ struct_field_value }
+struct_field_value = { expr }
+
+// 字段访问通过 field_suffix 参与到 postfix 链中
 
 // —— 表达式 if：支持 else if —— //
 if_expr         = { KW_IF ~ "(" ~ expr ~ ")" ~ block ~ KW_ELSE ~ else_tail_expr }
@@ -197,6 +209,11 @@ impl_item  = {
     ( KW_PUB? ~ KW_TYPE ~ ident ~ EQUALS ~ ty ~ SEMICOLON )
 }
 
+// ===== struct 声明 =====
+struct_decl = { KW_PUB? ~ KW_STRUCT ~ ident ~ ty_params? ~ "{" ~ struct_field_list? ~ "}" }
+struct_field_list = { struct_field ~ ("," ~ struct_field)* ~ (",")? }
+struct_field = { ident ~ COLON ~ ty }
+
 // ===== 标识符 / 关键字 / 运算符 =====
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
@@ -205,7 +222,7 @@ keyword = {
       KW_PUB
     | KW_FN | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST
     | KW_IF | KW_ELSE | KW_WHILE | KW_FOR | KW_BREAK | KW_CONTINUE | KW_MATCH
-    | KW_RETURN | KW_TRAIT | KW_IMPL | KW_WHERE | KW_AS | KW_TYPE
+    | KW_RETURN | KW_TRAIT | KW_IMPL | KW_WHERE | KW_AS | KW_TYPE | KW_STRUCT
     | KW_Int | KW_Long | KW_Byte | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void
     | KW_true | KW_false
   ) ~ !IDENT_NEXT
@@ -232,6 +249,7 @@ KW_IMPL    = @{ "impl"    ~ !IDENT_NEXT }
 KW_WHERE   = @{ "where"   ~ !IDENT_NEXT }
 KW_AS      = @{ "as"      ~ !IDENT_NEXT }
 KW_TYPE    = @{ "type"    ~ !IDENT_NEXT }
+KW_STRUCT  = @{ "struct"  ~ !IDENT_NEXT }
 
 KW_Int     = @{ "Int"    ~ !IDENT_NEXT }
 KW_Long    = @{ "Long"   ~ !IDENT_NEXT }
