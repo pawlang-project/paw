@@ -301,6 +301,21 @@ pub enum Expr {
         span: Span,
     },
 
+    /// 字段访问：base.field
+    Field {
+        base: Box<Expr>,
+        field: String,
+        span: Span,
+    },
+
+    /// 结构体字面量：Name<...>{ k: v, ... }
+    StructLit {
+        name: String,        // 可为标识符或限定名（按解析期约定存原字符串）
+        generics: Vec<Ty>,
+        fields: Vec<(String, Expr)>,
+        span: Span,
+    },
+
     Block {
         block: Block,
         span: Span,
@@ -521,6 +536,8 @@ impl Default for FunDecl {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
     Fun(FunDecl, /* span= */ Span),
+    /// 结构体声明：支持泛型形参
+    Struct(StructDecl, /* span= */ Span),
     Global {
         name: String,
         ty: Ty,
@@ -536,4 +553,17 @@ pub enum Item {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Program {
     pub items: Vec<Item>,
+}
+
+/* =========================
+ *        结构体声明
+ * ========================= */
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StructDecl {
+    pub vis: Visibility,
+    pub name: String,
+    pub type_params: Vec<String>,
+    pub fields: Vec<(String, Ty)>,
+    pub span: Span,
 }

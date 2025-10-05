@@ -72,3 +72,34 @@ impl ImplEnv {
         self.map.contains(&ImplKey::new(tr, args))
     }
 }
+
+/* ===================== struct 环境 ===================== */
+
+#[derive(Default, Clone)]
+pub struct StructEnv {
+    pub decls: FastMap<String, TraitLikeStructDecl>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TraitLikeStructDecl {
+    pub type_params: Vec<String>,
+    pub fields: Vec<(String, Ty)>,
+}
+
+impl StructEnv {
+    #[inline]
+    pub fn insert(&mut self, name: String, type_params: Vec<String>, fields: Vec<(String, Ty)>) -> Result<()> {
+        let key = name.clone();
+        if self.decls.contains_key(&key) { bail!("duplicate struct `{}`", key); }
+        self.decls.insert(key, TraitLikeStructDecl { type_params, fields });
+        Ok(())
+    }
+    #[inline]
+    pub fn arity(&self, name: &str) -> Option<usize> {
+        self.decls.get(name).map(|d| d.type_params.len())
+    }
+    #[inline]
+    pub fn get(&self, name: &str) -> Option<&TraitLikeStructDecl> {
+        self.decls.get(name)
+    }
+}

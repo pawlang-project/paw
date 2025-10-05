@@ -27,15 +27,15 @@ fn build_expr(p: Pair<Rule>, file: FileId) -> Result<Expr> {
             }
         }
 
-        // 后缀（函数/方法调用）
+        // 后缀（函数/方法调用 + 字段访问）
         Rule::postfix => {
             let sp_post = sp_of(&p, file);
             let mut it = p.into_inner();
 
             // 读取头
             let head = it.next().unwrap();
-            let mut callee_opt: Option<Callee> = None;
-            let mut base_expr: Option<Expr> = None;
+            let mut callee_opt: Option<Callee> = None; // 当作“可调用名”的头
+            let mut base_expr: Option<Expr> = None;    // 当作“可继续取字段/调用的值”的头
 
             match head.as_rule() {
                 // name_ref 统一 ident & qident
@@ -66,50 +66,69 @@ fn build_expr(p: Pair<Rule>, file: FileId) -> Result<Expr> {
                 }
             }
 
-            // 依次消费 (call_suffix)*
-            let mut out_call: Option<Expr> = None;
+            // 依次消费 (field_suffix | call_suffix)*
+            let mut out_expr: Option<Expr> = None;
             for suf in it {
-                if suf.as_rule() != Rule::call_suffix {
-                    return Err(anyhow!("postfix: unexpected suffix {:?}", suf.as_rule()));
-                }
-                // call_suffix = ty_args? "(" arg_list? ")"
-                let mut generics: Vec<Ty> = Vec::new();
-                let mut args: Vec<Expr> = Vec::new();
-
-                let mut ii = suf.into_inner();
-                if let Some(first) = ii.next() {
-                    match first.as_rule() {
-                        Rule::ty_args => {
-                            generics = build_ty_args(first)?;
-                            if let Some(maybe_args) = ii.next() {
-                                if maybe_args.as_rule() == Rule::arg_list {
-                                    args = build_arg_list(maybe_args, file)?;
+                match suf.as_rule() {
+                    Rule::field_suffix => {
+                        // 解析字段名
+                        let fname = suf.into_inner().next().unwrap().as_str().to_string();
+                        // 字段一定要有 base 值
+                        let base = if let Some(e) = out_expr.take() {
+                            e
+                        } else if let Some(e) = base_expr.take() {
+                            e
+                        } else if callee_opt.is_some() {
+                            // 从可调用名降解为值（变量引用）
+                            match callee_opt.take().unwrap() {
+                                Callee::Name(n) => Expr::Var { name: n, span: sp_post },
+                                Callee::Qualified { .. } => return Err(anyhow!("cannot access field on a qualified path")),
+                            }
+                        } else {
+                            return Err(anyhow!("field access without base"));
+                        };
+                        out_expr = Some(Expr::Field { base: Box::new(base), field: fname, span: sp_post });
+                    }
+                    Rule::call_suffix => {
+                        // call_suffix = ty_args? "(" arg_list? ")"
+                        let mut generics: Vec<Ty> = Vec::new();
+                        let mut args: Vec<Expr> = Vec::new();
+                        let mut ii = suf.into_inner();
+                        if let Some(first) = ii.next() {
+                            match first.as_rule() {
+                                Rule::ty_args => {
+                                    generics = build_ty_args(first)?;
+                                    if let Some(maybe_args) = ii.next() {
+                                        if maybe_args.as_rule() == Rule::arg_list {
+                                            args = build_arg_list(maybe_args, file)?;
+                                        }
+                                    }
                                 }
+                                Rule::arg_list => {
+                                    args = build_arg_list(first, file)?;
+                                }
+                                r => return Err(anyhow!("call_suffix: unexpected {:?}", r)),
                             }
                         }
-                        Rule::arg_list => {
-                            args = build_arg_list(first, file)?;
-                        }
-                        r => return Err(anyhow!("call_suffix: unexpected {:?}", r)),
+
+                        // 组装调用
+                        let callee = if let Some(c) = &callee_opt {
+                            c.clone()
+                        } else {
+                            match out_expr.take().or_else(|| base_expr.take()) {
+                                Some(Expr::Var { name, span: _ }) => Callee::Name(name),
+                                _ => return Err(anyhow!("call on non-ident expression")),
+                            }
+                        };
+                        out_expr = Some(Expr::Call { callee, generics, args, span: sp_post });
+                        // 形成调用后，不再把结果当“可继续作为函数名”的头
+                        callee_opt = None;
                     }
+                    other => return Err(anyhow!("postfix: unexpected suffix {:?}", other)),
                 }
-
-                // 组装调用
-                let callee = if let Some(c) = &callee_opt {
-                    c.clone()
-                } else {
-                    match base_expr.take() {
-                        Some(Expr::Var { name, span: _ }) => Callee::Name(name),
-                        _ => return Err(anyhow!("call on non-ident expression")),
-                    }
-                };
-
-                out_call = Some(Expr::Call { callee, generics, args, span: sp_post });
-                // 形成调用后，不再把结果当“可继续作为函数名”的头
-                callee_opt = None;
             }
 
-            if let Some(e) = out_call {
+            if let Some(e) = out_expr {
                 e
             } else if let Some(c) = callee_opt {
                 match c {
@@ -145,6 +164,53 @@ fn build_expr(p: Pair<Rule>, file: FileId) -> Result<Expr> {
             return Err(anyhow!(
                 "qualified path cannot be used as a value; call it like `Trait::method<...>(...)`"
             ));
+        }
+
+        // 结构体字面量
+        Rule::struct_lit => {
+            // struct_lit = (ident_with_ty | ident) ~ "{" ~ struct_init_list? ~ "}"
+            let sp = sp_of(&p, file);
+            let mut name: Option<String> = None;
+            let mut generics: Vec<Ty> = Vec::new();
+            let mut fields: Vec<(String, Expr)> = Vec::new();
+            for x in p.into_inner() {
+                match x.as_rule() {
+                    Rule::ident => { 
+                        if name.is_none() { 
+                            name = Some(x.as_str().to_string()); 
+                        }
+                    }
+                    Rule::ident_with_ty => {
+                        if name.is_none() {
+                            // ident_with_ty = ident ~ ty_args
+                            for part in x.into_inner() {
+                                match part.as_rule() {
+                                    Rule::ident => name = Some(part.as_str().to_string()),
+                                    Rule::ty_args => generics = build_ty_args(part)?,
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    Rule::ty_args => { generics = build_ty_args(x)?; }
+                    Rule::struct_init_list => {
+                        for f in x.into_inner() {
+                            if f.as_rule() != Rule::struct_init { continue; }
+                            let mut ii = f.into_inner();
+                            let fname = ii.next().ok_or_else(|| anyhow!("struct_init: missing ident"))?.as_str().to_string();
+                            let fexpr = build_struct_field_value(ii.next().ok_or_else(|| anyhow!("struct_init: missing field value"))?, file)?;
+                            fields.push((fname, fexpr));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Expr::StructLit {
+                name: name.ok_or_else(|| anyhow!("struct_lit: missing name"))?,
+                generics,
+                fields,
+                span: sp,
+            }
         }
 
         // 其它原子
@@ -279,3 +345,10 @@ fn fold_binary(p: Pair<Rule>, file: FileId) -> Result<Expr> {
     }
     Ok(lhs)
 }
+
+fn build_struct_field_value(p: Pair<Rule>, file: FileId) -> Result<Expr> {
+    // struct_field_value now contains expr, so we can directly parse it
+    build_expr(p, file)
+}
+
+// field_access is handled via field_suffix in the postfix chain

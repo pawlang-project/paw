@@ -5,6 +5,7 @@ pub struct TyCk<'a> {
 
     tenv: &'a TraitEnv,
     ienv: &'a ImplEnv,
+    senv: &'a StructEnv,
     globals: HashMap<String, Ty>,       // 对外保持 std
     globals_const: FastSet<String>,     // 快集合
     scopes: Vec<FastMap<String, Ty>>,   // 局部作用域（快表）
@@ -25,6 +26,7 @@ impl<'a> TyCk<'a> {
         fnscheme: &'a HashMap<String, Vec<Scheme>>,
         tenv: &'a TraitEnv,
         ienv: &'a ImplEnv,
+        senv: &'a StructEnv,
         globals: HashMap<String, Ty>,
         globals_const: FastSet<String>,
         diags: &'a mut DiagSink,
@@ -43,6 +45,7 @@ impl<'a> TyCk<'a> {
             fnscheme_arity: idx,
             tenv,
             ienv,
+            senv,
             globals,
             globals_const,
             scopes: vec![],
@@ -309,6 +312,7 @@ pub fn typecheck_program(
     // 0) 收集 trait / impl（并做结构校验）
     let mut tenv = TraitEnv::default();
     let mut ienv = ImplEnv::default();
+    let mut senv = StructEnv::default();
 
     // 收集 trait 声明
     for it in &p.items {
@@ -611,6 +615,24 @@ pub fn typecheck_program(
         }
     }
 
+    // 收集 struct 声明
+    for it in &p.items {
+        if let Item::Struct(sd, sspan) = it {
+            if senv.get(&sd.name).is_some() {
+                diags.error("E2050", file_id, Some(*sspan), format!("duplicate struct `{}`", sd.name));
+                bail!("duplicate struct `{}`", sd.name);
+            }
+            let mut seen = FastSet::<String>::default();
+            for (fname, _fty) in &sd.fields {
+                if !seen.insert(fname.clone()) {
+                    diags.error("E2051", file_id, Some(sd.span), format!("struct `{}` duplicate field `{}`", sd.name, fname));
+                    bail!("struct `{}` duplicate field `{}`", sd.name, fname);
+                }
+            }
+            senv.insert(sd.name.clone(), sd.type_params.clone(), sd.fields.clone())?;
+        }
+    }
+
     // 1) 收集函数方案（允许同名多份；impl 方法已由 passes 降成自由函数）
     let mut fnscheme = HashMap::<String, Vec<Scheme>>::new();
     for it in &p.items {
@@ -658,6 +680,7 @@ pub fn typecheck_program(
         &fnscheme,
         &tenv,
         &ienv,
+        &senv,
         globals.clone(),
         globals_const.clone(),
         diags,

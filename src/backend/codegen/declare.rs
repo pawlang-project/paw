@@ -143,6 +143,21 @@ impl CLBackend {
         Ok(())
     }
 
+    /// 收集 struct 模板（字段与类型形参），供后端布局
+    pub fn declare_structs_from_program(&mut self, prog: &Program) -> Result<()> {
+        for it in &prog.items {
+            if let Item::Struct(sd, _sp) = it {
+                let tpl = StructTpl { type_params: sd.type_params.clone(), fields: sd.fields.clone() };
+                if self.struct_templates.insert(sd.name.clone(), tpl).is_some() {
+                    let msg = format!("duplicate struct `{}` in codegen declare", sd.name);
+                    self.diag_err("CG0001", &msg);
+                    return Err(anyhow!(msg));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// 扫描程序并声明所有**带显式类型实参**的专门化符号（自由函数）
     pub fn declare_mono_from_program(&mut self, prog: &Program) -> Result<()> {
         let mut calls: Vec<(String, Vec<Ty>)> = Vec::new();

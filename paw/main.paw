@@ -137,6 +137,23 @@ fn demo_block_expr() -> Void {
   println<Int>(v);
 }
 
+// 泛型结构体测试
+struct Point<T> {
+  x: T,
+  y: T,
+}
+
+fn demo_struct() -> Void {
+  println<String>("[struct]");
+
+  // 统一使用新语法：Point<Int>{ x: 10, y: 20 }
+  let p1: Point<Int> = Point<Int>{ x: 10, y: 20 };
+  println<Int>(p1.x); // 应该输出 10
+
+  let p2: Point<Int> = Point<Int>{ x: 30, y: 40 };
+  println<Int>(p2.x); // 应该输出 30
+}
+
 fn abs_i32(x: Int) -> Int {
   if (x < 0) { return -x; }
   return x;
@@ -158,6 +175,7 @@ fn main() -> Int {
   demo_mem();
   demo_ops();
   demo_block_expr();
+  demo_struct();
 
   println<Int>(abs_i32(-42));
 

@@ -325,7 +325,7 @@ fn collect_calls_with_generics_in_program(p: &Program, out: &mut Vec<(String, Ve
             Item::Fun(f, _) => collect_calls_in_block(&f.body, out),
             Item::Global { init, .. } => collect_calls_in_expr(init, out),
             Item::Import(_, _) => {}
-            Item::Trait(_, _) | Item::Impl(_, _) => {}
+            Item::Trait(_, _) | Item::Impl(_, _) | Item::Struct(_, _) => {}
         }
     }
 }

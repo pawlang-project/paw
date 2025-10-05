@@ -3,6 +3,8 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 use std::{env, process};
+use std::time::Instant;
+use std::io;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -14,6 +16,7 @@ mod backend;
 mod interner;
 mod utils;
 mod diag;
+mod cli;
 
 use backend::link_zig::{link_with_zig, LinkInput, PawTarget};
 use crate::backend::codegen;
@@ -25,6 +28,7 @@ use middle::typecheck::typecheck_program;
 use project::{BuildProfile, Project};
 
 use crate::diag::{DiagSink, SourceMap, render_diagnostics_colored};
+use crate::cli::{ProgressBar, OutputFormatter};
 
 /// 读取 entry 源码 -> 解析 -> 以工程根目录为搜索根展开 import -> impl 降解
 fn load_and_expand_program(entry: &Path, project_root: &Path, sm: &mut SourceMap, diags: &mut DiagSink) -> Result<Program> {
@@ -59,27 +63,41 @@ fn build_object(prog: &Program, file_id: &str, diag: Rc<RefCell<DiagSink>>, sm: 
     }
 
     // 后端生成对象文件（带同一个 diag，用于 codegen 期错误）
-    codegen::compile_program(prog, Some(diag), sm.file_names())
+    let result = codegen::compile_program(prog, Some(diag), sm.file_names());
+    result
 }
 
 fn main() -> Result<()> {
-    // 仅支持：pawc build dev | pawc build release
+    let start_time = Instant::now();
+    
+    // 支持：pawc build <dev|release> [--quiet]
     let args = env::args().skip(1).collect::<Vec<_>>();
-    if args.len() != 2 || args[0].as_str() != "build" {
-        eprintln!("usage: pawc build <dev|release>");
+    if args.len() < 2 || args[0].as_str() != "build" {
+        eprintln!("usage: pawc build <dev|release> [--quiet]");
         process::exit(1);
     }
 
+    let quiet = args.len() > 2 && args[2] == "--quiet";
     let profile = match args[1].as_str() {
         "dev" => BuildProfile::Dev,
         "release" => BuildProfile::Release,
         _ => {
-            eprintln!("usage: pawc build <dev|release>");
+            eprintln!("usage: pawc build <dev|release> [--quiet]");
             process::exit(1);
         }
     };
 
     // 1) 载入工程
+    let mut progress = if !quiet {
+        Some(ProgressBar::new(20, 4, "Compiling".to_string()))
+    } else {
+        None
+    };
+
+    if let Some(ref mut p) = progress {
+        p.update(1);
+    }
+    
     let proj: Project = project::load_from_cwd()
         .context("failed to load project (Paw.toml or defaults)")?;
 
@@ -87,6 +105,10 @@ fn main() -> Result<()> {
     let diag = Rc::new(RefCell::new(DiagSink::default()));
 
     // 3) 解析 + 展开 import + impl 降解
+    if let Some(ref mut p) = progress {
+        p.update(2);
+    }
+    
     let entry = proj.entry.clone(); // e.g. <root>/main.paw
     let mut sm = SourceMap::new();
     // 使用局部 DiagSink 收集解析/导入阶段的错误，避免与共享 RefCell 交错借用
@@ -96,11 +118,19 @@ fn main() -> Result<()> {
             Ok(p) => {
                 // 合并到共享 diag（不可变借用，不会冲突）
                 diag.borrow_mut().append_from(local_diags.into_vec());
+                if let Some(ref mut prog) = progress {
+                    prog.update(3);
+                }
                 p
             }
-            Err(_e) => {
+            Err(e) => {
                 let v = local_diags.into_vec();
-                render_diagnostics_colored(&v, &sm);
+                if v.is_empty() {
+                    eprintln!("Parse failed: {}", e);
+                } else {
+                    eprintln!("Parse errors:");
+                    render_diagnostics_colored(&v, &sm);
+                }
                 process::exit(1);
             }
         }
@@ -109,10 +139,17 @@ fn main() -> Result<()> {
 
     // 4) 编译（失败则打印收集到的诊断并退出）
     let obj_bytes = match build_object(&program, &file_id, diag.clone(), &sm) {
-        Ok(obj) => obj,
+        Ok(obj) => {
+            if let Some(ref mut prog) = progress {
+                prog.update(4);
+                prog.finish();
+            }
+            obj
+        },
         Err(_e) => {
             let d = diag.borrow();
             let v = d.iter().cloned().collect::<Vec<_>>();
+            eprintln!("Compilation errors:");
             render_diagnostics_colored(&v, &sm);
             process::exit(1);
         }
@@ -156,6 +193,29 @@ fn main() -> Result<()> {
     };
     link_with_zig(&inp).context("link step failed")?;
 
-    eprintln!("OK: {} -> {}", entry.display(), exe_path.display());
+    let duration = start_time.elapsed();
+    let formatter = OutputFormatter::new();
+    
+    if quiet {
+        eprintln!("{}", exe_path.display());
+    } else {
+        // 相对路径展示
+        let entry_rel = entry.strip_prefix(&proj.root).unwrap_or(&entry);
+        let exe_rel = exe_path.strip_prefix(&proj.root).unwrap_or(&exe_path);
+        // 可执行体大小（人类可读）
+        let exe_size_bytes = fs::metadata(&exe_path).map(|m| m.len()).unwrap_or(0);
+        let human_size = OutputFormatter::human_size(exe_size_bytes);
+        // 目标三元组
+        let triple = target.rust_triple();
+        
+        formatter.success(
+            profile_dir,
+            triple,
+            entry_rel,
+            exe_rel,
+            duration.as_secs_f64(),
+            &human_size
+        );
+    }
     Ok(())
 }
