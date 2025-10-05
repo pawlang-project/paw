@@ -2,7 +2,8 @@
 use crate::backend::mangle::mangle_impl_method;
 use crate::frontend::ast::*;
 use crate::frontend::span::FileId;
-use crate::parser;
+use crate::frontend::parser;
+use crate::diag::{SourceMap, DiagSink};
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashSet;
 use std::fs;
@@ -69,14 +70,14 @@ pub fn declare_impls_from_program(mut p: Program) -> Program {
 /// ===============================
 
 /// 单一搜索根（通常传工程根目录）
-pub fn expand_imports_with_loader(root: &Program, project_root: &Path) -> Result<Program> {
-    expand_imports_with_roots(root, &[project_root.to_path_buf()])
+pub fn expand_imports_with_loader(root: &Program, project_root: &Path, sm: &mut SourceMap, diags: &mut DiagSink) -> Result<Program> {
+    expand_imports_with_roots(root, &[project_root.to_path_buf()], sm, diags)
 }
 
 /// 多搜索根（如果将来需要附加额外目录可使用此入口）
-pub fn expand_imports_with_roots(root: &Program, roots: &[PathBuf]) -> Result<Program> {
+pub fn expand_imports_with_roots(root: &Program, roots: &[PathBuf], sm: &mut SourceMap, diags: &mut DiagSink) -> Result<Program> {
     let mut visited_files: HashSet<PathBuf> = HashSet::new();
-    expand_prog_recursive(root, roots, &mut visited_files)
+    expand_prog_recursive(root, roots, &mut visited_files, sm, diags)
 }
 
 /// 递归展开 Program（去重防环）
@@ -84,6 +85,8 @@ fn expand_prog_recursive(
     prog: &Program,
     roots: &[PathBuf],
     visited: &mut HashSet<PathBuf>,
+    sm: &mut SourceMap,
+    diags: &mut DiagSink,
 ) -> Result<Program> {
     let mut out_items: Vec<Item> = Vec::new();
 
@@ -103,12 +106,13 @@ fn expand_prog_recursive(
                 let src = fs::read_to_string(&path)
                     .with_context(|| format!("read_to_string({})", path.display()))?;
 
-                // 解析子文件。若你维护了 FileId 映射，请换成真实 FileId；这里先用 DUMMY。
-                let sub = parser::parse_program(&src, FileId::DUMMY)
+                // 注册文件并解析子文件
+                let fid = sm.add_file(path.display().to_string(), src.clone());
+                let sub = parser::parse_program_with_diags(&src, fid, &path.display().to_string(), diags)
                     .with_context(|| format!("parse `{}` failed", path.display()))?;
 
                 // 递归展开子 Program
-                let sub_expanded = expand_prog_recursive(&sub, roots, visited)?;
+                let sub_expanded = expand_prog_recursive(&sub, roots, visited, sm, diags)?;
                 out_items.extend(sub_expanded.items);
 
                 let _ = import_span; // 如需保留 import，可在此 push 回去
