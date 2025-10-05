@@ -1,6 +1,7 @@
 [package]
 name = "Paw"
 version = "0.0.1"
+entry = "main.paw"
 
 [module]
 modules = ["std"]
