@@ -1,9 +1,31 @@
 fn build_params(p: Pair<Rule>) -> Result<Vec<(String, Ty)>> {
     let mut v = Vec::new();
     for x in p.into_inner() {
-        let mut it = x.into_inner(); // ident ":" ty
-        let name = it.next().unwrap().as_str().to_string();
-        let ty = build_ty(it.next().unwrap())?;
+        let mut it = x.into_inner(); // ident ~ (COLON ~ ty)?
+        let first = it.next().unwrap();
+        let name = match first.as_rule() {
+            Rule::ident => first.as_str().to_string(),
+            _ => return Err(anyhow!("expected ident in parameter")),
+        };
+        
+        // 检查是否有类型声明
+        let ty = if let Some(colon_ty) = it.next() {
+            if colon_ty.as_rule() == Rule::ty {
+                build_ty(colon_ty)?
+            } else {
+                return Err(anyhow!("expected type after colon"));
+            }
+        } else {
+            // 没有类型声明，需要推断
+            // 对于 self 参数，我们暂时返回一个占位符类型
+            // 实际的类型推断将在类型检查阶段进行
+            if name == "self" {
+                // 返回一个特殊的占位符类型，表示需要推断
+                Ty::Var("_Self".to_string())
+            } else {
+                return Err(anyhow!("parameter '{}' must have explicit type", name));
+            }
+        };
         v.push((name, ty));
     }
     Ok(v)

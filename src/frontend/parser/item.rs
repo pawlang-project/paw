@@ -68,6 +68,7 @@ fn build_fun_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
 fn build_extern_fun_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
     let mut vis: Visibility = Visibility::Private;
     let mut name: Option<String> = None;
+    let mut type_params: Vec<String> = Vec::new();
     let mut params: Vec<(String, Ty)> = Vec::new();
     let mut ret_pair: Option<Pair<Rule>> = None;
 
@@ -76,6 +77,7 @@ fn build_extern_fun_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
             Rule::KW_PUB => { vis = Visibility::Public; }
             Rule::KW_EXTERN | Rule::KW_FN => {}
             Rule::ident      => name = Some(child.as_str().to_string()),
+            Rule::ty_params  => type_params = build_ty_params(child)?,
             Rule::param_list => params = build_params(child)?,
             Rule::ret_type   => ret_pair = Some(child),
             _other => {}
@@ -87,7 +89,7 @@ fn build_extern_fun_item(p: Pair<Rule>, file: FileId) -> Result<Item> {
     let f = FunDecl {
         vis,
         name,
-        type_params: vec![],
+        type_params,
         params,
         ret,
         where_bounds: vec![],
@@ -219,7 +221,7 @@ fn build_trait_item(p: Pair<Rule>, file: FileId) -> Result<TraitItem> {
 }
 
 fn build_impl_decl(p: Pair<Rule>, file: FileId) -> Result<ImplDecl> {
-    // impl_decl = { KW_PUB? ~ KW_IMPL ~ ty_params? ~ (qident|ident) ~ ty_args? ~ where_clause? ~ "{" ~ impl_item* ~ "}" }
+    // impl_decl = { KW_PUB? ~ KW_IMPL ~ ty_params? ~ (ty_app | qident | ident) ~ (KW_FOR ~ (ty_app | qident | ident))? ~ where_clause? ~ "{" ~ impl_item* ~ "}" }
     let sp = sp_of(&p, file);
     let mut vis: Visibility = Visibility::Private;
     let mut type_params: Vec<String> = Vec::new();
@@ -227,17 +229,48 @@ fn build_impl_decl(p: Pair<Rule>, file: FileId) -> Result<ImplDecl> {
     let mut trait_args: Vec<Ty> = Vec::new();
     let mut where_bounds: Vec<WherePred> = Vec::new();
     let mut items: Vec<ImplItem> = Vec::new();
+    let mut found_for = false;
 
     for x in p.into_inner() {
         match x.as_rule() {
             Rule::KW_PUB   => { vis = Visibility::Public; }
             Rule::KW_IMPL  => {}
+            Rule::KW_FOR   => { found_for = true; }
             Rule::ty_params => type_params = build_ty_params(x)?,
             Rule::ident | Rule::qident => {
-                if trait_name.is_none() {
+                if found_for {
+                    // 在 for 之后的标识符是类型名称，我们暂时忽略它
+                    // 因为当前的 ImplDecl 结构体没有存储实现类型
+                } else if trait_name.is_none() {
                     trait_name = Some(x.as_str().to_string());
                 } else {
                     // 若 grammar 把路径拆成多个 token，这里忽略后续
+                }
+            }
+            Rule::ty_app => {
+                if found_for {
+                    // 在 for 之后的类型应用是类型名称，我们暂时忽略它
+                } else if trait_name.is_none() {
+                    // 解析类型应用，如 Box<T>
+                    let ty_app = build_ty_app(x)?;
+                    match ty_app {
+                        Ty::App { name, args } => {
+                            trait_name = Some(name);
+                            trait_args = args;
+                        }
+                        _ => return Err(anyhow!("expected type application in impl")),
+                    }
+                } else {
+                    // 若 grammar 把路径拆成多个 token，这里忽略后续
+                }
+            }
+            Rule::ty => {
+                if found_for {
+                    // 在 for 之后的类型是类型名称，我们暂时忽略它
+                    // 因为当前的 ImplDecl 结构体没有存储实现类型
+                } else {
+                    // 这不应该发生，因为 ty 只在 for 之后出现
+                    return Err(anyhow!("unexpected type in impl declaration"));
                 }
             }
             Rule::ty_args       => trait_args = build_ty_args(x)?,
@@ -246,10 +279,22 @@ fn build_impl_decl(p: Pair<Rule>, file: FileId) -> Result<ImplDecl> {
             _ => {}
         }
     }
+    let trait_name = trait_name.ok_or_else(|| anyhow!("impl: missing trait name"))?;
+    
+    // 自动推断类型参数：从 trait_args 中提取类型变量
+    let mut inferred_type_params = type_params;
+    if inferred_type_params.is_empty() {
+        let mut free_vars = crate::utils::fast::FastSet::default();
+        for ta in &trait_args {
+            collect_free_tyvars_inline(ta, &mut free_vars);
+        }
+        inferred_type_params = free_vars.into_iter().collect();
+    }
+    
     Ok(ImplDecl {
         vis,
-        type_params,
-        trait_name: trait_name.ok_or_else(|| anyhow!("impl: missing trait name"))?,
+        type_params: inferred_type_params,
+        trait_name,
         trait_args,
         where_bounds,
         items,
@@ -260,12 +305,27 @@ fn build_impl_decl(p: Pair<Rule>, file: FileId) -> Result<ImplDecl> {
 fn build_impl_item(p: Pair<Rule>, file: FileId) -> Result<ImplItem> {
     // impl_item:
     // 1) 方法：KW_PUB? KW_FN ident "(" param_list? ")" ret_type block
-    // 2) 关联类型：KW_PUB? KW_TYPE ident "=" ty ";"
+    // 2) 外部函数：KW_PUB? KW_EXTERN KW_FN ident "(" param_list? ")" ret_type ";"
+    // 3) 关联类型：KW_PUB? KW_TYPE ident "=" ty ";"
     let sp = sp_of(&p, file);
     let mut kind: Option<&'static str> = None;
     for x in p.clone().into_inner() {
         match x.as_rule() {
-            Rule::KW_FN => { kind = Some("fn"); break; }
+            Rule::KW_FN => { 
+                // Check if it's preceded by KW_EXTERN
+                let mut is_extern = false;
+                for y in p.clone().into_inner() {
+                    if y.as_rule() == Rule::KW_EXTERN {
+                        is_extern = true;
+                        break;
+                    }
+                    if y.as_rule() == Rule::KW_FN {
+                        break;
+                    }
+                }
+                kind = Some(if is_extern { "extern_fn" } else { "fn" });
+                break;
+            }
             Rule::KW_TYPE => { kind = Some("type"); break; }
             _ => {}
         }
@@ -297,6 +357,32 @@ fn build_impl_item(p: Pair<Rule>, file: FileId) -> Result<ImplItem> {
                 params,
                 ret: parse_ret_type_pair(ret_pair, file)?,
                 body: body.ok_or_else(|| anyhow!("impl fn: missing body"))?,
+                span: sp,
+            }))
+        }
+        Some("extern_fn") => {
+            let mut vis: Visibility = Visibility::Private;
+            let mut name: Option<String> = None;
+            let mut params: Vec<(String, Ty)> = Vec::new();
+            let mut ret_pair: Option<Pair<Rule>> = None;
+
+            for x in p.into_inner() {
+                match x.as_rule() {
+                    Rule::KW_PUB      => { vis = Visibility::Public; }
+                    Rule::KW_EXTERN   => {}
+                    Rule::KW_FN       => {}
+                    Rule::ident       => name = Some(x.as_str().to_string()),
+                    Rule::param_list  => params = build_params(x)?,
+                    Rule::ret_type    => ret_pair = Some(x),
+                    _ => {}
+                }
+            }
+
+            Ok(ImplItem::ExternMethod(ImplExternMethod {
+                vis,
+                name: name.ok_or_else(|| anyhow!("impl extern fn: missing name"))?,
+                params,
+                ret: parse_ret_type_pair(ret_pair, file)?,
                 span: sp,
             }))
         }
@@ -361,4 +447,28 @@ fn build_struct_decl(p: Pair<Rule>, file: FileId) -> Result<StructDecl> {
         fields,
         span: sp,
     })
+}
+
+// 内联函数：收集类型中的自由类型变量
+fn collect_free_tyvars_inline(t: &crate::frontend::ast::Ty, out: &mut crate::utils::fast::FastSet<String>) {
+    match t {
+        crate::frontend::ast::Ty::Var(v) => { out.insert(v.clone()); }
+        crate::frontend::ast::Ty::App { args, .. } => for a in args { collect_free_tyvars_inline(a, out) },
+        _ => {}
+    }
+}
+
+// 解析类型应用，如 Box<T>
+fn build_ty_app(p: Pair<Rule>) -> Result<crate::frontend::ast::Ty> {
+    let mut it = p.into_inner();
+    let name = it.next().unwrap().as_str().to_string();
+    let mut args = Vec::new();
+    
+    for arg in it {
+        if arg.as_rule() == Rule::ty {
+            args.push(build_ty(arg)?);
+        }
+    }
+    
+    Ok(crate::frontend::ast::Ty::App { name, args })
 }

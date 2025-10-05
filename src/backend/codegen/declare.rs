@@ -87,6 +87,7 @@ impl CLBackend {
                     for item in &id.items {
                         let m = match item {
                             ImplItem::Method(m) => m,
+                            ImplItem::ExternMethod(_) => continue,
                             ImplItem::AssocType(_) => continue,
                         };
                         let key = (id.trait_name.clone(), m.name.clone());
@@ -107,6 +108,7 @@ impl CLBackend {
                 for item in &id.items {
                     let m = match item {
                         ImplItem::Method(m) => m,
+                        ImplItem::ExternMethod(_) => continue,
                         ImplItem::AssocType(_) => continue,
                     };
 

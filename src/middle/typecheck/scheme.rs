@@ -21,7 +21,7 @@ fn ensure_no_free_tyvar(t: &Ty) -> Result<()> {
     Ok(())
 }
 
-fn collect_free_tyvars(t: &Ty, out: &mut FastSet<String>) {
+pub fn collect_free_tyvars(t: &Ty, out: &mut FastSet<String>) {
     match t {
         Ty::Var(v) => { out.insert(v.clone()); }
         Ty::App { args, .. } => for a in args { collect_free_tyvars(a, out) },
