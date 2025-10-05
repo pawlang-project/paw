@@ -1,7 +1,7 @@
 # Paw
 
 一个用 **Cranelift** 做后端的小型教学/实验语言编译器。  
-目前已支持：**一等整数/浮点/布尔/字符/字符串、`Byte`（真 `u8`）、控制流（`if/while/for/match`）、函数/重载、泛型（单态化）、`trait/impl`、简单标准库 `std::fmt::println`**，并生成本机目标的 **object file**。
+目前已支持：**一等整数/浮点/布尔/字符/字符串、`Byte`（真 `u8`）、控制流（`if/while/for/match`）、函数/重载、泛型（单态化）、`trait/impl`、结构体、智能指针、标准库 `std::fmt` 和 `std::mem`**，并生成本机目标的 **object file**。
 
 ---
 
@@ -83,6 +83,27 @@ let z: Double = 3.14;
 * 块/作用域：`{ ... }`（块表达式可有值；无尾表达式时默认类型 `Int`）
 * `if .. else`、`while`、`for(init; cond; step)`、`match`
 
+### 结构体
+
+```paw
+struct Point<T> {
+    x: T,
+    y: T,
+}
+
+fn main() -> Int {
+    let p: Point<Int> = Point<Int>{ x: 10, y: 20 };
+    println(p.x);  // 10
+    println(p.y);  // 20
+    0
+}
+```
+
+* **泛型结构体**：支持类型参数 `struct Point<T>`
+* **字段访问**：使用点号语法 `p.x`、`p.y`
+* **结构体字面量**：`Point<Int>{ x: 10, y: 20 }`
+* **内存布局**：结构体在栈上分配，字段按声明顺序排列
+
 ### 函数 / 泛型 / 重载
 
 ```paw
@@ -105,7 +126,47 @@ impl Show<Int> {
   * `impl Trait<Args...>` 在类型检查时校验 *arity*、方法集合与签名（经形参替换后）。
   * **合格名调用** `Trait::<T...>::method(...)`：若 `T...` 含类型变量则按需单态化；若全为具体类型则直接降解为自由函数符号。
 
-### 标准库（fmt）
+### 智能指针
+
+```paw
+import "std::mem";
+
+fn main() -> Int {
+    // Box<T> - 独占所有权
+    let b: Box<Int> = Box::new<Int>(42);
+    let value: Int = Box::get<Int>(b);
+    println(value);  // 42
+    Box::free<Int>(b);
+    
+    // Rc<T> - 引用计数
+    let r: Rc<Int> = Rc::new<Int>(100);
+    let r2: Rc<Int> = Rc::clone<Int>(r);
+    println(Rc::strong_count<Int>(r));  // 2
+    Rc::drop<Int>(r2);
+    println(Rc::strong_count<Int>(r));  // 1
+    Rc::drop<Int>(r);
+    
+    // Arc<T> - 原子引用计数
+    let a: Arc<Int> = Arc::new<Int>(200);
+    let a2: Arc<Int> = Arc::clone<Int>(a);
+    println(Arc::strong_count<Int>(a));  // 2
+    Arc::drop<Int>(a2);
+    println(Arc::strong_count<Int>(a));  // 1
+    Arc::drop<Int>(a);
+    
+    0
+}
+```
+
+* **Box<T>**：独占所有权的智能指针
+* **Rc<T>**：引用计数的智能指针（非线程安全）
+* **Arc<T>**：原子引用计数的智能指针（线程安全）
+* **Void 类型支持**：`BoxVoid::new()`、`RcVoid::new()`、`ArcVoid::new()`
+* **支持的类型**：所有基本类型（`Byte`, `Int`, `Long`, `Bool`, `Float`, `Double`, `Char`, `String`, `Void`）
+
+### 标准库
+
+#### fmt 模块
 
 导入：
 
@@ -122,6 +183,36 @@ println(true);           // Bool -> "true"/"false"
 println('A');            // Char (UTF-8)
 println("hello");        // String (UTF-8)
 println<Byte>(255);      // 以 Byte 语境打印
+```
+
+#### mem 模块
+
+导入：
+
+```paw
+import "std::mem";
+```
+
+智能指针操作：
+
+```paw
+// Box<T>
+let b: Box<Int> = Box::new<Int>(42);
+let value: Int = Box::get<Int>(b);
+Box::set<Int>(b, 100);
+Box::free<Int>(b);
+
+// Rc<T>
+let r: Rc<Int> = Rc::new<Int>(42);
+let r2: Rc<Int> = Rc::clone<Int>(r);
+let count: Int = Rc::strong_count<Int>(r);
+Rc::drop<Int>(r2);
+
+// Arc<T>
+let a: Arc<Int> = Arc::new<Int>(42);
+let a2: Arc<Int> = Arc::clone<Int>(a);
+let count: Int = Arc::strong_count<Int>(a);
+Arc::drop<Int>(a2);
 ```
 
 > `print`（不换行）可能受行缓冲影响；建议使用 `println` 或在运行时调用 `fflush(stdout)`/`stdout().flush()` 刷新。
@@ -156,6 +247,7 @@ fn main() -> Int {
 ## 典型输出（节选）
 
 ```
+[TEST] mem + fmt + syntax begin
 [casts]
 3
 3
@@ -206,7 +298,11 @@ true
 2.5
 [block-expr]
 30
+[struct]
+10
+30
 42
+[TEST] mem + fmt + syntax end
 ```
 
 ---
@@ -240,10 +336,14 @@ true
   * 语言→IR 映射：`Byte/Bool → i8`，`Int → i32`，`Long → i64`，`Float → f32`，`Double → f64`，`Char → i32`，`String → i64`（指针）。
   * 布尔在条件处使用 `b1`，进/出位置做 `i8`↔`b1` 转换。
   * 字符串常量以只读数据驻留，函数内通过 `global_value(i64)` 取址。
+  * 结构体映射为 `i64` 指针，在栈上分配内存。
 * **单态化**：
   * 预扫描显式 `<...>` 调用并声明实例；隐式常见形态（如 `println<T>(x:T)`）在调用点按需实例化。
   * impl 泛型方法在合格名调用处单态化并立刻定义。
 * **符号整形（mangle）**：重载与泛型实例的参数/返回类型会编码入符号名，确保链接唯一。
+* **内存管理**：
+  * 智能指针通过 Rust runtime 实现，提供 C ABI 接口。
+  * 支持跨平台编译（Windows、Linux、macOS Intel、macOS Apple Silicon）。
 
 ---
 
@@ -255,12 +355,19 @@ A: 取决于表达式的**静态类型**与所选重载：按 `Byte` 语境打�
 **Q: `print` 没反应？**  
 A: 可能被缓冲了。建议用 `println`，或在运行时调用 `fflush(stdout)`/`stdout().flush()`。
 
+**Q: 如何创建结构体实例？**  
+A: 使用结构体字面量语法：`Point<Int>{ x: 10, y: 20 }`。注意需要提供所有字段的值。
+
+**Q: 智能指针什么时候释放内存？**  
+A: `Box<T>` 在调用 `Box::free<T>()` 时释放；`Rc<T>` 和 `Arc<T>` 在引用计数降为 0 时自动释放（需要调用 `Rc::drop<T>()` 或 `Arc::drop<T>()` 来减少计数）。
+
 ---
 
 ## 路线图（可能）
 
 * 数组/切片与切片字面量
-* 结构体/枚举与模式匹配解构
+* 枚举与模式匹配解构
 * 更完善的标准库与 I/O
 * 更强的常量折叠与优化（基于 Cranelift 的 pass）
 * 更灵活的隐式泛型推断
+* 真正的泛型智能指针实现（当前使用具体类型实现）
