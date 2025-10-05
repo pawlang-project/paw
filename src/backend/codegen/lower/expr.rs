@@ -231,8 +231,12 @@ impl<'a> ExprGen<'a> {
                 b.ins().global_value(types::I64, gv)
             }
 
-            Expr::Var { name, .. } => {
-                let v = self.lookup(name).ok_or_else(|| anyhow!("unknown var in codegen `{name}`"))?;
+            Expr::Var { name, span } => {
+                let v = self.lookup(name).ok_or_else(|| {
+                    let msg = format!("unknown var in codegen `{name}`");
+                    self.be.diag_err_span("CG0001", *span, &msg);
+                    anyhow!(msg)
+                })?;
                 b.use_var(v)
             }
 
@@ -446,7 +450,7 @@ impl<'a> ExprGen<'a> {
                                 }
                             }
                             match hits.len() {
-                                0 => {
+                            0 => {
                                     let msg = format!("no overload of `{}` matches given argument types", name);
                                     self.be.diag_err("CG0005", &msg);
                                     return Err(anyhow!(msg));

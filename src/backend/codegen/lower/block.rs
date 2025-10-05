@@ -33,9 +33,17 @@ impl<'a> ExprGen<'a> {
                     let var = self.declare_named(b, name, ty);
                     b.def_var(var, v);
                 }
-                Stmt::Assign { name, expr, .. } => {
-                    let var = self.lookup(name).ok_or_else(|| anyhow!("unknown var `{name}`"))?;
-                    let ty = self.lookup_ty(name).ok_or_else(|| anyhow!("no type for `{name}`"))?;
+                Stmt::Assign { name, expr, span } => {
+                    let var = self.lookup(name).ok_or_else(|| {
+                        let msg = format!("unknown var `{name}`");
+                        self.be.diag_err_span("CG0001", *span, &msg);
+                        anyhow!(msg)
+                    })?;
+                    let ty = self.lookup_ty(name).ok_or_else(|| {
+                        let msg = format!("no type for `{name}`");
+                        self.be.diag_err_span("CG0001", *span, &msg);
+                        anyhow!(msg)
+                    })?;
                     let rhs = self.emit_expr(b, expr)?;
                     let rhs_fixed = self.coerce_for_dst_from_expr(b, expr, rhs, &ty)?;
                     b.def_var(var, rhs_fixed);
@@ -118,15 +126,23 @@ impl<'a> ExprGen<'a> {
                     b.ins().jump(hdr, &[]); b.seal_block(hdr);
                     b.switch_to_block(out); b.seal_block(out);
                 }
-                Stmt::Break { .. } => {
-                    let &(_, out) = self.loop_stack.last().ok_or_else(|| anyhow!("`break` outside loop"))?;
+                Stmt::Break { span } => {
+                    let &(_, out) = self.loop_stack.last().ok_or_else(|| {
+                        let msg = "`break` outside loop".to_string();
+                        self.be.diag_err_span("CG0006", *span, &msg);
+                        anyhow!(msg)
+                    })?;
                     b.ins().jump(out, &[]); let cont = b.create_block(); b.switch_to_block(cont); b.seal_block(cont);
                 }
-                Stmt::Continue { .. } => {
-                    let &(cont_tgt, _) = self.loop_stack.last().ok_or_else(|| anyhow!("`continue` outside loop"))?;
+                Stmt::Continue { span } => {
+                    let &(cont_tgt, _) = self.loop_stack.last().ok_or_else(|| {
+                        let msg = "`continue` outside loop".to_string();
+                        self.be.diag_err_span("CG0006", *span, &msg);
+                        anyhow!(msg)
+                    })?;
                     b.ins().jump(cont_tgt, &[]); let cont = b.create_block(); b.switch_to_block(cont); b.seal_block(cont);
                 }
-                Stmt::Return { expr: opt, .. } => {
+                Stmt::Return { expr: opt, span } => {
                     match (self.fun_ret.clone(), opt) {
                         (Ty::Void, Some(e)) => { let _ = self.emit_expr(b, e)?; b.ins().return_(&[]); }
                         (ret_ty, Some(e)) => {
@@ -143,7 +159,9 @@ impl<'a> ExprGen<'a> {
                                 Ty::Double => { let z = b.ins().f64const(0.0); b.ins().return_(&[z]); }
                                 Ty::Void => { b.ins().return_(&[]); }
                                 other => {
-                                    return Err(anyhow!("codegen: `return` without value but function has non-void/unsupported return type: {:?}", other));
+                                    let msg = format!("codegen: `return` without value but function has non-void/unsupported return type: {:?}", other);
+                                    self.be.diag_err_span("CG0007", *span, &msg);
+                                    return Err(anyhow!(msg));
                                 }
                             }
                         }

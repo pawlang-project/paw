@@ -154,8 +154,10 @@ impl<'a> TyCk<'a> {
         match s {
             Stmt::Let { name, ty, init, is_const, span } => {
                 let t = self.expr(init)?;
-                self.require_assignable_from_expr(init, &t, ty)
-                    .map_err(|e| anyhow!("let `{}`: {}", name, e))?;
+                self.require_assignable_from_expr(init, &t, ty).map_err(|e| {
+                    tc_err!(self, "E2300", Some(*span), "let `{}` type mismatch: {}", name, e);
+                    anyhow!("let `{}`: {}", name, e)
+                })?;
                 if self.scopes.last().unwrap().contains_key(name) {
                     tc_bail!(self, "E2101", Some(*span), "dup local `{}`", name);
                 }
@@ -173,7 +175,10 @@ impl<'a> TyCk<'a> {
                     tc_bail!(self, "E2103", Some(*span), "cannot assign to const `{}`", name);
                 }
                 let rhs_ty = self.expr(expr)?;
-                self.require_assignable_from_expr(expr, &rhs_ty, &var_ty)?;
+                self.require_assignable_from_expr(expr, &rhs_ty, &var_ty).map_err(|e| {
+                    tc_err!(self, "E2301", Some(*span), "assign type mismatch: {}", e);
+                    e
+                })?;
                 Ok(())
             }
 
@@ -278,7 +283,10 @@ impl<'a> TyCk<'a> {
                 };
                 if let Some(e) = expr {
                     let t = self.expr(e)?;
-                    self.require_assignable_from_expr(e, &t, &ret_ty)?;
+                    self.require_assignable_from_expr(e, &t, &ret_ty).map_err(|e| {
+                        tc_err!(self, "E2302", Some(*span), "return type mismatch: {}", e);
+                        e
+                    })?;
                 } else if ret_ty != Ty::Void {
                     tc_bail!(self, "E2107", Some(*span), "function expects `{}`, but return without value", ret_ty);
                 }

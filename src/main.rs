@@ -24,19 +24,20 @@ use middle::passes;
 use middle::typecheck::typecheck_program;
 use project::{BuildProfile, Project};
 
-use crate::diag::DiagSink;
+use crate::diag::{DiagSink, SourceMap, render_diagnostics_colored};
 
 /// 读取 entry 源码 -> 解析 -> 以工程根目录为搜索根展开 import -> impl 降解
-fn load_and_expand_program(entry: &Path, project_root: &Path) -> Result<Program> {
+fn load_and_expand_program(entry: &Path, project_root: &Path, sm: &mut SourceMap, diags: &mut DiagSink) -> Result<Program> {
     let src = fs::read_to_string(entry)
         .with_context(|| format!("read_to_string({}) failed", entry.display()))?;
 
-    // 解析器现在需要 (src, FileId)。先用占位 DUMMY（如有全局文件表，可替换为真实 FileId）。
-    let root = parser::parse_program(&src, FileId::DUMMY)
+    // 注册入口文件，提供真实 FileId
+    let fid = sm.add_file(entry.display().to_string(), src.clone());
+    let root = parser::parse_program_with_diags(&src, fid, &entry.display().to_string(), diags)
         .with_context(|| format!("parse `{}` failed", entry.display()))?;
 
     // 展开 import（a::b::c -> <root>/a/b/c.paw）
-    let merged = passes::expand_imports_with_loader(&root, project_root)
+    let merged = passes::expand_imports_with_loader(&root, project_root, sm, diags)
         .context("expand imports failed")?;
 
     // 将 impl 方法降解为自由函数，便于后续类型检查/后端处理
@@ -49,7 +50,7 @@ fn load_and_expand_program(entry: &Path, project_root: &Path) -> Result<Program>
 ///
 /// - `file_id`: 类型检查阶段的“主文件名”，用入口路径字符串即可
 /// - `diag`:    共享诊断（typecheck / codegen 共用）
-fn build_object(prog: &Program, file_id: &str, diag: Rc<RefCell<DiagSink>>) -> Result<Vec<u8>> {
+fn build_object(prog: &Program, file_id: &str, diag: Rc<RefCell<DiagSink>>, sm: &SourceMap) -> Result<Vec<u8>> {
     // 先类型检查（错误写入 diag，同时返回 Err）
     {
         // 注意作用域，确保可变借用在进入 codegen 前释放
@@ -58,7 +59,7 @@ fn build_object(prog: &Program, file_id: &str, diag: Rc<RefCell<DiagSink>>) -> R
     }
 
     // 后端生成对象文件（带同一个 diag，用于 codegen 期错误）
-    codegen::compile_program(prog, Some(diag))
+    codegen::compile_program(prog, Some(diag), sm.file_names())
 }
 
 fn main() -> Result<()> {
@@ -82,25 +83,37 @@ fn main() -> Result<()> {
     let proj: Project = project::load_from_cwd()
         .context("failed to load project (Paw.toml or defaults)")?;
 
-    // 2) 解析 + 展开 import + impl 降解
-    let entry = proj.entry.clone(); // e.g. <root>/main.paw
-    let program = load_and_expand_program(&entry, &proj.root)?;
-
-    // 3) 准备诊断收集器（typecheck + codegen 共用）
+    // 2) 提前准备诊断收集器（parser/import/typecheck/codegen 共用）
     let diag = Rc::new(RefCell::new(DiagSink::default()));
+
+    // 3) 解析 + 展开 import + impl 降解
+    let entry = proj.entry.clone(); // e.g. <root>/main.paw
+    let mut sm = SourceMap::new();
+    // 使用局部 DiagSink 收集解析/导入阶段的错误，避免与共享 RefCell 交错借用
+    let program = {
+        let mut local_diags = DiagSink::new();
+        match load_and_expand_program(&entry, &proj.root, &mut sm, &mut local_diags) {
+            Ok(p) => {
+                // 合并到共享 diag（不可变借用，不会冲突）
+                diag.borrow_mut().append_from(local_diags.into_vec());
+                p
+            }
+            Err(_e) => {
+                let v = local_diags.into_vec();
+                render_diagnostics_colored(&v, &sm);
+                process::exit(1);
+            }
+        }
+    };
     let file_id = entry.to_string_lossy().to_string();
 
     // 4) 编译（失败则打印收集到的诊断并退出）
-    let obj_bytes = match build_object(&program, &file_id, diag.clone()) {
+    let obj_bytes = match build_object(&program, &file_id, diag.clone(), &sm) {
         Ok(obj) => obj,
-        Err(e) => {
+        Err(_e) => {
             let d = diag.borrow();
-            eprintln!("--- diagnostics ({} total) ---", d.len());
-            for rec in d.iter() {
-                // 依赖于你在 diag.rs 为 Diagnostic 实现的 Display
-                eprintln!("{rec}");
-            }
-            eprintln!("compilation failed: {e:#}");
+            let v = d.iter().cloned().collect::<Vec<_>>();
+            render_diagnostics_colored(&v, &sm);
             process::exit(1);
         }
     };

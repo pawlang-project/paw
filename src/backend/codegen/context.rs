@@ -47,6 +47,7 @@ pub struct CLBackend {
 
     // —— 可选：诊断收集器 —— //
     diag: Option<Rc<RefCell<DiagSink>>>,
+    file_names: Vec<String>,
 }
 
 impl CLBackend {
@@ -77,16 +78,27 @@ impl CLBackend {
             declared_symbols: FastSet::default(),
             impl_templates: FastMap::default(),
             diag: None,
+            file_names: Vec::new(),
         })
     }
 
     fn diag_err(&self, code: &'static str, msg: impl AsRef<str>) {
         if let Some(d) = &self.diag {
-            d.borrow_mut().error(code, "<codegen>", None, msg.as_ref().to_string());
+            let file_id_str = self.file_names.get(0).cloned().unwrap_or_else(|| "<codegen>".to_string());
+            d.borrow_mut().error(code, &file_id_str, None, msg.as_ref().to_string());
+        }
+    }
+
+    fn diag_err_span(&self, code: &'static str, span: crate::frontend::span::Span, msg: impl AsRef<str>) {
+        if let Some(d) = &self.diag {
+            let file_id_str = self.file_names.get(span.file.0).cloned().unwrap_or_else(|| "<codegen>".to_string());
+            d.borrow_mut().error(code, &file_id_str, Some(span), msg.as_ref().to_string());
         }
     }
 
     pub fn set_diag(&mut self, sink: Rc<RefCell<DiagSink>>) {
         self.diag = Some(sink);
     }
+
+    pub fn set_file_names(&mut self, names: Vec<String>) { self.file_names = names; }
 }

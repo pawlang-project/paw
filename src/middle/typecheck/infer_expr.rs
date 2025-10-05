@@ -24,8 +24,10 @@ impl<'a> TyCk<'a> {
                         else { tc_bail!(self, "E2200", Some(*span), "unary `-` expects numeric, got `{}`", t); }
                     }
                     Not => {
-                        self.require_assignable(&t, &Ty::Bool)
-                            .map_err(|e| anyhow!("unary ! expects Bool: {}", e))?;
+                        self.require_assignable(&t, &Ty::Bool).map_err(|e| {
+                            tc_err!(self, "E2201", Some(*span), "unary `!` expects Bool: {}", e);
+                            anyhow!("unary ! expects Bool: {}", e)
+                        })?;
                         Ty::Bool
                     }
                 }
