@@ -38,9 +38,10 @@ fn build_expr(p: Pair<Rule>, file: FileId) -> Result<Expr> {
             let mut base_expr: Option<Expr> = None;    // 当作“可继续取字段/调用的值”的头
 
             match head.as_rule() {
-                // name_ref 统一 ident & qident
+                // name_ref 统一 ident & qident，不包含泛型参数
                 Rule::name_ref => {
                     let node = head.into_inner().next().unwrap();
+                    
                     match node.as_rule() {
                         Rule::ident => {
                             callee_opt = Some(Callee::Name(node.as_str().to_string()));

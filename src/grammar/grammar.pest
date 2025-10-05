@@ -32,18 +32,18 @@ ret_type   = { "->" ~ ty }
 
 // 顶层函数/extern 允许 `pub`（直接写 KW_PUB?，避免 parse 树出现额外的 `vis` 层）
 fun_decl    = { KW_PUB? ~ KW_FN ~ ident ~ ty_params? ~ "(" ~ param_list? ~ ")" ~ ret_type ~ where_clause? ~ block }
-extern_fun  = { KW_PUB? ~ KW_EXTERN ~ KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ ret_type ~ SEMICOLON }
+extern_fun  = { KW_PUB? ~ KW_EXTERN ~ KW_FN ~ ident ~ ty_params? ~ "(" ~ param_list? ~ ")" ~ ret_type ~ SEMICOLON }
 import_decl = { KW_IMPORT ~ string_lit ~ SEMICOLON }
 
 param_list = { param ~ ("," ~ param)* }
-param      = { ident ~ COLON ~ ty }
+param      = { ident ~ (COLON ~ ty)? }
 
 // 顶层变量声明
 let_decl = { ( KW_LET | KW_CONST ) ~ ident ~ COLON ~ ty ~ EQUALS ~ expr ~ SEMICOLON }
 
 // ===== 类型系统 =====
 ty_var   = @{ UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
-ty_app   = { (qident | ident) ~ "<" ~ ty ~ ("," ~ ty)* ~ ">" }
+ty_app   = { ident ~ "<" ~ ty ~ ("," ~ ty)* ~ ">" }
 ty_prim  = { KW_Int | KW_Long | KW_Byte | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void }
 ty       = { ty_app | ty_prim | ty_var | ident }
 ty_ident = @{ UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
@@ -198,12 +198,15 @@ trait_item = {
 }
 
 // impl：支持泛型与 where（impl<T, U> Trait<...> where ... { ... }）
-impl_decl  = { KW_PUB? ~ KW_IMPL ~ ty_params? ~ (qident | ident) ~ ty_args? ~ where_clause? ~ "{" ~ impl_item*  ~ "}" }
+impl_decl  = { KW_PUB? ~ KW_IMPL ~ ty_params? ~ (ty_app | qident | ident) ~ (KW_FOR ~ ty)? ~ where_clause? ~ "{" ~ impl_item*  ~ "}" }
 
 // impl 成员：方法定义 或 关联类型定义
 impl_item  = {
     // 方法：pub? fn name(params) -> Ret { ... }
     ( KW_PUB? ~ KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ ret_type ~ block )
+  |
+    // 外部函数：pub? extern fn name(params) -> Ret;
+    ( KW_PUB? ~ KW_EXTERN ~ KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ ret_type ~ SEMICOLON )
   |
     // 关联类型：pub? type Name = Ty;
     ( KW_PUB? ~ KW_TYPE ~ ident ~ EQUALS ~ ty ~ SEMICOLON )

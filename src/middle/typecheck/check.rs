@@ -134,7 +134,22 @@ impl<'a> TyCk<'a> {
             if self.scopes.last().unwrap().contains_key(n) {
                 tc_bail!(self, "E2100", Some(f.span), "dup param `{}`", n);
             }
-            self.scopes.last_mut().unwrap().insert(n.clone(), t.clone());
+            
+            // 处理 self 参数的类型推断
+            let param_ty = if let Ty::Var(var_name) = t {
+                if var_name == "_Self" && n == "self" {
+                    // 对于 self 参数，我们需要推断类型
+                    // 在 trait 方法中，self 的类型应该是一个类型变量，表示实现该 trait 的类型
+                    // 我们使用一个特殊的类型变量来表示这个类型
+                    Ty::Var("T".to_string()) // 使用 T 作为占位符，表示实现类型
+                } else {
+                    t.clone()
+                }
+            } else {
+                t.clone()
+            };
+            
+            self.scopes.last_mut().unwrap().insert(n.clone(), param_ty);
         }
         let _ = self.block(&f.body)?;
         self.pop();
@@ -397,16 +412,30 @@ pub fn typecheck_program(
                     id.trait_args.len()
                 );
             }
-            // impl 的实参必须全部是具体类型
+            // 检查 impl 实参：如果包含类型变量，则必须是 impl 的类型参数
             for ta in &id.trait_args {
-                if let Err(e) = ensure_no_free_tyvar(ta) {
-                    diags.error(
-                        "E2004",
-                        file_id,
-                        Some(*ispan),
-                        format!("impl `{}` arg not concrete: {}", id.trait_name, e),
-                    );
-                    return Err(e);
+                if let Err(_) = ensure_no_free_tyvar(ta) {
+                    // 检查类型变量是否在 impl 的类型参数中
+                    let mut free_vars = crate::utils::fast::FastSet::default();
+                    collect_free_tyvars_inline(ta, &mut free_vars);
+                    let impl_type_params: std::collections::HashSet<_> = id.type_params.iter().collect();
+                    let unknown_vars: Vec<_> = free_vars.iter()
+                        .filter(|v| !impl_type_params.contains(v))
+                        .map(|s| s.as_str())
+                        .collect();
+                    
+                    if !unknown_vars.is_empty() {
+                        diags.error(
+                            "E2004",
+                            file_id,
+                            Some(*ispan),
+                            format!("impl `{}` contains unknown type variables: {}", 
+                                id.trait_name, 
+                                unknown_vars.join(", ")
+                            ),
+                        );
+                        return Err(anyhow!("impl contains unknown type variables: {}", unknown_vars.join(", ")));
+                    }
                 }
             }
 
@@ -480,26 +509,53 @@ pub fn typecheck_program(
                     decl.params.iter().map(|(_, t)| apply_subst(t, &subst)).collect();
                 let want_ret: Ty = apply_subst(&decl.ret, &subst);
 
+                // 检查方法参数：如果包含类型变量，则必须是 impl 的类型参数
                 for (_, t) in &m.params {
-                    ensure_no_free_tyvar(t).map_err(|e| {
+                    if let Err(_) = ensure_no_free_tyvar(t) {
+                        let mut free_vars = crate::utils::fast::FastSet::default();
+                        collect_free_tyvars_inline(t, &mut free_vars);
+                        let impl_type_params: std::collections::HashSet<_> = id.type_params.iter().collect();
+                        let unknown_vars: Vec<_> = free_vars.iter()
+                            .filter(|v| !impl_type_params.contains(v))
+                            .map(|s| s.as_str())
+                            .collect();
+                        
+                        if !unknown_vars.is_empty() {
+                            diags.error(
+                                "E2007",
+                                file_id,
+                                Some(m.span),
+                                format!("impl `{}` method `{}` param contains unknown type variables: {}", 
+                                    id.trait_name, m.name, unknown_vars.join(", ")
+                                ),
+                            );
+                            return Err(anyhow!("impl method param contains unknown type variables: {}", unknown_vars.join(", ")));
+                        }
+                    }
+                }
+                
+                // 检查返回类型：如果包含类型变量，则必须是 impl 的类型参数
+                if let Err(_) = ensure_no_free_tyvar(&m.ret) {
+                    let mut free_vars = crate::utils::fast::FastSet::default();
+                    collect_free_tyvars_inline(&m.ret, &mut free_vars);
+                    let impl_type_params: std::collections::HashSet<_> = id.type_params.iter().collect();
+                    let unknown_vars: Vec<_> = free_vars.iter()
+                        .filter(|v| !impl_type_params.contains(v))
+                        .map(|s| s.as_str())
+                        .collect();
+                    
+                    if !unknown_vars.is_empty() {
                         diags.error(
                             "E2007",
                             file_id,
                             Some(m.span),
-                            format!("impl `{}` method `{}` param not concrete: {}", id.trait_name, m.name, e),
+                            format!("impl `{}` method `{}` return contains unknown type variables: {}", 
+                                id.trait_name, m.name, unknown_vars.join(", ")
+                            ),
                         );
-                        e
-                    })?;
+                        return Err(anyhow!("impl method return contains unknown type variables: {}", unknown_vars.join(", ")));
+                    }
                 }
-                ensure_no_free_tyvar(&m.ret).map_err(|e| {
-                    diags.error(
-                        "E2007",
-                        file_id,
-                        Some(m.span),
-                        format!("impl `{}` method `{}` return not concrete: {}", id.trait_name, m.name, e),
-                    );
-                    e
-                })?;
 
                 let got_params: Vec<Ty> = m.params.iter().map(|(_, t)| t.clone()).collect();
                 if want_params != got_params {
@@ -707,4 +763,13 @@ pub fn typecheck_program(
     }
 
     Ok((fnscheme, globals, tenv, ienv))
+}
+
+// 内联函数：收集类型中的自由类型变量
+fn collect_free_tyvars_inline(t: &crate::frontend::ast::Ty, out: &mut crate::utils::fast::FastSet<String>) {
+    match t {
+        crate::frontend::ast::Ty::Var(v) => { out.insert(v.clone()); }
+        crate::frontend::ast::Ty::App { args, .. } => for a in args { collect_free_tyvars_inline(a, out) },
+        _ => {}
+    }
 }

@@ -49,6 +49,9 @@ pub fn declare_impls_from_program(mut p: Program) -> Program {
                             extra.push(Item::Fun(f, m.span));
                         }
                     }
+                    ImplItem::ExternMethod(_) => {
+                        // Extern methods are handled separately
+                    }
                     ImplItem::AssocType(_a) => {
                         // 关联类型不会降解为函数：跳过
                     }

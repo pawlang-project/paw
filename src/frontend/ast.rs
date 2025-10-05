@@ -485,7 +485,18 @@ impl Default for ImplAssocType {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ImplItem {
     Method(ImplMethod),
+    ExternMethod(ImplExternMethod),
     AssocType(ImplAssocType),
+}
+
+/// impl 中的外部方法声明
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImplExternMethod {
+    pub vis: Visibility,
+    pub name: String,
+    pub params: Vec<(String, Ty)>,
+    pub ret: Ty,
+    pub span: Span,
 }
 
 /// impl 支持泛型形参与 where 约束；同时存储 trait 实参列表

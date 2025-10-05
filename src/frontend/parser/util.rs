@@ -88,28 +88,27 @@ fn parse_char_lit(s: &str) -> Result<u32> {
 }
 
 fn unescape_string(s: &str) -> String {
-    let bytes = s.as_bytes();
+    // 直接使用 Rust 的字符串处理，正确处理 UTF-8
+    let inner = &s[1..s.len() - 1]; // 去掉首尾的引号
     let mut out = String::new();
-    let mut i = 1; // skip opening "
-    while i + 1 < bytes.len() {
-        let c = bytes[i] as char;
-        if c == '"' { break; }
+    let mut chars = inner.chars();
+    
+    while let Some(c) = chars.next() {
         if c == '\\' {
-            i += 1;
-            let e = bytes[i] as char;
-            match e {
-                'n' => out.push('\n'),
-                't' => out.push('\t'),
-                '\\' => out.push('\\'),
-                '"' => out.push('"'),
-                'r' => out.push('\r'),
-                '0' => out.push('\0'),
-                _ => out.push(e),
+            if let Some(e) = chars.next() {
+                match e {
+                    'n' => out.push('\n'),
+                    't' => out.push('\t'),
+                    '\\' => out.push('\\'),
+                    '"' => out.push('"'),
+                    'r' => out.push('\r'),
+                    '0' => out.push('\0'),
+                    _ => out.push(e),
+                }
             }
         } else {
             out.push(c);
         }
-        i += 1;
     }
     out
 }

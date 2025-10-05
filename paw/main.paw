@@ -1,29 +1,32 @@
-// main.paw
+// Paw 语言综合功能测试
 import "std::mem";
 import "std::fmt";
 
+// ===== 基础类型和函数重载 =====
 fn over(x: Int) -> Int { x + 1 }
 fn over(x: Double) -> Double { x + 0.5 }
 
+// ===== 类型转换测试 =====
 fn demo_casts() -> Void {
+  println<String>("[类型转换测试]");
   let a: Int = 3;
   let b: Long = a as Long;
   let c: Float = 3.25;
   let d: Int = c as Int;
   let e: Double = b as Double;
-  println<String>("[casts]");
   println<Int>(b as Int);
   println<Int>(d);
   println<Double>(e);
 }
 
+// ===== 控制流测试 =====
 fn demo_ctrlflow() -> Void {
-  println<String>("[ctrlflow]");
+  println<String>("[控制流测试]");
 
   if (true) {
-    println<String>("if-true");
+    println<String>("if-true 分支");
   } else {
-    println<String>("if-false");
+    println<String>("if-false 分支");
   }
 
   let sum: Int = 0;
@@ -33,7 +36,7 @@ fn demo_ctrlflow() -> Void {
     sum = tmp;
     i = i + 1;
   }
-  println<Int>(15);
+  println<Int>(sum); // 应该输出 15
 
   for (let j: Int = 0; j < 5; j = j + 1) {
     if (j == 3) { continue; }
@@ -42,6 +45,7 @@ fn demo_ctrlflow() -> Void {
   }
 }
 
+// ===== 模式匹配测试 =====
 fn demo_match(v: Int) -> Int {
   let r: Int =
     match (v) {
@@ -52,6 +56,7 @@ fn demo_match(v: Int) -> Int {
   r
 }
 
+// ===== 泛型函数测试 =====
 fn echo_and_print<T>(x: T) -> T
 where T: Printable<T>
 {
@@ -60,15 +65,18 @@ where T: Printable<T>
   x
 }
 
+// ===== 内存管理测试 =====
 fn demo_mem() -> Void {
-  println<String>("[mem]");
+  println("[mem]");
 
+  // Box 测试
   let b: Box<Int> = Box::new<Int>(42);
   println<Int>(Box::get<Int>(b));
   Box::set<Int>(b, 99);
   println<Int>(Box::get<Int>(b));
   Box::free<Int>(b);
 
+  // Rc 测试
   let r1: Rc<Int> = Rc::new<Int>(123);
   let r2: Rc<Int> = Rc::clone<Int>(r1);
   println<Int>(Rc::strong_count<Int>(r1));
@@ -78,6 +86,7 @@ fn demo_mem() -> Void {
   println<Int>(Rc::strong_count<Int>(r1));
   Rc::drop<Int>(r1);
 
+  // Arc 测试
   let a1: Arc<Double> = Arc::new<Double>(3.5);
   let a2: Arc<Double> = Arc::clone<Double>(a1);
   println<Int>(Arc::strong_count<Double>(a1));
@@ -85,16 +94,19 @@ fn demo_mem() -> Void {
   Arc::drop<Double>(a2);
   Arc::drop<Double>(a1);
 
-  let sbox: Box<String> = Box::new<String>("mem + fmt OK");
+  // String 智能指针测试
+  let sbox: Box<String> = Box::new<String>("内存管理 + 格式化输出 OK");
   println<String>(Box::get<String>(sbox));
   Box::free<String>(sbox);
 
+  // Byte 类型测试
   let bb: Byte = 255;
   println<Byte>(bb);
 }
 
+// ===== 运算符测试 =====
 fn demo_ops() -> Void {
-  println<String>("[ops]");
+  println<String>("[运算符测试]");
 
   let x: Int = 7;
   let y: Int = 5;
@@ -127,8 +139,9 @@ fn demo_ops() -> Void {
   println<Double>(over(2.0));
 }
 
+// ===== 块表达式测试 =====
 fn demo_block_expr() -> Void {
-  println<String>("[block-expr]");
+  println<String>("[块表达式测试]");
   let v: Int = {
     let a: Int = 10;
     let b: Int = 20;
@@ -137,30 +150,51 @@ fn demo_block_expr() -> Void {
   println<Int>(v);
 }
 
-// 泛型结构体测试
+// ===== 泛型结构体测试 =====
 struct Point<T> {
   x: T,
   y: T,
 }
 
 fn demo_struct() -> Void {
-  println<String>("[struct]");
+  println<String>("[泛型结构体测试]");
 
-  // 统一使用新语法：Point<Int>{ x: 10, y: 20 }
+  // 使用新的简化语法：Point<Int>{ x: 10, y: 20 }
   let p1: Point<Int> = Point<Int>{ x: 10, y: 20 };
   println<Int>(p1.x); // 应该输出 10
 
   let p2: Point<Int> = Point<Int>{ x: 30, y: 40 };
   println<Int>(p2.x); // 应该输出 30
+
+  // 测试 Double 类型的 Point
+  let p3: Point<Double> = Point<Double>{ x: 1.5, y: 2.5 };
+  println<Double>(p3.x);
+  println<Double>(p3.y);
 }
 
+// ===== 新功能：泛型函数调用测试 =====
+fn demo_generic_calls() -> Void {
+  println<String>("[泛型函数调用测试]");
+  
+  // 测试泛型函数调用语法
+  let result1: Int = over(100);
+  let result2: Double = over(3.14);
+  
+  println<Int>(result1);
+  println<Double>(result2);
+}
+
+// ===== 工具函数 =====
 fn abs_i32(x: Int) -> Int {
   if (x < 0) { return -x; }
   return x;
 }
 
+// ===== 主函数 =====
 fn main() -> Int {
-  println<String>("[TEST] mem + fmt + syntax begin");
+  println<String>("==========================================");
+  println<String>("Paw 语言综合功能测试开始");
+  println<String>("==========================================");
 
   demo_casts();
   demo_ctrlflow();
@@ -170,15 +204,20 @@ fn main() -> Int {
   println<Int>(demo_match(9));
 
   let _e1: Int = echo_and_print<Int>(314);
-  let _e2: String = echo_and_print<String>("echo!");
+  let _e2: String = echo_and_print<String>("泛型函数测试成功!");
 
   demo_mem();
   demo_ops();
   demo_block_expr();
   demo_struct();
+  demo_generic_calls();
 
   println<Int>(abs_i32(-42));
 
-  println<String>("[TEST] mem + fmt + syntax end");
+  println<String>("==========================================");
+  println<String>("Paw 语言综合功能测试结束");
+  println<String>("所有功能测试完成！");
+  println<String>("==========================================");
+  
   0
 }
