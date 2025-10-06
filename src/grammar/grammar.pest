@@ -1,8 +1,10 @@
 //////////////////////////////
-// PawLang grammar.pest
-// - 支持 trait / impl / where
-// - 安全的泛型调用后缀：ty_args? "(" arg_list? ")"
-// - 类型：内建 + 类型变量 + 类型应用 + 零参类型名
+// PawLang grammar.pest (parser 同步版)
+// - 顶层/成员可见性：KW_PUB?
+// - trait 关联类型：trait_item 增加 `type` 变体
+// - impl 泛型/where：impl_decl 支持 ty_params? & where_clause?
+// - impl 关联类型定义：impl_item 增加 `type Name = Ty;`
+// - 显式 as、限定名调用、后缀泛型调用保持
 //////////////////////////////
 
 // ===== 基础/空白与注释 =====
@@ -14,49 +16,44 @@ COMMENT       = _{ LINE_COMMENT | BLOCK_COMMENT }
 LINE_COMMENT  = _{ "//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI) }
 BLOCK_COMMENT = _{ "/*" ~ (BLOCK_COMMENT | (!"*/" ~ ANY))* ~ "*/" }
 
+// 单独命名的标点（供 parser 的 Rule 枚举使用）
+SEMICOLON     = _{ ";" }
+EQUALS        = _{ "=" }
+COLON         = _{ ":" }
+
 // ===== 程序结构 =====
 program = { SOI ~ item* ~ EOI }
 
-// 顶层项：函数 / 外部函数 / 变量声明 / 导入 / trait / impl
-item = { extern_fun | fun_decl | let_decl | import_decl | trait_decl | impl_decl }
+// 顶层项：函数 / 外部函数 / 变量声明 / 导入 / trait / impl / struct
+item = { extern_fun | fun_decl | let_decl | import_decl | trait_decl | impl_decl | struct_decl }
 
 // ===== 函数 / 外部函数 / 导入 / 参数 =====
-fun_decl    = { KW_FN ~ ident ~ ty_params? ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ where_clause? ~ block }
-extern_fun  = { KW_EXTERN ~ KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ ";" }
-import_decl = { KW_IMPORT ~ string_lit ~ ";" }
+ret_type   = { "->" ~ ty }
+
+// 顶层函数/extern 允许 `pub`（直接写 KW_PUB?，避免 parse 树出现额外的 `vis` 层）
+fun_decl    = { KW_PUB? ~ KW_FN ~ ident ~ ty_params? ~ "(" ~ param_list? ~ ")" ~ ret_type ~ where_clause? ~ block }
+extern_fun  = { KW_PUB? ~ KW_EXTERN ~ KW_FN ~ ident ~ ty_params? ~ "(" ~ param_list? ~ ")" ~ ret_type ~ SEMICOLON }
+import_decl = { KW_IMPORT ~ string_lit ~ SEMICOLON }
 
 param_list = { param ~ ("," ~ param)* }
-param      = { ident ~ ":" ~ ty }
+param      = { ident ~ (COLON ~ ty)? }
 
 // 顶层变量声明
-let_decl = { ( KW_LET | KW_CONST ) ~ ident ~ ":" ~ ty ~ "=" ~ expr ~ ";" }
+let_decl = { ( KW_LET | KW_CONST ) ~ ident ~ COLON ~ ty ~ EQUALS ~ expr ~ SEMICOLON }
 
 // ===== 类型系统 =====
-// 类型变量（T/U/... 大写开头）
-ty_var = @{ UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
-
-// 类型应用：如 Vec<Int>, Map<String, Int>
-ty_app   = { (qident | ident) ~ "<" ~ ty ~ ("," ~ ty)* ~ ">" }
-
-// 内建原子类型
-ty_prim = { KW_Int | KW_Long | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void }
-
-// 顶层类型选择：应用类型 / 内建 / 类型变量 / 零参类型名
-ty = { ty_app | ty_prim | ty_var | ident }
-
-// 函数声明里的类型形参（<T, U>）
-ty_ident  = @{ UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
-ty_params = { "<" ~ ty_ident ~ ("," ~ ty_ident)* ~ ">" }
-
-// 调用处/impl 处的类型实参（<Int, String, Vec<T>>）
-ty_args   = { "<" ~ ty ~ ("," ~ ty)* ~ ">" }
+ty_var   = @{ UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
+ty_app   = { ident ~ "<" ~ ty ~ ("," ~ ty)* ~ ">" }
+ty_prim  = { KW_Int | KW_Long | KW_Byte | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void }
+ty       = { ty_app | ty_prim | ty_var | ident }
+ty_ident = @{ UPPER ~ (ASCII_ALPHANUMERIC | "_")* }
+ty_params= { "<" ~ ty_ident ~ ("," ~ ty_ident)* ~ ">" }
+ty_args  = { "<" ~ ty ~ ("," ~ ty)* ~ ">" }
 
 // ===== where 子句（约束） =====
-// 例如：where T: Eq + Show, U: Ord, Pair<Int,Long>: Foo<Int>
 where_clause = { KW_WHERE ~ where_item ~ ("," ~ where_item)* }
 where_item   = { where_pred | bound }
-where_pred   = { ty ~ ":" ~ bound ~ ("+" ~ bound)* }
-// 约束名允许将来带实参，如 Iterator<Item=T>（此处先留钩子）
+where_pred   = { ty ~ COLON ~ bound ~ ("+" ~ bound)* }
 bound        = { (qident | ident) ~ ("<" ~ ty ~ ("," ~ ty)* ~ ">")? }
 
 // ===== 语句/表达式与块 =====
@@ -74,25 +71,26 @@ stmt       = {
   | expr_stmt
 }
 
-assign_stmt = { ident ~ "=" ~ expr ~ ";" }
+assign_stmt = { ident ~ EQUALS ~ expr ~ SEMICOLON }
+while_stmt  = { KW_WHILE ~ "(" ~ expr ~ ")" ~ block }
 
-while_stmt = { KW_WHILE ~ "(" ~ expr ~ ")" ~ block }
-
-for_stmt = { KW_FOR ~ "(" ~ for_init? ~ ";" ~ expr? ~ ";" ~ for_step? ~ ")" ~ block }
+for_stmt = { KW_FOR ~ "(" ~ for_init? ~ SEMICOLON ~ expr? ~ SEMICOLON ~ for_step? ~ ")" ~ block }
 for_init = {
-      (KW_LET | KW_CONST) ~ ident ~ ":" ~ ty ~ "=" ~ expr
-    | ident ~ "=" ~ expr
+      (KW_LET | KW_CONST) ~ ident ~ COLON ~ ty ~ EQUALS ~ expr
+    | ident ~ EQUALS ~ expr
     | expr
 }
-for_step = { ident ~ "=" ~ expr | expr }
+for_step = { ident ~ EQUALS ~ expr | expr }
 
-if_stmt = { KW_IF ~ "(" ~ expr ~ ")" ~ block ~ (KW_ELSE ~ block)? }
+// —— 语句 if：支持 else if —— //
+if_stmt         = { KW_IF ~ "(" ~ expr ~ ")" ~ block ~ (KW_ELSE ~ else_tail_stmt)? }
+else_tail_stmt  = { block | if_stmt }
 
-break_stmt    = { KW_BREAK ~ ";" }
-continue_stmt = { KW_CONTINUE ~ ";" }
+break_stmt    = { KW_BREAK ~ SEMICOLON }
+continue_stmt = { KW_CONTINUE ~ SEMICOLON }
 
-return_stmt = { KW_RETURN ~ expr? ~ ";" }
-expr_stmt   = { expr ~ ";" }
+return_stmt = { KW_RETURN ~ expr? ~ SEMICOLON }
+expr_stmt   = { expr ~ SEMICOLON }
 tail_expr   = { expr }
 
 // ===== 表达式优先级 =====
@@ -101,30 +99,47 @@ logic_or    = { logic_and ~ (OP_OR  ~ logic_and)* }
 logic_and   = { equality  ~ (OP_AND ~ equality )* }
 equality    = { compare   ~ ((OP_EQ | OP_NE) ~ compare)* }
 compare     = { add       ~ ((OP_LE | OP_GE | OP_LT | OP_GT) ~ add)* }
-add         = { mult      ~ ((OP_ADD | OP_SUB) ~ mult)* }
+
+// 显式类型转换 as 插在加法与乘法之间
+add         = { cast_term ~ ((OP_ADD | OP_SUB) ~ cast_term)* }
+cast_term   = { cast | mult }
+cast        = { mult ~ (KW_AS ~ ty)+ }
+
 mult        = { unary     ~ ((OP_MUL | OP_DIV) ~ unary)* }
 unary       = { (OP_NOT | OP_SUB) ~ unary | postfix }
 
 // 可调用名：单段 ident 或 多段 qident（Trait::method）
 qident   = @{ ident ~ ("::" ~ ident)+ }
+// 带类型参数的标识符：Point::<Int> 或 Point<Int>
+qident_with_ty = { ident ~ "::" ~ ty_args }
 name_ref = { qident | ident }
 
-// 后缀：仅支持“安全泛型调用后缀”（ty_args? + "(" args? ")"）
-postfix       = { name_ref ~ call_suffix+ | primary_head ~ call_suffix* }
+// 后缀：支持混合链式 `foo.bar<Baz>(x).y`
+postfix       = { name_ref ~ (field_suffix | call_suffix)+ | primary_head ~ (field_suffix | call_suffix)* }
 primary_head  = { float_lit | double_lit | long_lit | int_lit | bool_lit | string_lit | char_lit
-                | if_expr | match_expr | name_ref | group | block
+                | if_expr | match_expr | struct_lit | name_ref | group | block
                 }
-// 为了兼容旧 parser：允许用 Rule::primary 来匹配
 primary       = { primary_head }
 
-call_suffix = { ty_args? ~ "(" ~ arg_list? ~ ")" }
+call_suffix  = { ty_args? ~ "(" ~ arg_list? ~ ")" }
+field_suffix = { "." ~ ident }
 arg_list    = { expr ~ ("," ~ expr)* }
 
 // ===== 原子表达式 =====
 group   = { "(" ~ expr ~ ")" }
 
-// if 作为表达式（有 else 才有值）
-if_expr = { KW_IF ~ "(" ~ expr ~ ")" ~ block ~ KW_ELSE ~ block }
+// 结构体字面量：Name<...>? { k: v, ... }
+struct_lit = { (ident_with_ty | ident) ~ "{" ~ struct_init_list? ~ "}" }
+ident_with_ty = { ident ~ ty_args }
+struct_init_list = { struct_init ~ ("," ~ struct_init)* ~ (",")? }
+struct_init = { ident ~ COLON ~ struct_field_value }
+struct_field_value = { expr }
+
+// 字段访问通过 field_suffix 参与到 postfix 链中
+
+// —— 表达式 if：支持 else if —— //
+if_expr         = { KW_IF ~ "(" ~ expr ~ ")" ~ block ~ KW_ELSE ~ else_tail_expr }
+else_tail_expr  = { block | if_expr }
 
 // match 表达式
 match_expr  = { KW_MATCH ~ "(" ~ expr ~ ")" ~ "{" ~ match_arms? ~ "}" }
@@ -153,6 +168,7 @@ double_lit = @{
 }
 
 char_lit = @{
+// 支持常见转义及 \u{...}
   "'" ~ (
       ( !("'" | "\\") ~ ANY )
     | "\\" ~ ( "'" | "\\" | "n" | "r" | "t" | "0" | ( "u{" ~ ASCII_HEX_DIGIT{1,6} ~ "}" ) )
@@ -160,6 +176,7 @@ char_lit = @{
 }
 
 string_lit = @{
+// 支持 \" \\ \n \r \t \0 以及 \u{...}
   "\"" ~ (
       "\\\"" | "\\\\" | "\\n" | "\\r" | "\\t" | "\\0"
     | ( "\\u{" ~ ASCII_HEX_DIGIT{1,6} ~ "}" )
@@ -168,57 +185,88 @@ string_lit = @{
 }
 
 // ===== trait / impl =====
-trait_decl = { KW_TRAIT ~ ident ~ ty_params? ~ "{" ~ trait_item* ~ "}" }
-trait_item = { KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ ";" }
+// 顶层也允许 `pub trait`，以便导出接口
+trait_decl = { KW_PUB? ~ KW_TRAIT ~ ident ~ ty_params? ~ "{" ~ trait_item* ~ "}" }
 
-// 允许 impl Foo<A, B> {...} 或 impl Foo {...}（让 typecheck 去判是否缺实参）
-impl_decl  = { KW_IMPL  ~ ident ~ ty_args?  ~ "{" ~ impl_item*  ~ "}" }
-impl_item  = { KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ "->" ~ ty ~ block }
+// trait 项：方法签名 或 关联类型声明
+trait_item = {
+    // 方法：pub? fn name(params) -> Ret;
+    ( KW_PUB? ~ KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ ret_type ~ SEMICOLON )
+  |
+    // 关联类型：pub? type Name<...> (: Bound (+ Bound)*)? ;
+    ( KW_PUB? ~ KW_TYPE ~ ident ~ ty_params? ~ ( COLON ~ bound ~ ( "+" ~ bound )* )? ~ SEMICOLON )
+}
+
+// impl：支持泛型与 where（impl<T, U> Trait<...> where ... { ... }）
+impl_decl  = { KW_PUB? ~ KW_IMPL ~ ty_params? ~ (ty_app | qident | ident) ~ (KW_FOR ~ ty)? ~ where_clause? ~ "{" ~ impl_item*  ~ "}" }
+
+// impl 成员：方法定义 或 关联类型定义
+impl_item  = {
+    // 方法：pub? fn name(params) -> Ret { ... }
+    ( KW_PUB? ~ KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ ret_type ~ block )
+  |
+    // 外部函数：pub? extern fn name(params) -> Ret;
+    ( KW_PUB? ~ KW_EXTERN ~ KW_FN ~ ident ~ "(" ~ param_list? ~ ")" ~ ret_type ~ SEMICOLON )
+  |
+    // 关联类型：pub? type Name = Ty;
+    ( KW_PUB? ~ KW_TYPE ~ ident ~ EQUALS ~ ty ~ SEMICOLON )
+}
+
+// ===== struct 声明 =====
+struct_decl = { KW_PUB? ~ KW_STRUCT ~ ident ~ ty_params? ~ "{" ~ struct_field_list? ~ "}" }
+struct_field_list = { struct_field ~ ("," ~ struct_field)* ~ (",")? }
+struct_field = { ident ~ COLON ~ ty }
 
 // ===== 标识符 / 关键字 / 运算符 =====
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
 keyword = {
   (
-      KW_FN | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST
+      KW_PUB
+    | KW_FN | KW_EXTERN | KW_IMPORT | KW_LET | KW_CONST
     | KW_IF | KW_ELSE | KW_WHILE | KW_FOR | KW_BREAK | KW_CONTINUE | KW_MATCH
-    | KW_RETURN | KW_TRAIT | KW_IMPL | KW_WHERE
-    | KW_Int | KW_Long | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void
+    | KW_RETURN | KW_TRAIT | KW_IMPL | KW_WHERE | KW_AS | KW_TYPE | KW_STRUCT
+    | KW_Int | KW_Long | KW_Byte | KW_Bool | KW_String | KW_Double | KW_Float | KW_Char | KW_Void
     | KW_true | KW_false
   ) ~ !IDENT_NEXT
 }
 
 // 关键字
+KW_PUB     = @{ "pub"     ~ !IDENT_NEXT }
 KW_FN      = @{ "fn"      ~ !IDENT_NEXT }
-KW_EXTERN   = @{ "extern"  ~ !IDENT_NEXT }
-KW_IMPORT   = @{ "import"  ~ !IDENT_NEXT }
-KW_LET      = @{ "let"     ~ !IDENT_NEXT }
-KW_CONST    = @{ "const"   ~ !IDENT_NEXT }
-KW_IF       = @{ "if"      ~ !IDENT_NEXT }
-KW_ELSE     = @{ "else"    ~ !IDENT_NEXT }
-KW_WHILE    = @{ "while"   ~ !IDENT_NEXT }
-KW_FOR      = @{ "for"     ~ !IDENT_NEXT }
-KW_BREAK    = @{ "break"   ~ !IDENT_NEXT }
-KW_CONTINUE = @{ "continue"~ !IDENT_NEXT }
-KW_MATCH    = @{ "match"   ~ !IDENT_NEXT }
-KW_RETURN   = @{ "return"  ~ !IDENT_NEXT }
+KW_EXTERN  = @{ "extern"  ~ !IDENT_NEXT }
+KW_IMPORT  = @{ "import"  ~ !IDENT_NEXT }
+KW_LET     = @{ "let"     ~ !IDENT_NEXT }
+KW_CONST   = @{ "const"   ~ !IDENT_NEXT }
+KW_IF      = @{ "if"      ~ !IDENT_NEXT }
+KW_ELSE    = @{ "else"    ~ !IDENT_NEXT }
+KW_WHILE   = @{ "while"   ~ !IDENT_NEXT }
+KW_FOR     = @{ "for"     ~ !IDENT_NEXT }
+KW_BREAK   = @{ "break"   ~ !IDENT_NEXT }
+KW_CONTINUE= @{ "continue"~ !IDENT_NEXT }
+KW_MATCH   = @{ "match"   ~ !IDENT_NEXT }
+KW_RETURN  = @{ "return"  ~ !IDENT_NEXT }
 
-KW_TRAIT    = @{ "trait"   ~ !IDENT_NEXT }
-KW_IMPL     = @{ "impl"    ~ !IDENT_NEXT }
-KW_WHERE    = @{ "where"   ~ !IDENT_NEXT }
+KW_TRAIT   = @{ "trait"   ~ !IDENT_NEXT }
+KW_IMPL    = @{ "impl"    ~ !IDENT_NEXT }
+KW_WHERE   = @{ "where"   ~ !IDENT_NEXT }
+KW_AS      = @{ "as"      ~ !IDENT_NEXT }
+KW_TYPE    = @{ "type"    ~ !IDENT_NEXT }
+KW_STRUCT  = @{ "struct"  ~ !IDENT_NEXT }
 
-KW_Int    = @{ "Int"    ~ !IDENT_NEXT }
-KW_Long   = @{ "Long"   ~ !IDENT_NEXT }    // i64
-KW_Bool   = @{ "Bool"   ~ !IDENT_NEXT }
-KW_String = @{ "String" ~ !IDENT_NEXT }
-KW_Double = @{ "Double" ~ !IDENT_NEXT }    // f64
-KW_Float  = @{ "Float"  ~ !IDENT_NEXT }    // f32
-KW_Char   = @{ "Char"   ~ !IDENT_NEXT }    // u32（ABI 用 i32）
-KW_Void   = @{ "Void"   ~ !IDENT_NEXT }
-KW_true   = @{ "true"   ~ !IDENT_NEXT }
-KW_false  = @{ "false"  ~ !IDENT_NEXT }
+KW_Int     = @{ "Int"    ~ !IDENT_NEXT }
+KW_Long    = @{ "Long"   ~ !IDENT_NEXT }
+KW_Byte    = @{ "Byte"   ~ !IDENT_NEXT }
+KW_Bool    = @{ "Bool"   ~ !IDENT_NEXT }
+KW_String  = @{ "String" ~ !IDENT_NEXT }
+KW_Double  = @{ "Double" ~ !IDENT_NEXT }    // f64
+KW_Float   = @{ "Float"  ~ !IDENT_NEXT }    // f32
+KW_Char    = @{ "Char"   ~ !IDENT_NEXT }    // u32（ABI 用 i32）
+KW_Void    = @{ "Void"   ~ !IDENT_NEXT }
+KW_true    = @{ "true"   ~ !IDENT_NEXT }
+KW_false   = @{ "false"  ~ !IDENT_NEXT }
 
-// 运算符（注意 <= / >= 在 < / > 之前）
+// 运算符
 OP_OR  = { "||" }
 OP_AND = { "&&" }
 OP_EQ  = { "==" }

@@ -24,6 +24,8 @@ struct Package {
     name: String,
     #[serde(default)]
     version: Option<String>, // 暂时不用，但允许写上不报错
+    #[serde(default)]
+    entry: Option<String>, // 入口文件，默认为 main.paw
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -90,6 +92,7 @@ pub fn load_from_dir(root: &Path) -> Result<Project> {
                     (pkg_name, dirs)
                 }
                 Err(e) => {
+                    // 项目加载警告，暂时保持直接输出
                     eprintln!(
                         "warning: 解析 `{}` 失败：{}",
                         paw_toml.display(),
@@ -105,7 +108,20 @@ pub fn load_from_dir(root: &Path) -> Result<Project> {
         }
     };
 
-    let entry = root.join("main.paw");
+    let entry = if let Ok(toml_content) = fs::read_to_string(root.join("Paw.toml")) {
+        if let Ok(config) = toml::from_str::<PawToml>(&toml_content) {
+            if let Some(entry_file) = config.package.entry {
+                root.join(entry_file)
+            } else {
+                root.join("main.paw")
+            }
+        } else {
+            root.join("main.paw")
+        }
+    } else {
+        root.join("main.paw")
+    };
+    
     Ok(Project {
         root: root.to_path_buf(),
         name,

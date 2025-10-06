@@ -1,65 +1,78 @@
+// PawLang 示例程序
+import "std::mem";
 import "std::fmt";
 
-fn sum_to(n: Int) -> Int {
-    let s: Int = 0;
-    // C 风格 for: init; cond; step
-    for (let i: Int = 0; i < n; i = i + 1) {
-        s = s + i;
-    }
-    s
+// 函数重载示例
+fn add(x: Int, y: Int) -> Int { x + y }
+fn add(x: Double, y: Double) -> Double { x + y }
+
+// 泛型结构体
+struct Point<T> {
+  x: T,
+  y: T,
 }
 
-fn test_break() -> Int {
-    let s: Int = 0;
-    for (let i: Int = 0; i < 10; i = i + 1) {
-        if (i == 5) { break; }
-        s = s + 1;
-    }
-    s // 期望: 5
+// 智能指针示例
+fn demo_smart_pointers() -> Void {
+  println<String>("=== 智能指针示例 ===");
+  
+  // Box 示例
+  let boxed: Box<Int> = Box::new<Int>(42);
+  println<Int>(Box::get<Int>(boxed));
+  Box::free<Int>(boxed);
+  
+  // Rc 示例
+  let rc1: Rc<String> = Rc::new<String>("Hello, PawLang!");
+  let rc2: Rc<String> = Rc::clone<String>(rc1);
+  println<String>(Rc::get<String>(rc1));
+  println<Int>(Rc::strong_count<String>(rc1));
+  Rc::drop<String>(rc2);
+  Rc::drop<String>(rc1);
 }
 
-fn test_continue() -> Int {
-    let s: Int = 0;
-    for (let i: Int = 0; i < 10; i = i + 1) {
-        if (i == 5) { continue; } // 继续时应先执行 step，再进入下一轮
-        s = s + 1;
-    }
-    s // 期望: 9
+// 控制流示例
+fn demo_control_flow() -> Void {
+  println<String>("=== 控制流示例 ===");
+  
+  // if-else
+  let x: Int = 10;
+  if (x > 5) {
+    println<String>("x is greater than 5");
+  } else {
+    println<String>("x is not greater than 5");
+  }
+  
+  // for 循环
+  for (let j: Int = 0; j < 3; j = j + 1) {
+    println<Int>(j);
+  }
 }
 
-fn classify_int(n: Int) -> Int {
-    match (n) {
-        0 => { 100 },
-        1 => { 200 },
-        _ => { 999 },
-    }
+// 泛型函数示例
+fn demo_generics() -> Void {
+  println<String>("=== 泛型示例 ===");
+  
+  // 泛型函数调用
+  let int_sum: Int = add(10, 20);
+  let double_sum: Double = add(3.14, 2.86);
+  
+  println<Int>(int_sum);
+  println<Double>(double_sum);
+  
+  // 泛型结构体
+  let point: Point<Int> = Point<Int>{ x: 10, y: 20 };
+  println<Int>(point.x);
+  println<Int>(point.y);
 }
 
-fn classify_bool(b: Bool) -> Int {
-    match (b) {
-        true  => { 1 },
-        false => { 0 },
-    }
-}
-
+// 主函数
 fn main() -> Int {
-    println("== for/sum_to ==");
-    println(sum_to(5));       // 10
-
-    println("== for/break ==");
-    println(test_break());    // 5
-
-    println("== for/continue ==");
-    println(test_continue()); // 9
-
-    println("== match/int ==");
-    println(classify_int(0)); // 100
-    println(classify_int(1)); // 200
-    println(classify_int(2)); // 999
-
-    println("== match/bool ==");
-    println(classify_bool(true));  // 1
-    println(classify_bool(false)); // 0
-
-    0
+  println<String>("Welcome to PawLang!");
+  
+  demo_smart_pointers();
+  demo_control_flow();
+  demo_generics();
+  
+  println<String>("Example completed successfully!");
+  0
 }
