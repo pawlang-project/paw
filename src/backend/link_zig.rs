@@ -10,7 +10,6 @@ pub enum PawTarget {
     WinGnuX64,
     LinuxGnuX64,
     MacosX64,
-    MacosArm64,
 }
 
 impl PawTarget {
@@ -20,8 +19,6 @@ impl PawTarget {
         }
         if cfg!(target_os = "windows") {
             Self::WinGnuX64
-        } else if cfg!(target_os = "macos") && cfg!(target_arch = "aarch64") {
-            Self::MacosArm64
         } else if cfg!(target_os = "macos") {
             Self::MacosX64
         } else {
@@ -31,10 +28,9 @@ impl PawTarget {
 
     pub fn parse(s: &str) -> Self {
         match s {
-            "x86_64-windows-gnu" => Self::WinGnuX64,
-            "x86_64-linux-gnu" => Self::LinuxGnuX64,
-            "x86_64-macos" | "x86_64-apple-darwin" => Self::MacosX64,
-            "aarch64-macos" | "aarch64-apple-darwin" => Self::MacosArm64,
+            "x86_64-pc-windows-gnu" | "x86_64-windows-gnu" => Self::WinGnuX64,
+            "x86_64-unknown-linux-gnu" | "x86_64-linux-gnu" => Self::LinuxGnuX64,
+            "x86_64-apple-darwin" | "x86_64-macos" => Self::MacosX64,
             _ => Self::LinuxGnuX64,
         }
     }
@@ -44,7 +40,6 @@ impl PawTarget {
             Self::WinGnuX64 => "x86_64-windows-gnu",
             Self::LinuxGnuX64 => "x86_64-linux-gnu",
             Self::MacosX64 => "x86_64-macos",
-            Self::MacosArm64 => "aarch64-macos",
         }
     }
 
@@ -53,7 +48,6 @@ impl PawTarget {
             Self::WinGnuX64 => "x86_64-pc-windows-gnu",
             Self::LinuxGnuX64 => "x86_64-unknown-linux-gnu",
             Self::MacosX64 => "x86_64-apple-darwin",
-            Self::MacosArm64 => "aarch64-apple-darwin",
         }
     }
 
@@ -233,6 +227,8 @@ fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
     }
 
     // 3) 在每个 base 下尝试这些候选：
+    //    runtime/target/<rust_triple>/debug/libruntime.a
+    //    runtime/target/<rust_triple>/release/libruntime.a
     //    deps/<rust_triple>/libruntime.a
     //    deps/<zig_triple>/libruntime.a
     //    deps/libruntime_<zig_triple>.a
@@ -240,6 +236,10 @@ fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
     let mut tried: Vec<PathBuf> = Vec::new();
     for base in bases {
         let cands = [
+            // 集成的runtime库路径
+            base.join("runtime").join("target").join(rust_triple).join("debug").join("libruntime.a"),
+            base.join("runtime").join("target").join(rust_triple).join("release").join("libruntime.a"),
+            // 原有的deps路径
             base.join("../../deps").join(rust_triple).join("libruntime.a"),
             base.join("../../deps").join(zig_triple).join("libruntime.a"),
             base.join("../../deps").join(format!("libruntime_{}.a", zig_triple)),
@@ -309,9 +309,9 @@ pub fn link_with_zig(inp: &LinkInput) -> Result<()> {
         }
         PawTarget::LinuxGnuX64 => {
             // 常见原生库（不同发行版可能已自动引入）
-            cmd.args(["-lpthread", "-ldl", "-lrt"]);
+            cmd.args(["-lpthread", "-ldl", "-lrt", "-lunwind"]);
         }
-        PawTarget::MacosX64 | PawTarget::MacosArm64 => {
+        PawTarget::MacosX64 => {
             cmd.arg("-mmacosx-version-min=11.0");
             // cmd.arg("-Wl,-adhoc_codesign");
             // cmd.arg("-Wl,-no_fixup_chains");
@@ -364,7 +364,7 @@ pub fn compile_c_to_obj(c_src: &str, out_obj: &Path, target: PawTarget) -> Resul
         .arg("-o")
         .arg(out_obj);
 
-    if matches!(target, PawTarget::MacosX64 | PawTarget::MacosArm64) {
+    if matches!(target, PawTarget::MacosX64) {
         cmd.arg("-mmacosx-version-min=11.0");
     }
 

@@ -16,6 +16,7 @@ cranelift-module   = "0.124.1"
 cranelift-object   = "0.124.1"
 cranelift-frontend = "0.124.1"
 cranelift-native = { version = "0.124.1", default-features = true }
+target-lexicon = "0.13"
 
 
 hashbrown = "0.16"

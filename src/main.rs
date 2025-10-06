@@ -4,7 +4,6 @@ use std::fs;
 use std::path::Path;
 use std::{env, process};
 use std::time::Instant;
-use std::io;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,16 +12,15 @@ mod project;
 mod frontend;
 mod middle;
 mod backend;
-mod interner;
 mod utils;
 mod diag;
 mod cli;
 
 use backend::link_zig::{link_with_zig, LinkInput, PawTarget};
 use crate::backend::codegen;
+use crate::cli::{CliArgs, Command, BuildProfile as CliBuildProfile};
 use crate::frontend::parser;
 use frontend::ast::Program;
-use frontend::span::FileId;
 use middle::passes;
 use middle::typecheck::typecheck_program;
 use project::{BuildProfile, Project};
@@ -52,9 +50,10 @@ fn load_and_expand_program(entry: &Path, project_root: &Path, sm: &mut SourceMap
 
 /// 把完整 Program 编译为 object bytes
 ///
-/// - `file_id`: 类型检查阶段的“主文件名”，用入口路径字符串即可
+/// - `file_id`: 类型检查阶段的"主文件名"，用入口路径字符串即可
 /// - `diag`:    共享诊断（typecheck / codegen 共用）
-fn build_object(prog: &Program, file_id: &str, diag: Rc<RefCell<DiagSink>>, sm: &SourceMap) -> Result<Vec<u8>> {
+/// - `target`:  目标平台（用于交叉编译）
+fn build_object(prog: &Program, file_id: &str, diag: Rc<RefCell<DiagSink>>, sm: &SourceMap, target: Option<&str>) -> Result<Vec<u8>> {
     // 先类型检查（错误写入 diag，同时返回 Err）
     {
         // 注意作用域，确保可变借用在进入 codegen 前释放
@@ -63,29 +62,39 @@ fn build_object(prog: &Program, file_id: &str, diag: Rc<RefCell<DiagSink>>, sm: 
     }
 
     // 后端生成对象文件（带同一个 diag，用于 codegen 期错误）
-    let result = codegen::compile_program(prog, Some(diag), sm.file_names());
+    let result = codegen::compile_program_for_target(prog, Some(diag), sm.file_names(), target);
     result
 }
 
 fn main() -> Result<()> {
     let start_time = Instant::now();
     
-    // 支持：pawc build <dev|release> [--quiet]
-    let args = env::args().skip(1).collect::<Vec<_>>();
-    if args.len() < 2 || args[0].as_str() != "build" {
-        eprintln!("usage: pawc build <dev|release> [--quiet]");
-        process::exit(1);
-    }
-
-    let quiet = args.len() > 2 && args[2] == "--quiet";
-    let profile = match args[1].as_str() {
-        "dev" => BuildProfile::Dev,
-        "release" => BuildProfile::Release,
-        _ => {
-            eprintln!("usage: pawc build <dev|release> [--quiet]");
+    // 解析命令行参数
+    let cli_args = match CliArgs::parse() {
+        Ok(args) => args,
+        Err(err) => {
+            eprintln!("Error: {}", err);
+            CliArgs::print_usage_error();
             process::exit(1);
         }
     };
+
+    // 处理不同的命令
+    match cli_args.command {
+        Command::Help => {
+            CliArgs::print_help();
+            return Ok(());
+        }
+        Command::ListTargets => {
+            CliArgs::print_supported_targets();
+            return Ok(());
+        }
+        Command::Build { profile, target, quiet, input_file } => {
+            // 转换CLI的BuildProfile到项目的BuildProfile
+            let build_profile = match profile {
+                CliBuildProfile::Dev => BuildProfile::Dev,
+                CliBuildProfile::Release => BuildProfile::Release,
+            };
 
     // 1) 载入工程
     let mut progress = if !quiet {
@@ -109,7 +118,11 @@ fn main() -> Result<()> {
         p.update(2);
     }
     
-    let entry = proj.entry.clone(); // e.g. <root>/main.paw
+    let entry = if let Some(input_file) = input_file {
+        std::path::PathBuf::from(input_file)
+    } else {
+        proj.entry.clone() // e.g. <root>/main.paw
+    };
     let mut sm = SourceMap::new();
     // 使用局部 DiagSink 收集解析/导入阶段的错误，避免与共享 RefCell 交错借用
     let program = {
@@ -138,7 +151,9 @@ fn main() -> Result<()> {
     let file_id = entry.to_string_lossy().to_string();
 
     // 4) 编译（失败则打印收集到的诊断并退出）
-    let obj_bytes = match build_object(&program, &file_id, diag.clone(), &sm) {
+    let target_triple = target.as_deref();
+    
+    let obj_bytes = match build_object(&program, &file_id, diag.clone(), &sm, target_triple) {
         Ok(obj) => {
             if let Some(ref mut prog) = progress {
                 prog.update(4);
@@ -146,28 +161,41 @@ fn main() -> Result<()> {
             }
             obj
         },
-        Err(_e) => {
+        Err(e) => {
             let d = diag.borrow();
             let v = d.iter().cloned().collect::<Vec<_>>();
-            eprintln!("Compilation errors:");
-            render_diagnostics_colored(&v, &sm);
+            if v.is_empty() {
+                eprintln!("Compilation failed: {}", e);
+            } else {
+                eprintln!("Compilation errors:");
+                render_diagnostics_colored(&v, &sm);
+            }
             process::exit(1);
         }
     };
 
-    // 5) 输出目录
-    let profile_dir = match profile {
-        BuildProfile::Dev => "dev",
-        BuildProfile::Release => "release",
+            // 5) 输出目录（按平台和配置分离，像Rust一样）
+            let profile_dir = match build_profile {
+                BuildProfile::Dev => "debug",
+                BuildProfile::Release => "release",
+            };
+    
+    // 确定目标平台
+    let paw_target = if let Some(t) = target {
+        PawTarget::parse(&t)
+    } else {
+        PawTarget::from_env_or_default()
     };
-    let out_dir = proj.root.join("build").join(profile_dir);
+    
+    // 创建平台特定的目录结构：build/{profile}/{target}/
+    let target_triple = paw_target.rust_triple();
+    let out_dir = proj.root.join("target").join(profile_dir).join(target_triple);
     fs::create_dir_all(&out_dir)
         .with_context(|| format!("create_dir_all({})", out_dir.display()))?;
 
     // 6) 写对象文件与可执行文件
-    let target = PawTarget::from_env_or_default();
-    let obj_ext = target.obj_ext();
-    let exe_ext = target.exe_ext();
+    let obj_ext = paw_target.obj_ext();
+    let exe_ext = paw_target.exe_ext();
 
     let obj_path = out_dir.join(format!("out.{}", obj_ext));
     fs::write(&obj_path, &obj_bytes)
@@ -189,33 +217,35 @@ fn main() -> Result<()> {
     let inp = LinkInput {
         obj_files: vec![obj_path.to_string_lossy().to_string()],
         out_exe: exe_path.to_string_lossy().to_string(),
-        target,
+        target: paw_target,
     };
     link_with_zig(&inp).context("link step failed")?;
 
     let duration = start_time.elapsed();
     let formatter = OutputFormatter::new();
     
-    if quiet {
-        eprintln!("{}", exe_path.display());
-    } else {
-        // 相对路径展示
-        let entry_rel = entry.strip_prefix(&proj.root).unwrap_or(&entry);
-        let exe_rel = exe_path.strip_prefix(&proj.root).unwrap_or(&exe_path);
-        // 可执行体大小（人类可读）
-        let exe_size_bytes = fs::metadata(&exe_path).map(|m| m.len()).unwrap_or(0);
-        let human_size = OutputFormatter::human_size(exe_size_bytes);
-        // 目标三元组
-        let triple = target.rust_triple();
-        
-        formatter.success(
-            profile_dir,
-            triple,
-            entry_rel,
-            exe_rel,
-            duration.as_secs_f64(),
-            &human_size
-        );
+            if quiet {
+                eprintln!("{}", exe_path.display());
+            } else {
+                // 相对路径展示
+                let entry_rel = entry.strip_prefix(&proj.root).unwrap_or(&entry);
+                let exe_rel = exe_path.strip_prefix(&proj.root).unwrap_or(&exe_path);
+                // 可执行体大小（人类可读）
+                let exe_size_bytes = fs::metadata(&exe_path).map(|m| m.len()).unwrap_or(0);
+                let human_size = OutputFormatter::human_size(exe_size_bytes);
+                // 目标三元组
+                let triple = paw_target.rust_triple();
+                
+                formatter.success(
+                    profile_dir,
+                    triple,
+                    entry_rel,
+                    exe_rel,
+                    duration.as_secs_f64(),
+                    &human_size
+                );
+            }
+            Ok(())
+        }
     }
-    Ok(())
 }

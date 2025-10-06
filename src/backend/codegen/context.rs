@@ -1,5 +1,7 @@
 use crate::frontend::ast::*;
 use crate::utils::fast::*;
+use cranelift_codegen::isa::TargetIsa;
+use target_lexicon::triple;
 
 #[derive(Clone, Debug)]
 pub struct StructLayout {
@@ -74,15 +76,23 @@ pub struct CLBackend {
 
 impl CLBackend {
     pub fn new() -> Result<Self> {
+        Self::new_for_target(None)
+    }
+
+    pub fn new_for_target(target: Option<&str>) -> Result<Self> {
         let mut fbuilder = settings::builder();
         fbuilder.set("is_pic", "true")?;
 
         let flags = Flags::new(fbuilder);
 
-        let isa = cranelift_native::builder()
-            .map_err(|e| anyhow!("cranelift_native::builder(): {e}"))?
-            .finish(flags)
-            .map_err(|e| anyhow!("finish ISA: {e}"))?;
+        let isa = if let Some(target) = target {
+            create_isa_for_target(target)?
+        } else {
+            cranelift_native::builder()
+                .map_err(|e| anyhow!("cranelift_native::builder(): {e}"))?
+                .finish(flags)
+                .map_err(|e| anyhow!("finish ISA: {e}"))?
+        };
 
         let obj = ObjectBuilder::new(isa, "paw_obj".to_string(), default_libcall_names())?;
         Ok(Self {
@@ -170,5 +180,68 @@ impl CLBackend {
 
     fn key_of_app(name: &str, args: &[Ty]) -> String {
         if args.is_empty() { name.to_string() } else { format!("{}<{}>", name, args.iter().map(|t| crate::backend::mangle::mangle_ty(t)).collect::<Vec<_>>().join(",")) }
+    }
+}
+
+fn create_isa_for_target(target: &str) -> Result<std::sync::Arc<dyn TargetIsa>> {
+    use cranelift_codegen::isa::lookup;
+    use cranelift_codegen::settings::Configurable;
+    
+    let mut fbuilder = settings::builder();
+    fbuilder.set("is_pic", "true")?;
+    
+    // 根据目标平台设置特定的编译选项
+    match target {
+        "x86_64-pc-windows-gnu" | "x86_64-windows-gnu" => {
+            fbuilder.set("use_colocated_libcalls", "false")?;
+        }
+        "x86_64-unknown-linux-gnu" | "x86_64-linux-gnu" => {
+            fbuilder.set("use_colocated_libcalls", "false")?;
+        }
+        "x86_64-apple-darwin" | "x86_64-macos" => {
+            fbuilder.set("use_colocated_libcalls", "false")?;
+        }
+        "aarch64-apple-darwin" | "aarch64-macos" => {
+            fbuilder.set("use_colocated_libcalls", "false")?;
+        }
+        _ => {}
+    }
+    
+    let flags = Flags::new(fbuilder);
+    
+    // 根据目标平台创建ISA
+    match target {
+        "x86_64-pc-windows-gnu" | "x86_64-windows-gnu" => {
+            // Windows x64 - 使用COFF格式
+            let isa = lookup(triple!("x86_64-pc-windows-gnu"))
+                .map_err(|e| anyhow!("lookup x86_64-pc-windows-gnu: {e}"))?
+                .finish(flags)
+                .map_err(|e| anyhow!("finish ISA: {e}"))?;
+            Ok(isa)
+        }
+        "x86_64-unknown-linux-gnu" | "x86_64-linux-gnu" => {
+            // Linux x64 - 使用ELF格式
+            let isa = lookup(triple!("x86_64-unknown-linux-gnu"))
+                .map_err(|e| anyhow!("lookup x86_64-unknown-linux-gnu: {e}"))?
+                .finish(flags)
+                .map_err(|e| anyhow!("finish ISA: {e}"))?;
+            Ok(isa)
+        }
+        "x86_64-apple-darwin" | "x86_64-macos" => {
+            // macOS x64 - 使用Mach-O格式
+            let isa = lookup(triple!("x86_64-apple-darwin"))
+                .map_err(|e| anyhow!("lookup x86_64-apple-darwin: {e}"))?
+                .finish(flags)
+                .map_err(|e| anyhow!("finish ISA: {e}"))?;
+            Ok(isa)
+        }
+        _ => {
+            // 默认使用原生ISA
+            let isa = cranelift_native::builder()
+                .map_err(|e| anyhow!("cranelift_native::builder(): {e}"))?
+                .finish(flags)
+                .map_err(|e| anyhow!("finish ISA: {e}"))?;
+            Ok(isa)
+        }
     }
 }
