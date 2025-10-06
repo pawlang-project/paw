@@ -91,14 +91,14 @@ impl CliArgs {
                     command: Command::ListTargets,
                 })
             }
-            "--help" | "-h" => {
-                Ok(CliArgs {
-                    command: Command::Help,
-                })
-            }
-            _ => {
-                Err(format!("Unknown command: {}. Use --help for help", args[0]))
-            }
+                    "--help" | "-h" => {
+                        Ok(CliArgs {
+                            command: Command::Help,
+                        })
+                    }
+                    _ => {
+                        Err(format!("Unknown command: {}. Use --help for help", args[0]))
+                    }
         }
     }
 
