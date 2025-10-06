@@ -2,6 +2,7 @@ mod io;
 mod mem;
 
 pub use io::*;
+pub use mem::*;
 
 
 // Windows

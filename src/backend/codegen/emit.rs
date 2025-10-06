@@ -213,7 +213,11 @@ impl CLBackend {
 }
 
 pub fn compile_program(prog: &Program, diag: Option<Rc<RefCell<DiagSink>>>, file_names: Vec<String>) -> Result<Vec<u8>> {
-    let mut be = CLBackend::new()?;
+    compile_program_for_target(prog, diag, file_names, None)
+}
+
+pub fn compile_program_for_target(prog: &Program, diag: Option<Rc<RefCell<DiagSink>>>, file_names: Vec<String>, target: Option<&str>) -> Result<Vec<u8>> {
+    let mut be = CLBackend::new_for_target(target)?;
     if let Some(d) = diag { be.set_diag(d); }
     // 提供 file_id -> 显示名 映射，便于用 span.file 定位真实文件名
     be.set_file_names(file_names);

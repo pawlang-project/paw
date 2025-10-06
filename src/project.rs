@@ -92,6 +92,7 @@ pub fn load_from_dir(root: &Path) -> Result<Project> {
                     (pkg_name, dirs)
                 }
                 Err(e) => {
+                    // 项目加载警告，暂时保持直接输出
                     eprintln!(
                         "warning: 解析 `{}` 失败：{}",
                         paw_toml.display(),
