@@ -4,6 +4,7 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::perf_timer;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PawTarget {
@@ -284,6 +285,8 @@ fn resolve_pawrt_lib(target: PawTarget) -> Result<PathBuf> {
 
 /// 纯对象 + 自动附带 libruntime.a → 生成可执行文件
 pub fn link_with_zig(inp: &LinkInput) -> Result<()> {
+    perf_timer!("link");
+    
     // 确保输出目录存在
     let out_exe = PathBuf::from(&inp.out_exe);
     if let Some(parent) = out_exe.parent() {

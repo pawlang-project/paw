@@ -1,7 +1,7 @@
 # PawLang
 
-A small teaching/experimental language compiler using **Cranelift** as the backend.  
-Supports: **first-class integers/floats/booleans/chars/strings, `Byte` (true `u8`), control flow (`if/while/for/match`), functions/overloading, generics (monomorphization), `trait/impl`, structs, smart pointers, standard library `std::fmt` and `std::mem`**, and generates **object files** for native targets with **cross-compilation support**.
+A high-performance teaching/experimental language compiler using **Cranelift** as the backend.  
+Supports: **first-class integers/floats/booleans/chars/strings, `Byte` (true `u8`), control flow (`if/while/for/match`), functions/overloading, generics (monomorphization), `trait/impl`, structs, smart pointers, standard library `std::fmt` and `std::mem`**, and generates **object files** for native targets with **cross-compilation support**. Features **parallel processing**, **performance optimization**, and **modern CLI interface**.
 
 ---
 
@@ -12,6 +12,13 @@ Supports: **first-class integers/floats/booleans/chars/strings, `Byte` (true `u8
 * Rust (stable, `cargo` available)
 * Zig compiler (for cross-compilation linking)
 * Native target toolchain (for linking `.o` files to executables)
+
+### Performance Features
+
+* **Parallel Processing**: Uses Rayon for parallel compilation tasks
+* **Memory Optimization**: String interning, object pooling, and efficient data structures
+* **Build Profiles**: Optimized dev and release configurations
+* **Performance Monitoring**: Built-in timing and memory tracking
 
 ### Build
 
@@ -33,6 +40,12 @@ cargo run -- build dev --input paw/main.paw
 cargo run -- build dev --target x86_64-unknown-linux-gnu
 cargo run -- build release --target x86_64-pc-windows-gnu
 cargo run -- build dev --target x86_64-apple-darwin
+
+# List all supported targets
+cargo run -- --list-targets
+
+# Show help information
+cargo run -- --help
 ```
 
 ### Run Tests
@@ -55,7 +68,48 @@ cargo run -- build release --target x86_64-pc-windows-gnu
 cargo run -- build dev --target x86_64-apple-darwin
 ```
 
-> **Note**: The compiler automatically generates object files in the correct format (ELF for Linux, COFF for Windows, Mach-O for macOS) and links them using Zig for cross-compilation.
+> **Note**: The compiler automatically generates object files in the correct format (ELF for Linux, COFF for Windows, Mach-O for macOS) and links them using Zig for cross-compilation. Runtime libraries are automatically integrated into the final executable.
+
+### CLI Interface
+
+PawLang features a modern command-line interface with:
+
+* **Build Commands**: `build dev` and `build release` with optional target specification
+* **Target Management**: List supported platforms with `--list-targets`
+* **Progress Indicators**: Visual compilation progress with performance metrics
+* **Error Reporting**: Comprehensive error messages with source location information
+* **Quiet Mode**: `--quiet` flag for scripted usage
+
+---
+
+## Performance Features
+
+### Parallel Processing
+PawLang leverages Rayon for parallel compilation tasks, providing significant speedup for large projects:
+
+* **Parallel File Processing**: Multiple source files can be processed simultaneously
+* **Parallel Code Generation**: Object file generation can be parallelized
+* **Scalable Architecture**: Automatically adapts to available CPU cores
+
+### Memory Optimization
+Advanced memory management techniques for efficient compilation:
+
+* **String Interning**: Reduces memory usage by deduplicating identical strings
+* **Object Pooling**: Reuses expensive objects to reduce allocation overhead
+* **Efficient Data Structures**: Uses optimized collections and caching mechanisms
+
+### Build Profiles
+Optimized configurations for different use cases:
+
+* **Development Mode**: Fast compilation with debug information and incremental builds
+* **Release Mode**: Maximum optimization with LTO, single codegen unit, and panic=abort
+
+### Performance Monitoring
+Built-in tools for tracking compilation performance:
+
+* **Timing Metrics**: Automatic measurement of compilation phases
+* **Memory Tracking**: Monitor memory usage during compilation
+* **Progress Indicators**: Visual feedback with performance statistics
 
 ---
 
@@ -266,6 +320,23 @@ fn main() -> Int {
 
 ## Typical Output (Excerpt)
 
+### Compilation Output with Performance Metrics
+
+```
+Compiling =====>-------------- 25.0% 72992.7/s
+Compiling ==========>--------- 50.0% 5040.3/s
+Compiling ===============>---- 75.0% 149.2/s
+Compiling ==================== 100.0% 136.9/s
+Compiling completed in 0.03s
+[PERF] typecheck: 1ms
+[PERF] codegen: 7ms
+[paw-link] use runtime: D:\Projects\Rust\PawLang\runtime\target\x86_64-pc-windows-gnu\release\libruntime.a
+build debug [x86_64-pc-windows-gnu]  main.paw -> Paw.exe  (0.23s, 1.7 MB)
+[PERF] link: 202ms
+```
+
+### Program Execution Output
+
 ```
 [TEST] mem + fmt + syntax begin
 [casts]
@@ -368,6 +439,11 @@ true
   * Uses Cranelift for native object file generation (ELF, COFF, Mach-O)
   * Uses Zig as the cross-compilation linker
   * CLI module provides English error messages and help information
+* **Performance Optimization**:
+  * **Parallel Processing**: Rayon-based parallel compilation for large projects
+  * **Memory Efficiency**: String interning, object pooling, and optimized data structures
+  * **Build Profiles**: Separate dev and release configurations with appropriate optimizations
+  * **Performance Monitoring**: Built-in timing and memory usage tracking
 
 ---
 
@@ -391,6 +467,12 @@ A: Use the `--target` option: `pawc build dev --target x86_64-unknown-linux-gnu`
 **Q: What if I get linking errors?**  
 A: Ensure Zig is installed and in PATH. The compiler uses Zig for cross-compilation linking.
 
+**Q: How does parallel processing work?**  
+A: PawLang uses Rayon for parallel compilation tasks. For large projects with multiple files, parallel processing can significantly improve compilation speed.
+
+**Q: What performance optimizations are included?**  
+A: The compiler includes string interning, object pooling, memory-efficient data structures, and optimized build profiles for both development and release modes.
+
 ---
 
 ## Roadmap
@@ -403,3 +485,6 @@ A: Ensure Zig is installed and in PATH. The compiler uses Zig for cross-compilat
 * True generic smart pointer implementation (uses concrete type implementations)
 * Support for `aarch64-apple-darwin` with improved Cranelift support
 * Additional target platforms with expanded Cranelift support
+* Enhanced parallel processing for larger projects
+* Advanced performance profiling and optimization tools
+* Incremental compilation support

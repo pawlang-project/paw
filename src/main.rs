@@ -2,11 +2,12 @@
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
-use std::{env, process};
+use std::process;
 use std::time::Instant;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+// 性能监控宏在 performance 模块中定义
 
 mod project;
 mod frontend;
@@ -27,6 +28,7 @@ use project::{BuildProfile, Project};
 
 use crate::diag::{DiagSink, SourceMap, render_diagnostics_colored};
 use crate::cli::{ProgressBar, OutputFormatter};
+use crate::utils::parallel;
 
 /// 读取 entry 源码 -> 解析 -> 以工程根目录为搜索根展开 import -> impl 降解
 fn load_and_expand_program(entry: &Path, project_root: &Path, sm: &mut SourceMap, diags: &mut DiagSink) -> Result<Program> {
@@ -38,8 +40,8 @@ fn load_and_expand_program(entry: &Path, project_root: &Path, sm: &mut SourceMap
     let root = parser::parse_program_with_diags(&src, fid, &entry.display().to_string(), diags)
         .with_context(|| format!("parse `{}` failed", entry.display()))?;
 
-    // 展开 import（a::b::c -> <root>/a/b/c.paw）
-    let merged = passes::expand_imports_with_loader(&root, project_root, sm, diags)
+    // 使用并行版本展开 import（a::b::c -> <root>/a/b/c.paw）
+    let merged = parallel::expand_imports_parallel(&root, &[project_root.to_path_buf()], sm, diags)
         .context("expand imports failed")?;
 
     // 将 impl 方法降解为自由函数，便于后续类型检查/后端处理
@@ -56,14 +58,18 @@ fn load_and_expand_program(entry: &Path, project_root: &Path, sm: &mut SourceMap
 fn build_object(prog: &Program, file_id: &str, diag: Rc<RefCell<DiagSink>>, sm: &SourceMap, target: Option<&str>) -> Result<Vec<u8>> {
     // 先类型检查（错误写入 diag，同时返回 Err）
     {
+        perf_timer!("typecheck");
         // 注意作用域，确保可变借用在进入 codegen 前释放
         let mut d = diag.borrow_mut();
         let _ = typecheck_program(prog, file_id, &mut *d)?;
     }
 
     // 后端生成对象文件（带同一个 diag，用于 codegen 期错误）
-    let result = codegen::compile_program_for_target(prog, Some(diag), sm.file_names(), target);
-    result
+    {
+        perf_timer!("codegen");
+        let result = codegen::compile_program_for_target(prog, Some(diag), sm.file_names(), target);
+        result
+    }
 }
 
 fn main() -> Result<()> {
