@@ -1,4 +1,7 @@
 /target
-/pawrt/target/
+/runtime/target/
 /build/
 /paw/build/
+/paw/target/
+
+.idea/

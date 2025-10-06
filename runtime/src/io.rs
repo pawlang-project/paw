@@ -25,6 +25,9 @@ fn with_stderr<F: FnOnce(&mut BufWriter<io::Stderr>)>(f: F) {
  * --------------------------- */
 
 #[unsafe(no_mangle)]
+pub extern "C" fn print_u8(x: u8) { with_stdout(|w| { let _ = write!(w, "{x}"); }); }
+
+#[unsafe(no_mangle)]
 pub extern "C" fn print_i32(x: i32) { with_stdout(|w| { let _ = write!(w, "{x}"); }); }
 
 #[unsafe(no_mangle)]
@@ -51,7 +54,7 @@ pub extern "C" fn print_char(u: u32) {
     }
 }
 
-/// 打印 UTF-8 字符串（`ptr,len` 来自你生成的字符串常量或切片）
+/// 打印 UTF-8 字符串（指针须指向以 NUL 结尾的内存；由后端生成的字符串常量或切片）
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn print_str(s: *const c_char) {
     if !s.is_null() {

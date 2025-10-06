@@ -1,11 +1,8 @@
 mod io;
+mod mem;
 
-pub use io::{
-    print_i32, print_i64, print_f32, print_f64,
-    print_bool, print_char, print_str,
-    rt_println, rt_eprintln,
-    flush_stdout, flush_stderr, at_exit_flush,
-};
+pub use io::*;
+pub use mem::*;
 
 
 // Windows
