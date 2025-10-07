@@ -1,4 +1,4 @@
-// Paw v3 - 模式匹配示例
+// Paw - 模式匹配示例
 
 type Color = enum {
     Red
@@ -38,21 +38,20 @@ fn unwrap_or<T>(option: Option<T>, default: T) -> T {
 }
 
 fn main() -> int {
-    let red = Red
-    let green = Green
-    let rgb = RGB(100, 150, 200)
+    let red = Red;
+    let green = Green;
+    let rgb = RGB(100, 150, 200);
     
-    println(describe_color(red))
-    println(describe_color(rgb))
+    println(describe_color(red));
+    println(describe_color(rgb));
     
-    let total = get_value(red) + get_value(green) + get_value(rgb)
+    let total = get_value(red) + get_value(green) + get_value(rgb);
     
-    let some_value = Some(42)
-    let none_value: Option<int> = None
+    let some_value = Some(42);
+    let none_value: Option<int> = None;
     
-    println("Some: ${unwrap_or(some_value, 0)}")
-    println("None: ${unwrap_or(none_value, 99)}")
+    println("Some: ${unwrap_or(some_value, 0)}");
+    println("None: ${unwrap_or(none_value, 99)}");
     
-    total
+    total  // 返回值
 }
-
