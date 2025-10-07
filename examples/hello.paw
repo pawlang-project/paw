@@ -1,0 +1,12 @@
+// Paw v3 - Hello World 示例
+
+fn main() -> int {
+    let message = "Hello, Paw!"
+    println(message)
+    
+    let x = 42
+    let y = 58
+    println("$x + $y = ${x + y}")
+    
+    x + y
+}
