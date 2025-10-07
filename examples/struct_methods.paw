@@ -5,31 +5,31 @@ type Point = struct {
     y: float
     
     fn new(x: float, y: float) -> Self {
-        Point { x, y }
+        Point { x, y }  // 返回值
     }
     
     fn distance(self) -> float {
-        sqrt(self.x * self.x + self.y * self.y)
+        sqrt(self.x * self.x + self.y * self.y)  // 返回值
     }
     
     fn move(mut self, dx: float, dy: float) {
-        self.x += dx
-        self.y += dy
+        self.x += dx;  // 语句
+        self.y += dy;  // 语句
     }
     
     fn display(self) -> string {
-        "Point($self.x, $self.y)"
+        "Point($self.x, $self.y)"  // 返回值
     }
 }
 
 fn main() -> int {
-    let mut p = Point.new(3.0, 4.0)
+    let mut p = Point.new(3.0, 4.0);
     
-    println(p.display())
-    println("Distance from origin: ${p.distance()}")
+    println(p.display());
+    println("Distance from origin: ${p.distance()}");
     
-    p.move(1.0, 1.0)
-    println("After move: ${p.display()}")
+    p.move(1.0, 1.0);
+    println("After move: ${p.display()}");
     
-    0
+    0  // 返回值
 }

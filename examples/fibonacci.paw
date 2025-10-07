@@ -1,33 +1,38 @@
 // Paw - 斐波那契数列
 
 fn fib(n: int) -> int {
-    if n <= 1 { n }
-    else { fib(n - 1) + fib(n - 2) }
+    if n <= 1 {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
 }
 
 fn fib_iterative(n: int) -> int {
-    if n <= 1 { return n }
-    
-    let mut a = 0
-    let mut b = 1
-    
-    loop for i in 2..=n {
-        let temp = a + b
-        a = b
-        b = temp
+    if n <= 1 {
+        return n;
     }
     
-    b
+    let mut a = 0;
+    let mut b = 1;
+    
+    loop for i in 2..=n {
+        let temp = a + b;
+        a = b;
+        b = temp;
+    }
+    
+    b  // 返回值
 }
 
 fn main() -> int {
-    println("Fibonacci (recursive):")
+    println("Fibonacci (recursive):");
     loop for i in 0..10 {
-        println("fib($i) = ${fib(i)}")
+        println("fib($i) = ${fib(i)}");
     }
     
-    println("\nFibonacci (iterative):")
-    println("fib(20) = ${fib_iterative(20)}")
+    println("\nFibonacci (iterative):");
+    println("fib(20) = ${fib_iterative(20)}");
     
-    fib(10)
+    fib(10)  // 返回值
 }
