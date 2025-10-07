@@ -1,0 +1,44 @@
+// Paw v3 - 错误处理示例
+
+type Result<T, E> = enum {
+    Ok(T)
+    Err(E)
+}
+
+fn divide(a: int, b: int) -> Result<int, string> {
+    if b == 0 { Err("division by zero") }
+    else { Ok(a / b) }
+}
+
+fn safe_divide(a: int, b: int) -> int {
+    let result = divide(a, b) else { 0 }
+    result
+}
+
+fn calculate() -> Result<int, string> {
+    let x = divide(100, 10)?
+    let y = divide(x, 2)?
+    let z = divide(y, 0)?  // 这里会传播错�?
+    Ok(z)
+}
+
+fn process_result(result: Result<int, string>) -> string {
+    result is {
+        Ok(value) -> "Success: $value"
+        Err(e) -> "Error: $e"
+    }
+}
+
+fn main() -> int {
+    println("Safe divide 10/2: ${safe_divide(10, 2)}")
+    println("Safe divide 10/0: ${safe_divide(10, 0)}")
+    
+    let calc_result = calculate()
+    println(process_result(calc_result))
+    
+    let success = divide(20, 4)
+    println(process_result(success))
+    
+    0
+}
+

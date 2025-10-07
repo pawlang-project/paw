@@ -1,0 +1,35 @@
+// Paw - 结构体和方法示例
+
+type Point = struct {
+    x: float
+    y: float
+    
+    fn new(x: float, y: float) -> Self {
+        Point { x, y }
+    }
+    
+    fn distance(self) -> float {
+        sqrt(self.x * self.x + self.y * self.y)
+    }
+    
+    fn move(mut self, dx: float, dy: float) {
+        self.x += dx
+        self.y += dy
+    }
+    
+    fn display(self) -> string {
+        "Point($self.x, $self.y)"
+    }
+}
+
+fn main() -> int {
+    let mut p = Point.new(3.0, 4.0)
+    
+    println(p.display())
+    println("Distance from origin: ${p.distance()}")
+    
+    p.move(1.0, 1.0)
+    println("After move: ${p.display()}")
+    
+    0
+}
