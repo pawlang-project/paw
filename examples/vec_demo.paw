@@ -1,0 +1,8 @@
+// Vec<T> 演示
+
+fn main() -> i32 {
+    println("Vec<T> Demo - Coming in v0.2.1!");
+    println("泛型系统已完成，Vec<T> 实现中...");
+    return 0;
+}
+
