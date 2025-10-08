@@ -1,0 +1,22 @@
+// 字符串插值示例
+
+fn main() -> i32 {
+    let name: i32 = 42;
+    let x: i32 = 10;
+    let y: i32 = 20;
+    
+    // 🆕 简单插值：$var
+    let msg1 = "Value is $name";
+    
+    // 🆕 表达式插值：${expr}
+    let msg2 = "X equals ${x}";
+    
+    // 🆕 多个插值
+    let msg3 = "X=$x, Y=$y";
+    
+    // 🆕 混合文本和插值
+    let msg4 = "The sum of ${x} and ${y} is...";
+    
+    // 返回计算结果
+    return x + y + name;  // 10 + 20 + 42 = 72
+}

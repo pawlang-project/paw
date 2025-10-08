@@ -1,7 +1,29 @@
+//! CodeGen - C Code Generator
+//!
+//! This module generates C code from the Paw AST.
+//!
+//! Structure:
+//!   - CodeGen struct (lines 1-100)
+//!   - Declaration generation (lines 100-400)
+//!   - Statement generation (lines 400-600)
+//!   - Expression generation (lines 600-900)
+//!   - Helper functions (lines 900-1200)
+//!
+//! Features:
+//!   - Rust-style enum to C tagged union
+//!   - Method calls to function calls
+//!   - String interpolation
+//!   - Error propagation (?) operator
+//!   - Pattern matching (is expression)
+
 const std = @import("std");
 const ast = @import("ast.zig");
 
-/// C 代码生成器
+// ============================================================================
+// CodeGen Structure
+// ============================================================================
+
+/// C Code Generator
 pub const CodeGen = struct {
     allocator: std.mem.Allocator,
     output: std.ArrayList(u8),
@@ -13,9 +35,13 @@ pub const CodeGen = struct {
     enum_variants: std.StringHashMap([]const u8),
 
     pub fn init(allocator: std.mem.Allocator) CodeGen {
+        var output = std.ArrayList(u8).init(allocator);
+        // 🚀 Performance: Pre-allocate 64KB buffer to reduce reallocations
+        output.ensureTotalCapacity(64 * 1024) catch {};
+        
         return CodeGen{
             .allocator = allocator,
-            .output = std.ArrayList(u8).init(allocator),
+            .output = output,
             .var_types = std.StringHashMap([]const u8).init(allocator),
             .type_decls = std.StringHashMap(ast.TypeDecl).init(allocator),
             .enum_variants = std.StringHashMap([]const u8).init(allocator),
@@ -50,6 +76,7 @@ pub const CodeGen = struct {
         try self.output.appendSlice("#include <stdlib.h>\n");
         try self.output.appendSlice("#include <stdint.h>\n");
         try self.output.appendSlice("#include <stdbool.h>\n");
+        try self.output.appendSlice("#include <string.h>\n");  // 🆕 字符串插值需要
         try self.output.appendSlice("\n");
         
         // 第二遍：生成所有声明
@@ -60,6 +87,10 @@ pub const CodeGen = struct {
         
         return self.output.items;
     }
+    
+    // ============================================================================
+    // Declaration Generation
+    // ============================================================================
     
     fn generateDecl(self: *CodeGen, decl: ast.TopLevelDecl) !void {
             switch (decl) {
@@ -372,6 +403,10 @@ pub const CodeGen = struct {
         try self.output.appendSlice(";\n");
     }
     
+    // ============================================================================
+    // Statement Generation
+    // ============================================================================
+    
     fn generateStmt(self: *CodeGen, stmt: ast.Stmt) !void {
         switch (stmt) {
             .expr => |expr| {
@@ -413,7 +448,7 @@ pub const CodeGen = struct {
                         array_size = type_.array.size;
                         // 生成数组元素类型
                         try self.output.appendSlice(self.typeToC(type_.array.element.*));
-                    } else {
+                } else {
                         try self.output.appendSlice(self.typeToC(type_));
                         // 记录变量类型
                         if (type_ == .named) {
@@ -429,6 +464,12 @@ pub const CodeGen = struct {
                     } else if (init_expr == .struct_init) {
                         try self.output.appendSlice(init_expr.struct_init.type_name);
                         type_name = init_expr.struct_init.type_name;
+                    } else if (init_expr == .string_literal) {
+                        // 🆕 字符串字面量返回 char*
+                        try self.output.appendSlice("char*");
+                    } else if (init_expr == .string_interp) {
+                        // 🆕 字符串插值返回 char*
+                        try self.output.appendSlice("char*");
                     } else if (init_expr == .call and init_expr.call.callee.* == .identifier) {
                         // 🆕 检查是否是enum构造器调用
                         const callee_name = init_expr.call.callee.identifier;
@@ -454,7 +495,7 @@ pub const CodeGen = struct {
                 if (is_array) {
                     // 优先使用初始化表达式的大小
                     var actual_size = array_size;
-                    if (let.init) |init_expr| {
+                if (let.init) |init_expr| {
                         if (init_expr == .array_literal) {
                             actual_size = init_expr.array_literal.len;
                         }
@@ -634,6 +675,24 @@ pub const CodeGen = struct {
                             _ = try self.generateExpr(arg);
                         }
                         try self.output.appendSlice(")");
+                    } else if (std.mem.eql(u8, func_name, "println")) {
+                        // 🆕 内置函数 println
+                        try self.output.appendSlice("printf(\"%s\\n\", ");
+                        if (call.args.len > 0) {
+                            _ = try self.generateExpr(call.args[0]);
+                        } else {
+                            try self.output.appendSlice("\"\"");
+                        }
+                        try self.output.appendSlice(")");
+                    } else if (std.mem.eql(u8, func_name, "print")) {
+                        // 🆕 内置函数 print
+                        try self.output.appendSlice("printf(\"%s\", ");
+                        if (call.args.len > 0) {
+                            _ = try self.generateExpr(call.args[0]);
+                        } else {
+                            try self.output.appendSlice("\"\"");
+                        }
+                        try self.output.appendSlice(")");
                     } else {
                         // 普通函数调用
                         try self.output.appendSlice(func_name);
@@ -740,11 +799,77 @@ pub const CodeGen = struct {
                 _ = r;
                 try self.output.appendSlice("/* range expression */");
             },
+            // 🆕 字符串插值
+            .string_interp => |si| {
+                try self.generateStringInterpolation(si.parts);
+            },
+            // 🆕 错误传播 (expr?)
+            .try_expr => |inner| {
+                try self.generateTryExpr(inner.*);
+            },
             else => {
                 // 其他表达式暂时生成 0
                 try self.output.appendSlice("0");
             },
         }
+    }
+    
+    // 🆕 生成错误传播代码
+    // 策略：使用 statement expression 检查 Result，如果是 Err 则提前返回
+    fn generateTryExpr(self: *CodeGen, inner: ast.Expr) (std.mem.Allocator.Error)!void {
+        // 简化实现：假设 Result 类型是 enum
+        // Result<T, E> 有两个 variant：Ok(T) 和 Err(E)
+        
+        try self.output.appendSlice("({\n");
+        
+        // 评估内部表达式并存储到临时变量（暂时硬编码为 Result）
+        try self.output.appendSlice("    Result __try_result__ = ");
+        try self.generateExpr(inner);
+        try self.output.appendSlice(";\n");
+        
+        // 检查是否是 Err，如果是则提前返回
+        try self.output.appendSlice("    if (__try_result__.tag == Result_TAG_Err) {\n");
+        try self.output.appendSlice("        return __try_result__;\n");
+        try self.output.appendSlice("    }\n");
+        
+        // 返回 Ok 中的值
+        try self.output.appendSlice("    __try_result__.data.Ok_value;\n");
+        try self.output.appendSlice("})");
+    }
+    
+    // 🆕 生成字符串插值代码
+    // 策略：使用 sprintf 拼接字符串
+    fn generateStringInterpolation(self: *CodeGen, parts: []ast.StringInterpPart) (std.mem.Allocator.Error)!void {
+        // 简化实现：生成立即执行的代码块，返回拼接后的字符串
+        try self.output.appendSlice("({\n");
+        try self.output.appendSlice("    static char __str_buf__[1024];\n");
+        try self.output.appendSlice("    __str_buf__[0] = '\\0';\n");
+        
+        // 逐个拼接每个部分
+        for (parts) |part| {
+            switch (part) {
+                .literal => |lit| {
+                    if (lit.len > 0) {
+                        try self.output.appendSlice("    strcat(__str_buf__, \"");
+                        try self.output.appendSlice(lit);
+                        try self.output.appendSlice("\");\n");
+                    }
+                },
+                .expr => |expr| {
+                    // 将表达式转换为字符串并拼接
+                    try self.output.appendSlice("    {\n");
+                    try self.output.appendSlice("        char __tmp__[64];\n");
+                    try self.output.appendSlice("        sprintf(__tmp__, \"%d\", ");
+                    try self.generateExpr(expr);
+                    try self.output.appendSlice(");\n");
+                    try self.output.appendSlice("        strcat(__str_buf__, __tmp__);\n");
+                    try self.output.appendSlice("    }\n");
+                },
+            }
+        }
+        
+        try self.output.appendSlice("    __str_buf__;\n");
+        try self.output.appendSlice("})");
     }
     
     // 🆕 生成 loop iterator (loop i in collection)
@@ -802,7 +927,7 @@ pub const CodeGen = struct {
             try self.output.appendSlice("    for (int32_t ");
             try self.output.appendSlice(idx_var);
             const loop_cond = try std.fmt.allocPrint(
-                self.allocator, 
+            self.allocator,
                 " = 0; {s} < {d}; {s}++) {{\n", 
                 .{idx_var, array_lit.len, idx_var}
             );
@@ -1063,6 +1188,10 @@ pub const CodeGen = struct {
         }
     }
     
+    
+    // ============================================================================
+    // Helper Functions
+    // ============================================================================
     
     fn typeToC(self: *CodeGen, paw_type: ast.Type) []const u8 {
         return switch (paw_type) {

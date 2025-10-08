@@ -70,6 +70,7 @@ pub const TokenType = enum {
     and_and,     // &&
     or_or,       // ||
     bang,        // !
+    question,    // ? (错误传播)
     
     assign,      // =
     // 🆕 复合赋值操作符

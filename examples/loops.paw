@@ -1,6 +1,6 @@
 // Paw - 循环示例
 
-fn sum_to_n(n: i32) -> int {
+fn sum_to_n(n: i32) -> i32 {
     let mut sum = 0;
     let mut i = 1;
     
@@ -12,7 +12,7 @@ fn sum_to_n(n: i32) -> int {
     sum  // 返回值
 }
 
-fn factorial(n: i32) -> int {
+fn factorial(n: i32) -> i32 {
     let mut result = 1;
     
     loop i in 1..=n {
@@ -22,7 +22,7 @@ fn factorial(n: i32) -> int {
     result  // 返回值
 }
 
-fn find_first_even(numbers: [int]) -> int {
+fn find_first_even(numbers: [i32]) -> i32 {
     loop num in numbers {
         if num % 2 == 0 {
             return num;  // return 需要分号
@@ -31,7 +31,7 @@ fn find_first_even(numbers: [int]) -> int {
     0
 }
 
-fn count_down(from: i32) -> int {
+fn count_down(from: i32) -> i32 {
     let mut count = from;
     
     loop count > 0 {
@@ -43,7 +43,7 @@ fn count_down(from: i32) -> int {
     0
 }
 
-fn main() -> int {
+fn main() -> i32 {
     println("Sum 1 to 10: ${sum_to_n(10)}");
     println("Factorial 5: ${factorial(5)}");
     

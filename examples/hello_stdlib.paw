@@ -1,0 +1,9 @@
+// Hello World 使用标准库
+
+fn main() -> i32 {
+    // 使用内置的 println 函数
+    println("Hello, Paw!");
+    println("Welcome to Paw v0.1.0!");
+    
+    return 0;
+}

@@ -205,6 +205,10 @@ pub const TypeChecker = struct {
         }
     }
 
+    // ============================================================================
+    // Statement Checking
+    // ============================================================================
+    
     fn checkStmt(self: *TypeChecker, stmt: ast.Stmt, scope: *std.StringHashMap(ast.Type)) (std.mem.Allocator.Error || error{TypeCheckFailed})!void {
         switch (stmt) {
             .expr => |expr| {
@@ -348,6 +352,10 @@ pub const TypeChecker = struct {
         
         return false;
     }
+    
+    // ============================================================================
+    // Expression Checking
+    // ============================================================================
     
     fn checkExpr(self: *TypeChecker, expr: ast.Expr, scope: *std.StringHashMap(ast.Type)) (std.mem.Allocator.Error || error{TypeCheckFailed})!ast.Type {
         return switch (expr) {
@@ -647,6 +655,28 @@ pub const TypeChecker = struct {
                 
                 // 范围表达式的类型暂定为 void（实际上是迭代器）
                 break :blk ast.Type.void;
+            },
+            // 🆕 字符串插值
+            .string_interp => |si| blk: {
+                // 检查所有表达式部分的类型
+                for (si.parts) |part| {
+                    if (part == .expr) {
+                        _ = try self.checkExpr(part.expr, scope);
+                    }
+                }
+                // 字符串插值的结果类型是 string
+                break :blk ast.Type.string;
+            },
+            // 🆕 错误传播 (expr?)
+            .try_expr => |inner| blk: {
+                const inner_type = try self.checkExpr(inner.*, scope);
+                
+                // 检查是否是 Result 类型（简化：暂时不检查）
+                // TODO: 完整实现需要检查 inner_type 是 Result<T, E>
+                // 并返回 T，同时验证当前函数返回类型也是 Result
+                
+                // 暂时简化：返回 inner_type
+                break :blk inner_type;
             },
             .match_expr => |match| blk: {
                 _ = try self.checkExpr(match.value.*, scope);

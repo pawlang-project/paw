@@ -160,6 +160,18 @@ pub const Expr = union(enum) {
         end: *Expr,
         inclusive: bool,  // true = ..=, false = ..
     },
+    // 🆕 字符串插值
+    string_interp: struct {
+        parts: []StringInterpPart,
+    },
+    // 🆕 错误传播 (expr?)
+    try_expr: *Expr,
+};
+
+// 🆕 字符串插值的部分
+pub const StringInterpPart = union(enum) {
+    literal: []const u8,  // 字面量部分
+    expr: Expr,           // 表达式部分（$var 或 ${expr}）
 };
 
 pub const BinaryOp = enum {
