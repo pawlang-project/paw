@@ -1,0 +1,40 @@
+// Paw - 斐波那契数列
+
+// 递归版本
+fn fib(n: i32) -> i32 {
+    if n <= 1 {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
+}
+
+// 迭代版本
+fn fib_iterative(n: i32) -> i32 {
+    if n <= 1 {
+        return n;
+    }
+    
+    let mut a = 0;
+    let mut b = 1;
+    
+    loop i in 2..=n {
+        let temp = a + b;
+        a = b;
+        b = temp;
+    }
+    
+    b  // 返回值
+}
+
+fn main() -> i32 {
+    println("Fibonacci (recursive):");
+    loop i in 0..10 {
+        println("fib($i) = ${fib(i)}");
+    }
+    
+    println("\nFibonacci (iterative):");
+    println("fib(20) = ${fib_iterative(20)}");
+    
+    fib(10)  // 返回值
+}

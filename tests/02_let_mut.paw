@@ -1,0 +1,22 @@
+// 测试 2: let 和 mut 关键字
+
+fn test_mut() -> i32 {
+    let mut counter = 0;
+    counter += 10;
+    counter += 20;
+    counter
+}
+
+fn test_immutable() -> i32 {
+    let x = 42;
+    let y = 58;
+    x + y
+}
+
+fn main() -> i32 {
+    let r1 = test_mut();
+    let r2 = test_immutable();
+    r1 + r2
+}
+
+

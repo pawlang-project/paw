@@ -1,0 +1,25 @@
+// 测试 5: type 定义 struct（不带方法）
+
+type Point = struct {
+    x: i32
+    y: i32
+}
+
+type Rect = struct {
+    width: i32
+    height: i32
+}
+
+fn area(r: Rect) -> i32 {
+    r.width * r.height
+}
+
+fn main() -> i32 {
+    let p = Point { x: 10, y: 20 };
+    let r = Rect { width: 5, height: 8 };
+    
+    let a = area(r);
+    p.x + p.y + a
+}
+
+
