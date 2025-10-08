@@ -12,10 +12,15 @@ pub const Lexer = struct {
     column: usize,
 
     pub fn init(allocator: std.mem.Allocator, source: []const u8) Lexer {
+        var tokens = std.ArrayList(Token).init(allocator);
+        // 🚀 Performance: Pre-allocate token array (estimate ~1 token per 10 chars)
+        const estimated_tokens = source.len / 10 + 100;
+        tokens.ensureTotalCapacity(estimated_tokens) catch {};
+        
         return Lexer{
             .allocator = allocator,
             .source = source,
-            .tokens = std.ArrayList(Token).init(allocator),
+            .tokens = tokens,
             .start = 0,
             .current = 0,
             .line = 1,
@@ -105,6 +110,7 @@ pub const Lexer = struct {
                     try self.addToken(.bang);
                 }
             },
+            '?' => try self.addToken(.question),
             '=' => {
                 if (self.match('=')) {
                     try self.addToken(.eq);
@@ -168,7 +174,7 @@ pub const Lexer = struct {
                 } else if (isAlpha(c)) {
                     try self.identifier();
                 } else {
-                    std.debug.print("错误: 未知字符 '{c}' 在第 {d} 行第 {d} 列\n", .{ c, self.line, self.column });
+                    std.debug.print("Error: Unknown character '{c}' at line {d} column {d}\n", .{ c, self.line, self.column });
                 }
             },
         }
@@ -205,7 +211,7 @@ pub const Lexer = struct {
         }
 
         if (self.isAtEnd()) {
-            std.debug.print("错误: 未终止的字符串\n", .{});
+            std.debug.print("Error: Unterminated string\n", .{});
             return;
         }
 
@@ -223,7 +229,7 @@ pub const Lexer = struct {
         }
 
         if (self.isAtEnd()) {
-            std.debug.print("错误: 未终止的字符字面量\n", .{});
+            std.debug.print("Error: Unterminated character literal\n", .{});
             return;
         }
 

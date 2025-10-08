@@ -18,7 +18,7 @@ fn fib_iterative(n: i32) -> i32 {
     let mut a = 0;
     let mut b = 1;
     
-    loop for i in 2..=n {
+    loop i in 2..=n {
         let temp = a + b;
         a = b;
         b = temp;
@@ -29,7 +29,7 @@ fn fib_iterative(n: i32) -> i32 {
 
 fn main() -> i32 {
     println("Fibonacci (recursive):");
-    loop for i in 0..10 {
+    loop i in 0..10 {
         println("fib($i) = ${fib(i)}");
     }
     

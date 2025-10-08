@@ -57,11 +57,11 @@ pub const TccBackend = struct {
         
         if (has_tcc) {
             // 使用 TCC 编译
-            std.debug.print("🔧 使用 TinyCC 编译...\n", .{});
+            std.debug.print("🔧 Compiling with TinyCC...\n", .{});
             try self.compileWithTcc(temp_c_file, output_file);
         } else {
             // 回退到 GCC/Clang
-            std.debug.print("⚠️  未找到 TinyCC，使用系统 C 编译器...\n", .{});
+            std.debug.print("⚠️  TinyCC not found, using system C compiler...\n", .{});
             try self.compileWithSystemCompiler(temp_c_file, output_file);
         }
     }
@@ -87,11 +87,11 @@ pub const TccBackend = struct {
         defer self.allocator.free(result.stderr);
         
         if (result.term.Exited != 0) {
-            std.debug.print("❌ TCC 编译失败:\n{s}\n", .{result.stderr});
+            std.debug.print("❌ TCC compilation failed:\n{s}\n", .{result.stderr});
             return error.CompilationFailed;
         }
         
-        std.debug.print("✅ 编译成功: {s}\n", .{output_file});
+        std.debug.print("✅ Compilation successful: {s}\n", .{output_file});
     }
     
     /// 使用系统 C 编译器（GCC/Clang）
@@ -121,9 +121,9 @@ pub const TccBackend = struct {
                 self.allocator.free(clang_result.stderr);
                 compiler = "clang";
             } else |_| {
-                std.debug.print("❌ 未找到 C 编译器 (gcc/clang/tcc)\n", .{});
-                std.debug.print("💡 请安装以下任一编译器:\n", .{});
-                std.debug.print("   • TinyCC:  brew install tcc (推荐，快速)\n", .{});
+                std.debug.print("❌ C compiler not found (gcc/clang/tcc)\n", .{});
+                std.debug.print("💡 Please install one of the following compilers:\n", .{});
+                std.debug.print("   • TinyCC:  brew install tcc (recommended, fast)\n", .{});
                 std.debug.print("   • GCC:     brew install gcc\n", .{});
                 std.debug.print("   • Clang:   xcode-select --install\n", .{});
                 return error.NoCompilerFound;
@@ -145,14 +145,14 @@ pub const TccBackend = struct {
         defer self.allocator.free(compile_result.stderr);
         
         if (compile_result.term.Exited != 0) {
-            std.debug.print("❌ {s} 编译失败:\n{s}\n", .{ compiler, compile_result.stderr });
+            std.debug.print("❌ {s} compilation failed:\n{s}\n", .{ compiler, compile_result.stderr });
             return error.CompilationFailed;
         }
         
-        std.debug.print("✅ 编译成功 (使用 {s}): {s}\n", .{ compiler, output_file });
+        std.debug.print("✅ Compilation successful (using {s}): {s}\n", .{ compiler, output_file });
     }
     
-    /// 编译并运行（用于 REPL 或快速测试）
+    /// Compile and run (for REPL or quick testing)
     pub fn compileAndRun(
         self: *TccBackend,
         c_code: []const u8,
@@ -160,8 +160,8 @@ pub const TccBackend = struct {
         const temp_output = "temp_paw_output";
         try self.compile(c_code, temp_output);
         
-        // 运行程序
-        std.debug.print("\n🚀 运行程序:\n", .{});
+        // Run program
+        std.debug.print("\n🚀 Running program:\n", .{});
         std.debug.print("─────────────────────────────────────────\n", .{});
         
         // 使用绝对路径运行
@@ -184,7 +184,7 @@ pub const TccBackend = struct {
             std.debug.print("stderr: {s}", .{result.stderr});
         }
         std.debug.print("─────────────────────────────────────────\n", .{});
-        std.debug.print("退出码: {d}\n", .{result.term.Exited});
+        std.debug.print("Exit code: {d}\n", .{result.term.Exited});
         
         // 清理临时文件
         std.fs.cwd().deleteFile(temp_output) catch {};

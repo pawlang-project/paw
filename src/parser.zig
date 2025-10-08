@@ -1,7 +1,30 @@
+//! Parser - Paw Language Parser
+//! 
+//! This module implements the syntax analysis phase of the Paw compiler.
+//! It converts a stream of tokens into an Abstract Syntax Tree (AST).
+//!
+//! Structure:
+//!   - Parser struct (lines 1-100)
+//!   - Declaration parsing (lines 100-500)
+//!   - Statement parsing (lines 500-900)
+//!   - Expression parsing (lines 900-1500)
+//!   - Helper functions (lines 1500-1700)
+//!
+//! Features:
+//!   - Context-aware parsing (type table for generic disambiguation)
+//!   - Two-pass parsing (collect types, then parse)
+//!   - String interpolation support
+//!   - Error propagation (?) operator
+//!   - Pattern matching (is expression)
+
 const std = @import("std");
 const Token = @import("token.zig").Token;
 const TokenType = @import("token.zig").TokenType;
 const ast = @import("ast.zig");
+
+// ============================================================================
+// Parser Structure
+// ============================================================================
 
 pub const Parser = struct {
     allocator: std.mem.Allocator,
@@ -98,6 +121,10 @@ pub const Parser = struct {
         };
     }
 
+    // ============================================================================
+    // Declaration Parsing
+    // ============================================================================
+    
     fn parseTopLevelDecl(self: *Parser) !ast.TopLevelDecl {
         const is_public = self.match(.keyword_pub);
         
@@ -685,6 +712,10 @@ pub const Parser = struct {
         return try stmts.toOwnedSlice();
     }
 
+    // ============================================================================
+    // Statement Parsing
+    // ============================================================================
+    
     fn parseStmt(self: *Parser) (std.mem.Allocator.Error || error{UnexpectedToken,ExpectedType,ExpectedPattern,InvalidCharacter,Overflow})!ast.Stmt {
         if (self.match(.keyword_let)) {
             return try self.parseLetStmt();
@@ -868,6 +899,10 @@ pub const Parser = struct {
         };
     }
 
+    // ============================================================================
+    // Expression Parsing
+    // ============================================================================
+    
     fn parseExpr(self: *Parser) (std.mem.Allocator.Error || error{UnexpectedToken,ExpectedType,ExpectedPattern,InvalidCharacter,Overflow})!ast.Expr {
         return try self.parseIs();
     }
@@ -1226,6 +1261,12 @@ pub const Parser = struct {
                         .index = index_ptr,
                     },
                 };
+            } else if (self.match(.question)) {
+                // 🆕 错误传播 expr?
+                const inner_ptr = try self.allocator.create(ast.Expr);
+                inner_ptr.* = expr;
+                
+                expr = ast.Expr{ .try_expr = inner_ptr };
             } else {
                 break;
             }
@@ -1257,7 +1298,14 @@ pub const Parser = struct {
         
         if (self.check(.string_literal)) {
             const token = self.advance();
-            return ast.Expr{ .string_literal = token.lexeme[1 .. token.lexeme.len - 1] };
+            const str_content = token.lexeme[1 .. token.lexeme.len - 1];
+            
+            // 🆕 检查是否包含插值 $ 或 ${}
+            if (self.hasInterpolation(str_content)) {
+                return try self.parseStringInterpolation(str_content);
+            }
+            
+            return ast.Expr{ .string_literal = str_content };
         }
         
         if (self.check(.char_literal)) {
@@ -1504,6 +1552,10 @@ pub const Parser = struct {
         return false;
     }
 
+    // ============================================================================
+    // Helper Functions
+    // ============================================================================
+    
     fn check(self: *Parser, token_type: TokenType) bool {
         if (self.isAtEnd()) return false;
         return self.tokens[self.current].type == token_type;
@@ -1563,6 +1615,100 @@ pub const Parser = struct {
         if (name.len == 0) return false;
         const first_char = name[0];
         return first_char >= 'A' and first_char <= 'Z';
+    }
+    
+    // 🆕 检查字符串是否包含插值
+    fn hasInterpolation(self: *Parser, str: []const u8) bool {
+        _ = self;
+        for (str, 0..) |c, i| {
+            if (c == '$') {
+                // 确保不是转义的 \$
+                if (i == 0 or str[i - 1] != '\\') {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    // 🆕 检查字符是否是标识符字符
+    fn isIdentifierChar(self: *Parser, c: u8) bool {
+        _ = self;
+        return (c >= 'a' and c <= 'z') or 
+               (c >= 'A' and c <= 'Z') or 
+               (c >= '0' and c <= '9') or 
+               c == '_';
+    }
+    
+    // 🆕 解析字符串插值
+    fn parseStringInterpolation(self: *Parser, str: []const u8) !ast.Expr {
+        var parts = std.ArrayList(ast.StringInterpPart).init(self.allocator);
+        
+        var i: usize = 0;
+        var literal_start: usize = 0;
+        
+        while (i < str.len) {
+            if (str[i] == '$') {
+                // 添加之前的字面量部分
+                if (i > literal_start) {
+                    try parts.append(ast.StringInterpPart{
+                        .literal = str[literal_start..i],
+                    });
+                }
+                
+                i += 1; // 跳过 $
+                
+                if (i < str.len and str[i] == '{') {
+                    // ${expr} 形式
+                    i += 1; // 跳过 {
+                    const expr_start = i;
+                    
+                    // 找到匹配的 }
+                    var brace_count: i32 = 1;
+                    while (i < str.len and brace_count > 0) {
+                        if (str[i] == '{') brace_count += 1;
+                        if (str[i] == '}') brace_count -= 1;
+                        if (brace_count > 0) i += 1;
+                    }
+                    
+                    const expr_str = str[expr_start..i];
+                    i += 1; // 跳过 }
+                    
+                    // 解析表达式（简化：暂时只支持标识符）
+                    const expr = ast.Expr{ .identifier = expr_str };
+                    try parts.append(ast.StringInterpPart{ .expr = expr });
+                    
+                    literal_start = i;
+                } else {
+                    // $var 形式
+                    const var_start = i;
+                    while (i < str.len and (self.isIdentifierChar(str[i]))) {
+                        i += 1;
+                    }
+                    
+                    const var_name = str[var_start..i];
+                    const expr = ast.Expr{ .identifier = var_name };
+                    try parts.append(ast.StringInterpPart{ .expr = expr });
+                    
+                    literal_start = i;
+                }
+            } else {
+                i += 1;
+            }
+        }
+        
+        // 添加最后的字面量部分
+        if (literal_start < str.len) {
+            try parts.append(ast.StringInterpPart{
+                .literal = str[literal_start..],
+            });
+        }
+        
+        return ast.Expr{
+            .string_interp = .{
+                .parts = try parts.toOwnedSlice(),
+            },
+        };
     }
 
     fn consume(self: *Parser, token_type: TokenType) !Token {
