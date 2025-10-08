@@ -1,4 +1,4 @@
-// Paw v3 完整示例 - Web API + 数据�?
+// Paw v3 完整示例 - Web API + 数据库
 
 import http.{Server, Request, Response, Method}
 import db.Database
@@ -6,10 +6,10 @@ import json.Json
 
 // 用户类型
 type User = struct {
-    id: int
+    id: i32
     name: string
     email: string
-    age: int
+    age: i32
     
     fn validate(self) -> Result<(), string> {
         if self.name.is_empty() { 
@@ -34,7 +34,7 @@ type User = struct {
 // API 响应类型
 type ApiResponse<T> = enum {
     Success(T)
-    Error { code: int, message: string }
+    Error { code: i32, message: string }
     NotFound
     
     fn json(self) -> string {
@@ -48,208 +48,157 @@ type ApiResponse<T> = enum {
 
 // 数据库连接池
 type DbPool = struct {
-    pool: Database
+    db: Database
     
-    fn new(url: string) async -> Result<Self, string> {
-        let pool = Database.connect(url).await?
-        Ok(DbPool { pool })
+    fn new() async -> Result<Self, string> {
+        let db = await Database.connect("localhost:5432")?;
+        Ok(Self { db })
     }
     
-    fn query<T>(self, sql: string, params: [Value]) async -> Result<T, string> {
-        self.pool.execute(sql, params).await
-    }
-}
-
-// 用户服务
-type UserService = struct {
-    db: DbPool
-    
-    fn get_all(self) async -> Result<[User], string> {
-        self.db.query(
-            "SELECT * FROM users ORDER BY name",
-            []
-        ).await
+    fn get_by_id(self, id: i32) async -> Result<Option<User>, string> {
+        let query = "SELECT * FROM users WHERE id = ?";
+        await self.db.query_one(query, [id])
     }
     
-    fn get_by_id(self, id: int) async -> Result<Option<User>, string> {
-        let users: [User] = self.db.query(
-            "SELECT * FROM users WHERE id = ?",
-            [id as Value]
-        ).await?
-        
-        Ok(users.first())
+    fn create(self, user: User) async -> Result<User, string> {
+        user.validate()?;
+        let query = "INSERT INTO users (name, email, age) VALUES (?, ?, ?)";
+        await self.db.execute(query, [user.name, user.email, user.age])
     }
     
-    fn create(self, user: User) async -> Result<int, string> {
-        user.validate()?
-        
-        let result = self.db.query(
-            "INSERT INTO users (name, email, age) VALUES (?, ?, ?)",
-            [user.name as Value, user.email as Value, user.age as Value]
-        ).await?
-        
-        Ok(result.last_insert_id())
+    fn update(self, id: i32, user: User) async -> Result<(), string> {
+        user.validate()?;
+        let query = "UPDATE users SET name = ?, email = ?, age = ? WHERE id = ?";
+        await self.db.execute(query, [user.name, user.email, user.age, id])
     }
     
-    fn update(self, id: int, user: User) async -> Result<(), string> {
-        user.validate()?
-        
-        self.db.query(
-            "UPDATE users SET name = ?, email = ?, age = ? WHERE id = ?",
-            [user.name as Value, user.email as Value, user.age as Value, id as Value]
-        ).await?
-        
-        Ok(())
-    }
-    
-    fn delete(self, id: int) async -> Result<(), string> {
-        self.db.query(
-            "DELETE FROM users WHERE id = ?",
-            [id as Value]
-        ).await?
-        
-        Ok(())
+    fn delete(self, id: i32) async -> Result<(), string> {
+        let query = "DELETE FROM users WHERE id = ?";
+        await self.db.execute(query, [id])
     }
 }
 
-// HTTP 处理�?
-type Handler = struct {
-    service: UserService
+// API 处理器
+type UserHandler = struct {
+    pool: DbPool
     
     fn handle(self, req: Request) async -> Response {
-        let result = self.handle_internal(req).await
+        req.method is {
+            Method.GET -> self.get_user(req).await
+            Method.POST -> self.create_user(req).await
+            Method.PUT -> self.update_user(req).await
+            Method.DELETE -> self.delete_user(req).await
+            _ -> Response.method_not_allowed()
+        }
+    }
+    
+    fn get_user(self, req: Request) async -> Response {
+        let id = req.param("id")? as i32;
+        
+        let result = self.pool.get_by_id(id).await;
         
         result is {
-            Ok(response) -> response
-            Err(error) -> {
-                println("Error: $error")
-                Response.error(500, error)
-            }
+            Ok(Some(user)) -> Response.json(ApiResponse.Success(user))
+            Ok(None) -> Response.json(ApiResponse.NotFound)
+            Err(e) -> Response.json(ApiResponse.Error { 
+                code: 500, 
+                message: e 
+            })
         }
     }
     
-    fn handle_internal(self, req: Request) async -> Result<Response, string> {
-        (req.method(), req.path()) is {
-            (Method.GET, "/api/users") -> {
-                let users = self.service.get_all().await?
-                Ok(Response.json(ApiResponse.Success(users)))
-            }
-            
-            (Method.GET, path) if path.starts_with("/api/users/") -> {
-                let id = path.strip_prefix("/api/users/")
-                    else { return Err("Invalid path") }
-                
-                let id = id.parse::<int>()
-                    else { return Err("Invalid user ID") }
-                
-                let user = self.service.get_by_id(id).await?
-                
-                user is {
-                    Some(u) -> Ok(Response.json(ApiResponse.Success(u)))
-                    None -> Ok(Response.json(ApiResponse.NotFound))
-                }
-            }
-            
-            (Method.POST, "/api/users") -> {
-                let user: User = req.json().await?
-                let id = self.service.create(user).await?
-                Ok(Response.created(id))
-            }
-            
-            (Method.PUT, path) if path.starts_with("/api/users/") -> {
-                let id = path.strip_prefix("/api/users/")?.parse::<int>()?
-                let user: User = req.json().await?
-                self.service.update(id, user).await?
-                Ok(Response.ok())
-            }
-            
-            (Method.DELETE, path) if path.starts_with("/api/users/") -> {
-                let id = path.strip_prefix("/api/users/")?.parse::<int>()?
-                self.service.delete(id).await?
-                Ok(Response.no_content())
-            }
-            
-            _ -> Ok(Response.not_found())
+    fn create_user(self, req: Request) async -> Response {
+        let user: User = req.json()?;
+        
+        let result = self.pool.create(user).await;
+        
+        result is {
+            Ok(created) -> Response.json(ApiResponse.Success(created))
+            Err(e) -> Response.json(ApiResponse.Error { 
+                code: 400, 
+                message: e 
+            })
+        }
+    }
+    
+    fn update_user(self, req: Request) async -> Response {
+        let id = req.param("id")? as i32;
+        let user: User = req.json()?;
+        
+        let result = self.pool.update(id, user).await;
+        
+        result is {
+            Ok(_) -> Response.no_content()
+            Err(e) -> Response.json(ApiResponse.Error { 
+                code: 400, 
+                message: e 
+            })
+        }
+    }
+    
+    fn delete_user(self, req: Request) async -> Response {
+        let id = req.param("id")? as i32;
+        
+        let result = self.pool.delete(id).await;
+        
+        result is {
+            Ok(_) -> Response.no_content()
+            Err(e) -> Response.json(ApiResponse.Error { 
+                code: 500, 
+                message: e 
+            })
         }
     }
 }
 
-// 中间件：日志
-fn log_middleware(req: Request, next: fn(Request) async -> Response) async -> Response {
-    let start = Instant.now()
-    let method = req.method()
-    let path = req.path()
-    
-    println("-> $method $path")
-    
-    let response = next(req).await
-    
-    let duration = start.elapsed().as_millis()
-    let status = response.status()
-    
-    println("<- $status (${duration}ms)")
-    
-    response
-}
-
-// 主函�?
-fn main() async -> Result<(), string> {
-    println("🚀 Starting Paw API Server...")
-    
-    // 连接数据�?
-    let db = DbPool.new("postgresql://localhost/myapp").await?
-    println("�?Database connected")
-    
-    // 创建服务
-    let service = UserService { db }
-    let handler = Handler { service }
-    
-    // 配置服务�?
-    let server = Server.builder()
-        .bind("0.0.0.0:8080")?
-        .middleware(log_middleware)
-        .build()
-    
-    println("�?Server configured")
-    println("")
-    println("📝 Available endpoints:")
-    println("  GET    /api/users")
-    println("  GET    /api/users/:id")
-    println("  POST   /api/users")
-    println("  PUT    /api/users/:id")
-    println("  DELETE /api/users/:id")
-    println("")
-    println("🌐 Listening on http://localhost:8080")
-    println("Press Ctrl+C to stop")
-    
-    // 启动服务�?
-    server.serve(|req| handler.handle(req)).await
-}
-
-// 测试
-#[test]
-fn test_user_validation() {
-    let valid = User {
-        id: 1
-        name: "Alice"
-        email: "alice@example.com"
-        age: 30
+// 中间件
+type AuthMiddleware = struct {
+    fn check(req: Request) -> Result<(), Response> {
+        let token = req.header("Authorization")?;
+        
+        if token.starts_with("Bearer ") {
+            Ok(())
+        } else {
+            Err(Response.unauthorized())
+        }
     }
-    assert(valid.validate().is_ok())
-    
-    let invalid = User {
-        id: 2
-        name: ""
-        email: "invalid"
-        age: -5
+}
+
+type LogMiddleware = struct {
+    fn log(req: Request) {
+        println("${req.method} ${req.path} - ${req.ip()}");
     }
-    assert(invalid.validate().is_err())
 }
 
-#[test]
-fn test_api_response() async {
-    let response = ApiResponse.Success(42)
-    let json = response.json()
-    assert(json.contains("42"))
+// 主服务器
+fn main() async -> i32 {
+    println("🚀 Starting Paw Web Server...");
+    
+    // 初始化数据库连接池
+    let pool = DbPool.new().await else {
+        println("❌ Failed to connect to database");
+        return 1;
+    };
+    
+    println("✅ Database connected");
+    
+    // 创建处理器
+    let handler = UserHandler { pool };
+    
+    // 创建服务器
+    let mut server = Server.new("0.0.0.0:8080");
+    
+    // 注册路由
+    server
+        .use(LogMiddleware.log)
+        .use(AuthMiddleware.check)
+        .route("/users/:id", handler.handle)
+        .route("/users", handler.handle);
+    
+    println("🌐 Server running on http://0.0.0.0:8080");
+    
+    // 启动服务器
+    await server.run();
+    
+    0
 }
-

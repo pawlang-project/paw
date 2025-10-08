@@ -1,6 +1,7 @@
 // Paw - 斐波那契数列
 
-fn fib(n: int) -> int {
+// 递归版本
+fn fib(n: i32) -> i32 {
     if n <= 1 {
         n
     } else {
@@ -8,7 +9,8 @@ fn fib(n: int) -> int {
     }
 }
 
-fn fib_iterative(n: int) -> int {
+// 迭代版本
+fn fib_iterative(n: i32) -> i32 {
     if n <= 1 {
         return n;
     }
@@ -25,7 +27,7 @@ fn fib_iterative(n: int) -> int {
     b  // 返回值
 }
 
-fn main() -> int {
+fn main() -> i32 {
     println("Fibonacci (recursive):");
     loop for i in 0..10 {
         println("fib($i) = ${fib(i)}");

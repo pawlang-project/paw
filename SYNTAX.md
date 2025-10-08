@@ -266,18 +266,18 @@ loop {
     if should_stop { break }
 }
 
-// 带条件（用块）
-loop if condition {
+// 🆕 带条件（直接写条件，无需 if）
+loop condition {
     // 相当于 while
 }
 
 // 遍历集合
-loop for item in collection {
+loop item in collection {
     println(item)
 }
 
 // 带索引
-loop for (i, item) in collection.enumerate() {
+loop (i, item) in collection.enumerate() {
     println("$i: $item")
 }
 
@@ -287,7 +287,8 @@ let result = loop {
 }
 ```
 
-**统一性：** 只用 `loop`，通过组合实现不同循环模式
+**统一性：** 只用 `loop`，通过组合实现不同循环模式  
+**极简性：** `loop condition { }` 比 `loop condition { }` 更简洁！
 
 ---
 
@@ -437,7 +438,7 @@ type Point = struct {
 
 // 泛型约束
 fn print_all<T: Display>(items: [T]) {
-    loop for item in items {
+    loop item in items {
         println(item.display())
     }
 }
@@ -689,7 +690,7 @@ type Game = struct {
                 self.player.position.move(0, delta * 100)
                 
                 // 检查碰撞
-                loop for enemy in self.enemies {
+                loop enemy in self.enemies {
                     if self.player.position.distance(enemy.position) < 32 {
                         if self.player.take_damage(10) {
                             self.state = GameOver { score: self.player.score }
@@ -711,7 +712,7 @@ fn main() async -> Result<(), Error> {
     
     loop {
         // 处理输入
-        loop for event in window.poll_events() {
+        loop event in window.poll_events() {
             event is {
                 Quit -> break
                 KeyDown(key) -> handle_key(key, &mut game)
@@ -754,9 +755,9 @@ let x = value as Type      // 类型转换
 
 ### 3. 控制流统一
 ```paw
-loop { }                   // 循环
-loop if cond { }          // 条件循环
-loop for item in iter { } // 遍历
+loop { }                   // 无限循环
+loop cond { }              // 条件循环（🆕 简化！）
+loop item in iter { } // 遍历
 ```
 
 ### 4. 函数统一

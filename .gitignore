@@ -1,0 +1,32 @@
+.DS_Store
+.idea/
+
+# Zig 构建产物
+zig-out/
+zig-cache/
+.zig-cache/
+
+# 编译产物
+*.o
+*.out
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+
+# 临时文件
+temp*
+test_*.paw
+test_*.c
+output.c
+output
+
+# 备份文件
+*_old.zig
+*_backup.zig
+*.bak
+
+# 调试文件
+*.dSYM/
+

@@ -15,7 +15,7 @@ pub const Lexer = struct {
         return Lexer{
             .allocator = allocator,
             .source = source,
-            .tokens = .{},
+            .tokens = std.ArrayList(Token).init(allocator),
             .start = 0,
             .current = 0,
             .line = 1,
@@ -24,7 +24,7 @@ pub const Lexer = struct {
     }
 
     pub fn deinit(self: *Lexer) void {
-        self.tokens.deinit(self.allocator);
+        self.tokens.deinit();
     }
 
     pub fn tokenize(self: *Lexer) ![]Token {
@@ -36,7 +36,7 @@ pub const Lexer = struct {
             try self.scanToken();
         }
 
-        try self.tokens.append(self.allocator, Token.init(.eof, "", self.line, self.column));
+        try self.tokens.append(Token.init(.eof, "", self.line, self.column));
         return self.tokens.items;
     }
 
@@ -56,17 +56,48 @@ pub const Lexer = struct {
             ']' => try self.addToken(.rbracket),
             ',' => try self.addToken(.comma),
             ';' => try self.addToken(.semicolon),
-            '.' => try self.addToken(.dot),
-            '+' => try self.addToken(.plus),
+            '.' => {
+                // 🆕 检查 .. 和 ..=
+                if (self.match('.')) {
+                    if (self.match('=')) {
+                        try self.addToken(.dot_dot_eq);  // ..=
+                    } else {
+                        try self.addToken(.dot_dot);     // ..
+                    }
+                } else {
+                    try self.addToken(.dot);             // .
+                }
+            },
+            '+' => {
+                if (self.match('=')) {
+                    try self.addToken(.add_assign);
+                } else {
+                    try self.addToken(.plus);
+                }
+            },
             '-' => {
                 if (self.match('>')) {
                     try self.addToken(.arrow);
+                } else if (self.match('=')) {
+                    try self.addToken(.sub_assign);
                 } else {
                     try self.addToken(.minus);
                 }
             },
-            '*' => try self.addToken(.star),
-            '%' => try self.addToken(.percent),
+            '*' => {
+                if (self.match('=')) {
+                    try self.addToken(.mul_assign);
+                } else {
+                    try self.addToken(.star);
+                }
+            },
+            '%' => {
+                if (self.match('=')) {
+                    try self.addToken(.mod_assign);
+                } else {
+                    try self.addToken(.percent);
+                }
+            },
             '!' => {
                 if (self.match('=')) {
                     try self.addToken(.ne);
@@ -123,6 +154,8 @@ pub const Lexer = struct {
                 } else if (self.match('*')) {
                     // 多行注释
                     try self.blockComment();
+                } else if (self.match('=')) {
+                    try self.addToken(.div_assign);
                 } else {
                     try self.addToken(.slash);
                 }
@@ -228,33 +261,53 @@ pub const Lexer = struct {
     }
     
     fn getKeywordType(text: []const u8) ?TokenType {
+        // Paw 核心关键字 (19个) - 极简设计
         if (std.mem.eql(u8, text, "fn")) return .keyword_fn;
         if (std.mem.eql(u8, text, "let")) return .keyword_let;
-        if (std.mem.eql(u8, text, "if")) return .keyword_if;
-        if (std.mem.eql(u8, text, "else")) return .keyword_else;
-        if (std.mem.eql(u8, text, "while")) return .keyword_while;
-        if (std.mem.eql(u8, text, "for")) return .keyword_for;
-        if (std.mem.eql(u8, text, "match")) return .keyword_match;
-        if (std.mem.eql(u8, text, "return")) return .keyword_return;
-        if (std.mem.eql(u8, text, "break")) return .keyword_break;
-        if (std.mem.eql(u8, text, "continue")) return .keyword_continue;
-        if (std.mem.eql(u8, text, "struct")) return .keyword_struct;
-        if (std.mem.eql(u8, text, "enum")) return .keyword_enum;
-        if (std.mem.eql(u8, text, "trait")) return .keyword_trait;
-        if (std.mem.eql(u8, text, "impl")) return .keyword_impl;
+        if (std.mem.eql(u8, text, "type")) return .keyword_type;
         if (std.mem.eql(u8, text, "import")) return .keyword_import;
         if (std.mem.eql(u8, text, "pub")) return .keyword_pub;
+        if (std.mem.eql(u8, text, "if")) return .keyword_if;
+        if (std.mem.eql(u8, text, "else")) return .keyword_else;
+        if (std.mem.eql(u8, text, "loop")) return .keyword_loop;
+        if (std.mem.eql(u8, text, "break")) return .keyword_break;
+        if (std.mem.eql(u8, text, "return")) return .keyword_return;
+        if (std.mem.eql(u8, text, "is")) return .keyword_is;
+        if (std.mem.eql(u8, text, "as")) return .keyword_as;
+        if (std.mem.eql(u8, text, "async")) return .keyword_async;
+        if (std.mem.eql(u8, text, "await")) return .keyword_await;
+        if (std.mem.eql(u8, text, "self")) return .keyword_self;
+        if (std.mem.eql(u8, text, "Self")) return .keyword_Self;
+        if (std.mem.eql(u8, text, "mut")) return .keyword_mut;
         if (std.mem.eql(u8, text, "true")) return .keyword_true;
         if (std.mem.eql(u8, text, "false")) return .keyword_false;
-        if (std.mem.eql(u8, text, "Void")) return .type_void;
-        if (std.mem.eql(u8, text, "Bool")) return .type_bool;
-        if (std.mem.eql(u8, text, "Byte")) return .type_byte;
-        if (std.mem.eql(u8, text, "Char")) return .type_char;
-        if (std.mem.eql(u8, text, "Int")) return .type_int;
-        if (std.mem.eql(u8, text, "Long")) return .type_long;
-        if (std.mem.eql(u8, text, "Float")) return .type_float;
-        if (std.mem.eql(u8, text, "Double")) return .type_double;
-        if (std.mem.eql(u8, text, "String")) return .type_string;
+        if (std.mem.eql(u8, text, "in")) return .keyword_in;
+        
+        // 内置类型（Rust 风格，纯粹无别名）
+        // 有符号整数
+        if (std.mem.eql(u8, text, "i8")) return .type_i8;
+        if (std.mem.eql(u8, text, "i16")) return .type_i16;
+        if (std.mem.eql(u8, text, "i32")) return .type_i32;
+        if (std.mem.eql(u8, text, "i64")) return .type_i64;
+        if (std.mem.eql(u8, text, "i128")) return .type_i128;
+        
+        // 无符号整数
+        if (std.mem.eql(u8, text, "u8")) return .type_u8;
+        if (std.mem.eql(u8, text, "u16")) return .type_u16;
+        if (std.mem.eql(u8, text, "u32")) return .type_u32;
+        if (std.mem.eql(u8, text, "u64")) return .type_u64;
+        if (std.mem.eql(u8, text, "u128")) return .type_u128;
+        
+        // 浮点类型
+        if (std.mem.eql(u8, text, "f32")) return .type_f32;
+        if (std.mem.eql(u8, text, "f64")) return .type_f64;
+        
+        // 其他类型
+        if (std.mem.eql(u8, text, "bool")) return .type_bool;
+        if (std.mem.eql(u8, text, "char")) return .type_char;
+        if (std.mem.eql(u8, text, "string")) return .type_string;
+        if (std.mem.eql(u8, text, "void")) return .type_void;
+        
         return null;
     }
 
@@ -305,7 +358,7 @@ pub const Lexer = struct {
     fn addToken(self: *Lexer, token_type: TokenType) !void {
         const text = self.source[self.start..self.current];
         const token = Token.init(token_type, text, self.line, self.column);
-        try self.tokens.append(self.allocator, token);
+        try self.tokens.append(token);
     }
 };
 

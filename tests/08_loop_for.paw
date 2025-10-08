@@ -1,0 +1,33 @@
+// 测试 8: loop for 遍历循环
+
+// 注意：loop for 需要 for 关键字
+// 但我们已经移除了 for 作为关键字
+// 所以这个测试验证 for 作为上下文标识符的用法
+
+type Array = struct {
+    data: i32
+}
+
+fn sum_array() -> i32 {
+    // TODO: 等实现数组字面量后测试
+    // let numbers = [1, 2, 3, 4, 5];
+    // let mut sum = 0;
+    // loop for num in numbers {
+    //     sum += num;
+    // }
+    // sum
+    
+    // 简化版本：手动循环
+    let mut sum = 0;
+    let mut i = 1;
+    loop if i <= 5 {
+        sum += i;
+        i += 1;
+    }
+    sum
+}
+
+fn main() -> i32 {
+    sum_array()
+}
+

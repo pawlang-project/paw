@@ -1,6 +1,6 @@
 # Paw 语法速查卡
 
-> **一页纸掌握全部语法** - 仅 19 个关键字！
+> **一页纸掌握全部语法** - 19 关键字 + 18 类型！
 
 ---
 
@@ -14,113 +14,229 @@ self  Self  mut  true  false
 ```
 
 **说明：**
-- 模块由文件系统控制（无需 `mod`）
-- `import` 导入模块（语义更清晰）
+- 业界最少的关键字设计
+- 高度统一的语法原则
 - `mut` 前置（`let mut x`，`mut self`）
+
+---
+
+## 类型系统（18个精确类型）⭐
+
+### Rust 风格，无别名
+
+```
+整数（有符号）: i8, i16, i32, i64, i128
+整数（无符号）: u8, u16, u32, u64, u128
+浮点类型:       f32, f64
+其他:           bool, char, string, void
+```
+
+**默认类型：**
+- 整数字面量 → `i32`
+- 浮点字面量 → `f64`
 
 ---
 
 ## 快速语法
 
 ### 变量
+
 ```paw
-let x = 42               // 不可变
-let mut x = 42           // 可变（mut 前置）
-let x: int = 42          // 带类型
-let (a, b) = (1, 2)      // 解构
-let (mut a, b) = (1, 2)  // a 可变，b 不可变
+let x = 42               // i32（默认）
+let mut x = 42           // 可变
+let x: i64 = 42          // 显式类型
+let tiny: i8 = 127       // 8位
+let huge: i128 = 1000    // 128位
+let byte: u8 = 255       // 无符号
+let pi: f64 = 3.14       // 浮点
 ```
 
-### 类型
+### 类型定义
+
 ```paw
-type Point = struct {    // 结构体（私有）
-    x: float
-    y: float
+// 结构体
+type Point = struct {
+    x: f64
+    y: f64
     
-    fn new(x: float, y: float) -> Self {  // 方法直接在这里
+    fn new(x: f64, y: f64) -> Self {
         Point { x, y }
+    }
+    
+    fn distance(self) -> f64 {
+        sqrt(self.x * self.x + self.y * self.y)
     }
 }
 
-pub type Point = struct { // 公开结构体
-    pub x: float          // 公开字段
-    pub y: float
+// 公开结构体
+pub type Color = struct {
+    pub r: u8     // 0-255
+    pub g: u8
+    pub b: u8
+    pub a: u8
     
-    pub fn new() -> Self { }  // 公开方法
-    fn internal() { }         // 私有方法
+    pub fn new(r: u8, g: u8, b: u8) -> Self {
+        Color { r, g, b, a: 255 }
+    }
 }
 
-type Color = enum {      // 枚举
-    Red
-    Green
-    Blue
-    RGB(int, int, int)
+// 枚举
+type Option<T> = enum {
+    Some(T)
+    None
 }
 
-type Display = trait {   // trait
-    fn show(self) -> string
+type Result<T, E> = enum {
+    Ok(T)
+    Err(E)
 }
 
-type ID = int            // 类型别名
+// Trait
+type Display = trait {
+    fn display(self) -> string
+}
 ```
 
 ### 函数
+
 ```paw
-fn add(x: int, y: int) -> int = x + y        // 单行（私有）
-pub fn add(x: int, y: int) -> int = x + y    // 公开
-fn process(data: string) { println(data) }   // 多行
-fn generic<T>(item: T) -> T { item }         // 泛型
-fn fetch(url: string) async -> string { }    // 异步
+fn add(x: i32, y: i32) -> i32 {     // 基础
+    x + y
+}
+
+pub fn multiply(x: i64, y: i64) -> i64 {  // 公开
+    x * y
+}
+
+fn generic<T>(item: T) -> T {       // 泛型
+    item
+}
+
+fn fetch(url: string) async -> string {   // 异步
+    await http.get(url)
+}
 ```
 
 ### 方法参数
+
 ```paw
-fn read(self) -> int { }        // 不可变 self
-fn modify(mut self) { }         // 可变 self（mut 前置）
-fn consume(self) -> int { }     // 消耗 self
+fn read(self) -> i32 { }        // 不可变 self
+fn modify(mut self) { }         // 可变 self
+fn consume(self) -> i32 { }     // 消耗 self
 ```
 
 ### 控制流
+
 ```paw
 // if 表达式
-if x > 0 { "pos" } else { "neg" }
+let result = if x > 0 { "pos" } else { "neg" };
 
-// 模式匹配
-value is {
+// 模式匹配（is）
+let description = count is {
     0 -> "zero"
     1..10 -> "small"
     _ -> "large"
+};
+
+// 循环（统一用 loop）
+loop {                          // 无限循环
+    if should_break { break; }
 }
 
-// 循环（全用 loop）
-loop { break }                 // 无限
-loop if cond { }              // 条件
-loop for item in items { }    // 遍历
+loop count < 10 {            // 条件循环
+    count += 1;
+}
+
+loop item in items {        // 遍历循环
+    process(item);
+}
+```
+
+### 类型转换
+
+```paw
+let i: i32 = 42;
+let f = i as f64;               // i32 → f64
+let tiny = i as i8;             // i32 → i8
+let huge = i as i128;           // i32 → i128
+let unsigned = i as u32;        // i32 → u32
 ```
 
 ### 模块导入
+
 ```paw
-import user.User                    // 单个
-import std.collections.{Vec, HashMap} // 多个
-import std.io.*                     // 全部
-import database.DB as Database      // 别名
+import user.User                          // 单个
+import std.collections.{Vec, HashMap}     // 多个
+import std.io.*                           // 全部
+import database.DB as Database            // 别名
 ```
 
 ### 错误处理
+
 ```paw
-fn divide(a: int, b: int) -> Result<int, string> {
-    if b == 0 { Err("div by zero") }
-    else { Ok(a / b) }
+fn divide(a: i32, b: i32) -> Result<i32, string> {
+    if b == 0 { 
+        Err("division by zero") 
+    } else { 
+        Ok(a / b) 
+    }
 }
 
-let x = operation()?          // 传播错误
-let y = result else { 0 }     // 默认值
+let x = operation()?              // 传播错误
+let y = result else { 0 }         // 默认值
 ```
 
-### 借用
+---
+
+## 类型使用模式
+
+### 整数类型选择
+
 ```paw
-let borrowed = &data          // 不可变借用
-let mutable = &mut data       // 可变借用
+// 小范围（-128 to 127）
+let flags: i8 = 0;
+
+// 端口号（0 to 65535）
+let port: u16 = 8080;
+
+// 常规整数（默认）
+let count: i32 = 1000000;
+
+// 大整数
+let timestamp: i64 = 1234567890;
+
+// 超大整数（密码学、UUID）
+let hash: u128 = 123456789012345678901234567890;
+```
+
+### 网络编程
+
+```paw
+type IPv6Address = struct {
+    addr: u128    // IPv6 正好 128 位
+}
+
+type SocketAddr = struct {
+    ip: IPv6Address
+    port: u16
+}
+```
+
+### 图形编程
+
+```paw
+type Color = struct {
+    r: u8    // 0-255
+    g: u8
+    b: u8
+    a: u8
+}
+
+type Position = struct {
+    x: f32
+    y: f32
+    z: f32
+}
 ```
 
 ---
@@ -128,66 +244,78 @@ let mutable = &mut data       // 可变借用
 ## 常用模式
 
 ### Option 处理
+
 ```paw
-let value = option else { default }
-if value is Some(x) { import(x) }
+let value = option else { default };
+if value is Some(x) { process(x); }
+
+value is {
+    Some(x) -> use(x)
+    None -> default_value()
+}
 ```
 
 ### Result 处理
+
 ```paw
-let value = result?                    // 传播
-let value = result else { default }    // 默认
-result is {                            // 匹配
+let value = result?;                    // 传播
+let value = result else { default };    // 默认
+
+result is {
     Ok(v) -> v
     Err(e) -> handle(e)
 }
 ```
 
 ### 字符串插值
-```paw
-let name = "Alice"
-"Hello, $name!"                // 简单变量
-"2 + 2 = ${2 + 2}"            // 表达式
-```
 
-### 迭代器
 ```paw
-items.map(|x| x * 2)          // 转换
-items.filter(|x| x > 0)       // 过滤
-items.sum()                   // 聚合
-items.collect()               // 收集
+let name = "Alice";
+let age: i32 = 30;
+
+"Hello, $name!"                // 简单变量
+"Age: $age"                    // 整数
+"Sum: ${2 + 2}"               // 表达式
 ```
 
 ---
 
 ## 完整示例
 
-### HTTP API
+### HTTP API 服务器
+
 ```paw
 import http.{Server, Request, Response}
 
 type User = struct {
-    id: int
+    id: i32
     name: string
+    age: i32
     
     fn validate(self) -> Result<(), string> {
-        if self.name.is_empty() { Err("Name required") }
-        else { Ok(()) }
+        if self.name.is_empty() { 
+            Err("Name required") 
+        } else if self.age < 0 or self.age > 150 {
+            Err("Invalid age")
+        } else { 
+            Ok(()) 
+        }
     }
 }
 
 fn handle(req: Request) async -> Response {
-    req.path() is {
-        "/users" -> get_users().await
-        "/users/{id}" -> get_user(req.param("id")?).await
+    req.method is {
+        GET -> get_users().await
+        POST -> create_user(req).await
         _ -> Response.not_found()
     }
 }
 
-fn main() async -> Result<(), Error> {
-    let server = Server.bind("0.0.0.0:8080")?
-    println("Server running")
-    server.serve(handle).await
+fn main() async -> i32 {
+    let server = Server.bind("0.0.0.0:8080");
+    println("Server running on :8080");
+    await server.serve(handle);
+    0
 }
 ```
 
@@ -198,26 +326,20 @@ fn main() async -> Result<(), Error> {
 | 概念 | 语法 | 示例 |
 |------|------|------|
 | 不可变变量 | `let name = value` | `let x = 42` |
-| 可变变量 | `let mut name = value` | `let mut x = 0` |
-| 结构体 | `type Name = struct { }` | `type Point = struct { x: int }` |
-| 公开结构体 | `pub type Name = struct { }` | `pub type Point = struct { pub x: int }` |
+| 可变变量 | `let mut name = value` | `let mut x: i32 = 0` |
+| 结构体 | `type Name = struct { }` | `type Point = struct { x: f64 }` |
 | 枚举 | `type Name = enum { }` | `type Color = enum { Red, Blue }` |
 | Trait | `type Name = trait { }` | `type Show = trait { fn show(self) }` |
-| 公开函数 | `pub fn name() { }` | `pub fn api() -> int = 42` |
-| 函数 | `fn name() -> T { }` | `fn add(x: int) -> int = x + 1` |
-| 泛型 | `fn name<T>() { }` | `fn id<T>(x: T) -> T = x` |
+| 函数 | `fn name() -> T { }` | `fn add(x: i32) -> i32 { x + 1 }` |
+| 泛型 | `fn name<T>() { }` | `fn id<T>(x: T) -> T { x }` |
 | 异步 | `fn name() async { }` | `fn fetch() async -> string { }` |
 | 条件 | `if cond { } else { }` | `if x > 0 { 1 } else { 0 }` |
 | 匹配 | `value is { }` | `x is { 0 -> "zero", _ -> "other" }` |
-| 无限循环 | `loop { }` | `loop { if done { break } }` |
-| 条件循环 | `loop if cond { }` | `loop if x < 10 { x += 1 }` |
-| 遍历 | `loop for item in { }` | `loop for x in items { println(x) }` |
-| 导入 | `import path.Name` | `import std.collections.Vec` |
-| 多个导入 | `import path.{A, B}` | `import std.{io, fs}` |
-| 借用 | `&value` | `process(&data)` |
-| 可变借用 | `&mut value` | `modify(&mut data)` |
+| 无限循环 | `loop { }` | `loop { if done { break; } }` |
+| 条件循环 | `loop cond { }` | `loop x < 10 { x += 1; }` |
+| 遍历 | `loop item in { }` | `loop x in items { use(x); }` |
+| 类型转换 | `value as Type` | `42 as f64` |
 | 错误传播 | `expr?` | `let x = divide(10, 2)?` |
-| 类型转换 | `value as Type` | `42 as float` |
 
 ---
 
@@ -225,39 +347,31 @@ fn main() async -> Result<(), Error> {
 
 ### 3个统一原则
 
-1. **声明统一** - 用 `let` 和 `type`
+1. **声明统一** - `let` + `type`
    ```paw
    let x = value           // 变量
    type T = definition     // 类型
    ```
 
-2. **模式统一** - 用 `is`
+2. **模式统一** - `is`
    ```paw
    value is { patterns }   // 匹配
    if x is Pattern { }     // 判断
    ```
 
-3. **循环统一** - 用 `loop`
+3. **循环统一** - `loop`
    ```paw
-   loop { }                // 基础
-   loop if/for { }         // 扩展
+   loop { }                // 无限
+   loop cond { }           // 条件（🆕 简化！）
+   loop x in iter { }  // 遍历
    ```
 
-### mut 规则
-
-```paw
-let mut x = 5           // 变量可变（前置）
-let (mut a, b) = (1, 2) // 解构中的可变
-fn modify(mut self) { } // 方法参数（前置）
-```
-
-### 模块规则
+### 类型记忆
 
 ```
-文件即模块
-import 导入
-.paw 扩展名
-mod.paw 目录入口
+有符号整数: i + 位数 (i8, i32, i128)
+无符号整数: u + 位数 (u8, u32, u128)
+浮点类型:   f + 位数 (f32, f64)
 ```
 
 ---
@@ -265,86 +379,81 @@ mod.paw 目录入口
 ## 最小示例集
 
 ### 1. Hello World
+
 ```paw
-fn main() -> int {
-    println("Hello, World!")
+fn main() -> i32 {
+    println("Hello, World!");
     0
 }
 ```
 
-### 2. 函数和变量
-```paw
-fn double(x: int) -> int = x * 2
+### 2. 类型和函数
 
-fn main() -> int {
-    let x = 21
-    let result = double(x)
-    println("$x * 2 = $result")
+```paw
+fn double(x: i32) -> i32 {
+    x * 2
+}
+
+fn main() -> i32 {
+    let x: i32 = 21;
+    let result = double(x);
+    println("$x * 2 = $result");
     0
 }
 ```
 
 ### 3. 结构体和方法
+
 ```paw
 type Point = struct {
-    x: int
-    y: int
+    x: i32
+    y: i32
     
-    fn sum(self) -> int = self.x + self.y
+    fn sum(self) -> i32 {
+        self.x + self.y
+    }
 }
 
-fn main() -> int {
-    let p = Point { x: 10, y: 20 }
+fn main() -> i32 {
+    let p = Point { x: 10, y: 20 };
     p.sum()
 }
 ```
 
-### 4. 可变性
+### 4. 128位大数
+
 ```paw
-fn main() -> int {
-    let mut count = 0
+fn main() -> i32 {
+    let huge: i128 = 170141183460469231731687303715884105727;
+    let hash: u128 = 340282366920938463463374607431768211455;
     
-    loop if count < 10 {
-        count += 1
-    }
-    
-    count
-}
-```
-
-### 5. 模块导入
-```paw
-// math.paw
-pub fn add(x: int, y: int) -> int = x + y
-
-// main.paw
-import math.add
-
-fn main() -> int {
-    add(2, 3)
+    println("i128 max: $huge");
+    println("u128 max: $hash");
+    0
 }
 ```
 
 ---
 
-## 记住这些，你就掌握了 Paw！
+## 核心公式
 
-### 核心公式
 ```
+  19 关键字 + 18 类型 = 完整语言
+  
   let + type + import  = 所有声明
   is                   = 所有模式
   loop + if/for        = 所有循环
   fn + async           = 所有函数
-  mut self             = 可变方法
-  & + mut              = 所有借用
+  i8-i128, u8-u128     = 所有整数
 ```
 
 ### 学习路径
+
 ```
 第1天: let, type, fn, if, loop        ← 5个关键字
-第2天: is, as, import, &, ?           ← 5个概念
-第3天: async, await                   ← 异步
-第4天: pub, trait                     ← 高级特性
+第2天: is, as, import, i32, f64       ← 类型系统
+第3天: async, await, 错误处理          ← 异步
+第4天: pub, trait, 泛型               ← 高级特性
 第5天: 实战项目                        ← 整合应用
 
 总计: 5天入门，1周精通！ ⭐
@@ -353,3 +462,5 @@ fn main() -> int {
 ---
 
 **打印此页，贴在墙上！** 📄✨
+
+*Paw = Rust 类型 + 19 关键字 + 统一语法* 🐾
