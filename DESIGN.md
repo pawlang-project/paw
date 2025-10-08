@@ -42,8 +42,8 @@ if value is Pattern { } // 所有模式判�?
 ```paw
 // 只需记住 1 个关键字
 loop { }                // 无限循环
-loop cond { }           // 条件循环（🆕 简化！）
-loop item in { }    // 遍历循环
+loop if cond { }        // 条件循环
+loop for item in { }    // 遍历循环
 ```
 
 ---
@@ -110,11 +110,11 @@ user is {
     None -> println("No user")
 }
 
-loop condition {
+loop if condition {
     process()
 }
 
-loop item in items {
+loop for item in items {
     handle(item)
 }
 ```
@@ -231,14 +231,14 @@ type T = trait { }      // �?trait
 ```paw
 value is { }            // �?匹配表达�?
 if x is Pattern { }     // �?条件判断
-loop x is { }        // �?循环条件
+loop if x is { }        // �?循环条件
 ```
 
 **循环统一�?*
 ```paw
 loop { }                // �?基础循环
-loop cond { }        // �?扩展1
-loop item in { }    // �?扩展2
+loop if cond { }        // �?扩展1
+loop for item in { }    // �?扩展2
 ```
 
 ### 特�?3: 自然语言�?
@@ -250,7 +250,7 @@ age is {                    // "age is..."
     _ -> "adult"            // "otherwise -> adult"
 }
 
-loop count < 10 {        // "loop count less than 10"
+loop if count < 10 {        // "loop if count less than 10"
     count += 1
 }
 
@@ -443,7 +443,7 @@ value is {
 }
 
 // 5. 循环（只�?loop�?
-loop item in items {
+loop for item in items {
     println(item)
 }
 ```
