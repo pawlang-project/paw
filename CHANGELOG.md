@@ -2,6 +2,38 @@
 
 All notable changes to the Paw programming language will be documented in this file.
 
+## [0.1.1] - 2025-10-09
+
+### 🎉 重大更新：完整泛型系统
+
+#### 新增功能
+- ✅ **泛型函数**：支持单/多类型参数，自动类型推导
+  - `fn identity<T>(x: T) -> T { return x; }`
+  - `fn pair<A, B>(a: A, b: B) -> i32 { ... }`
+- ✅ **泛型结构体**：支持单/多类型参数，自动类型推导
+  - `type Box<T> = struct { value: T }`
+  - `type Pair<A, B> = struct { first: A, second: B }`
+- ✅ **类型推导引擎**：从表达式自动推导类型
+- ✅ **单态化机制**：零运行时开销的代码生成
+- ✅ **名称修饰**：`Box<i32>` → `Box_i32`, `Pair<i32, f64>` → `Pair_i32_f64`
+
+#### 标准库更新
+- ✅ 添加 `Vec<T>` 泛型结构体
+- ✅ 添加 `Box<T>` 泛型结构体
+
+#### 技术改进
+- ✅ 完整的泛型引擎 (`src/generics.zig`)
+- ✅ 泛型结构体单态化
+- ✅ 多类型参数支持（无数量限制）
+- ✅ 生产级代码质量
+
+#### 测试
+- ✅ 完整的泛型函数测试
+- ✅ 完整的泛型结构体测试
+- ✅ 多类型参数测试（2个、3个类型参数）
+
+---
+
 ## [0.1.0] - 2025-10-08
 
 ### 🎉 Initial Release - Production Ready!

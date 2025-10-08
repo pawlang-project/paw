@@ -5,7 +5,7 @@ const TypeChecker = @import("typechecker.zig").TypeChecker;
 const CodeGen = @import("codegen.zig").CodeGen;
 const TccBackend = @import("tcc_backend.zig").TccBackend;
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 
 // 🆕 check command: type checking only
 fn checkFile(allocator: std.mem.Allocator, source_file: []const u8) !void {
@@ -93,8 +93,9 @@ pub fn main() !void {
 
     // 🆕 Handle --version / -v
     if (std.mem.eql(u8, args[1], "--version") or std.mem.eql(u8, args[1], "-v")) {
-        std.debug.print("pawc 0.1.0\n", .{});
+        std.debug.print("pawc 0.1.1\n", .{});
         std.debug.print("Paw Programming Language Compiler\n", .{});
+        std.debug.print("Generics: Functions + Structs\n", .{});
         return;
     }
 
@@ -185,6 +186,8 @@ pub fn main() !void {
     defer parser.deinit();
     
     const ast = try parser.parse();
+    defer ast.deinit(allocator);
+    
     if (verbose) {
         const parse_time = std.time.nanoTimestamp();
         std.debug.print("[PERF] Parsing: {d}μs\n", .{@divTrunc(parse_time - start_time, 1000)});
@@ -260,7 +263,7 @@ pub fn main() !void {
 fn printUsage() void {
     std.debug.print("\n", .{});
     std.debug.print("╔═══════════════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║        pawc - Paw Language Compiler v0.1.0                   ║\n", .{});
+    std.debug.print("║        pawc - Paw Language Compiler v0.1.1                   ║\n", .{});
     std.debug.print("╚═══════════════════════════════════════════════════════════════╝\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Usage:\n", .{});

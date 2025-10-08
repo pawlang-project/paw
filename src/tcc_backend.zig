@@ -188,6 +188,8 @@ pub const TccBackend = struct {
         
         // 清理临时文件
         std.fs.cwd().deleteFile(temp_output) catch {};
-        std.fs.cwd().deleteFile(try std.fmt.allocPrint(self.allocator, "{s}.c", .{temp_output})) catch {};
+        const temp_c_output = try std.fmt.allocPrint(self.allocator, "{s}.c", .{temp_output});
+        defer self.allocator.free(temp_c_output);
+        std.fs.cwd().deleteFile(temp_c_output) catch {};
     }
 };

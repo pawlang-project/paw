@@ -1,9 +1,5 @@
 // Enum 错误处理示例
-
-type Result = enum {
-    Ok(i32)
-    Err(i32)
-}
+// Result 枚举已在标准库中定义
 
 fn divide(a: i32, b: i32) -> Result {
     let zero: i32 = 0;
@@ -13,8 +9,8 @@ fn divide(a: i32, b: i32) -> Result {
 }
 
 fn safe_calculate(a: i32, b: i32, c: i32) -> i32 {
-    let r1 = divide(a, b);
-    let r2 = divide(b, c);
+    let r1: Result = divide(a, b);
+    let r2: Result = divide(b, c);
     
     // 简化：直接返回0
     // TODO: 需要模式匹配来正确处理Result

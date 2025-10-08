@@ -110,6 +110,13 @@ pub const Expr = union(enum) {
         args: []Expr,
         type_args: []Type,
     },
+    // 🆕 静态方法调用：Type<T>::method()
+    static_method_call: struct {
+        type_name: []const u8,
+        type_args: []Type,
+        method_name: []const u8,
+        args: []Expr,
+    },
     field_access: struct {
         object: *Expr,
         field: []const u8,
@@ -166,6 +173,112 @@ pub const Expr = union(enum) {
     },
     // 🆕 错误传播 (expr?)
     try_expr: *Expr,
+    
+    /// 递归释放表达式及其子表达式
+    pub fn deinit(self: Expr, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .binary => |bin| {
+                bin.left.deinit(allocator);
+                allocator.destroy(bin.left);
+                bin.right.deinit(allocator);
+                allocator.destroy(bin.right);
+            },
+            .unary => |un| {
+                un.operand.deinit(allocator);
+                allocator.destroy(un.operand);
+            },
+            .call => |call| {
+                call.callee.deinit(allocator);
+                allocator.destroy(call.callee);
+                for (call.args) |arg| {
+                    arg.deinit(allocator);
+                }
+                allocator.free(call.args);
+                allocator.free(call.type_args);
+            },
+            .static_method_call => |smc| {
+                for (smc.args) |arg| {
+                    arg.deinit(allocator);
+                }
+                allocator.free(smc.args);
+                allocator.free(smc.type_args);
+            },
+            .field_access => |fa| {
+                fa.object.deinit(allocator);
+                allocator.destroy(fa.object);
+            },
+            .struct_init => |si| {
+                allocator.free(si.type_args);
+                allocator.free(si.fields);
+            },
+            .enum_variant => |ev| {
+                for (ev.args) |arg| {
+                    arg.deinit(allocator);
+                }
+                allocator.free(ev.args);
+            },
+            .block => |stmts| {
+                for (stmts) |stmt| {
+                    stmt.deinit(allocator);
+                }
+                allocator.free(stmts);
+            },
+            .if_expr => |ie| {
+                ie.condition.deinit(allocator);
+                allocator.destroy(ie.condition);
+                ie.then_branch.deinit(allocator);
+                allocator.destroy(ie.then_branch);
+                if (ie.else_branch) |eb| {
+                    eb.deinit(allocator);
+                    allocator.destroy(eb);
+                }
+            },
+            .is_expr => |is_e| {
+                is_e.value.deinit(allocator);
+                allocator.destroy(is_e.value);
+                allocator.free(is_e.arms);
+            },
+            .match_expr => |me| {
+                me.value.deinit(allocator);
+                allocator.destroy(me.value);
+                allocator.free(me.arms);
+            },
+            .as_expr => |ae| {
+                ae.value.deinit(allocator);
+                allocator.destroy(ae.value);
+            },
+            .await_expr => |ae| {
+                ae.deinit(allocator);
+                allocator.destroy(ae);
+            },
+            .array_literal => |arr| {
+                for (arr) |elem| {
+                    elem.deinit(allocator);
+                }
+                allocator.free(arr);
+            },
+            .array_index => |ai| {
+                ai.array.deinit(allocator);
+                allocator.destroy(ai.array);
+                ai.index.deinit(allocator);
+                allocator.destroy(ai.index);
+            },
+            .range => |rng| {
+                rng.start.deinit(allocator);
+                allocator.destroy(rng.start);
+                rng.end.deinit(allocator);
+                allocator.destroy(rng.end);
+            },
+            .string_interp => |si| {
+                allocator.free(si.parts);
+            },
+            .try_expr => |te| {
+                te.deinit(allocator);
+                allocator.destroy(te);
+            },
+            else => {}, // 字面量和标识符不需要释放
+        }
+    }
 };
 
 // 🆕 字符串插值的部分
@@ -270,6 +383,72 @@ pub const Stmt = union(enum) {
         step: ?Expr,
         body: []Stmt,
     },
+    
+    /// 释放语句及其子表达式
+    pub fn deinit(self: Stmt, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .expr => |expr| expr.deinit(allocator),
+            .let_decl => |ld| {
+                if (ld.init) |init| {
+                    init.deinit(allocator);
+                }
+            },
+            .assign => |assign| {
+                assign.target.deinit(allocator);
+                assign.value.deinit(allocator);
+            },
+            .compound_assign => |ca| {
+                ca.target.deinit(allocator);
+                ca.value.deinit(allocator);
+            },
+            .return_stmt => |ret| {
+                if (ret) |expr| {
+                    expr.deinit(allocator);
+                }
+            },
+            .break_stmt => |brk| {
+                if (brk) |expr| {
+                    expr.deinit(allocator);
+                }
+            },
+            .continue_stmt => {},
+            .loop_stmt => |loop| {
+                if (loop.condition) |cond| {
+                    cond.deinit(allocator);
+                }
+                if (loop.iterator) |iter| {
+                    iter.iterable.deinit(allocator);
+                }
+                for (loop.body) |stmt| {
+                    stmt.deinit(allocator);
+                }
+                allocator.free(loop.body);
+            },
+            .while_loop => |loop| {
+                loop.condition.deinit(allocator);
+                for (loop.body) |stmt| {
+                    stmt.deinit(allocator);
+                }
+                allocator.free(loop.body);
+            },
+            .for_loop => |loop| {
+                if (loop.init) |init| {
+                    init.deinit(allocator);
+                    allocator.destroy(init);
+                }
+                if (loop.condition) |cond| {
+                    cond.deinit(allocator);
+                }
+                if (loop.step) |step| {
+                    step.deinit(allocator);
+                }
+                for (loop.body) |stmt| {
+                    stmt.deinit(allocator);
+                }
+                allocator.free(loop.body);
+            },
+        }
+    }
 };
 
 // 新增：loop for 的迭代器
@@ -291,6 +470,15 @@ pub const FunctionDecl = struct {
     body: []Stmt,
     is_public: bool,
     is_async: bool,  // 新增：是否异步
+    
+    pub fn deinit(self: FunctionDecl, allocator: std.mem.Allocator) void {
+        allocator.free(self.type_params);
+        allocator.free(self.params);
+        for (self.body) |stmt| {
+            stmt.deinit(allocator);
+        }
+        allocator.free(self.body);
+    }
 };
 
 pub const StructDecl = struct {
@@ -366,6 +554,33 @@ pub const TypeDecl = struct {
     type_params: [][]const u8,
     kind: TypeDeclKind,
     is_public: bool,
+    
+    pub fn deinit(self: TypeDecl, allocator: std.mem.Allocator) void {
+        allocator.free(self.type_params);
+        switch (self.kind) {
+            .struct_type => |st| {
+                allocator.free(st.fields);
+                for (st.methods) |method| {
+                    method.deinit(allocator);
+                }
+                allocator.free(st.methods);
+            },
+            .enum_type => |et| {
+                // 释放每个变体的字段
+                for (et.variants) |variant| {
+                    allocator.free(variant.fields);
+                }
+                allocator.free(et.variants);
+                for (et.methods) |method| {
+                    method.deinit(allocator);
+                }
+                allocator.free(et.methods);
+            },
+            .trait_type => |tt| {
+                allocator.free(tt.methods);
+            },
+        }
+    }
 };
 
 pub const TopLevelDecl = union(enum) {
@@ -382,5 +597,17 @@ pub const TopLevelDecl = union(enum) {
 
 pub const Program = struct {
     declarations: []TopLevelDecl,
+    
+    pub fn deinit(self: Program, allocator: std.mem.Allocator) void {
+        // 递归释放所有声明
+        for (self.declarations) |decl| {
+            switch (decl) {
+                .function => |func| func.deinit(allocator),
+                .type_decl => |td| td.deinit(allocator),
+                else => {}, // 其他类型暂不处理
+            }
+        }
+        allocator.free(self.declarations);
+    }
 };
 
