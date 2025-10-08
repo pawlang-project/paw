@@ -1,0 +1,26 @@
+// Paw 泛型系统演示
+
+// 泛型 identity 函数
+fn identity<T>(x: T) -> T {
+    return x;
+}
+
+// 泛型 add 函数
+fn add<T>(a: T, b: T) -> T {
+    return a + b;
+}
+
+fn main() -> i32 {
+    // 测试 identity
+    let x = identity(42);
+    let y = identity(100);
+    
+    // 测试 add
+    let sum = add(10, 20);
+    
+    println("Paw Generic System Demo");
+    println("identity(42) + identity(100) = add(10, 20)");
+    
+    return sum;
+}
+

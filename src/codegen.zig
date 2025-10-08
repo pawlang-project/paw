@@ -18,6 +18,7 @@
 
 const std = @import("std");
 const ast = @import("ast.zig");
+const generics = @import("generics.zig");
 
 // ============================================================================
 // CodeGen Structure
@@ -33,6 +34,10 @@ pub const CodeGen = struct {
     type_decls: std.StringHashMap(ast.TypeDecl),
     // 🆕 enum variant表：variant名 -> enum类型名
     enum_variants: std.StringHashMap([]const u8),
+    // 🆕 泛型上下文
+    generic_context: generics.GenericContext,
+    // 🆕 函数表：函数名 -> FunctionDecl（用于泛型实例化）
+    function_table: std.StringHashMap(ast.FunctionDecl),
 
     pub fn init(allocator: std.mem.Allocator) CodeGen {
         var output = std.ArrayList(u8).init(allocator);
@@ -45,6 +50,8 @@ pub const CodeGen = struct {
             .var_types = std.StringHashMap([]const u8).init(allocator),
             .type_decls = std.StringHashMap(ast.TypeDecl).init(allocator),
             .enum_variants = std.StringHashMap([]const u8).init(allocator),
+            .generic_context = generics.GenericContext.init(allocator),
+            .function_table = std.StringHashMap(ast.FunctionDecl).init(allocator),
         };
     }
 
@@ -53,10 +60,12 @@ pub const CodeGen = struct {
         self.var_types.deinit();
         self.type_decls.deinit();
         self.enum_variants.deinit();
+        self.generic_context.deinit();
+        self.function_table.deinit();
     }
     
     pub fn generate(self: *CodeGen, program: ast.Program) ![]const u8 {
-        // 🆕 第一遍：收集类型定义和enum variants
+        // 🆕 第一遍：收集类型定义、函数和enum variants
         for (program.declarations) |decl| {
             if (decl == .type_decl) {
                 try self.type_decls.put(decl.type_decl.name, decl.type_decl);
@@ -68,8 +77,18 @@ pub const CodeGen = struct {
                         try self.enum_variants.put(variant.name, decl.type_decl.name);
                     }
                 }
+            } else if (decl == .function) {
+                // 🆕 收集函数定义（用于泛型实例化）
+                try self.function_table.put(decl.function.name, decl.function);
             }
         }
+        
+        // 🆕 设置泛型上下文的函数表引用
+        self.generic_context.function_table = &self.function_table;
+        
+        // 🆕 第二遍：收集所有泛型函数调用和泛型结构体实例
+        try self.generic_context.collectGenericCalls(program);
+        try self.collectGenericStructInstances(program);
         
         // 生成 C 代码头部
         try self.output.appendSlice("#include <stdio.h>\n");
@@ -78,12 +97,19 @@ pub const CodeGen = struct {
         try self.output.appendSlice("#include <stdbool.h>\n");
         try self.output.appendSlice("#include <string.h>\n");  // 🆕 字符串插值需要
         try self.output.appendSlice("\n");
+        try self.output.appendSlice("// 🆕 泛型函数前向声明\n");
         
-        // 第二遍：生成所有声明
+        // 🆕 第三遍：生成单态化函数的前向声明和泛型结构体定义
+        try self.generateMonomorphizedDeclarations();
+        
+        // 第四遍：生成所有声明
         for (program.declarations) |decl| {
             try self.generateDecl(decl);
             try self.output.appendSlice("\n");
         }
+        
+        // 🆕 第五遍：生成泛型实例化的函数实现
+        try self.generateMonomorphizedFunctions();
         
         return self.output.items;
     }
@@ -127,9 +153,8 @@ pub const CodeGen = struct {
         for (variant.fields, 0..) |vtype, i| {
             if (i > 0) try self.output.appendSlice(", ");
             try self.output.appendSlice(self.typeToC(vtype));
-            const param_name = try std.fmt.allocPrint(self.allocator, " arg{d}", .{i});
-            defer self.allocator.free(param_name);
-            try self.output.appendSlice(param_name);
+            try self.output.appendSlice(" arg");
+            try self.output.writer().print("{d}", .{i});
         }
         
         try self.output.appendSlice(") {\n");
@@ -152,13 +177,7 @@ pub const CodeGen = struct {
                 for (0..variant.fields.len) |i| {
                     try self.output.appendSlice("    result.data.");
                     try self.output.appendSlice(variant.name);
-                    const field_assign = try std.fmt.allocPrint(
-                        self.allocator,
-                        "_value.field{d} = arg{d};\n",
-                        .{i, i}
-                    );
-                    defer self.allocator.free(field_assign);
-                    try self.output.appendSlice(field_assign);
+                    try self.output.writer().print("_value.field{d} = arg{d};\n", .{i, i});
                 }
             }
         }
@@ -236,6 +255,12 @@ pub const CodeGen = struct {
     }
 
     fn generateFunction(self: *CodeGen, func: ast.FunctionDecl) !void {
+        // 🆕 跳过泛型函数（需要实例化后才能生成）
+        if (func.type_params.len > 0) {
+            // 泛型函数：跳过，等待实例化
+            return;
+        }
+        
         // 生成函数签名
         try self.output.appendSlice(self.typeToC(func.return_type));
         try self.output.appendSlice(" ");
@@ -263,6 +288,11 @@ pub const CodeGen = struct {
     fn generateTypeDecl(self: *CodeGen, type_decl: ast.TypeDecl) !void {
         switch (type_decl.kind) {
             .struct_type => |st| {
+                // 🆕 如果是泛型结构体，跳过（等待单态化）
+                if (type_decl.type_params.len > 0) {
+                    return;
+                }
+                
                 // 🆕 先声明 struct 类型
                 try self.output.appendSlice("typedef struct ");
                 try self.output.appendSlice(type_decl.name);
@@ -341,9 +371,8 @@ pub const CodeGen = struct {
                                 for (variant.fields, 0..) |vtype, j| {
                                     if (j > 0) try self.output.appendSlice("; ");
                                     try self.output.appendSlice(self.typeToC(vtype));
-                                    const field_name = try std.fmt.allocPrint(self.allocator, " field{d}", .{j});
-                                    defer self.allocator.free(field_name);
-                                    try self.output.appendSlice(field_name);
+                                    try self.output.appendSlice(" field");
+                                    try self.output.writer().print("{d}", .{j});
                                 }
                                 try self.output.appendSlice("; } ");
                                 try self.output.appendSlice(variant.name);
@@ -462,8 +491,34 @@ pub const CodeGen = struct {
                         array_size = init_expr.array_literal.len;
                         try self.output.appendSlice("int32_t");
                     } else if (init_expr == .struct_init) {
-                        try self.output.appendSlice(init_expr.struct_init.type_name);
-                        type_name = init_expr.struct_init.type_name;
+                        // 🆕 检查是否是泛型结构体实例化
+                        const si = init_expr.struct_init;
+                        const actual_name = blk: {
+                            if (self.type_decls.get(si.type_name)) |type_decl| {
+                                if (type_decl.type_params.len > 0) {
+                                    // 是泛型结构体，需要推导类型参数
+                                    var type_args = std.ArrayList(ast.Type).init(self.allocator);
+                                    defer type_args.deinit();
+                                    
+                                    // 🆕 从所有字段值推导类型（支持多类型参数）
+                                    for (si.fields) |field| {
+                                        const arg_type = self.inferExprType(field.value);
+                                        try type_args.append(arg_type);
+                                    }
+                                    
+                                    // 获取修饰后的名称
+                                    const mangled = try self.generic_context.monomorphizer.recordStructInstance(
+                                        si.type_name,
+                                        try type_args.toOwnedSlice(),
+                                    );
+                                    break :blk mangled;
+                                }
+                            }
+                            break :blk si.type_name;
+                        };
+                        
+                        try self.output.appendSlice(actual_name);
+                        type_name = actual_name;
                     } else if (init_expr == .string_literal) {
                         // 🆕 字符串字面量返回 char*
                         try self.output.appendSlice("char*");
@@ -502,9 +557,7 @@ pub const CodeGen = struct {
                     }
                     
                     if (actual_size) |size| {
-                        const size_str = try std.fmt.allocPrint(self.allocator, "[{d}]", .{size});
-                        defer self.allocator.free(size_str);
-                        try self.output.appendSlice(size_str);
+                        try self.output.writer().print("[{d}]", .{size});
                     } else {
                         // 动态大小数组，使用指针
                         try self.output.appendSlice("*");
@@ -693,9 +746,52 @@ pub const CodeGen = struct {
                             try self.output.appendSlice("\"\"");
                         }
                         try self.output.appendSlice(")");
+                    } else if (std.mem.eql(u8, func_name, "eprintln")) {
+                        // 🆕 内置函数 eprintln
+                        try self.output.appendSlice("fprintf(stderr, \"%s\\n\", ");
+                        if (call.args.len > 0) {
+                            _ = try self.generateExpr(call.args[0]);
+                        } else {
+                            try self.output.appendSlice("\"\"");
+                        }
+                        try self.output.appendSlice(")");
+                    } else if (std.mem.eql(u8, func_name, "eprint")) {
+                        // 🆕 内置函数 eprint
+                        try self.output.appendSlice("fprintf(stderr, \"%s\", ");
+                        if (call.args.len > 0) {
+                            _ = try self.generateExpr(call.args[0]);
+                        } else {
+                            try self.output.appendSlice("\"\"");
+                        }
+                        try self.output.appendSlice(")");
                     } else {
-                        // 普通函数调用
-                        try self.output.appendSlice(func_name);
+                        // 普通函数调用（可能是泛型）
+                        // 🆕 检查是否是泛型函数
+                        const actual_func_name = blk: {
+                            if (self.function_table.get(func_name)) |func| {
+                                if (func.type_params.len > 0) {
+                                    // 泛型函数：收集参数类型并获取修饰后的名称
+                                    var arg_types = std.ArrayList(ast.Type).init(self.allocator);
+                                    defer arg_types.deinit();
+                                    
+                                    // 🆕 从实际参数推导类型
+                                    for (call.args) |arg| {
+                                        const arg_type = self.inferExprType(arg);
+                                        try arg_types.append(arg_type);
+                                    }
+                                    
+                                    const mangled = self.generic_context.inferGenericInstance(
+                                        func_name,
+                                        try arg_types.toOwnedSlice(),
+                                    ) catch func_name;
+                                    
+                                    break :blk mangled;
+                                }
+                            }
+                            break :blk func_name;
+                        };
+                        
+                        try self.output.appendSlice(actual_func_name);
                         try self.output.appendSlice("(");
                         for (call.args, 0..) |arg, i| {
                             if (i > 0) try self.output.appendSlice(", ");
@@ -713,6 +809,30 @@ pub const CodeGen = struct {
                     }
                     try self.output.appendSlice(")");
                 }
+            },
+            .static_method_call => |smc| {
+                // 🆕 静态方法调用：Type<T>::method()
+                // 生成修饰后的函数名：Type_T_method
+                try self.output.appendSlice(smc.type_name);
+                for (smc.type_args) |type_arg| {
+                    try self.output.appendSlice("_");
+                    // 简化类型名
+                    switch (type_arg) {
+                        .i32 => try self.output.appendSlice("i32"),
+                        .i64 => try self.output.appendSlice("i64"),
+                        .f64 => try self.output.appendSlice("f64"),
+                        .named => |n| try self.output.appendSlice(n),
+                        else => try self.output.appendSlice("T"),
+                    }
+                }
+                try self.output.appendSlice("_");
+                try self.output.appendSlice(smc.method_name);
+                try self.output.appendSlice("(");
+                for (smc.args, 0..) |arg, i| {
+                    if (i > 0) try self.output.appendSlice(", ");
+                    _ = try self.generateExpr(arg);
+                }
+                try self.output.appendSlice(")");
             },
             .field_access => |field| {
                 // 🆕 检查对象是否是 self（需要用 -> 而不是 .）
@@ -743,8 +863,53 @@ pub const CodeGen = struct {
             },
             .struct_init => |si| {
                 // 🆕 生成 struct 初始化
+                // 检查是否是泛型结构体实例化
+                const actual_name = blk: {
+                    if (self.type_decls.get(si.type_name)) |type_decl| {
+                        if (type_decl.type_params.len > 0) {
+                            // 是泛型结构体，需要推导类型参数
+                            var type_args = std.ArrayList(ast.Type).init(self.allocator);
+                            defer type_args.deinit();
+                            
+                            // 🆕 只从泛型类型参数对应的字段推导类型
+                            for (type_decl.kind.struct_type.fields, 0..) |struct_field, idx| {
+                                // 检查字段类型是否是泛型参数（T, U, A, B）
+                                const is_generic_param = blk2: {
+                                    if (struct_field.type == .generic) {
+                                        break :blk2 true;
+                                    } else if (struct_field.type == .named) {
+                                        // 检查这个名称是否在 type_params 中
+                                        for (type_decl.type_params) |param_name| {
+                                            if (std.mem.eql(u8, param_name, struct_field.type.named)) {
+                                                break :blk2 true;
+                                            }
+                                        }
+                                    }
+                                    break :blk2 false;
+                                };
+                                
+                                if (is_generic_param) {
+                                    // 这是一个泛型字段，从对应的初始化值推导类型
+                                    if (idx < si.fields.len) {
+                                        const arg_type = self.inferExprType(si.fields[idx].value);
+                                        try type_args.append(arg_type);
+                                    }
+                                }
+                            }
+                            
+                            // 记录泛型结构体实例化
+                            const mangled = try self.generic_context.monomorphizer.recordStructInstance(
+                                si.type_name,
+                                try type_args.toOwnedSlice(),
+                            );
+                            break :blk mangled;
+                        }
+                    }
+                    break :blk si.type_name;
+                };
+                
                 try self.output.appendSlice("(");
-                try self.output.appendSlice(si.type_name);
+                try self.output.appendSlice(actual_name);
                 try self.output.appendSlice("){");
                 for (si.fields, 0..) |field, i| {
                     if (i > 0) try self.output.appendSlice(", ");
@@ -889,7 +1054,7 @@ pub const CodeGen = struct {
             if (range.inclusive) {
                 // ..= (包含结束)
                 try self.output.appendSlice(" <= ");
-            } else {
+                } else {
                 // .. (不包含结束)
                 try self.output.appendSlice(" < ");
             }
@@ -900,9 +1065,9 @@ pub const CodeGen = struct {
             try self.output.appendSlice("++) {\n");
             
             for (body) |stmt| {
-                try self.generateStmt(stmt);
-            }
-            
+                    try self.generateStmt(stmt);
+                }
+                
             try self.output.appendSlice("}\n");
         } else if (iter.iterable == .array_literal) {
             // 🆕 数组字面量遍历：loop item in [1, 2, 3] { }
@@ -995,7 +1160,7 @@ pub const CodeGen = struct {
             
             try self.output.appendSlice("    }\n");
             try self.output.appendSlice("}\n");
-        } else {
+                } else {
             // 其他类型的集合（TODO）
             try self.output.appendSlice("// TODO: unsupported iterator type\n");
             try self.output.appendSlice("for (;;) { break; }\n");
@@ -1211,7 +1376,7 @@ pub const CodeGen = struct {
             .char => "char",
             .string => "char*",
             .void => "void",
-            .generic => "void*",
+            .generic => |name| name,  // 🆕 泛型类型：直接使用类型参数名（T, U, etc）
             .named => |name| name,
             .pointer => |ptr| {
                 // TODO: 处理指针类型
@@ -1267,8 +1432,8 @@ pub const CodeGen = struct {
     fn unaryOpToC(self: *CodeGen, op: ast.UnaryOp) []const u8 {
         _ = self;
         return switch (op) {
-            .neg => "-",
-            .not => "!",
+                    .neg => "-",
+                    .not => "!",
         };
     }
     
@@ -1282,5 +1447,318 @@ pub const CodeGen = struct {
             .div_assign => "/=",
             .mod_assign => "%=",
         };
+    }
+
+    // ============================================================================
+    // 🆕 类型推导辅助函数
+    // ============================================================================
+    
+    /// 从表达式推导类型
+    fn inferExprType(self: *CodeGen, expr: ast.Expr) ast.Type {
+        return switch (expr) {
+            .int_literal => ast.Type.i32,
+            .float_literal => ast.Type.f64,
+            .string_literal => ast.Type.string,
+            .char_literal => ast.Type.char,
+            .bool_literal => ast.Type.bool,
+            .identifier => |name| blk: {
+                // 查询变量类型
+                if (self.var_types.get(name)) |type_name| {
+                    break :blk ast.Type{ .named = type_name };
+                }
+                break :blk ast.Type.i32;  // 默认
+            },
+            .call => ast.Type.i32,  // 简化：函数调用返回 i32
+            .binary => ast.Type.i32,
+            .unary => |un| self.inferExprType(un.operand.*),
+            .field_access => ast.Type.i32,
+            .array_index => ast.Type.i32,
+            .struct_init => |si| ast.Type{ .named = si.type_name },
+            .array_literal => ast.Type.i32,  // 简化：数组返回 i32
+            else => ast.Type.i32,
+        };
+    }
+
+    // ============================================================================
+    // 🆕 泛型单态化函数生成
+    // ============================================================================
+
+    /// 生成单态化函数的前向声明
+    fn generateMonomorphizedDeclarations(self: *CodeGen) !void {
+        // 🆕 1. 生成泛型结构体定义
+        const struct_instances = self.generic_context.monomorphizer.struct_instances.items;
+        for (struct_instances) |instance| {
+            if (self.type_decls.get(instance.generic_name)) |type_decl| {
+                if (type_decl.kind == .struct_type) {
+                    const st = type_decl.kind.struct_type;
+                    
+                    // 生成 typedef struct
+                    try self.output.appendSlice("typedef struct ");
+                    try self.output.appendSlice(instance.mangled_name);
+                    try self.output.appendSlice(" ");
+                    try self.output.appendSlice(instance.mangled_name);
+                    try self.output.appendSlice(";\n\n");
+                    
+                    // 生成 struct 定义
+                    try self.output.appendSlice("struct ");
+                    try self.output.appendSlice(instance.mangled_name);
+                    try self.output.appendSlice(" {\n");
+                    
+                    // 生成字段（用具体类型替换泛型类型参数）
+                    for (st.fields) |field| {
+                        try self.output.appendSlice("    ");
+                        
+                        // 🆕 替换泛型类型参数
+                        // 检查字段类型是否是泛型参数（T, U, A, B, etc）
+                        const field_type_to_use = blk: {
+                            if (field.type == .named) {
+                                // 检查这个名称是否是泛型参数
+                                for (type_decl.type_params, 0..) |param_name, param_idx| {
+                                    if (std.mem.eql(u8, param_name, field.type.named)) {
+                                        // 是泛型参数，使用对应的具体类型
+                                        if (param_idx < instance.type_args.len) {
+                                            break :blk instance.type_args[param_idx];
+                                        }
+                                    }
+                                }
+                            } else if (field.type == .generic and instance.type_args.len > 0) {
+                                // 直接是 .generic 类型
+                                break :blk instance.type_args[0];
+                            }
+                            // 不是泛型参数，使用原始类型
+                            break :blk field.type;
+                        };
+                        
+                        try self.output.appendSlice(self.typeToC(field_type_to_use));
+                        try self.output.appendSlice(" ");
+                        try self.output.appendSlice(field.name);
+                        try self.output.appendSlice(";\n");
+                    }
+                    
+                    try self.output.appendSlice("};\n\n");
+                }
+            }
+        }
+        
+        // 🆕 2. 生成泛型函数前向声明
+        const instances = self.generic_context.monomorphizer.instances.items;
+        
+        for (instances) |instance| {
+            if (self.function_table.get(instance.generic_name)) |generic_func| {
+                if (generic_func.type_params.len > 0 and instance.type_args.len > 0) {
+                    // 🆕 返回类型：使用第一个类型参数（简化）
+                    const return_type = instance.type_args[0];
+                    
+                    // 生成前向声明
+                    try self.output.appendSlice(self.typeToC(return_type));
+                    try self.output.appendSlice(" ");
+                    try self.output.appendSlice(instance.mangled_name);
+                    try self.output.appendSlice("(");
+                    
+                    // 🆕 参数类型：使用对应的类型参数
+                    for (generic_func.params, 0..) |param, i| {
+                        if (i > 0) try self.output.appendSlice(", ");
+                        
+                        // 如果有足够的类型参数，使用对应的类型
+                        const param_type = if (i < instance.type_args.len)
+                            instance.type_args[i]
+                        else
+                            instance.type_args[0];  // 降级：重复使用第一个
+                        
+                        try self.output.appendSlice(self.typeToC(param_type));
+                        try self.output.appendSlice(" ");
+                        try self.output.appendSlice(param.name);
+                    }
+                    
+                    try self.output.appendSlice(");\n");
+                }
+            }
+        }
+        try self.output.appendSlice("\n");
+    }
+
+    /// 生成所有单态化的泛型函数
+    fn generateMonomorphizedFunctions(self: *CodeGen) !void {
+        const instances = self.generic_context.monomorphizer.instances.items;
+        
+        for (instances) |instance| {
+            // 获取原始泛型函数
+            if (self.function_table.get(instance.generic_name)) |generic_func| {
+                if (generic_func.type_params.len > 0 and instance.type_args.len > 0) {
+                    // 🆕 返回类型：使用第一个类型参数
+                    const return_type = instance.type_args[0];
+                    
+                    // 生成函数签名
+                    try self.output.appendSlice(self.typeToC(return_type));
+                    try self.output.appendSlice(" ");
+                    try self.output.appendSlice(instance.mangled_name);
+                    try self.output.appendSlice("(");
+                    
+                    // 🆕 生成参数：使用对应的类型参数
+                    for (generic_func.params, 0..) |param, i| {
+                        if (i > 0) try self.output.appendSlice(", ");
+                        
+                        // 如果有足够的类型参数，使用对应的类型
+                        const param_type = if (i < instance.type_args.len)
+                            instance.type_args[i]
+                        else
+                            instance.type_args[0];  // 降级：重复使用第一个
+                        
+                        try self.output.appendSlice(self.typeToC(param_type));
+                        try self.output.appendSlice(" ");
+                        try self.output.appendSlice(param.name);
+                    }
+                    
+                    try self.output.appendSlice(") {\n");
+                    
+                    // 生成函数体
+                    for (generic_func.body) |stmt| {
+                        try self.generateStmt(stmt);
+                    }
+                    
+                    try self.output.appendSlice("}\n\n");
+                }
+            }
+        }
+    }
+
+    // ============================================================================
+    // 🆕 收集泛型结构体实例
+    // ============================================================================
+    
+    /// 收集所有泛型结构体实例化
+    fn collectGenericStructInstances(self: *CodeGen, program: ast.Program) !void {
+        for (program.declarations) |decl| {
+            if (decl == .function) {
+                // 遍历函数体中的语句
+                try self.collectStructInstancesInStmts(decl.function.body);
+            }
+        }
+    }
+    
+    fn collectStructInstancesInStmts(self: *CodeGen, stmts: []ast.Stmt) (std.mem.Allocator.Error)!void {
+        for (stmts) |stmt| {
+            try self.collectStructInstancesInStmt(stmt);
+        }
+    }
+    
+    fn collectStructInstancesInStmt(self: *CodeGen, stmt: ast.Stmt) (std.mem.Allocator.Error)!void {
+        switch (stmt) {
+            .let_decl => |let| {
+                if (let.init) |init_expr| {
+                    try self.collectStructInstancesInExpr(init_expr);
+                }
+            },
+            .assign => |assign| {
+                try self.collectStructInstancesInExpr(assign.value);
+            },
+            .compound_assign => |ca| {
+                try self.collectStructInstancesInExpr(ca.value);
+            },
+            .return_stmt => |ret| {
+                if (ret) |expr| {
+                    try self.collectStructInstancesInExpr(expr);
+                }
+            },
+            .expr => |expr| {
+                try self.collectStructInstancesInExpr(expr);
+            },
+            .loop_stmt => |loop| {
+                try self.collectStructInstancesInStmts(loop.body);
+            },
+            .while_loop => |while_loop| {
+                try self.collectStructInstancesInStmts(while_loop.body);
+            },
+            .for_loop => |for_loop| {
+                try self.collectStructInstancesInStmts(for_loop.body);
+            },
+            else => {},
+        }
+    }
+    
+    fn collectStructInstancesInExpr(self: *CodeGen, expr: ast.Expr) (std.mem.Allocator.Error)!void {
+        switch (expr) {
+            .struct_init => |si| {
+                // 检查是否是泛型结构体实例化
+                if (self.type_decls.get(si.type_name)) |type_decl| {
+                    if (type_decl.type_params.len > 0) {
+                        // 是泛型结构体，需要推导类型参数
+                        var type_args = std.ArrayList(ast.Type).init(self.allocator);
+                        defer type_args.deinit();
+                        
+                        // 🆕 只从泛型类型参数对应的字段推导类型
+                        // 需要匹配 struct 定义中的字段类型
+                        for (type_decl.kind.struct_type.fields, 0..) |struct_field, idx| {
+                            // 检查字段类型是否是泛型参数（T, U, A, B）
+                            const is_generic_param = blk: {
+                                if (struct_field.type == .generic) {
+                                    break :blk true;
+                                } else if (struct_field.type == .named) {
+                                    // 检查这个名称是否在 type_params 中
+                                    for (type_decl.type_params) |param_name| {
+                                        if (std.mem.eql(u8, param_name, struct_field.type.named)) {
+                                            break :blk true;
+                                        }
+                                    }
+                                }
+                                break :blk false;
+                            };
+                            
+                            if (is_generic_param) {
+                                // 这是一个泛型字段，从对应的初始化值推导类型
+                                if (idx < si.fields.len) {
+                                    const arg_type = self.inferExprType(si.fields[idx].value);
+                                    try type_args.append(arg_type);
+                                }
+                            }
+                        }
+                        
+                        // 记录泛型结构体实例化
+                        _ = try self.generic_context.monomorphizer.recordStructInstance(
+                            si.type_name,
+                            try type_args.toOwnedSlice(),
+                        );
+                    }
+                }
+                
+                // 递归收集字段值中的实例
+                for (si.fields) |field| {
+                    try self.collectStructInstancesInExpr(field.value);
+                }
+            },
+            .call => |call| {
+                try self.collectStructInstancesInExpr(call.callee.*);
+                for (call.args) |arg| {
+                    try self.collectStructInstancesInExpr(arg);
+                }
+            },
+            .binary => |bin| {
+                try self.collectStructInstancesInExpr(bin.left.*);
+                try self.collectStructInstancesInExpr(bin.right.*);
+            },
+            .unary => |un| {
+                try self.collectStructInstancesInExpr(un.operand.*);
+            },
+            .field_access => |fa| {
+                try self.collectStructInstancesInExpr(fa.object.*);
+            },
+            .array_index => |ai| {
+                try self.collectStructInstancesInExpr(ai.array.*);
+                try self.collectStructInstancesInExpr(ai.index.*);
+            },
+            .if_expr => |if_expr| {
+                try self.collectStructInstancesInExpr(if_expr.condition.*);
+                try self.collectStructInstancesInExpr(if_expr.then_branch.*);
+                if (if_expr.else_branch) |else_branch| {
+                    try self.collectStructInstancesInExpr(else_branch.*);
+                }
+            },
+            .array_literal => |elements| {
+                for (elements) |elem| {
+                    try self.collectStructInstancesInExpr(elem);
+                }
+            },
+            else => {},
+        }
     }
 };

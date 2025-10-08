@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const generics = @import("generics.zig");
 
 // Trait 定义结构
 pub const TraitDef = struct {
@@ -27,6 +28,7 @@ pub const TypeChecker = struct {
     trait_table: std.StringHashMap(TraitDef),      // 新增：存储 trait 定义
     type_methods: std.StringHashMap(TypeMethods),  // 新增：存储类型的方法
     current_function_is_async: bool,  // 追踪当前函数是否异步
+    generic_context: generics.GenericContext,  // 🆕 泛型上下文
 
     pub fn init(allocator: std.mem.Allocator) TypeChecker {
         return TypeChecker{
@@ -38,6 +40,7 @@ pub const TypeChecker = struct {
             .trait_table = std.StringHashMap(TraitDef).init(allocator),
             .type_methods = std.StringHashMap(TypeMethods).init(allocator),
             .current_function_is_async = false,
+            .generic_context = generics.GenericContext.init(allocator),  // 🆕 初始化泛型上下文
         };
     }
 
@@ -55,6 +58,9 @@ pub const TypeChecker = struct {
             methods.deinit();
         }
         self.type_methods.deinit();
+        
+        // 🆕 清理泛型上下文
+        self.generic_context.deinit();
     }
 
     pub fn check(self: *TypeChecker, program: ast.Program) !void {
@@ -196,6 +202,11 @@ pub const TypeChecker = struct {
         var local_scope = std.StringHashMap(ast.Type).init(self.allocator);
         defer local_scope.deinit();
 
+        // 🆕 如果是泛型函数，将类型参数添加到作用域
+        for (func.type_params) |type_param| {
+            try local_scope.put(type_param, ast.Type{ .generic = type_param });
+        }
+
         for (func.params) |param| {
             try local_scope.put(param.name, param.type);
         }
@@ -205,6 +216,20 @@ pub const TypeChecker = struct {
         }
     }
 
+    // ============================================================================
+    // Helper Functions
+    // ============================================================================
+    
+    /// 创建子作用域（复制父作用域）
+    fn createChildScope(self: *TypeChecker, parent: *std.StringHashMap(ast.Type)) !std.StringHashMap(ast.Type) {
+        var child = std.StringHashMap(ast.Type).init(self.allocator);
+        var iter = parent.iterator();
+        while (iter.next()) |entry| {
+            try child.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+        return child;
+    }
+    
     // ============================================================================
     // Statement Checking
     // ============================================================================
@@ -270,14 +295,8 @@ pub const TypeChecker = struct {
                     _ = iter_type;
                     
                     // 为循环变量创建新的作用域
-                    var loop_scope = std.StringHashMap(ast.Type).init(self.allocator);
+                    var loop_scope = try self.createChildScope(scope);
                     defer loop_scope.deinit();
-                    
-                    // 复制父作用域
-                    var iter_scope = scope.iterator();
-                    while (iter_scope.next()) |entry| {
-                        try loop_scope.put(entry.key_ptr.*, entry.value_ptr.*);
-                    }
                     
                     // 添加循环变量（简化：假设为 i32）
                     try loop_scope.put(iter.binding, ast.Type.i32);
@@ -333,6 +352,10 @@ pub const TypeChecker = struct {
         // 完全相同的类型
         if (from_type.eql(to_type)) return true;
         
+        // 🆕 泛型类型兼容：任何类型都可以赋值给泛型类型参数
+        if (to_type == .generic) return true;
+        if (from_type == .generic) return true;
+        
         // 整数字面量（i32）可以兼容任何整数类型
         const from_is_int = from_type == .i32;  // 字面量默认类型
         const to_is_any_int = to_type == .i8 or to_type == .i16 or to_type == .i32 or 
@@ -364,6 +387,17 @@ pub const TypeChecker = struct {
             .string_literal => ast.Type.string,
             .char_literal => ast.Type.char,
             .bool_literal => ast.Type.bool,
+            .static_method_call => |smc| blk: {
+                // 🆕 静态方法调用：Type<T>::method()
+                // 简化：返回泛型实例类型或 i32
+                if (smc.type_args.len > 0) {
+                    break :blk ast.Type{ .generic_instance = .{
+                        .name = smc.type_name,
+                        .type_args = smc.type_args,
+                    }};
+                }
+                break :blk ast.Type.i32;
+            },
             .identifier => |name| blk: {
                 if (scope.get(name)) |var_type| {
                     break :blk var_type;
@@ -432,6 +466,16 @@ pub const TypeChecker = struct {
                     
                     // 不是enum构造器，检查是否是函数
                     if (self.function_table.get(func_name)) |func| {
+                        // 🆕 泛型函数处理：如果返回类型是泛型，需要推导
+                        if (func.return_type == .generic) {
+                            // 简化实现：返回第一个参数的类型
+                            if (call.args.len > 0) {
+                                const arg_type = try self.checkExpr(call.args[0], scope);
+                                break :blk arg_type;
+                            }
+                            // 如果没有参数，返回i32作为默认
+                            break :blk ast.Type.i32;
+                        }
                         break :blk func.return_type;
                     }
                 }

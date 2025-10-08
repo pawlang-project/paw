@@ -1,10 +1,5 @@
 // ? 错误传播操作符示例
-
-// 定义 Result 枚举
-type Result = enum {
-    Ok(i32),
-    Err(i32),
-}
+// Result 枚举已在标准库中定义，无需重复定义
 
 // 返回 Ok 的函数
 fn get_value() -> Result {
