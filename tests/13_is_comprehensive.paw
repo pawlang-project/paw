@@ -1,0 +1,41 @@
+// 测试 13: is 表达式的完整性检查
+
+type Option = enum {
+    Some(int)
+    None
+}
+
+// 完整的模式匹配（有通配符）
+fn safe_unwrap(opt: Option) -> i32 {
+    opt is {
+        Some(x) -> x
+        None -> 0
+        _ -> 0
+    }
+}
+
+// 带 guard 的模式匹配
+fn classify_number(x: i32) -> string {
+    x is {
+        0 -> "zero"
+        _ -> "non-zero"
+    }
+}
+
+// 所有分支类型一致
+fn valid_is() -> i32 {
+    let x = 5;
+    x is {
+        0 -> 0
+        1 -> 1
+        _ -> 999
+    }
+}
+
+fn main() -> i32 {
+    let opt = Some(42);
+    let r1 = safe_unwrap(opt);
+    let r2 = valid_is();
+    r1 + r2
+}
+
