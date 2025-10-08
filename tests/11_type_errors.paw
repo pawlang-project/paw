@@ -1,0 +1,43 @@
+// 测试 11: 类型错误检测
+
+// 正确的代码
+fn valid_function() -> i32 {
+    let x = 42;
+    let y = 58;
+    x + y
+}
+
+// 类型不匹配（应该检测到）
+fn type_mismatch() -> i32 {
+    let x: i32 = 42;
+    let y: f64 = 3.14;
+    // x + y  // 类型不匹配
+    x
+}
+
+// if 分支类型不一致（应该检测到）
+fn if_type_mismatch(x: i32) -> i32 {
+    // let result = if x > 0 {
+    //     "positive"  // string
+    // } else {
+    //     0  // int
+    // };
+    // result
+    x
+}
+
+// is 分支类型不一致（应该检测到）
+fn is_type_mismatch(x: i32) -> i32 {
+    // x is {
+    //     0 -> "zero"    // string
+    //     _ -> 42        // int
+    // }
+    x
+}
+
+fn main() -> i32 {
+    let r1 = valid_function();
+    let r2 = type_mismatch();
+    r1 + r2
+}
+

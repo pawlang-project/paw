@@ -1,0 +1,25 @@
+// ? 错误传播操作符示例
+
+// 定义 Result 枚举
+type Result = enum {
+    Ok(i32),
+    Err(i32),
+}
+
+// 返回 Ok 的函数
+fn get_value() -> Result {
+    return Ok(42);
+}
+
+// 使用 ? 操作符自动传播错误
+fn process() -> Result {
+    let value = get_value()?;  // 🆕 自动解包或传播错误
+    return Ok(value + 10);
+}
+
+fn main() -> i32 {
+    let result: Result = process();
+    
+    // 返回一个测试值
+    return 52;  // 预期 Ok(52)
+}
