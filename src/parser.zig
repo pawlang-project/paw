@@ -1373,6 +1373,29 @@ pub const Parser = struct {
                 }
                 _ = try self.consume(.gt);
                 
+                // 🆕 检查是否是静态方法调用：Type<T>::method()
+                if (self.match(.double_colon)) {
+                    const method_name = try self.consume(.identifier);
+                    _ = try self.consume(.lparen);
+                    
+                    var args = std.ArrayList(ast.Expr).init(self.allocator);
+                    while (!self.check(.rparen) and !self.isAtEnd()) {
+                        const arg = try self.parseExpr();
+                        try args.append(arg);
+                        if (!self.match(.comma)) break;
+                    }
+                    _ = try self.consume(.rparen);
+                    
+                    return ast.Expr{
+                        .static_method_call = .{
+                            .type_name = name.lexeme,
+                            .type_args = try type_args.toOwnedSlice(),
+                            .method_name = method_name.lexeme,
+                            .args = try args.toOwnedSlice(),
+                        },
+                    };
+                }
+                
                 // 结构体初始化
                 if (self.match(.lbrace)) {
                     var fields = std.ArrayList(ast.StructFieldInit).init(self.allocator);

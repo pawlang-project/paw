@@ -30,3 +30,7 @@ output
 # 调试文件
 *.dSYM/
 
+output
+*.c
+test_*
+temp_*
