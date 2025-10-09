@@ -332,34 +332,112 @@ pub fn main() !void {
     
     // 5. Output based on options
     if (should_compile) {
-            // 🆕 v0.1.4: LLVM后端暂不支持直接编译
-            if (backend == .llvm or backend == .llvm_native) {
-                std.debug.print("❌ Error: LLVM backends do not support --compile/--run yet\n", .{});
-                std.debug.print("💡 Use: pawc file.paw --backend=llvm (generates LLVM IR)\n", .{});
-                std.debug.print("   Or: pawc file.paw --backend=llvm-native (generates LLVM IR via native API)\n", .{});
-                return;
-            }
-        
-        // 编译为可执行文件（仅C后端）
         const output_name = output_file orelse "output";
         
-        var tcc_backend = TccBackend.init(allocator);
+        // 检查是否有本地 LLVM/Clang
+        const local_clang_path = "llvm/install/bin/clang";
+        const has_local_clang = blk: {
+            std.fs.cwd().access(local_clang_path, .{}) catch {
+                break :blk false;
+            };
+            break :blk true;
+        };
         
-        if (should_run) {
-            // 编译并运行
-            std.debug.print("🔥 Compiling and running: {s}\n", .{source_file});
-            try tcc_backend.compileAndRun(output_code);
+        if (has_local_clang and backend == .c) {
+            // 使用本地 Clang 编译 C 代码
+            if (verbose) {
+                std.debug.print("🔨 Using local Clang for compilation\n", .{});
+            }
+            
+            // 写入 C 代码到临时文件
+            const temp_c_file = try std.fmt.allocPrint(allocator, "{s}.c", .{output_name});
+            defer allocator.free(temp_c_file);
+            
+            const c_file = try std.fs.cwd().createFile(temp_c_file, .{});
+            defer c_file.close();
+            try c_file.writeAll(output_code);
+            
+            // 使用本地 Clang 编译
+            // 需要指定 SDK 路径 (macOS)
+            var clang_args = std.ArrayList([]const u8).init(allocator);
+            defer clang_args.deinit();
+            
+            try clang_args.append(local_clang_path);
+            try clang_args.append(temp_c_file);
+            try clang_args.append("-o");
+            try clang_args.append(output_name);
+            try clang_args.append("-O2");
+            
+            // macOS: 添加 SDK 路径
+            if (builtin.os.tag == .macos) {
+                try clang_args.append("-isysroot");
+                try clang_args.append("/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk");
+            }
+            
+            var child = std.process.Child.init(clang_args.items, allocator);
+            
+            const result = try child.spawnAndWait();
+            
+            if (result != .Exited or result.Exited != 0) {
+                std.debug.print("❌ Compilation failed\n", .{});
+                return;
+            }
+            
+            if (verbose) {
+                std.debug.print("✅ Compilation complete: {s} -> {s}\n", .{ source_file, output_name });
+            }
+            
+            // 如果需要运行
+            if (should_run) {
+                if (verbose) {
+                    std.debug.print("🔥 Running: {s}\n", .{output_name});
+                }
+                
+                const run_path = try std.fmt.allocPrint(allocator, "./{s}", .{output_name});
+                defer allocator.free(run_path);
+                
+                var run_child = std.process.Child.init(&[_][]const u8{run_path}, allocator);
+                const run_result = try run_child.spawnAndWait();
+                
+                if (verbose) {
+                    std.debug.print("Exit code: {any}\n", .{run_result});
+                }
+            }
+            
+            // 清理临时文件
+            if (!verbose) {
+                std.fs.cwd().deleteFile(temp_c_file) catch {};
+            }
+            
+        } else if (backend == .llvm or backend == .llvm_native) {
+            // LLVM 后端: 生成 IR 然后用 Clang 编译
+            std.debug.print("❌ Error: LLVM backends do not support --compile/--run yet\n", .{});
+            std.debug.print("💡 Use manual workflow:\n", .{});
+            std.debug.print("   pawc file.paw --backend=llvm-native\n", .{});
+            std.debug.print("   llvm/install/bin/clang output.ll -o program\n", .{});
+            return;
         } else {
-            // 只编译
-            try tcc_backend.compile(output_code, output_name);
-        }
-        
-        if (verbose) {
-            std.debug.print("\n✅ Compilation complete: {s} -> {s} ({d:.2}s)\n", .{
-                source_file,
-                output_name,
-                @as(f64, @floatFromInt(total_time - start_time)) / 1_000_000_000.0,
-            });
+            // 回退到 TCC（如果没有本地 Clang）
+            if (verbose) {
+                std.debug.print("🔨 Using TCC for compilation\n", .{});
+            }
+            
+            var tcc_backend = TccBackend.init(allocator);
+            
+            if (should_run) {
+                std.debug.print("🔥 Compiling and running: {s}\n", .{source_file});
+                try tcc_backend.compileAndRun(output_code);
+            } else {
+                try tcc_backend.compile(output_code, output_name);
+            }
+            
+            if (verbose) {
+                std.debug.print("\n✅ Compilation complete: {s} -> {s} ({d:.2}s)\n", .{
+                    source_file,
+                    output_name,
+                    @as(f64, @floatFromInt(total_time - start_time)) / 1_000_000_000.0,
+                });
+            }
         }
     } else {
             // Generate code (C or LLVM IR)
@@ -433,16 +511,24 @@ fn printUsage() void {
     std.debug.print("  -v               Verbose output\n", .{});
     std.debug.print("  --compile        Compile to executable (C backend only)\n", .{});
     std.debug.print("  --run            Compile and run immediately (C backend only)\n", .{});
-    std.debug.print("  --backend=c      Use C backend (default, stable)\n", .{});
-    std.debug.print("  --backend=llvm   Use LLVM backend (experimental) 🆕\n", .{});
+    std.debug.print("\n", .{});
+    std.debug.print("Backends:\n", .{});
+    std.debug.print("  --backend=c              Use C backend (default, stable)\n", .{});
+    std.debug.print("  --backend=llvm           Use LLVM text IR backend (no deps) 🆕\n", .{});
+    std.debug.print("  --backend=llvm-native    Use LLVM native API (requires local LLVM) ⭐\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Examples:\n", .{});
-    std.debug.print("  pawc hello.paw                  Generate C code -> output.c\n", .{});
-    std.debug.print("  pawc hello.paw --compile        Compile to executable -> output\n", .{});
-    std.debug.print("  pawc hello.paw --run            Compile and run\n", .{});
-    std.debug.print("  pawc hello.paw --backend=llvm   Generate LLVM IR -> output.ll 🆕\n", .{});
-    std.debug.print("  pawc check hello.paw            Type check only\n", .{});
-    std.debug.print("  pawc init my_project            Create new project\n", .{});
+    std.debug.print("  pawc hello.paw                       Generate C code -> output.c\n", .{});
+    std.debug.print("  pawc hello.paw --compile             Compile to executable -> output\n", .{});
+    std.debug.print("  pawc hello.paw --run                 Compile and run\n", .{});
+    std.debug.print("  pawc hello.paw --backend=llvm        Generate LLVM IR -> output.ll\n", .{});
+    std.debug.print("  pawc hello.paw --backend=llvm-native Generate LLVM IR (native) 🚀\n", .{});
+    std.debug.print("  pawc check hello.paw                 Type check only\n", .{});
+    std.debug.print("  pawc init my_project                 Create new project\n", .{});
+    std.debug.print("\n", .{});
+    std.debug.print("Build with LLVM:\n", .{});
+    std.debug.print("  zig build                            Auto-detect and use LLVM if available\n", .{});
+    std.debug.print("  zig build run-llvm                   Quick test with LLVM backend\n", .{});
     std.debug.print("\n", .{});
 }
 

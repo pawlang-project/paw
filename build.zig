@@ -15,38 +15,48 @@ pub fn build(b: *std.Build) void {
         .root_module = main_mod,
     });
 
-    // 🆕 集成 LLVM（可选，用于未来原生后端）
+    // 🆕 集成 LLVM（自动检测并启用）
     // Using direct C API bindings instead of llvm-zig
-    if (b.option(bool, "with-llvm", "Enable native LLVM backend (experimental)") orelse false) {
-        const local_llvm = "llvm/install";
+    const local_llvm = "llvm/install";
+    const llvm_config_path = b.fmt("{s}/bin/llvm-config", .{local_llvm});
+    
+    // 自动检测本地 LLVM
+    const has_local_llvm = blk: {
+        std.fs.cwd().access(llvm_config_path, .{}) catch {
+            break :blk false;
+        };
+        break :blk true;
+    };
+    
+    if (has_local_llvm) {
+        std.debug.print("✓ Local LLVM detected at {s}\n", .{local_llvm});
         
-        // Check if local LLVM exists
-        const llvm_config_path = b.fmt("{s}/bin/llvm-config", .{local_llvm});
-        if (std.fs.cwd().access(llvm_config_path, .{})) {
-            std.debug.print("✓ Using local LLVM from {s}\n", .{local_llvm});
-            
-            // Add LLVM library paths and includes
-            exe.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/lib", .{local_llvm}) });
-            exe.addIncludePath(.{ .cwd_relative = b.fmt("{s}/include", .{local_llvm}) });
-            
-            // Link essential LLVM static libraries (minimal set)
-            exe.linkSystemLibrary("LLVMCore");
-            exe.linkSystemLibrary("LLVMSupport");
-            exe.linkSystemLibrary("LLVMBinaryFormat");
-            exe.linkSystemLibrary("LLVMRemarks");
-            exe.linkSystemLibrary("LLVMBitstreamReader");
-            exe.linkSystemLibrary("LLVMTargetParser");
-            exe.linkSystemLibrary("LLVMDemangle");
-            
-            // Link C++ standard library (LLVM is C++)
-            exe.linkLibCpp();
-            
-            std.debug.print("✅ LLVM native API enabled (direct C bindings)\n", .{});
-        } else |_| {
-            std.debug.print("⚠️  Local LLVM not found, build it first:\n", .{});
-            std.debug.print("   ./scripts/setup_llvm_source.sh\n", .{});
-            std.debug.print("   ./scripts/build_llvm_local.sh\n", .{});
-        }
+        // Add LLVM library paths and includes
+        exe.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/lib", .{local_llvm}) });
+        exe.addIncludePath(.{ .cwd_relative = b.fmt("{s}/include", .{local_llvm}) });
+        
+        // Link essential LLVM static libraries (minimal set)
+        exe.linkSystemLibrary("LLVMCore");
+        exe.linkSystemLibrary("LLVMSupport");
+        exe.linkSystemLibrary("LLVMBinaryFormat");
+        exe.linkSystemLibrary("LLVMRemarks");
+        exe.linkSystemLibrary("LLVMBitstreamReader");
+        exe.linkSystemLibrary("LLVMTargetParser");
+        exe.linkSystemLibrary("LLVMDemangle");
+        
+        // Link C++ standard library (LLVM is C++)
+        exe.linkLibCpp();
+        
+        std.debug.print("✅ LLVM native API enabled (3 backends available)\n", .{});
+        std.debug.print("   • C backend (default, stable)\n", .{});
+        std.debug.print("   • LLVM text mode (--backend=llvm)\n", .{});
+        std.debug.print("   • LLVM native API (--backend=llvm-native)\n", .{});
+    } else {
+        std.debug.print("ℹ️  LLVM not found - using 2 backends\n", .{});
+        std.debug.print("   • C backend (default, stable)\n", .{});
+        std.debug.print("   • LLVM text mode (--backend=llvm)\n", .{});
+        std.debug.print("   💡 To enable native LLVM:\n", .{});
+        std.debug.print("      ./scripts/setup_llvm_source.sh && ./scripts/build_llvm_local.sh\n", .{});
     }
     
     // 链接标准库
@@ -75,7 +85,6 @@ pub fn build(b: *std.Build) void {
     pawc_to_ir.addArg("output_zig");
     
     // Step 2: 使用本地 Clang 编译 LLVM IR 到可执行文件
-    const local_llvm = "llvm/install";
     const clang_path = b.fmt("{s}/bin/clang", .{local_llvm});
     
     const compile_ir = b.addSystemCommand(&[_][]const u8{
