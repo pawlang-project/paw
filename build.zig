@@ -16,65 +16,20 @@ pub fn build(b: *std.Build) void {
     });
 
     // 🆕 集成 LLVM（可选，用于未来原生后端）
+    // Note: Native LLVM API integration is experimental and requires system LLVM
+    // The text-based IR generation (default) works without any LLVM installation
     if (b.option(bool, "with-llvm", "Enable native LLVM backend (experimental)") orelse false) {
-        // 优先使用本地编译的 LLVM
-        const local_llvm = "llvm/install";
-        
-        // 检查本地LLVM是否存在
-        const llvm_config_path = b.fmt("{s}/bin/llvm-config", .{local_llvm});
-        if (std.fs.cwd().access(llvm_config_path, .{})) {
-            std.debug.print("✓ Using local LLVM from {s}\n", .{local_llvm});
-            
-            // 添加本地LLVM的路径
-            exe.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/lib", .{local_llvm}) });
-            exe.addIncludePath(.{ .cwd_relative = b.fmt("{s}/include", .{local_llvm}) });
-            
-            // 链接静态 LLVM 库（我们编译的是静态库）
-            exe.linkSystemLibrary("LLVMCore");
-            exe.linkSystemLibrary("LLVMSupport");
-            exe.linkSystemLibrary("LLVMAnalysis");
-            exe.linkSystemLibrary("LLVMTransformUtils");
-            exe.linkSystemLibrary("LLVMTarget");
-            exe.linkSystemLibrary("LLVMCodeGen");
-            exe.linkSystemLibrary("LLVMAsmPrinter");
-            exe.linkSystemLibrary("LLVMSelectionDAG");
-            exe.linkSystemLibrary("LLVMMC");
-            exe.linkSystemLibrary("LLVMMCParser");
-            exe.linkSystemLibrary("LLVMBitReader");
-            exe.linkSystemLibrary("LLVMBitWriter");
-            exe.linkSystemLibrary("LLVMIRReader");
-            exe.linkSystemLibrary("LLVMAsmParser");
-            exe.linkSystemLibrary("LLVMInstCombine");
-            exe.linkSystemLibrary("LLVMScalarOpts");
-            exe.linkSystemLibrary("LLVMipo");
-            exe.linkSystemLibrary("LLVMVectorize");
-            exe.linkSystemLibrary("LLVMObjCARCOpts");
-            exe.linkSystemLibrary("LLVMLinker");
-            exe.linkSystemLibrary("LLVMPasses");
-            exe.linkSystemLibrary("LLVMAArch64CodeGen");
-            exe.linkSystemLibrary("LLVMAArch64AsmParser");
-            exe.linkSystemLibrary("LLVMAArch64Desc");
-            exe.linkSystemLibrary("LLVMAArch64Disassembler");
-            exe.linkSystemLibrary("LLVMAArch64Info");
-            exe.linkSystemLibrary("LLVMAArch64Utils");
-            exe.linkSystemLibrary("LLVMX86CodeGen");
-            exe.linkSystemLibrary("LLVMX86AsmParser");
-            exe.linkSystemLibrary("LLVMX86Desc");
-            exe.linkSystemLibrary("LLVMX86Disassembler");
-            exe.linkSystemLibrary("LLVMX86Info");
-            exe.linkSystemLibrary("LLVMX86TargetMCA");
-            
-            // 添加 llvm-zig 模块
-            const llvm_dep = b.dependency("llvm", .{
-                .target = target,
-                .optimize = optimize,
-            });
-            const llvm_mod = llvm_dep.module("llvm");
-            exe.root_module.addImport("llvm", llvm_mod);
-        } else |_| {
-            std.debug.print("⚠️  Local LLVM not found, build it first:\n", .{});
-            std.debug.print("   ./scripts/build_llvm.sh\n", .{});
-        }
+        std.debug.print("⚠️  Native LLVM API integration is not yet supported.\n", .{});
+        std.debug.print("💡 Use text mode instead (default):\n", .{});
+        std.debug.print("   zig build\n", .{});
+        std.debug.print("   ./zig-out/bin/pawc hello.paw --backend=llvm\n", .{});
+        std.debug.print("\n", .{});
+        std.debug.print("📝 Native API requires:\n", .{});
+        std.debug.print("   - LLVM dynamic library (libLLVM.dylib)\n", .{});
+        std.debug.print("   - Compatible llvm-zig bindings\n", .{});
+        std.debug.print("   - Planned for v0.1.5+\n", .{});
+        std.debug.print("\n", .{});
+        return;
     }
     
     // 链接标准库
