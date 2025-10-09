@@ -75,6 +75,19 @@ pub const GenericStructInstance = struct {
     }
 };
 
+/// 🆕 泛型方法实例：记录泛型方法的实例化
+pub const GenericMethodInstance = struct {
+    struct_name: []const u8,        // 结构体名 (Vec)
+    method_name: []const u8,        // 方法名 (new)
+    type_args: []ast.Type,          // 类型参数 (i32)
+    mangled_name: []const u8,       // 修饰后的名称 (Vec_i32_new)
+    
+    pub fn deinit(self: GenericMethodInstance, allocator: std.mem.Allocator) void {
+        allocator.free(self.type_args);
+        allocator.free(self.mangled_name);
+    }
+};
+
 // ============================================================================
 // 类型推导引擎
 // ============================================================================
@@ -274,6 +287,9 @@ pub const Monomorphizer = struct {
     /// 🆕 泛型结构体实例
     struct_instances: std.ArrayList(GenericStructInstance),
     struct_seen: std.StringHashMap(void),
+    /// 🆕 泛型方法实例
+    method_instances: std.ArrayList(GenericMethodInstance),
+    method_seen: std.StringHashMap(void),
 
     pub fn init(allocator: std.mem.Allocator) Monomorphizer {
         return Monomorphizer{
@@ -282,6 +298,8 @@ pub const Monomorphizer = struct {
             .seen = std.StringHashMap(void).init(allocator),
             .struct_instances = std.ArrayList(GenericStructInstance).init(allocator),
             .struct_seen = std.StringHashMap(void).init(allocator),
+            .method_instances = std.ArrayList(GenericMethodInstance).init(allocator),
+            .method_seen = std.StringHashMap(void).init(allocator),
         };
     }
 
@@ -293,11 +311,16 @@ pub const Monomorphizer = struct {
         for (self.struct_instances.items) |instance| {
             instance.deinit(self.allocator);
         }
+        for (self.method_instances.items) |instance| {
+            instance.deinit(self.allocator);
+        }
         
         self.instances.deinit();
         self.seen.deinit();
         self.struct_instances.deinit();
         self.struct_seen.deinit();
+        self.method_instances.deinit();
+        self.method_seen.deinit();
     }
 
     /// 记录一个泛型实例化
@@ -366,6 +389,49 @@ pub const Monomorphizer = struct {
         });
 
         return mangled;
+    }
+
+    /// 🆕 记录一个泛型方法实例化
+    pub fn recordMethodInstance(
+        self: *Monomorphizer,
+        struct_name: []const u8,
+        method_name: []const u8,
+        type_args: []ast.Type,
+    ) ![]const u8 {
+        // 生成方法的修饰名称: Vec_i32_new
+        const struct_mangled = try self.mangleName(struct_name, type_args);
+        defer self.allocator.free(struct_mangled);
+        
+        var mangled = std.ArrayList(u8).init(self.allocator);
+        try mangled.appendSlice(struct_mangled);
+        try mangled.append('_');
+        try mangled.appendSlice(method_name);
+        const mangled_name = try mangled.toOwnedSlice();
+        
+        // 检查是否已经实例化过
+        if (self.method_seen.contains(mangled_name)) {
+            // 已存在，释放传入的 type_args 和 mangled_name
+            self.allocator.free(type_args);
+            self.allocator.free(mangled_name);
+            // 返回已存在的 mangled name
+            for (self.method_instances.items) |instance| {
+                if (std.mem.eql(u8, instance.struct_name, struct_name) and
+                    std.mem.eql(u8, instance.method_name, method_name)) {
+                    return instance.mangled_name;
+                }
+            }
+            return mangled_name; // fallback
+        }
+
+        try self.method_seen.put(mangled_name, {});
+        try self.method_instances.append(GenericMethodInstance{
+            .struct_name = struct_name,
+            .method_name = method_name,
+            .type_args = type_args,
+            .mangled_name = mangled_name,
+        });
+
+        return mangled_name;
     }
 
     /// 名称修饰 (Name Mangling)
@@ -666,6 +732,40 @@ pub const GenericContext = struct {
                             _ = try self.inferGenericInstance(func_name, try arg_types.toOwnedSlice());
                         }
                     }
+                }
+            },
+            .static_method_call => |smc| {
+                // 🆕 收集泛型方法调用
+                // Vec<i32>::new() -> 记录 Vec, new, [i32]
+                
+                // 检查参数
+                for (smc.args) |arg| {
+                    try self.collectExprCalls(arg);
+                }
+                
+                // 如果有类型参数，记录这个方法实例
+                if (smc.type_args.len > 0) {
+                    var type_args = std.ArrayList(ast.Type).init(self.allocator);
+                    for (smc.type_args) |type_arg| {
+                        try type_args.append(type_arg);
+                    }
+                    
+                    _ = try self.monomorphizer.recordMethodInstance(
+                        smc.type_name,
+                        smc.method_name,
+                        try type_args.toOwnedSlice(),
+                    );
+                    
+                    // 同时记录结构体实例（如果还没有）
+                    var struct_type_args = std.ArrayList(ast.Type).init(self.allocator);
+                    for (smc.type_args) |type_arg| {
+                        try struct_type_args.append(type_arg);
+                    }
+                    
+                    _ = try self.monomorphizer.recordStructInstance(
+                        smc.type_name,
+                        try struct_type_args.toOwnedSlice(),
+                    );
                 }
             },
             .binary => |bin| {

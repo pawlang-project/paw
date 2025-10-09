@@ -1,0 +1,30 @@
+// 数学模块示例
+// 用于演示模块系统
+
+// 公共函数：加法
+pub fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+// 公共函数：乘法
+pub fn multiply(a: i32, b: i32) -> i32 {
+    a * b
+}
+
+// 私有函数：不能被导入
+fn private_helper() -> i32 {
+    42
+}
+
+// 公共类型：2D向量
+pub type Vec2 = struct {
+    x: i32,
+    y: i32,
+}
+
+// 公共类型：Point
+pub type Point = struct {
+    x: i32,
+    y: i32,
+}
+

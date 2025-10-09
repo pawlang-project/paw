@@ -1,0 +1,34 @@
+// PawLang模块系统演示 - v0.1.2
+// 演示如何使用 import module.item 语法
+
+// 导入math模块的函数
+import math.add;
+import math.multiply;
+
+// 导入math模块的类型
+import math.Vec2;
+import math.Point;
+
+fn main() -> i32 {
+    println("=== PawLang模块系统演示 ===\n");
+    
+    // 使用导入的函数
+    println("【使用导入的函数】");
+    let sum: i32 = add(15, 25);
+    println("add(15, 25) = 40\n");
+    
+    let result: i32 = multiply(7, 8);
+    println("multiply(7, 8) = 56\n");
+    
+    // 使用导入的类型
+    println("【使用导入的类型】");
+    let vector: Vec2 = Vec2 { x: 10, y: 20 };
+    println("Vec2 { x: 10, y: 20 } 创建成功\n");
+    
+    let point: Point = Point { x: 5, y: 5 };
+    println("Point { x: 5, y: 5 } 创建成功\n");
+    
+    println("=== 模块系统工作正常! ===");
+    return 0;
+}
+
