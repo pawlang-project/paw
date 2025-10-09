@@ -55,10 +55,27 @@ let vec = Vec<i32>::new();   // 自动推导为 Vec<i32>
 - ✅ 更新 README.md 文档
 - ✅ 详细的使用指南
 
+#### 类型系统增强 🔧
+- ✅ **函数调用参数验证**：检查参数数量和类型
+- ✅ **泛型类型推导**：自动推导泛型类型参数（`T`）
+- ✅ **泛型类型统一**：确保类型参数一致性
+- ✅ **详细错误消息**：明确指出类型不匹配的位置
+
+**示例**：
+```paw
+fn add<T>(a: T, b: T) -> T { a + b }
+
+let sum = add(10, 20);      // ✅ OK: T = i32
+let bad = add(10, "hello"); // ❌ Error: T cannot be both i32 and string
+let wrong = add(32);        // ❌ Error: expects 2 arguments, got 1
+```
+
 #### 技术细节
 - AST 已支持可选类型（`type: ?Type`）
 - Parser 允许省略类型注解
 - TypeChecker 自动从表达式推导类型
+- TypeChecker 验证泛型类型统一性
+- 完整的参数验证（数量和类型）
 - 无需额外开销，零运行时成本
 
 ---
