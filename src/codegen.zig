@@ -547,6 +547,24 @@ pub const CodeGen = struct {
                     } else if (init_expr == .string_interp) {
                         // 🆕 字符串插值返回 char*
                         try self.output.appendSlice("char*");
+                    } else if (init_expr == .static_method_call) {
+                        // 🆕 静态方法调用：Vec<i32>::new() → Vec_i32
+                        const smc = init_expr.static_method_call;
+                        if (smc.type_args.len > 0) {
+                            // 构建mangled name
+                            var buf = std.ArrayList(u8).init(self.arena.allocator());
+                            try buf.appendSlice(smc.type_name);
+                            for (smc.type_args) |arg| {
+                                try buf.appendSlice("_");
+                                try buf.appendSlice(self.getSimpleTypeName(arg));
+                            }
+                            const mangled = try buf.toOwnedSlice();
+                            try self.output.appendSlice(mangled);
+                            type_name = mangled;
+                        } else {
+                            try self.output.appendSlice(smc.type_name);
+                            type_name = smc.type_name;
+                        }
                     } else if (init_expr == .call and init_expr.call.callee.* == .identifier) {
                         // 🆕 检查是否是enum构造器调用
                         const callee_name = init_expr.call.callee.identifier;
