@@ -27,6 +27,8 @@ const generics = @import("generics.zig");
 /// C Code Generator
 pub const CodeGen = struct {
     allocator: std.mem.Allocator,
+    /// 🆕 Arena allocator for temporary strings (mangled names, etc.)
+    arena: std.heap.ArenaAllocator,
     output: std.ArrayList(u8),
     // 🆕 类型表：变量名 -> 类型名
     var_types: std.StringHashMap([]const u8),
@@ -38,6 +40,13 @@ pub const CodeGen = struct {
     generic_context: generics.GenericContext,
     // 🆕 函数表：函数名 -> FunctionDecl（用于泛型实例化）
     function_table: std.StringHashMap(ast.FunctionDecl),
+    // 🆕 当前方法上下文：用于生成方法体时的类型替换
+    current_method_context: ?struct {
+        struct_name: []const u8,      // 原始struct名 (Vec)
+        mangled_name: []const u8,     // 单态化名 (Vec_i32)
+        type_params: [][]const u8,    // 类型参数 ([T])
+        type_args: []ast.Type,        // 具体类型 ([i32])
+    },
 
     pub fn init(allocator: std.mem.Allocator) CodeGen {
         var output = std.ArrayList(u8).init(allocator);
@@ -46,12 +55,14 @@ pub const CodeGen = struct {
         
         return CodeGen{
             .allocator = allocator,
+            .arena = std.heap.ArenaAllocator.init(allocator),
             .output = output,
             .var_types = std.StringHashMap([]const u8).init(allocator),
             .type_decls = std.StringHashMap(ast.TypeDecl).init(allocator),
             .enum_variants = std.StringHashMap([]const u8).init(allocator),
             .generic_context = generics.GenericContext.init(allocator),
             .function_table = std.StringHashMap(ast.FunctionDecl).init(allocator),
+            .current_method_context = null,
         };
     }
 
@@ -62,6 +73,7 @@ pub const CodeGen = struct {
         self.enum_variants.deinit();
         self.generic_context.deinit();
         self.function_table.deinit();
+        self.arena.deinit();  // 🆕 释放所有arena分配
     }
     
     pub fn generate(self: *CodeGen, program: ast.Program) ![]const u8 {
@@ -479,9 +491,19 @@ pub const CodeGen = struct {
                         try self.output.appendSlice(self.typeToC(type_.array.element.*));
                 } else {
                         try self.output.appendSlice(self.typeToC(type_));
-                        // 记录变量类型
+                        // 🆕 记录变量类型（包括generic_instance）
                         if (type_ == .named) {
                             type_name = type_.named;
+                        } else if (type_ == .generic_instance) {
+                            // Vec<i32> -> Vec_i32
+                            const gi = type_.generic_instance;
+                            var buf = std.ArrayList(u8).init(self.arena.allocator());
+                            try buf.appendSlice(gi.name);
+                            for (gi.type_args) |arg| {
+                                try buf.appendSlice("_");
+                                try buf.appendSlice(self.getSimpleTypeName(arg));
+                            }
+                            type_name = try buf.toOwnedSlice();
                         }
                     }
                 } else if (let.init) |init_expr| {
@@ -816,14 +838,8 @@ pub const CodeGen = struct {
                 try self.output.appendSlice(smc.type_name);
                 for (smc.type_args) |type_arg| {
                     try self.output.appendSlice("_");
-                    // 简化类型名
-                    switch (type_arg) {
-                        .i32 => try self.output.appendSlice("i32"),
-                        .i64 => try self.output.appendSlice("i64"),
-                        .f64 => try self.output.appendSlice("f64"),
-                        .named => |n| try self.output.appendSlice(n),
-                        else => try self.output.appendSlice("T"),
-                    }
+                    // 🆕 使用简化名保持与mangling一致
+                    try self.output.appendSlice(self.getSimpleTypeName(type_arg));
                 }
                 try self.output.appendSlice("_");
                 try self.output.appendSlice(smc.method_name);
@@ -863,8 +879,24 @@ pub const CodeGen = struct {
             },
             .struct_init => |si| {
                 // 🆕 生成 struct 初始化
-                // 检查是否是泛型结构体实例化
+                // 检查是否在方法上下文中，且是当前struct的初始化
                 const actual_name = blk: {
+                    // 🆕 优先检查方法上下文
+                    if (self.current_method_context) |ctx| {
+                        if (std.mem.eql(u8, si.type_name, ctx.struct_name)) {
+                            // 在方法体中初始化当前struct，使用mangled名字
+                            // 直接构建：struct_name + type_args
+                            var buf = std.ArrayList(u8).init(self.arena.allocator());
+                            buf.appendSlice(ctx.struct_name) catch break :blk si.type_name;
+                            for (ctx.type_args) |arg| {
+                                buf.appendSlice("_") catch break :blk si.type_name;
+                                buf.appendSlice(self.getSimpleTypeName(arg)) catch break :blk si.type_name;
+                            }
+                            break :blk buf.toOwnedSlice() catch si.type_name;
+                        }
+                    }
+                    
+                    // 检查是否是泛型结构体实例化
                     if (self.type_decls.get(si.type_name)) |type_decl| {
                         if (type_decl.type_params.len > 0) {
                             // 是泛型结构体，需要推导类型参数
@@ -1358,6 +1390,32 @@ pub const CodeGen = struct {
     // Helper Functions
     // ============================================================================
     
+    /// 获取类型的简化名（用于name mangling）
+    fn getSimpleTypeName(self: *CodeGen, paw_type: ast.Type) []const u8 {
+        _ = self;
+        return switch (paw_type) {
+            .i8 => "i8",
+            .i16 => "i16",
+            .i32 => "i32",
+            .i64 => "i64",
+            .i128 => "i128",
+            .u8 => "u8",
+            .u16 => "u16",
+            .u32 => "u32",
+            .u64 => "u64",
+            .u128 => "u128",
+            .f32 => "f32",
+            .f64 => "f64",
+            .bool => "bool",
+            .char => "char",
+            .string => "string",
+            .void => "void",
+            .generic => |name| name,
+            .named => |name| name,
+            else => "unknown",
+        };
+    }
+    
     fn typeToC(self: *CodeGen, paw_type: ast.Type) []const u8 {
         return switch (paw_type) {
             .i8 => "int8_t",
@@ -1403,9 +1461,15 @@ pub const CodeGen = struct {
                 return "void*";
             },
             .generic_instance => |gi| {
-                // TODO: 处理泛型实例
-                _ = gi;
-                return "void*";
+                // 🆕 处理泛型实例：Vec<i32> -> Vec_i32
+                // 使用arena allocator，generate结束时自动释放
+                var buf = std.ArrayList(u8).init(self.arena.allocator());
+                buf.appendSlice(gi.name) catch return "void*";
+                for (gi.type_args) |arg| {
+                    buf.appendSlice("_") catch return "void*";
+                    buf.appendSlice(self.getSimpleTypeName(arg)) catch return "void*";
+                }
+                return buf.toOwnedSlice() catch "void*";
             },
         };
     }
@@ -1485,12 +1549,30 @@ pub const CodeGen = struct {
 
     /// 生成单态化函数的前向声明
     fn generateMonomorphizedDeclarations(self: *CodeGen) !void {
-        // 🆕 1. 生成泛型结构体定义
+        // 🆕 1. 生成泛型结构体定义，并自动记录所有实例方法
         const struct_instances = self.generic_context.monomorphizer.struct_instances.items;
         for (struct_instances) |instance| {
             if (self.type_decls.get(instance.generic_name)) |type_decl| {
                 if (type_decl.kind == .struct_type) {
                     const st = type_decl.kind.struct_type;
+                    
+                    // 🆕 自动记录该struct的所有实例方法
+                    for (st.methods) |method| {
+                        if (method.params.len > 0 and 
+                            std.mem.eql(u8, method.params[0].name, "self")) {
+                            // 这是实例方法
+                            var method_type_args = std.ArrayList(ast.Type).init(self.allocator);
+                            for (instance.type_args) |arg| {
+                                try method_type_args.append(arg);
+                            }
+                            
+                            _ = try self.generic_context.monomorphizer.recordMethodInstance(
+                                instance.generic_name,
+                                method.name,
+                                try method_type_args.toOwnedSlice(),
+                            );
+                        }
+                    }
                     
                     // 生成 typedef struct
                     try self.output.appendSlice("typedef struct ");
@@ -1575,6 +1657,111 @@ pub const CodeGen = struct {
             }
         }
         try self.output.appendSlice("\n");
+        
+        // 🆕 3. 生成泛型方法前向声明
+        const method_instances = self.generic_context.monomorphizer.method_instances.items;
+        
+        for (method_instances) |method_instance| {
+            // 查找原始类型声明
+            if (self.type_decls.get(method_instance.struct_name)) |type_decl| {
+                if (type_decl.kind == .struct_type) {
+                    const st = type_decl.kind.struct_type;
+                    
+                    // 查找对应的方法
+                    for (st.methods) |method| {
+                        if (std.mem.eql(u8, method.name, method_instance.method_name)) {
+                            // 生成返回类型（替换泛型参数）
+                            const return_type = try self.substituteGenericType(
+                                method.return_type,
+                                type_decl.type_params,
+                                method_instance.type_args,
+                            );
+                            try self.output.appendSlice(self.typeToC(return_type));
+                            try self.output.appendSlice(" ");
+                            
+                            // 生成方法名（mangled）
+                            try self.output.appendSlice(method_instance.mangled_name);
+                            try self.output.appendSlice("(");
+                            
+                            // 生成参数（替换泛型参数）
+                            for (method.params, 0..) |param, i| {
+                                if (i > 0) try self.output.appendSlice(", ");
+                                
+                                const param_type = try self.substituteGenericType(
+                                    param.type,
+                                    type_decl.type_params,
+                                    method_instance.type_args,
+                                );
+                                
+                                // 如果参数名是 self，转换为指针
+                                if (std.mem.eql(u8, param.name, "self")) {
+                                    try self.output.appendSlice(method_instance.struct_name);
+                                    for (method_instance.type_args) |arg| {
+                                        try self.output.appendSlice("_");
+                                        try self.output.appendSlice(self.getSimpleTypeName(arg));
+                                    }
+                                    try self.output.appendSlice("* self");
+                                } else {
+                                    try self.output.appendSlice(self.typeToC(param_type));
+                                    try self.output.appendSlice(" ");
+                                    try self.output.appendSlice(param.name);
+                                }
+                            }
+                            
+                            try self.output.appendSlice(");\n");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        try self.output.appendSlice("\n");
+    }
+
+    /// 替换类型中的泛型参数
+    fn substituteGenericType(
+        self: *CodeGen,
+        ty: ast.Type,
+        type_params: [][]const u8,
+        type_args: []ast.Type,
+    ) !ast.Type {
+        switch (ty) {
+            .generic => |name| {
+                // 查找对应的类型参数
+                for (type_params, 0..) |param_name, idx| {
+                    if (std.mem.eql(u8, name, param_name) and idx < type_args.len) {
+                        return type_args[idx];
+                    }
+                }
+                return ty;
+            },
+            .named => |name| {
+                // 检查这个名称是否是泛型参数
+                for (type_params, 0..) |param_name, idx| {
+                    if (std.mem.eql(u8, name, param_name) and idx < type_args.len) {
+                        return type_args[idx];
+                    }
+                }
+                return ty;
+            },
+            .generic_instance => |gi| {
+                // 🆕 处理泛型实例类型（Vec<T>）
+                // 需要替换类型参数，生成具体的泛型实例
+                // 使用arena allocator，generate结束时自动释放
+                var new_type_args = std.ArrayList(ast.Type).init(self.arena.allocator());
+                for (gi.type_args) |arg| {
+                    const substituted = try self.substituteGenericType(arg, type_params, type_args);
+                    try new_type_args.append(substituted);
+                }
+                return ast.Type{
+                    .generic_instance = .{
+                        .name = gi.name,
+                        .type_args = try new_type_args.toOwnedSlice(),
+                    },
+                };
+            },
+            else => return ty,
+        }
     }
 
     /// 生成所有单态化的泛型函数
@@ -1617,6 +1804,82 @@ pub const CodeGen = struct {
                     }
                     
                     try self.output.appendSlice("}\n\n");
+                }
+            }
+        }
+        
+        // 🆕 生成泛型方法实现
+        const method_instances = self.generic_context.monomorphizer.method_instances.items;
+        
+        for (method_instances) |method_instance| {
+            // 查找原始类型声明
+            if (self.type_decls.get(method_instance.struct_name)) |type_decl| {
+                if (type_decl.kind == .struct_type) {
+                    const st = type_decl.kind.struct_type;
+                    
+                    // 查找对应的方法
+                    for (st.methods) |method| {
+                        if (std.mem.eql(u8, method.name, method_instance.method_name)) {
+                            // 生成返回类型（替换泛型参数）
+                            const return_type = try self.substituteGenericType(
+                                method.return_type,
+                                type_decl.type_params,
+                                method_instance.type_args,
+                            );
+                            try self.output.appendSlice(self.typeToC(return_type));
+                            try self.output.appendSlice(" ");
+                            
+                            // 生成方法名（mangled）
+                            try self.output.appendSlice(method_instance.mangled_name);
+                            try self.output.appendSlice("(");
+                            
+                            // 生成参数（替换泛型参数）
+                            for (method.params, 0..) |param, i| {
+                                if (i > 0) try self.output.appendSlice(", ");
+                                
+                                const param_type = try self.substituteGenericType(
+                                    param.type,
+                                    type_decl.type_params,
+                                    method_instance.type_args,
+                                );
+                                
+                                // 如果参数名是 self，转换为指针
+                                if (std.mem.eql(u8, param.name, "self")) {
+                                    try self.output.appendSlice(method_instance.struct_name);
+                                    for (method_instance.type_args) |arg| {
+                                        try self.output.appendSlice("_");
+                                        try self.output.appendSlice(self.getSimpleTypeName(arg));
+                                    }
+                                    try self.output.appendSlice("* self");
+                                } else {
+                                    try self.output.appendSlice(self.typeToC(param_type));
+                                    try self.output.appendSlice(" ");
+                                    try self.output.appendSlice(param.name);
+                                }
+                            }
+                            
+                            try self.output.appendSlice(") {\n");
+                            
+                            // 🆕 设置方法上下文，用于方法体生成时的类型替换
+                            self.current_method_context = .{
+                                .struct_name = method_instance.struct_name,
+                                .mangled_name = method_instance.mangled_name,
+                                .type_params = type_decl.type_params,
+                                .type_args = method_instance.type_args,
+                            };
+                            
+                            // 生成方法体
+                            for (method.body) |stmt| {
+                                try self.generateStmt(stmt);
+                            }
+                            
+                            // 清除方法上下文
+                            self.current_method_context = null;
+                            
+                            try self.output.appendSlice("}\n\n");
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -1713,11 +1976,39 @@ pub const CodeGen = struct {
                             }
                         }
                         
+                        // 🆕 先保存type_args的副本（因为recordStructInstance会接管所有权）
+                        var saved_type_args = std.ArrayList(ast.Type).init(self.allocator);
+                        for (type_args.items) |arg| {
+                            try saved_type_args.append(arg);
+                        }
+                        
                         // 记录泛型结构体实例化
                         _ = try self.generic_context.monomorphizer.recordStructInstance(
                             si.type_name,
                             try type_args.toOwnedSlice(),
                         );
+                        
+                        // 🆕 同时记录该struct的所有实例方法
+                        if (type_decl.kind == .struct_type) {
+                            const st = type_decl.kind.struct_type;
+                            for (st.methods) |method| {
+                                // 检查是否有self参数（实例方法）
+                                if (method.params.len > 0 and 
+                                    std.mem.eql(u8, method.params[0].name, "self")) {
+                                    // 这是实例方法，记录它（使用相同的type_args）
+                                    var method_type_args = std.ArrayList(ast.Type).init(self.allocator);
+                                    for (saved_type_args.items) |arg| {
+                                        try method_type_args.append(arg);
+                                    }
+                                    
+                                    _ = try self.generic_context.monomorphizer.recordMethodInstance(
+                                        si.type_name,
+                                        method.name,
+                                        try method_type_args.toOwnedSlice(),
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
                 
