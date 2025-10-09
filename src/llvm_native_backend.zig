@@ -130,7 +130,7 @@ pub const LLVMNativeBackend = struct {
         self.current_function = null;
     }
     
-    fn generateStmt(self: *LLVMNativeBackend, stmt: ast.Stmt) !void {
+    fn generateStmt(self: *LLVMNativeBackend, stmt: ast.Stmt) (error{NoCurrentFunction} || std.mem.Allocator.Error)!void {
         switch (stmt) {
             .return_stmt => |maybe_val| {
                 if (maybe_val) |val| {
@@ -168,7 +168,7 @@ pub const LLVMNativeBackend = struct {
         }
     }
     
-    fn generateWhileLoop(self: *LLVMNativeBackend, while_stmt: anytype) !void {
+    fn generateWhileLoop(self: *LLVMNativeBackend, loop: struct { condition: ast.Expr, body: []ast.Stmt }) !void {
         const func = self.current_function orelse return error.NoCurrentFunction;
         
         // Create basic blocks
@@ -191,12 +191,12 @@ pub const LLVMNativeBackend = struct {
         
         // Generate condition block
         self.builder.positionAtEnd(cond_block);
-        const cond_value = try self.generateExpr(while_stmt.condition);
+        const cond_value = try self.generateExpr(loop.condition);
         _ = llvm.LLVMBuildCondBr(self.builder.ref, cond_value, body_block, exit_block);
         
         // Generate body block
         self.builder.positionAtEnd(body_block);
-        for (while_stmt.body) |stmt| {
+        for (loop.body) |stmt| {
             try self.generateStmt(stmt);
         }
         _ = self.builder.buildBr(cond_block);  // Loop back
