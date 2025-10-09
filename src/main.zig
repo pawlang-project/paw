@@ -206,18 +206,35 @@ pub fn main() !void {
         if (decl == .import_decl) {
             const import_decl = decl.import_decl;
             
-            // 加载模块并获取导入项
-            const imported_item = module_loader.getImportedItem(
-                import_decl.module_path,
-                import_decl.item_name,
-            ) catch |err| {
-                std.debug.print("Error: Failed to import {s}.{s}: {any}\n", 
-                    .{import_decl.module_path, import_decl.item_name, err});
-                continue;
-            };
-            
-            // 将导入的声明添加到AST中
-            try resolved_declarations.append(imported_item);
+            // 🆕 处理单项或多项导入
+            switch (import_decl.items) {
+                .single => |item_name| {
+                    // 单项导入：import math.add;
+                    const imported_item = module_loader.getImportedItem(
+                        import_decl.module_path,
+                        item_name,
+                    ) catch |err| {
+                        std.debug.print("Error: Failed to import {s}.{s}: {any}\n", 
+                            .{import_decl.module_path, item_name, err});
+                        continue;
+                    };
+                    try resolved_declarations.append(imported_item);
+                },
+                .multiple => |item_names| {
+                    // 多项导入：import math.{add, sub, Vec2};
+                    for (item_names) |item_name| {
+                        const imported_item = module_loader.getImportedItem(
+                            import_decl.module_path,
+                            item_name,
+                        ) catch |err| {
+                            std.debug.print("Error: Failed to import {s}.{s}: {any}\n", 
+                                .{import_decl.module_path, item_name, err});
+                            continue;
+                        };
+                        try resolved_declarations.append(imported_item);
+                    }
+                },
+            }
             
             // 注意：module_path会在ast_result.deinit()中释放，这里不释放
         } else {
