@@ -1,0 +1,63 @@
+// PawLang v0.1.2 示例：泛型方法
+// 演示静态方法和实例方法的使用
+
+fn main() -> i32 {
+    println("=== PawLang v0.1.2: 泛型方法演示 ===\n");
+    
+    // ============================================
+    // 静态方法：使用 :: 语法
+    // ============================================
+    println("【静态方法】");
+    println("使用 :: 语法调用类型的关联函数\n");
+    
+    // Vec<i32> 静态方法
+    println("1. Vec<i32>::new()");
+    let numbers: Vec<i32> = Vec<i32>::new();
+    println("   创建空的整数向量\n");
+    
+    println("2. Vec<i32>::with_capacity(100)");
+    let big_vec: Vec<i32> = Vec<i32>::with_capacity(100);
+    println("   创建容量为100的向量\n");
+    
+    // Box<i32> 静态方法
+    println("3. Box<i32>::new(42)");
+    let boxed: Box<i32> = Box<i32>::new(42);
+    println("   将整数装箱\n");
+    
+    // ============================================
+    // 实例方法：使用 . 语法
+    // ============================================
+    println("【实例方法】");
+    println("使用 . 语法调用实例方法");
+    println("✨ 亮点：self参数不需要写类型！\n");
+    
+    println("4. vec.length()");
+    let len: i32 = big_vec.length();
+    println("   获取向量长度\n");
+    
+    println("5. vec.capacity_method()");
+    let cap: i32 = big_vec.capacity_method();
+    println("   获取向量容量\n");
+    
+    // ============================================
+    // 多类型参数
+    // ============================================
+    println("【多类型支持】");
+    println("同一个泛型，不同的类型参数\n");
+    
+    let vec_int: Vec<i32> = Vec<i32>::new();
+    let vec_str: Vec<string> = Vec<string>::new();
+    let box_int: Box<i32> = Box<i32>::new(1);
+    let box_str: Box<string> = Box<string>::new("paw");
+    
+    println("  ✓ Vec<i32>");
+    println("  ✓ Vec<string>");
+    println("  ✓ Box<i32>");
+    println("  ✓ Box<string>");
+    
+    println("\n=== 演示完成! ===");
+    println("PawLang泛型方法系统让代码更优雅、更安全、更高效！");
+    
+    return 0;
+}
+

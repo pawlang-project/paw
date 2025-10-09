@@ -87,6 +87,22 @@ pub const Type = union(enum) {
             },
         };
     }
+    
+    /// 释放Type的动态分配部分（如type_args）
+    /// 注意：只释放一层，不做深度递归，避免double-free
+    pub fn deinit(self: Type, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .generic_instance => |gi| {
+                // 释放type_args slice（这是最主要的泄漏源）
+                allocator.free(gi.type_args);
+            },
+            .function => |func| {
+                // 释放参数slice
+                allocator.free(func.params);
+            },
+            else => {}, // 其他类型暂不处理，避免复杂的所有权问题
+        }
+    }
 };
 
 pub const Expr = union(enum) {
@@ -474,6 +490,7 @@ pub const FunctionDecl = struct {
     pub fn deinit(self: FunctionDecl, allocator: std.mem.Allocator) void {
         allocator.free(self.type_params);
         allocator.free(self.params);
+        // 注意：不释放参数类型，避免复杂的所有权问题
         for (self.body) |stmt| {
             stmt.deinit(allocator);
         }
@@ -530,7 +547,12 @@ pub const ImplDecl = struct {
 };
 
 pub const ImportDecl = struct {
-    path: []const u8,
+    module_path: []const u8,  // math.add -> "math" (需要释放)
+    item_name: []const u8,    // math.add -> "add" (token lexeme, 不需要释放)
+    
+    pub fn deinit(self: ImportDecl, allocator: std.mem.Allocator) void {
+        allocator.free(self.module_path);
+    }
 };
 
 // 新增：统一的类型定义类型
@@ -604,6 +626,7 @@ pub const Program = struct {
             switch (decl) {
                 .function => |func| func.deinit(allocator),
                 .type_decl => |td| td.deinit(allocator),
+                .import_decl => |id| id.deinit(allocator),
                 else => {}, // 其他类型暂不处理
             }
         }

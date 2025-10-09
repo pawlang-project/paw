@@ -133,7 +133,7 @@ pub const Parser = struct {
             const type_decl = try self.parseTypeDecl(is_public);
             return ast.TopLevelDecl{ .type_decl = type_decl };
         } else if (self.match(.keyword_fn)) {
-            const func = try self.parseFunctionDecl(is_public, false);
+            const func = try self.parseFunctionDecl(is_public, false, null);
             return ast.TopLevelDecl{ .function = func };
         } else if (self.match(.keyword_import)) {
             const import_decl = try self.parseImportDecl();
@@ -143,7 +143,10 @@ pub const Parser = struct {
         }
     }
 
-    fn parseFunctionDecl(self: *Parser, is_public: bool, is_async: bool) !ast.FunctionDecl {
+    fn parseFunctionDecl(self: *Parser, is_public: bool, is_async: bool, struct_context: ?struct {
+        name: []const u8,
+        type_params: [][]const u8,
+    }) !ast.FunctionDecl {
         const name = try self.consume(.identifier);
         
         // 解析泛型参数
@@ -170,7 +173,27 @@ pub const Parser = struct {
                 // mut self 或 mut identifier: Type
                 if (self.match(.keyword_self)) {
                     param_name = "self";
-                    param_type = ast.Type{ .named = "Self" };
+                    // 🆕 如果在struct上下文中，使用struct类型
+                    if (struct_context) |ctx| {
+                        if (ctx.type_params.len > 0) {
+                            // 泛型struct: Vec<T>
+                            var type_args = std.ArrayList(ast.Type).init(self.allocator);
+                            for (ctx.type_params) |tp| {
+                                try type_args.append(ast.Type{ .generic = tp });
+                            }
+                            param_type = ast.Type{
+                                .generic_instance = .{
+                                    .name = ctx.name,
+                                    .type_args = try type_args.toOwnedSlice(),
+                                },
+                            };
+                        } else {
+                            // 普通struct
+                            param_type = ast.Type{ .named = ctx.name };
+                        }
+                    } else {
+                        param_type = ast.Type{ .named = "Self" };
+                    }
                 } else {
                     const pname = try self.consume(.identifier);
                     _ = try self.consume(.colon);
@@ -180,7 +203,27 @@ pub const Parser = struct {
             } else if (self.match(.keyword_self)) {
                 // self (不可变)
                 param_name = "self";
-                param_type = ast.Type{ .named = "Self" };
+                // 🆕 如果在struct上下文中，使用struct类型
+                if (struct_context) |ctx| {
+                    if (ctx.type_params.len > 0) {
+                        // 泛型struct: Vec<T>
+                        var type_args = std.ArrayList(ast.Type).init(self.allocator);
+                        for (ctx.type_params) |tp| {
+                            try type_args.append(ast.Type{ .generic = tp });
+                        }
+                        param_type = ast.Type{
+                            .generic_instance = .{
+                                .name = ctx.name,
+                                .type_args = try type_args.toOwnedSlice(),
+                            },
+                        };
+                    } else {
+                        // 普通struct
+                        param_type = ast.Type{ .named = ctx.name };
+                    }
+                } else {
+                    param_type = ast.Type{ .named = "Self" };
+                }
             } else {
                 // 普通参数
                 const pname = try self.consume(.identifier);
@@ -254,7 +297,11 @@ pub const Parser = struct {
                 // 检查是否是方法定义
                 if (self.check(.keyword_fn)) {
                     _ = self.advance();
-                    const method = try self.parseFunctionDecl(field_is_pub, false);
+                    // 🆕 传递struct上下文给parseFunctionDecl
+                    const method = try self.parseFunctionDecl(field_is_pub, false, .{
+                        .name = name.lexeme,
+                        .type_params = type_params.items,
+                    });
                     try methods.append(method);
                 } else {
                     // 字段定义
@@ -290,7 +337,11 @@ pub const Parser = struct {
                 
                 if (self.check(.keyword_fn)) {
                     _ = self.advance();
-                    const method = try self.parseFunctionDecl(variant_is_pub, false);
+                    // 🆕 传递enum上下文给parseFunctionDecl
+                    const method = try self.parseFunctionDecl(variant_is_pub, false, .{
+                        .name = name.lexeme,
+                        .type_params = type_params.items,
+                    });
                     try methods.append(method);
                 } else {
                     const variant_name = try self.consume(.identifier);
@@ -615,11 +666,41 @@ pub const Parser = struct {
     }
 
     fn parseImportDecl(self: *Parser) !ast.ImportDecl {
-        const path = try self.consume(.string_literal);
+        // 解析模块路径：import math.add;
+        // 格式：import module_path.item_name;
+        
+        var path_parts = std.ArrayList([]const u8).init(self.allocator);
+        defer path_parts.deinit();
+        
+        // 第一个标识符
+        const first = try self.consume(.identifier);
+        try path_parts.append(first.lexeme);
+        
+        // 解析 .identifier 链
+        while (self.match(.dot)) {
+            const part = try self.consume(.identifier);
+            try path_parts.append(part.lexeme);
+        }
+        
         _ = self.match(.semicolon);
         
+        // 最后一个是item_name，其余是module_path
+        if (path_parts.items.len < 2) {
+            return error.InvalidImportPath;
+        }
+        
+        const item_name = path_parts.items[path_parts.items.len - 1];
+        
+        // 构建module_path：math.vec -> "math/vec"
+        var module_path = std.ArrayList(u8).init(self.allocator);
+        for (path_parts.items[0..path_parts.items.len - 1], 0..) |part, i| {
+            if (i > 0) try module_path.append('/');
+            try module_path.appendSlice(part);
+        }
+        
         return ast.ImportDecl{
-            .path = path.lexeme[1 .. path.lexeme.len - 1], // 去掉引号
+            .module_path = try module_path.toOwnedSlice(),
+            .item_name = item_name,
         };
     }
 
@@ -685,14 +766,12 @@ pub const Parser = struct {
                 }
                 _ = try self.consume(.gt);
                 
-                const generic_inst = try self.allocator.create(ast.Type);
-                generic_inst.* = ast.Type{
+                return ast.Type{
                     .generic_instance = .{
                         .name = name.lexeme,
                         .type_args = try type_args.toOwnedSlice(),
                     },
                 };
-                return generic_inst.*;
             }
             
             return ast.Type{ .named = name.lexeme };
