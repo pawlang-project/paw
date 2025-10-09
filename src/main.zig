@@ -352,7 +352,7 @@ pub fn main() !void {
         };
         defer code_file.close();
         
-        _ = try code_file.write(output_code);
+        try code_file.writeAll(output_code);
         
         if (verbose) {
             std.debug.print("Compilation complete: {s} -> {s} ({d:.2}s)\n", .{

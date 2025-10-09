@@ -1,0 +1,17 @@
+// LLVM Backend Test 3: Function Calls
+// Multiple functions and function calls
+
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn multiply(a: i32, b: i32) -> i32 {
+    return a * b;
+}
+
+fn main() -> i32 {
+    let x = add(10, 20);
+    let y = multiply(3, 4);
+    return x + y;
+}
+

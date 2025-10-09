@@ -18,7 +18,8 @@ pub const LLVMBackend = struct {
     output: std.ArrayList(u8),
     
     // Symbol tables
-    variables: std.StringHashMap([]const u8),
+    variables: std.StringHashMap([]const u8),      // local variables (需要load)
+    parameters: std.StringHashMap([]const u8),     // function parameters (不需要load)
     functions: std.StringHashMap([]const u8),
     
     // IR generation state
@@ -30,6 +31,7 @@ pub const LLVMBackend = struct {
             .allocator = allocator,
             .output = std.ArrayList(u8).init(allocator),
             .variables = std.StringHashMap([]const u8).init(allocator),
+            .parameters = std.StringHashMap([]const u8).init(allocator),
             .functions = std.StringHashMap([]const u8).init(allocator),
         };
     }
@@ -37,6 +39,7 @@ pub const LLVMBackend = struct {
     pub fn deinit(self: *LLVMBackend) void {
         self.output.deinit();
         self.variables.deinit();
+        self.parameters.deinit();
         self.functions.deinit();
     }
     
@@ -51,7 +54,8 @@ pub const LLVMBackend = struct {
             try self.generateDecl(decl);
         }
         
-        return self.output.items;
+        // Return a copy of the output
+        return try self.allocator.dupe(u8, self.output.items);
     }
     
     fn generateDecl(self: *LLVMBackend, decl: ast.TopLevelDecl) !void {
@@ -85,8 +89,9 @@ pub const LLVMBackend = struct {
     }
     
     fn generateFunction(self: *LLVMBackend, func: ast.FunctionDecl) !void {
-        // Reset temp counter for each function
+        // Reset temp counter and clear parameter map for each function
         self.next_temp = 1;
+        self.parameters.clearRetainingCapacity();
         
         // Function signature
         try self.output.appendSlice("\ndefine ");
@@ -101,6 +106,9 @@ pub const LLVMBackend = struct {
             try self.output.appendSlice(try self.toLLVMType(param.type));
             try self.output.appendSlice(" %");
             try self.output.appendSlice(param.name);
+            
+            // 🆕 记录这是一个参数（值类型，不需要load）
+            try self.parameters.put(param.name, param.name);
         }
         
         try self.output.appendSlice(") {\n");
@@ -119,16 +127,16 @@ pub const LLVMBackend = struct {
     fn generateStmt(self: *LLVMBackend, stmt: ast.Stmt) !void {
         switch (stmt) {
             .return_stmt => |maybe_val| {
-                try self.output.appendSlice("  ret ");
                 if (maybe_val) |val| {
                     const temp = try self.generateExpr(val);
+                    try self.output.appendSlice("  ret ");
                     try self.output.appendSlice(try self.getExprType(val));
                     try self.output.appendSlice(" ");
                     try self.output.appendSlice(temp);
+                    try self.output.appendSlice("\n");
                 } else {
-                    try self.output.appendSlice("void");
+                    try self.output.appendSlice("  ret void\n");
                 }
-                try self.output.appendSlice("\n");
             },
             .let_decl => |let_stmt| {
                 // Allocate local variable
@@ -174,14 +182,20 @@ pub const LLVMBackend = struct {
                 return try std.fmt.allocPrint(self.allocator, "{d}", .{val});
             },
             .identifier => |name| {
-                // Load variable
-                const temp = try self.nextTemp();
-                try self.output.appendSlice("  ");
-                try self.output.appendSlice(temp);
-                try self.output.appendSlice(" = load i32, ptr %");
-                try self.output.appendSlice(name);
-                try self.output.appendSlice("\n");
-                return temp;
+                // 🆕 检查是否是函数参数
+                if (self.parameters.contains(name)) {
+                    // 参数是值类型，直接返回
+                    return try std.fmt.allocPrint(self.allocator, "%{s}", .{name});
+                } else {
+                    // 局部变量，需要load
+                    const temp = try self.nextTemp();
+                    try self.output.appendSlice("  ");
+                    try self.output.appendSlice(temp);
+                    try self.output.appendSlice(" = load i32, ptr %");
+                    try self.output.appendSlice(name);
+                    try self.output.appendSlice("\n");
+                    return temp;
+                }
             },
             .binary => |binop| {
                 const lhs = try self.generateExpr(binop.left.*);
