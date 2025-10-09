@@ -109,37 +109,53 @@ let wrong = add(32);        // ❌ Error: expects 2 arguments, got 1
 
 ---
 
-### 🔗 模块系统（v0.1.2）⭐
+### 🏗️ 工程化模块系统（v0.1.3升级）⭐
 
-**简洁的导入语法**：
+**多项导入语法**：
 
 ```paw
 // math.paw - 模块文件
-pub fn add(a: i32, b: i32) -> i32 {
-    return a + b;
-}
-
-pub type Vec2 = struct {
-    x: i32,
-    y: i32,
-}
+pub fn add(a: i32, b: i32) -> i32 { a + b }
+pub fn multiply(a: i32, b: i32) -> i32 { a * b }
+pub type Vec2 = struct { x: i32, y: i32, }
 
 // main.paw - 使用模块
-import math.add;      // 导入函数
-import math.Vec2;     // 导入类型
+// 🆕 v0.1.3: 多项导入（推荐）
+import math.{add, multiply, Vec2};
+
+// v0.1.2: 单项导入（仍然支持）
+import math.add;
+import math.multiply;
+import math.Vec2;
 
 fn main() -> i32 {
     let sum = add(10, 20);
+    let product = multiply(5, 6);
     let v = Vec2 { x: 1, y: 2 };
-    return 0;
+    return sum + product;
 }
 ```
 
+**mod.paw模块入口**：
+```
+mylib/
+├── mod.paw       # 模块入口（重新导出）
+├── core.paw      # 核心功能
+└── utils.paw     # 工具函数
+
+使用:
+import mylib.{hello, Data};  // 从mod.paw导入
+```
+
 **特点**：
+- ✅ 多项导入减少代码量
+- ✅ mod.paw模块入口支持
+- ✅ 标准库模块化组织
 - ✅ 使用`.`语法（不是`::`）
 - ✅ 直接`import`（不需要`use`）
 - ✅ `pub`控制导出
 - ✅ 自动模块加载和缓存
+- ✅ 向后兼容旧语法
 
 ### 🎯 完整的泛型系统（v0.1.2 新功能！）
 
