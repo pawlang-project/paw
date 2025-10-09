@@ -15,8 +15,20 @@ pub fn build(b: *std.Build) void {
         .root_module = main_mod,
     });
 
+    // 🆕 集成 LLVM（可选，用于未来原生后端）
+    // 当前文本后端不需要，但预先配置好
+    if (b.option(bool, "with-llvm", "Enable native LLVM backend (experimental)") orelse false) {
+        const llvm_dep = b.dependency("llvm", .{
+            .target = target,
+            .optimize = optimize,
+        });
+        const llvm_mod = llvm_dep.module("llvm");
+        exe.root_module.addImport("llvm", llvm_mod);
+        
+        std.debug.print("✓ LLVM native backend enabled\n", .{});
+    }
+    
     // 链接标准库
-    // 注意: LLVM 后端生成文本 IR，不需要链接 LLVM 库
     exe.linkLibC();
 
     b.installArtifact(exe);
