@@ -393,6 +393,10 @@ pub const Builder = struct {
             name.ptr,
         );
     }
+    
+    pub fn buildBr(self: Builder, dest: BasicBlockRef) ValueRef {
+        return LLVMBuildBr(self.ref, dest);
+    }
 };
 
 // Helper function to create constant int

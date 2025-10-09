@@ -17,6 +17,13 @@ pub const LLVMNativeBackend = struct {
     functions: std.StringHashMap(llvm.ValueRef),
     variables: std.StringHashMap(llvm.ValueRef),
     
+    // Current function context
+    current_function: ?llvm.ValueRef,
+    
+    // Loop context for break/continue
+    current_loop_exit: ?llvm.BasicBlockRef,
+    current_loop_continue: ?llvm.BasicBlockRef,
+    
     pub fn init(allocator: std.mem.Allocator, module_name: []const u8) !LLVMNativeBackend {
         const context = llvm.Context.create();
         
@@ -34,6 +41,9 @@ pub const LLVMNativeBackend = struct {
             .builder = builder,
             .functions = std.StringHashMap(llvm.ValueRef).init(allocator),
             .variables = std.StringHashMap(llvm.ValueRef).init(allocator),
+            .current_function = null,
+            .current_loop_exit = null,
+            .current_loop_continue = null,
         };
     }
     
@@ -97,6 +107,9 @@ pub const LLVMNativeBackend = struct {
         const llvm_func = self.module.addFunction(func_name_z, func_type);
         try self.functions.put(func.name, llvm_func);
         
+        // Set current function context
+        self.current_function = llvm_func;
+        
         // Create entry basic block
         const entry_block = llvm.appendBasicBlock(self.context, llvm_func, "entry");
         self.builder.positionAtEnd(entry_block);
@@ -112,6 +125,9 @@ pub const LLVMNativeBackend = struct {
         for (func.body) |stmt| {
             try self.generateStmt(stmt);
         }
+        
+        // Clear function context
+        self.current_function = null;
     }
     
     fn generateStmt(self: *LLVMNativeBackend, stmt: ast.Stmt) !void {
@@ -133,10 +149,60 @@ pub const LLVMNativeBackend = struct {
             .expr => |expr| {
                 _ = try self.generateExpr(expr);
             },
+            .while_loop => |while_stmt| {
+                try self.generateWhileLoop(while_stmt);
+            },
+            .break_stmt => |_| {
+                if (self.current_loop_exit) |exit_block| {
+                    _ = self.builder.buildBr(exit_block);
+                }
+            },
+            .continue_stmt => {
+                if (self.current_loop_continue) |continue_block| {
+                    _ = self.builder.buildBr(continue_block);
+                }
+            },
             else => {
                 // TODO: Handle other statement types
             },
         }
+    }
+    
+    fn generateWhileLoop(self: *LLVMNativeBackend, while_stmt: anytype) !void {
+        const func = self.current_function orelse return error.NoCurrentFunction;
+        
+        // Create basic blocks
+        const cond_block = llvm.appendBasicBlock(self.context, func, "while.cond");
+        const body_block = llvm.appendBasicBlock(self.context, func, "while.body");
+        const exit_block = llvm.appendBasicBlock(self.context, func, "while.exit");
+        
+        // Save loop context
+        const saved_exit = self.current_loop_exit;
+        const saved_continue = self.current_loop_continue;
+        self.current_loop_exit = exit_block;
+        self.current_loop_continue = cond_block;
+        defer {
+            self.current_loop_exit = saved_exit;
+            self.current_loop_continue = saved_continue;
+        }
+        
+        // Jump to condition
+        _ = self.builder.buildBr(cond_block);
+        
+        // Generate condition block
+        self.builder.positionAtEnd(cond_block);
+        const cond_value = try self.generateExpr(while_stmt.condition);
+        _ = llvm.LLVMBuildCondBr(self.builder.ref, cond_value, body_block, exit_block);
+        
+        // Generate body block
+        self.builder.positionAtEnd(body_block);
+        for (while_stmt.body) |stmt| {
+            try self.generateStmt(stmt);
+        }
+        _ = self.builder.buildBr(cond_block);  // Loop back
+        
+        // Continue from exit block
+        self.builder.positionAtEnd(exit_block);
     }
     
     fn generateExpr(self: *LLVMNativeBackend, expr: ast.Expr) !llvm.ValueRef {
@@ -171,6 +237,41 @@ pub const LLVMNativeBackend = struct {
                     else => llvm.constI32(self.context, 0),
                 };
                 break :blk result;
+            },
+            .if_expr => |if_expr| blk: {
+                const func = self.current_function orelse {
+                    break :blk llvm.constI32(self.context, 0);
+                };
+                
+                // Generate condition
+                const cond_value = try self.generateExpr(if_expr.condition.*);
+                
+                // Create basic blocks
+                const then_block = llvm.appendBasicBlock(self.context, func, "if.then");
+                const else_block = llvm.appendBasicBlock(self.context, func, "if.else");
+                const cont_block = llvm.appendBasicBlock(self.context, func, "if.cont");
+                
+                // Build conditional branch
+                _ = llvm.LLVMBuildCondBr(self.builder.ref, cond_value, then_block, else_block);
+                
+                // Generate then branch
+                self.builder.positionAtEnd(then_block);
+                const then_value = try self.generateExpr(if_expr.then_branch.*);
+                _ = self.builder.buildBr(cont_block);
+                
+                // Generate else branch
+                self.builder.positionAtEnd(else_block);
+                _ = if (if_expr.else_branch) |else_br|
+                    try self.generateExpr(else_br.*)
+                else
+                    llvm.constI32(self.context, 0);
+                _ = self.builder.buildBr(cont_block);
+                
+                // Continue block
+                self.builder.positionAtEnd(cont_block);
+                
+                // For now, just return then_value (proper PHI node needed for full support)
+                break :blk then_value;
             },
             .call => |call_expr| blk: {
                 // Get function name
