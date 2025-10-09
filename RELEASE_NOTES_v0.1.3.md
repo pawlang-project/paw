@@ -34,7 +34,9 @@ let p = Point { x: 1, y: 2 };  // Point inferred
 
 ### Type Inference Capabilities
 
-#### 1. Literal Inference
+#### Basic Inference
+
+##### 1. Literal Inference
 ```paw
 let num = 42;           // i32
 let text = "hello";     // string
@@ -42,7 +44,7 @@ let flag = true;        // bool
 let pi = 3.14;          // f64
 ```
 
-#### 2. Function Call Inference
+##### 2. Function Call Inference
 ```paw
 fn calculate(a: i32, b: i32) -> i32 {
     a + b
@@ -51,20 +53,38 @@ fn calculate(a: i32, b: i32) -> i32 {
 let result = calculate(10, 20);  // i32 inferred from return type
 ```
 
-#### 3. Generic Type Inference
-```paw
-let vec = Vec<i32>::new();           // Vec<i32> inferred
-let boxed = Box<string>::new("hi");  // Box<string> inferred
-```
-
-#### 4. Struct Inference
+##### 3. Struct Literal Inference
 ```paw
 type Point = struct { x: i32, y: i32, }
 
 let p = Point { x: 100, y: 200 };  // Point inferred
 ```
 
-#### 5. Complex Expressions
+#### Advanced Inference ⭐
+
+##### 4. Generic Method Return Types
+```paw
+let vec = Vec<i32>::new();           // Vec<i32> inferred!
+let boxed = Box<string>::new("hi");  // Box<string> inferred!
+let length = vec.length();            // i32 inferred from method
+```
+
+##### 5. Struct Field Access
+```paw
+type Point = struct { x: i32, y: i32, }
+
+let p = Point { x: 10, y: 20 };
+let x = p.x;  // i32 inferred from field type
+let y = p.y;  // i32 inferred from field type
+```
+
+##### 6. Array Literals
+```paw
+let arr = [1, 2, 3];      // [i32; 3] inferred
+let nums = [10, 20, 30];  // [i32; 3] inferred
+```
+
+##### 7. Complex Expressions
 ```paw
 let sum = add(1, 2);
 let double = sum * 2;     // i32 inferred from sum
