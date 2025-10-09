@@ -1,0 +1,24 @@
+// 测试实例方法 - v0.1.2
+// 测试 self 不带类型的实例方法
+
+fn main() -> i32 {
+    println("=== 测试泛型实例方法 v0.1.2 ===");
+    
+    // 创建Vec实例
+    println("\n测试 1: 创建 Vec<i32>");
+    let vec: Vec<i32> = Vec<i32>::with_capacity(5);
+    println("Vec<i32> 创建成功");
+    
+    // 调用实例方法（使用 . 语法）
+    println("\n测试 2: 调用实例方法 vec.capacity_method()");
+    let cap: i32 = vec.capacity_method();
+    println("capacity_method() 调用成功");
+    
+    println("\n测试 3: 调用实例方法 vec.length()");
+    let len: i32 = vec.length();
+    println("length() 调用成功");
+    
+    println("\n=== 所有实例方法测试通过! ===");
+    return 0;
+}
+

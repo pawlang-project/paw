@@ -547,11 +547,19 @@ pub const ImplDecl = struct {
 };
 
 pub const ImportDecl = struct {
-    module_path: []const u8,  // math.add -> "math" (需要释放)
-    item_name: []const u8,    // math.add -> "add" (token lexeme, 不需要释放)
+    module_path: []const u8,      // math.add -> "math" (需要释放)
+    items: ImportItems,           // 🆕 支持多项导入
+    
+    pub const ImportItems = union(enum) {
+        single: []const u8,       // import math.add
+        multiple: [][]const u8,   // import math.{add, sub} (需要释放slice)
+    };
     
     pub fn deinit(self: ImportDecl, allocator: std.mem.Allocator) void {
         allocator.free(self.module_path);
+        if (self.items == .multiple) {
+            allocator.free(self.items.multiple);
+        }
     }
 };
 

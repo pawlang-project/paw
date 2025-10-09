@@ -1,0 +1,55 @@
+// 完整泛型方法测试 - v0.1.2
+// 测试静态方法 + 实例方法
+
+fn main() -> i32 {
+    println("=== PawLang v0.1.2 完整泛型方法测试 ===");
+    
+    // ============================================
+    // 测试组 1: Vec<i32> 静态方法 + 实例方法
+    // ============================================
+    println("\n[组1] Vec<i32> 静态方法");
+    let vec1: Vec<i32> = Vec<i32>::new();
+    println("  ✓ Vec<i32>::new()");
+    
+    let vec2: Vec<i32> = Vec<i32>::with_capacity(10);
+    println("  ✓ Vec<i32>::with_capacity(10)");
+    
+    println("\n[组1] Vec<i32> 实例方法");
+    let len: i32 = vec2.length();
+    println("  ✓ vec.length()");
+    
+    let cap: i32 = vec2.capacity_method();
+    println("  ✓ vec.capacity_method()");
+    
+    // ============================================
+    // 测试组 2: Vec<string> 静态方法 + 实例方法
+    // ============================================
+    println("\n[组2] Vec<string> 静态方法");
+    let vec_str: Vec<string> = Vec<string>::new();
+    println("  ✓ Vec<string>::new()");
+    
+    println("\n[组2] Vec<string> 实例方法");
+    let str_len: i32 = vec_str.length();
+    println("  ✓ vec_str.length()");
+    
+    // ============================================
+    // 测试组 3: Box<i32> 静态方法
+    // ============================================
+    println("\n[组3] Box<i32> 静态方法");
+    let box1: Box<i32> = Box<i32>::new(42);
+    println("  ✓ Box<i32>::new(42)");
+    
+    let box2: Box<i32> = Box<i32>::new(100);
+    println("  ✓ Box<i32>::new(100)");
+    
+    // ============================================
+    // 测试组 4: Box<string> 静态方法
+    // ============================================
+    println("\n[组4] Box<string> 静态方法");
+    let box_str: Box<string> = Box<string>::new("hello");
+    println("  ✓ Box<string>::new(hello)");
+    
+    println("\n=== ✅ 所有测试通过! PawLang泛型方法系统完成! ===");
+    return 0;
+}
+

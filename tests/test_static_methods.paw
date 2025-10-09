@@ -1,0 +1,35 @@
+// 测试泛型静态方法 - v0.1.2
+// 只测试静态方法（不涉及实例方法）
+
+fn main() -> i32 {
+    println("=== 测试泛型静态方法 v0.1.2 ===");
+    
+    // 测试 1: Vec<i32>::new()
+    println("\n测试 1: Vec<i32>::new()");
+    let vec1: Vec<i32> = Vec<i32>::new();
+    println("Vec<i32>::new() 创建成功");
+    
+    // 测试 2: Vec<i32>::with_capacity(10)
+    println("\n测试 2: Vec<i32>::with_capacity(10)");
+    let vec2: Vec<i32> = Vec<i32>::with_capacity(10);
+    println("Vec<i32>::with_capacity(10) 创建成功");
+    
+    // 测试 3: Vec<string>::new()
+    println("\n测试 3: Vec<string>::new()");
+    let vec_str: Vec<string> = Vec<string>::new();
+    println("Vec<string>::new() 创建成功");
+    
+    // 测试 4: Box<i32>::new(42)
+    println("\n测试 4: Box<i32>::new(42)");
+    let box1: Box<i32> = Box<i32>::new(42);
+    println("Box<i32>::new(42) 创建成功");
+    
+    // 测试 5: Box<string>::new(hello)
+    println("\n测试 5: Box<string>::new(hello)");
+    let box_str: Box<string> = Box<string>::new("hello");
+    println("Box<string>::new(hello) 创建成功");
+    
+    println("\n=== 所有静态方法测试通过! ===");
+    return 0;
+}
+
