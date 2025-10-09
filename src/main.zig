@@ -3,17 +3,21 @@ const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
 const TypeChecker = @import("typechecker.zig").TypeChecker;
 const CodeGen = @import("codegen.zig").CodeGen;
-const LLVMBackend = @import("llvm_backend.zig").LLVMBackend; // 🆕 v0.1.4
+const LLVMBackend = @import("llvm_backend.zig").LLVMBackend; // 🆕 v0.1.4 - Text mode
+const LLVMNativeBackend = @import("llvm_native_backend.zig").LLVMNativeBackend; // 🆕 v0.1.4 - Native API
 const TccBackend = @import("tcc_backend.zig").TccBackend;
 const ModuleLoader = @import("module.zig").ModuleLoader;
 const ast_mod = @import("ast.zig");
+
+const builtin = @import("builtin");
 
 const VERSION = "0.1.4-dev";
 
 // 🆕 v0.1.4: Backend选择
 const Backend = enum {
-    c,      // C backend (default, stable)
-    llvm,   // LLVM backend (experimental)
+    c,           // C backend (default, stable)
+    llvm,        // LLVM backend (text IR, experimental)
+    llvm_native, // LLVM native API (requires -Dwith-llvm=true)
 };
 
 // 🆕 check command: type checking only
@@ -160,12 +164,15 @@ pub fn main() !void {
             should_compile = true;
         } else if (std.mem.eql(u8, arg, "--compile")) {
             should_compile = true;
-        } else if (std.mem.eql(u8, arg, "--backend=llvm")) {
-            // 🆕 v0.1.4: LLVM后端
-            backend = .llvm;
-        } else if (std.mem.eql(u8, arg, "--backend=c")) {
-            backend = .c;
-        }
+            } else if (std.mem.eql(u8, arg, "--backend=llvm")) {
+                // 🆕 v0.1.4: LLVM后端 (文本IR)
+                backend = .llvm;
+            } else if (std.mem.eql(u8, arg, "--backend=llvm-native")) {
+                // 🆕 v0.1.4: LLVM原生API
+                backend = .llvm_native;
+            } else if (std.mem.eql(u8, arg, "--backend=c")) {
+                backend = .c;
+            }
     }
 
     // 读取源文件
@@ -281,19 +288,35 @@ pub fn main() !void {
         std.debug.print("[PERF] Type checking: {d}μs\n", .{@divTrunc(typecheck_time - start_time, 1000)});
     }
 
-    // 4. Code generation - 🆕 v0.1.4: 支持多后端
-    const output_code = switch (backend) {
-        .c => blk: {
-            var codegen = CodeGen.init(allocator);
-            defer codegen.deinit();
-            break :blk try codegen.generate(ast);
-        },
-        .llvm => blk: {
-            var llvm_codegen = LLVMBackend.init(allocator);
-            defer llvm_codegen.deinit();
-            break :blk try llvm_codegen.generate(ast);
-        },
-    };
+        // 4. Code generation - 🆕 v0.1.4: 支持多后端
+        const output_code = switch (backend) {
+            .c => blk: {
+                var codegen = CodeGen.init(allocator);
+                defer codegen.deinit();
+                break :blk try codegen.generate(ast);
+            },
+            .llvm => blk: {
+                var llvm_codegen = LLVMBackend.init(allocator);
+                defer llvm_codegen.deinit();
+                break :blk try llvm_codegen.generate(ast);
+            },
+            .llvm_native => blk: {
+                // Check if LLVM native API is available
+                const has_llvm = comptime blk_check: {
+                    break :blk_check @hasDecl(@This(), "LLVMNativeBackend");
+                };
+                
+                if (!has_llvm) {
+                    std.debug.print("❌ LLVM native backend not available\n", .{});
+                    std.debug.print("💡 Rebuild with: zig build -Dwith-llvm=true\n", .{});
+                    return;
+                }
+                
+                var llvm_native = try LLVMNativeBackend.init(allocator, "pawlang_module");
+                defer llvm_native.deinit();
+                break :blk try llvm_native.generate(ast);
+            },
+        };
     
     const total_time = std.time.nanoTimestamp();
     
@@ -301,19 +324,21 @@ pub fn main() !void {
     if (verbose) {
         const backend_name = switch (backend) {
             .c => "C",
-            .llvm => "LLVM (experimental)",
+            .llvm => "LLVM (text IR)",
+            .llvm_native => "LLVM (native API)",
         };
         std.debug.print("[INFO] Backend: {s}\n", .{backend_name});
     }
     
     // 5. Output based on options
     if (should_compile) {
-        // 🆕 v0.1.4: LLVM后端暂不支持直接编译
-        if (backend == .llvm) {
-            std.debug.print("❌ Error: LLVM backend does not support --compile/--run yet\n", .{});
-            std.debug.print("💡 Use: pawc file.paw --backend=llvm (generates LLVM IR)\n", .{});
-            return;
-        }
+            // 🆕 v0.1.4: LLVM后端暂不支持直接编译
+            if (backend == .llvm or backend == .llvm_native) {
+                std.debug.print("❌ Error: LLVM backends do not support --compile/--run yet\n", .{});
+                std.debug.print("💡 Use: pawc file.paw --backend=llvm (generates LLVM IR)\n", .{});
+                std.debug.print("   Or: pawc file.paw --backend=llvm-native (generates LLVM IR via native API)\n", .{});
+                return;
+            }
         
         // 编译为可执行文件（仅C后端）
         const output_name = output_file orelse "output";
@@ -337,12 +362,12 @@ pub fn main() !void {
             });
         }
     } else {
-        // Generate code (C or LLVM IR)
-        const output_name = output_file orelse "output";
-        const output_ext = switch (backend) {
-            .c => ".c",
-            .llvm => ".ll", // LLVM IR文件扩展名
-        };
+            // Generate code (C or LLVM IR)
+            const output_name = output_file orelse "output";
+            const output_ext = switch (backend) {
+                .c => ".c",
+                .llvm, .llvm_native => ".ll", // LLVM IR文件扩展名
+            };
         const code_filename = try std.fmt.allocPrint(allocator, "{s}{s}", .{output_name, output_ext});
         defer allocator.free(code_filename);
         
@@ -361,21 +386,28 @@ pub fn main() !void {
                 @as(f64, @floatFromInt(total_time - start_time)) / 1_000_000_000.0,
             });
             
-            switch (backend) {
-                .c => {
-                    std.debug.print("✅ C code generated: {s}\n", .{code_filename});
-                    std.debug.print("💡 Hints:\n", .{});
-                    std.debug.print("   • Compile: gcc {s} -o {s}\n", .{ code_filename, output_name });
-                    std.debug.print("   • Run: ./{s}\n", .{output_name});
-                },
-                .llvm => {
-                    std.debug.print("✅ LLVM IR generated: {s}\n", .{code_filename});
-                    std.debug.print("💡 Hints (experimental):\n", .{});
-                    std.debug.print("   • Compile: llc {s} -o {s}.s && gcc {s}.s -o {s}\n", 
-                        .{ code_filename, output_name, output_name, output_name });
-                    std.debug.print("   • Or: clang {s} -o {s}\n", .{ code_filename, output_name });
-                },
-            }
+                switch (backend) {
+                    .c => {
+                        std.debug.print("✅ C code generated: {s}\n", .{code_filename});
+                        std.debug.print("💡 Hints:\n", .{});
+                        std.debug.print("   • Compile: gcc {s} -o {s}\n", .{ code_filename, output_name });
+                        std.debug.print("   • Run: ./{s}\n", .{output_name});
+                    },
+                    .llvm => {
+                        std.debug.print("✅ LLVM IR generated (text mode): {s}\n", .{code_filename});
+                        std.debug.print("💡 Hints (experimental):\n", .{});
+                        std.debug.print("   • Compile: llc {s} -o {s}.s && gcc {s}.s -o {s}\n", 
+                            .{ code_filename, output_name, output_name, output_name });
+                        std.debug.print("   • Or: clang {s} -o {s}\n", .{ code_filename, output_name });
+                    },
+                    .llvm_native => {
+                        std.debug.print("✅ LLVM IR generated (native API): {s}\n", .{code_filename});
+                        std.debug.print("💡 Hints (experimental):\n", .{});
+                        std.debug.print("   • Compile: llc {s} -o {s}.s && gcc {s}.s -o {s}\n", 
+                            .{ code_filename, output_name, output_name, output_name });
+                        std.debug.print("   • Or: clang {s} -o {s}\n", .{ code_filename, output_name });
+                    },
+                }
         } else {
             std.debug.print("✅ {s} -> {s}\n", .{source_file, code_filename});
         }

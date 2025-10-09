@@ -29,13 +29,13 @@ pub fn build(b: *std.Build) void {
             exe.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/lib", .{local_llvm}) });
             exe.addIncludePath(.{ .cwd_relative = b.fmt("{s}/include", .{local_llvm}) });
             
-            // Link essential LLVM static libraries
+            // Link essential LLVM static libraries (minimal set)
             exe.linkSystemLibrary("LLVMCore");
             exe.linkSystemLibrary("LLVMSupport");
-            exe.linkSystemLibrary("LLVMTargetParser");
             exe.linkSystemLibrary("LLVMBinaryFormat");
             exe.linkSystemLibrary("LLVMRemarks");
             exe.linkSystemLibrary("LLVMBitstreamReader");
+            exe.linkSystemLibrary("LLVMTargetParser");
             exe.linkSystemLibrary("LLVMDemangle");
             
             // Link C++ standard library (LLVM is C++)
