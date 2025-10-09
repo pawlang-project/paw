@@ -127,15 +127,21 @@ pub fn build(b: *std.Build) void {
             exe.linkSystemLibrary("advapi32");
             
             std.debug.print("   🔧 Using MinGW C++ runtime\n", .{});
+        } else if (target.result.os.tag == .linux) {
+            // Linux: Use libstdc++
+            exe.linkSystemLibrary("stdc++");
+            exe.linkSystemLibrary("pthread");
+            std.debug.print("   🔧 Using libstdc++ (Linux)\n", .{});
         } else {
-            // Unix: Use system C++ library
+            // macOS and others: Use libc++
             exe.linkLibCpp();
+            std.debug.print("   🔧 Using libc++ (macOS)\n", .{});
         }
     } else {
         build_options.addOption(bool, "llvm_native_available", false);
         std.debug.print("ℹ️  LLVM not found\n", .{});
         std.debug.print("   • C backend: --backend=c (default)\n", .{});
-        std.debug.print("   • LLVM backend: --backend=llvm (text mode)\n", .{});
+        std.debug.print("   • LLVM backend: not available (install LLVM first)\n", .{});
         std.debug.print("   💡 For setup: python scripts/setup_llvm.py && python scripts/build_llvm.py\n", .{});
     }
     
