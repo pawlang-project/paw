@@ -28,7 +28,41 @@ pub fn build(b: *std.Build) void {
             // 添加本地LLVM的路径
             exe.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/lib", .{local_llvm}) });
             exe.addIncludePath(.{ .cwd_relative = b.fmt("{s}/include", .{local_llvm}) });
-            exe.linkSystemLibrary("LLVM");
+            
+            // 链接静态 LLVM 库（我们编译的是静态库）
+            exe.linkSystemLibrary("LLVMCore");
+            exe.linkSystemLibrary("LLVMSupport");
+            exe.linkSystemLibrary("LLVMAnalysis");
+            exe.linkSystemLibrary("LLVMTransformUtils");
+            exe.linkSystemLibrary("LLVMTarget");
+            exe.linkSystemLibrary("LLVMCodeGen");
+            exe.linkSystemLibrary("LLVMAsmPrinter");
+            exe.linkSystemLibrary("LLVMSelectionDAG");
+            exe.linkSystemLibrary("LLVMMC");
+            exe.linkSystemLibrary("LLVMMCParser");
+            exe.linkSystemLibrary("LLVMBitReader");
+            exe.linkSystemLibrary("LLVMBitWriter");
+            exe.linkSystemLibrary("LLVMIRReader");
+            exe.linkSystemLibrary("LLVMAsmParser");
+            exe.linkSystemLibrary("LLVMInstCombine");
+            exe.linkSystemLibrary("LLVMScalarOpts");
+            exe.linkSystemLibrary("LLVMipo");
+            exe.linkSystemLibrary("LLVMVectorize");
+            exe.linkSystemLibrary("LLVMObjCARCOpts");
+            exe.linkSystemLibrary("LLVMLinker");
+            exe.linkSystemLibrary("LLVMPasses");
+            exe.linkSystemLibrary("LLVMAArch64CodeGen");
+            exe.linkSystemLibrary("LLVMAArch64AsmParser");
+            exe.linkSystemLibrary("LLVMAArch64Desc");
+            exe.linkSystemLibrary("LLVMAArch64Disassembler");
+            exe.linkSystemLibrary("LLVMAArch64Info");
+            exe.linkSystemLibrary("LLVMAArch64Utils");
+            exe.linkSystemLibrary("LLVMX86CodeGen");
+            exe.linkSystemLibrary("LLVMX86AsmParser");
+            exe.linkSystemLibrary("LLVMX86Desc");
+            exe.linkSystemLibrary("LLVMX86Disassembler");
+            exe.linkSystemLibrary("LLVMX86Info");
+            exe.linkSystemLibrary("LLVMX86TargetMCA");
             
             // 添加 llvm-zig 模块
             const llvm_dep = b.dependency("llvm", .{
