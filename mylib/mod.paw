@@ -1,0 +1,13 @@
+// mylib模块入口
+
+pub fn hello() -> i32 {
+    42
+}
+
+pub type Data = struct {
+    value: i32,
+}
+
+pub fn process(d: Data) -> i32 {
+    d.value * 2
+}
