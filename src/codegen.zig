@@ -107,9 +107,9 @@ pub const CodeGen = struct {
         try self.output.appendSlice("#include <stdlib.h>\n");
         try self.output.appendSlice("#include <stdint.h>\n");
         try self.output.appendSlice("#include <stdbool.h>\n");
-        try self.output.appendSlice("#include <string.h>\n");  // 🆕 字符串插值需要
+        try self.output.appendSlice("#include <string.h>\n");  // For string interpolation
         try self.output.appendSlice("\n");
-        try self.output.appendSlice("// 🆕 泛型函数前向声明\n");
+        try self.output.appendSlice("// Generic function forward declarations\n");
         
         // 🆕 第三遍：生成单态化函数的前向声明和泛型结构体定义
         try self.generateMonomorphizedDeclarations();

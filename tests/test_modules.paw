@@ -1,0 +1,20 @@
+// 测试模块系统 - v0.1.2
+// 演示 import module.item 语法
+
+import math.add;
+import math.multiply;
+import math.Vec2;
+import math.Point;
+
+fn main() -> i32 {
+    // 测试1: 导入的函数
+    let sum: i32 = add(10, 20);
+    let product: i32 = multiply(5, 6);
+    
+    // 测试2: 导入的类型
+    let v: Vec2 = Vec2 { x: 1, y: 2 };
+    let p: Point = Point { x: 3, y: 4 };
+    
+    return sum + product + v.x + p.x;
+}
+
