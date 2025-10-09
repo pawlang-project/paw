@@ -3,11 +3,18 @@ const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
 const TypeChecker = @import("typechecker.zig").TypeChecker;
 const CodeGen = @import("codegen.zig").CodeGen;
+const LLVMBackend = @import("llvm_backend.zig").LLVMBackend; // 🆕 v0.1.4
 const TccBackend = @import("tcc_backend.zig").TccBackend;
 const ModuleLoader = @import("module.zig").ModuleLoader;
 const ast_mod = @import("ast.zig");
 
-const VERSION = "0.1.2";
+const VERSION = "0.1.4-dev";
+
+// 🆕 v0.1.4: Backend选择
+const Backend = enum {
+    c,      // C backend (default, stable)
+    llvm,   // LLVM backend (experimental)
+};
 
 // 🆕 check command: type checking only
 fn checkFile(allocator: std.mem.Allocator, source_file: []const u8) !void {
@@ -133,8 +140,9 @@ pub fn main() !void {
     var output_file: ?[]const u8 = null;
     var optimize = false;
     var verbose = false;
-    var should_run = false;      // 新增：是否运行
-    var should_compile = false;  // 新增：是否编译为可执行文件
+    var should_run = false;      // 是否运行
+    var should_compile = false;  // 是否编译为可执行文件
+    var backend = Backend.c;     // 🆕 v0.1.4: 后端选择，默认C后端
 
     // 解析命令行选项
     var i: usize = 2;
@@ -152,6 +160,11 @@ pub fn main() !void {
             should_compile = true;
         } else if (std.mem.eql(u8, arg, "--compile")) {
             should_compile = true;
+        } else if (std.mem.eql(u8, arg, "--backend=llvm")) {
+            // 🆕 v0.1.4: LLVM后端
+            backend = .llvm;
+        } else if (std.mem.eql(u8, arg, "--backend=c")) {
+            backend = .c;
         }
     }
 
@@ -268,17 +281,41 @@ pub fn main() !void {
         std.debug.print("[PERF] Type checking: {d}μs\n", .{@divTrunc(typecheck_time - start_time, 1000)});
     }
 
-    // 4. Code generation
-    var codegen = CodeGen.init(allocator);
-    defer codegen.deinit();
-    
-    const c_code = try codegen.generate(ast);
+    // 4. Code generation - 🆕 v0.1.4: 支持多后端
+    const output_code = switch (backend) {
+        .c => blk: {
+            var codegen = CodeGen.init(allocator);
+            defer codegen.deinit();
+            break :blk try codegen.generate(ast);
+        },
+        .llvm => blk: {
+            var llvm_codegen = LLVMBackend.init(allocator);
+            defer llvm_codegen.deinit();
+            break :blk try llvm_codegen.generate(ast);
+        },
+    };
     
     const total_time = std.time.nanoTimestamp();
     
+    // 🆕 显示使用的后端
+    if (verbose) {
+        const backend_name = switch (backend) {
+            .c => "C",
+            .llvm => "LLVM (experimental)",
+        };
+        std.debug.print("[INFO] Backend: {s}\n", .{backend_name});
+    }
+    
     // 5. Output based on options
     if (should_compile) {
-        // 编译为可执行文件
+        // 🆕 v0.1.4: LLVM后端暂不支持直接编译
+        if (backend == .llvm) {
+            std.debug.print("❌ Error: LLVM backend does not support --compile/--run yet\n", .{});
+            std.debug.print("💡 Use: pawc file.paw --backend=llvm (generates LLVM IR)\n", .{});
+            return;
+        }
+        
+        // 编译为可执行文件（仅C后端）
         const output_name = output_file orelse "output";
         
         var tcc_backend = TccBackend.init(allocator);
@@ -286,10 +323,10 @@ pub fn main() !void {
         if (should_run) {
             // 编译并运行
             std.debug.print("🔥 Compiling and running: {s}\n", .{source_file});
-            try tcc_backend.compileAndRun(c_code);
+            try tcc_backend.compileAndRun(output_code);
         } else {
             // 只编译
-            try tcc_backend.compile(c_code, output_name);
+            try tcc_backend.compile(output_code, output_name);
         }
         
         if (verbose) {
@@ -300,31 +337,47 @@ pub fn main() !void {
             });
         }
     } else {
-        // Generate C code only (default behavior)
+        // Generate code (C or LLVM IR)
         const output_name = output_file orelse "output";
-        const c_filename = try std.fmt.allocPrint(allocator, "{s}.c", .{output_name});
-        defer allocator.free(c_filename);
+        const output_ext = switch (backend) {
+            .c => ".c",
+            .llvm => ".ll", // LLVM IR文件扩展名
+        };
+        const code_filename = try std.fmt.allocPrint(allocator, "{s}{s}", .{output_name, output_ext});
+        defer allocator.free(code_filename);
         
-        const c_file = std.fs.cwd().createFile(c_filename, .{}) catch |err| {
-            std.debug.print("❌ Failed to create file {s}: {}\n", .{ c_filename, err });
+        const code_file = std.fs.cwd().createFile(code_filename, .{}) catch |err| {
+            std.debug.print("❌ Failed to create file {s}: {}\n", .{ code_filename, err });
             return;
         };
-        defer c_file.close();
+        defer code_file.close();
         
-        _ = try c_file.write(c_code);
+        _ = try code_file.write(output_code);
         
         if (verbose) {
             std.debug.print("Compilation complete: {s} -> {s} ({d:.2}s)\n", .{
                 source_file,
-                c_filename,
+                code_filename,
                 @as(f64, @floatFromInt(total_time - start_time)) / 1_000_000_000.0,
             });
-            std.debug.print("✅ C code generated: {s}\n", .{c_filename});
-            std.debug.print("💡 Hints:\n", .{});
-            std.debug.print("   • Compile: gcc {s} -o {s}\n", .{ c_filename, output_name });
-            std.debug.print("   • Run: ./{s}\n", .{output_name});
+            
+            switch (backend) {
+                .c => {
+                    std.debug.print("✅ C code generated: {s}\n", .{code_filename});
+                    std.debug.print("💡 Hints:\n", .{});
+                    std.debug.print("   • Compile: gcc {s} -o {s}\n", .{ code_filename, output_name });
+                    std.debug.print("   • Run: ./{s}\n", .{output_name});
+                },
+                .llvm => {
+                    std.debug.print("✅ LLVM IR generated: {s}\n", .{code_filename});
+                    std.debug.print("💡 Hints (experimental):\n", .{});
+                    std.debug.print("   • Compile: llc {s} -o {s}.s && gcc {s}.s -o {s}\n", 
+                        .{ code_filename, output_name, output_name, output_name });
+                    std.debug.print("   • Or: clang {s} -o {s}\n", .{ code_filename, output_name });
+                },
+            }
         } else {
-            std.debug.print("✅ {s} -> {s}\n", .{source_file, c_filename});
+            std.debug.print("✅ {s} -> {s}\n", .{source_file, code_filename});
         }
     }
 }
@@ -332,7 +385,7 @@ pub fn main() !void {
 fn printUsage() void {
     std.debug.print("\n", .{});
     std.debug.print("╔═══════════════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║        pawc - Paw Language Compiler v0.1.1                   ║\n", .{});
+    std.debug.print("║        pawc - Paw Language Compiler v0.1.4-dev               ║\n", .{});
     std.debug.print("╚═══════════════════════════════════════════════════════════════╝\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Usage:\n", .{});
@@ -346,13 +399,16 @@ fn printUsage() void {
     std.debug.print("  -o <file>        Specify output file name\n", .{});
     std.debug.print("  -O               Enable optimization (not implemented)\n", .{});
     std.debug.print("  -v               Verbose output\n", .{});
-    std.debug.print("  --compile        Compile to executable (using TCC/GCC/Clang)\n", .{});
-    std.debug.print("  --run            Compile and run immediately\n", .{});
+    std.debug.print("  --compile        Compile to executable (C backend only)\n", .{});
+    std.debug.print("  --run            Compile and run immediately (C backend only)\n", .{});
+    std.debug.print("  --backend=c      Use C backend (default, stable)\n", .{});
+    std.debug.print("  --backend=llvm   Use LLVM backend (experimental) 🆕\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Examples:\n", .{});
     std.debug.print("  pawc hello.paw                  Generate C code -> output.c\n", .{});
     std.debug.print("  pawc hello.paw --compile        Compile to executable -> output\n", .{});
     std.debug.print("  pawc hello.paw --run            Compile and run\n", .{});
+    std.debug.print("  pawc hello.paw --backend=llvm   Generate LLVM IR -> output.ll 🆕\n", .{});
     std.debug.print("  pawc check hello.paw            Type check only\n", .{});
     std.debug.print("  pawc init my_project            Create new project\n", .{});
     std.debug.print("\n", .{});
