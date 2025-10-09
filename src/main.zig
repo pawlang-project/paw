@@ -4,8 +4,10 @@ const Parser = @import("parser.zig").Parser;
 const TypeChecker = @import("typechecker.zig").TypeChecker;
 const CodeGen = @import("codegen.zig").CodeGen;
 const TccBackend = @import("tcc_backend.zig").TccBackend;
+const ModuleLoader = @import("module.zig").ModuleLoader;
+const ast_mod = @import("ast.zig");
 
-const VERSION = "0.1.1";
+const VERSION = "0.1.2";
 
 // 🆕 check command: type checking only
 fn checkFile(allocator: std.mem.Allocator, source_file: []const u8) !void {
@@ -185,12 +187,61 @@ pub fn main() !void {
     var parser = Parser.init(allocator, tokens);
     defer parser.deinit();
     
-    const ast = try parser.parse();
-    defer ast.deinit(allocator);
+    var ast_result = try parser.parse();
+    defer ast_result.deinit(allocator);
     
     if (verbose) {
         const parse_time = std.time.nanoTimestamp();
         std.debug.print("[PERF] Parsing: {d}μs\n", .{@divTrunc(parse_time - start_time, 1000)});
+    }
+
+    // 2.5. 🆕 处理导入（模块系统）
+    var module_loader = ModuleLoader.init(allocator);
+    defer module_loader.deinit();
+    
+    var resolved_declarations = std.ArrayList(ast_mod.TopLevelDecl).init(allocator);
+    defer resolved_declarations.deinit();
+    
+    for (ast_result.declarations) |decl| {
+        if (decl == .import_decl) {
+            const import_decl = decl.import_decl;
+            
+            // 加载模块并获取导入项
+            const imported_item = module_loader.getImportedItem(
+                import_decl.module_path,
+                import_decl.item_name,
+            ) catch |err| {
+                std.debug.print("Error: Failed to import {s}.{s}: {any}\n", 
+                    .{import_decl.module_path, import_decl.item_name, err});
+                // 释放ImportDecl中分配的字符串
+                allocator.free(import_decl.module_path);
+                continue;
+            };
+            
+            // 将导入的声明添加到AST中
+            try resolved_declarations.append(imported_item);
+            
+            // 🆕 释放ImportDecl中分配的字符串（item_name不需要释放，它来自token）
+            allocator.free(import_decl.module_path);
+        } else {
+            // 非import声明，直接添加
+            try resolved_declarations.append(decl);
+        }
+    }
+    
+    // 创建新的AST（包含导入的声明）
+    const ast = ast_mod.Program{
+        .declarations = try resolved_declarations.toOwnedSlice(),
+    };
+    defer {
+        // 只释放declarations数组，不递归释放内容
+        // 因为内容来自ast_result或module_loader，已有自己的生命周期管理
+        allocator.free(ast.declarations);
+    }
+    
+    if (verbose) {
+        const import_time = std.time.nanoTimestamp();
+        std.debug.print("[PERF] Module resolution: {d}μs\n", .{@divTrunc(import_time - start_time, 1000)});
     }
 
     // 3. Type checking
@@ -220,18 +271,20 @@ pub fn main() !void {
         
         if (should_run) {
             // 编译并运行
-            std.debug.print("🔥 编译并运行: {s}\n", .{source_file});
+            std.debug.print("🔥 Compiling and running: {s}\n", .{source_file});
             try tcc_backend.compileAndRun(c_code);
         } else {
             // 只编译
             try tcc_backend.compile(c_code, output_name);
         }
         
-        std.debug.print("\nCompilation complete: {s} -> {s} ({d:.2}s)\n", .{
-            source_file,
-            output_name,
-            @as(f64, @floatFromInt(total_time - start_time)) / 1_000_000_000.0,
-        });
+        if (verbose) {
+            std.debug.print("\n✅ Compilation complete: {s} -> {s} ({d:.2}s)\n", .{
+                source_file,
+                output_name,
+                @as(f64, @floatFromInt(total_time - start_time)) / 1_000_000_000.0,
+            });
+        }
     } else {
         // Generate C code only (default behavior)
         const output_name = output_file orelse "output";
@@ -239,24 +292,26 @@ pub fn main() !void {
         defer allocator.free(c_filename);
         
         const c_file = std.fs.cwd().createFile(c_filename, .{}) catch |err| {
-            std.debug.print("❌ 无法创建文件 {s}: {}\n", .{ c_filename, err });
+            std.debug.print("❌ Failed to create file {s}: {}\n", .{ c_filename, err });
             return;
         };
         defer c_file.close();
         
         _ = try c_file.write(c_code);
         
-        std.debug.print("Compilation complete: {s} -> {s} ({d:.2}s)\n", .{
-            source_file,
-            c_filename,
-            @as(f64, @floatFromInt(total_time - start_time)) / 1_000_000_000.0,
-        });
-        
-        std.debug.print("✅ C code generated: {s}\n", .{c_filename});
-        std.debug.print("💡 Hints:\n", .{});
-        std.debug.print("   • Compile: pawc {s} --compile -o {s}\n", .{ source_file, output_name });
-        std.debug.print("   • Run: pawc {s} --run\n", .{source_file});
-        std.debug.print("   • Manual: gcc {s} -o {s}\n", .{ c_filename, output_name });
+        if (verbose) {
+            std.debug.print("Compilation complete: {s} -> {s} ({d:.2}s)\n", .{
+                source_file,
+                c_filename,
+                @as(f64, @floatFromInt(total_time - start_time)) / 1_000_000_000.0,
+            });
+            std.debug.print("✅ C code generated: {s}\n", .{c_filename});
+            std.debug.print("💡 Hints:\n", .{});
+            std.debug.print("   • Compile: gcc {s} -o {s}\n", .{ c_filename, output_name });
+            std.debug.print("   • Run: ./{s}\n", .{output_name});
+        } else {
+            std.debug.print("✅ {s} -> {s}\n", .{source_file, c_filename});
+        }
     }
 }
 

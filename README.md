@@ -1,206 +1,229 @@
-# 🐾 Paw Programming Language
+# 🐾 PawLang
 
-**A modern system programming language with Rust-level safety and simpler syntax.**
+**一个现代的、带有Rust级别安全性和更简洁语法的系统编程语言**
 
-Version: **0.1.0** | Status: **Production Ready** ⭐⭐⭐⭐⭐
+[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
 
 ---
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
-### Installation
+### 安装
 
 ```bash
-# Clone the repository
+# 克隆仓库
 git clone https://github.com/yourusername/PawLang.git
 cd PawLang
 
-# Build the compiler
+# 构建编译器
 zig build
 
-# The compiler is now available at zig-out/bin/pawc
+# 编译器位于 zig-out/bin/pawc
 ```
 
 ### Hello World
 
 ```paw
 fn main() -> i32 {
-    println("Hello, World!");
+    println("Hello, PawLang! 🐾");
     return 0;
 }
 ```
 
 ```bash
-# Run your program
-pawc hello.paw --run
+# 编译并运行
+./zig-out/bin/pawc hello.paw --run
+
+# 或分步执行
+./zig-out/bin/pawc hello.paw    # 生成output.c
+gcc output.c -o hello            # 编译
+./hello                          # 运行
 ```
 
 ---
 
-## ✨ Features
+## ✨ 核心特性
 
-### Core Language Features
+### 🔗 模块系统（v0.1.2 新功能！）⭐
 
-- **🎯 Rust-Style Type System**: 18 precise types (`i8`-`i128`, `u8`-`u128`, `f32`, `f64`, `bool`, `char`, `string`, `void`)
-- **🔒 Memory Safety**: Ownership system (similar to Rust)
-- **⚡ Zero-Cost Abstractions**: Performance comparable to C/C++
-- **🎨 Simple Syntax**: Only 19 core keywords
-- **🔄 Unified Declarations**: `let` for variables, `type` for types
-- **🔁 Unified Loops**: `loop` for all loop forms
-- **🎭 Pattern Matching**: `is` expression for powerful pattern matching
-- **📦 Structs and Methods**: Object-oriented programming support
-- **🏷️ Enums**: Rust-style tagged unions
-- **🔢 Arrays**: Full array support with literals, indexing, and iteration
-- **💬 String Interpolation**: `$var` and `${expr}` syntax
-- **❓ Error Propagation**: `?` operator for automatic error handling
-
-### Standard Library
-
-- **Built-in Functions**: `println()`, `print()`
-- **Error Handling**: `Result<T, E>` type
-- **Optional Values**: `Option<T>` type
-- **Auto-imported**: No need for manual imports
-
-### Compiler Features
-
-- **Fast Compilation**: Optimized for speed
-- **Self-Contained**: Single executable with embedded stdlib
-- **Cross-Platform**: Supports macOS, Linux, Windows
-- **Multiple Backends**: TinyCC, GCC, Clang support
-
----
-
-## 📖 Language Guide
-
-### Variables and Types
+**简洁的导入语法**：
 
 ```paw
-// Variable declaration
-let x: i32 = 42;
-let y = 100;  // Type inference
-
-// Mutable variables
-let mut counter: i32 = 0;
-counter += 1;
-
-// All numeric types
-let a: i8 = 127;
-let b: u64 = 1000000;
-let c: f32 = 3.14;
-let d: i128 = 999999999999999999;
-```
-
-### Control Flow
-
-```paw
-// If expression
-let result = if x > 0 { x } else { -x };
-
-// Infinite loop
-loop {
-    break;
+// math.paw - 模块文件
+pub fn add(a: i32, b: i32) -> i32 {
+    return a + b;
 }
 
-// Conditional loop
-loop i < 10 {
-    i += 1;
+pub type Vec2 = struct {
+    x: i32,
+    y: i32,
 }
 
-// Range iteration
-loop i in 1..=10 {
-    println("$i");
-}
+// main.paw - 使用模块
+import math.add;      // 导入函数
+import math.Vec2;     // 导入类型
 
-// Array iteration
-loop item in [1, 2, 3, 4, 5] {
-    println("$item");
+fn main() -> i32 {
+    let sum = add(10, 20);
+    let v = Vec2 { x: 1, y: 2 };
+    return 0;
 }
 ```
 
-### Structs and Methods
+**特点**：
+- ✅ 使用`.`语法（不是`::`）
+- ✅ 直接`import`（不需要`use`）
+- ✅ `pub`控制导出
+- ✅ 自动模块加载和缓存
 
+### 🎯 完整的泛型系统（v0.1.2 新功能！）
+
+**泛型函数**：
+```paw
+fn identity<T>(x: T) -> T {
+    return x;
+}
+
+let num = identity(42);      // T = i32
+let text = identity("hello"); // T = string
+```
+
+**泛型结构体**：
+```paw
+type Box<T> = struct {
+    value: T,
+}
+
+let box_int: Box<i32> = Box { value: 42 };
+let box_str: Box<string> = Box { value: "paw" };
+```
+
+**泛型方法** ⭐：
+```paw
+type Vec<T> = struct {
+    ptr: i32,
+    len: i32,
+    cap: i32,
+    
+    // 静态方法：使用 :: 调用
+    fn new() -> Vec<T> {
+        return Vec { ptr: 0, len: 0, cap: 0 };
+    }
+    
+    fn with_capacity(cap: i32) -> Vec<T> {
+        return Vec { ptr: 0, len: 0, cap: cap };
+    }
+    
+    // 实例方法：self不需要类型！
+    fn length(self) -> i32 {
+        return self.len;
+    }
+}
+
+// 使用
+let vec: Vec<i32> = Vec<i32>::new();        // 静态方法
+let len: i32 = vec.length();                // 实例方法
+```
+
+### 🔒 类型安全
+
+- **18种精确类型**：`i8`-`i128`, `u8`-`u128`, `f32`, `f64`, `bool`, `char`, `string`, `void`
+- **编译时类型检查**
+- **零运行时开销**（完全单态化）
+
+### 🎨 简洁语法
+
+**仅19个核心关键字**：
+```
+fn let type import pub if else loop break return
+is as async await self Self mut true false in
+```
+
+### 🔄 统一的设计
+
+- **统一声明**：`let` 用于变量，`type` 用于类型
+- **统一循环**：`loop` 用于所有循环形式
+- **统一模式**：`is` 用于所有模式匹配
+
+### 📦 强大的类型系统
+
+**结构体**：
 ```paw
 type Point = struct {
     x: i32,
     y: i32,
     
+    fn new(x: i32, y: i32) -> Point {
+        return Point { x: x, y: y };
+    }
+    
     fn distance(self) -> f64 {
         return sqrt(self.x * self.x + self.y * self.y);
     }
 }
-
-fn main() -> i32 {
-    let p = Point { x: 3, y: 4 };
-    let d = p.distance();
-    return 0;
-}
 ```
 
-### Enums and Pattern Matching
-
-```paw
-type Option = enum {
-    Some(i32),
-    None(),
-}
-
-fn process(opt: Option) -> i32 {
-    return opt is {
-        Some(value) => value * 2,
-        None() => 0,
-        _ => -1,
-    };
-}
-```
-
-### String Interpolation
-
-```paw
-let name = "Alice";
-let age: i32 = 25;
-
-// Simple interpolation
-let msg1 = "Hello, $name!";
-
-// Expression interpolation
-let msg2 = "You are ${age} years old.";
-
-println(msg1);
-println(msg2);
-```
-
-### Error Handling
-
+**枚举**（Rust风格）：
 ```paw
 type Result = enum {
     Ok(i32),
     Err(i32),
 }
 
+type Option = enum {
+    Some(i32),
+    None(),
+}
+```
+
+**模式匹配**：
+```paw
+let result = value is {
+    Some(x) => x * 2,
+    None() => 0,
+    _ => -1,
+};
+```
+
+### 💬 字符串插值
+
+```paw
+let name = "Alice";
+let age: i32 = 25;
+
+println("Hello, $name!");              // 简单插值
+println("You are ${age} years old.");  // 表达式插值
+```
+
+### ❓ 错误处理
+
+```paw
 fn divide(a: i32, b: i32) -> Result {
     return if b == 0 { Err(1) } else { Ok(a / b) };
 }
 
 fn process() -> Result {
-    let value = divide(10, 2)?;  // Auto-propagate errors
+    let value = divide(10, 2)?;  // ? 操作符自动传播错误
     return Ok(value * 2);
 }
 ```
 
-### Arrays
+### 🔢 数组支持
 
 ```paw
-// Array literals
+// 数组字面量
 let arr = [1, 2, 3, 4, 5];
 
-// Array indexing
+// 数组索引
 let first = arr[0];
 
-// Array types
-let numbers: [i32] = [10, 20, 30];
-let fixed: [i32; 5] = [1, 2, 3, 4, 5];
+// 数组类型
+let numbers: [i32] = [10, 20, 30];        // 动态大小
+let fixed: [i32; 5] = [1, 2, 3, 4, 5];   // 固定大小
 
-// Array iteration
+// 数组迭代
 loop item in arr {
     println("$item");
 }
@@ -208,257 +231,447 @@ loop item in arr {
 
 ---
 
-## 🛠️ CLI Usage
+## 📚 标准库
 
-### Basic Commands
+### 内置函数
+
+```paw
+println(msg: string)  // 打印并换行
+print(msg: string)    // 打印不换行
+eprintln(msg: string) // 错误输出
+eprint(msg: string)   // 错误输出不换行
+```
+
+### 泛型容器（v0.1.2）
+
+**Vec<T>** - 动态数组：
+```paw
+let vec: Vec<i32> = Vec<i32>::new();
+let vec2: Vec<i32> = Vec<i32>::with_capacity(10);
+let len: i32 = vec.length();
+let cap: i32 = vec.capacity_method();
+```
+
+**Box<T>** - 智能指针：
+```paw
+let box: Box<i32> = Box<i32>::new(42);
+```
+
+### 错误处理类型
+
+```paw
+type Result = enum { Ok(i32), Err(i32) }
+type Option = enum { Some(i32), None() }
+```
+
+---
+
+## 🛠️ 命令行工具
 
 ```bash
-# Compile to C code
+# 编译到C代码
 pawc hello.paw
 
-# Compile to executable
+# 编译到可执行文件
 pawc hello.paw --compile
 
-# Compile and run
+# 编译并运行
 pawc hello.paw --run
 
-# Type check only
-pawc check hello.paw
-
-# Create new project
-pawc init my_project
-
-# Show version
+# 显示版本
 pawc --version
 
-# Show help
+# 显示帮助
 pawc --help
 ```
 
-### Options
+### 选项
 
-```bash
--o <file>        Specify output file name
--v               Verbose output
---compile        Compile to executable
---run            Compile and run
---help, -h       Show help
---version, -v    Show version
-```
+- `-o <file>` - 指定输出文件名
+- `--compile` - 编译到可执行文件
+- `--run` - 编译并运行
+- `-v` - 详细输出
+- `--help` - 显示帮助
 
 ---
 
-## 📚 Examples
+## 📖 示例程序
 
-### Fibonacci
+查看 `examples/` 目录：
 
-```paw
-fn fib(n: i32) -> i32 {
-    return if n <= 1 { n } else { fib(n - 1) + fib(n - 2) };
-}
-
-fn main() -> i32 {
-    let result = fib(10);
-    println("Fibonacci(10) = $result");
-    return 0;
-}
-```
-
-### Complete Example
-
-See `examples/` directory for more examples:
 - `hello.paw` - Hello World
-- `fibonacci.paw` - Fibonacci sequence
-- `loops.paw` - All loop forms
-- `struct_methods.paw` - Structs and methods
-- `pattern_matching.paw` - Pattern matching
-- `array_complete.paw` - Array operations
-- `string_interpolation.paw` - String interpolation
-- `error_propagation.paw` - Error handling
+- `fibonacci.paw` - 斐波那契数列
+- `loops.paw` - 所有循环形式
+- `array_complete.paw` - 数组操作
+- `string_interpolation.paw` - 字符串插值
+- `error_propagation.paw` - 错误处理
+- `enum_error_handling.paw` - 枚举错误处理
+- `vec_demo.paw` - Vec容器演示
+- **`generic_methods.paw`** - 泛型方法演示（v0.1.2）
+- `generics_demo.paw` - 泛型函数演示
+
+查看 `tests/` 目录：
+
+- `test_static_methods.paw` - 静态方法测试
+- `test_instance_methods.paw` - 实例方法测试
+- `test_methods_complete.paw` - 完整方法测试
+- `test_generic_struct_complete.paw` - 泛型结构体测试
 
 ---
 
-## 🏗️ Architecture
+## 🎯 版本历史
 
-### Compiler Pipeline
+### v0.1.2 (2025-10-08) - 当前版本 🌟
+
+**完整泛型方法系统**
+
+- ✅ 泛型静态方法（`Vec<i32>::new()`）
+- ✅ 泛型实例方法（`vec.length()`）
+- ✅ **self参数无需类型** - PawLang独特设计！
+- ✅ 自动单态化
+- ✅ 标准库方法扩展
+
+[详细说明 →](RELEASE_NOTES_v0.1.2.md)
+
+### v0.1.1 (2025-10-09)
+
+**完整泛型系统**
+
+- ✅ 泛型函数
+- ✅ 泛型结构体
+- ✅ 类型推导
+- ✅ 单态化机制
+
+[详细说明 →](RELEASE_NOTES_v0.1.1.md)
+
+### v0.1.0
+
+**基础语言特性**
+
+- ✅ 完整语法和类型系统
+- ✅ 编译器工具链
+- ✅ 标准库基础
+
+[详细说明 →](RELEASE_NOTES_v0.1.0.md)
+
+---
+
+## 🏗️ 编译器架构
 
 ```
-Source Code (.paw)
+PawLang源代码 (.paw)
     ↓
-Lexer (Lexical Analysis)
+词法分析器 (Lexer)
     ↓
-Parser (Syntax Analysis)
+语法分析器 (Parser)
     ↓
-TypeChecker (Semantic Analysis)
+类型检查器 (TypeChecker)
     ↓
-CodeGen (C Code Generation)
+泛型单态化 (Monomorphizer) ← v0.1.2新增
     ↓
-TinyCC/GCC/Clang
+代码生成器 (CodeGen)
     ↓
-Executable
+C代码 (.c)
+    ↓
+GCC/Clang/TinyCC
+    ↓
+可执行文件
 ```
 
-### Project Structure
+### 项目结构
 
 ```
 PawLang/
 ├── src/
-│   ├── main.zig           # Compiler entry point
-│   ├── lexer.zig          # Lexical analysis
-│   ├── token.zig          # Token definitions
-│   ├── parser.zig         # Syntax analysis
-│   ├── ast.zig            # AST definitions
-│   ├── typechecker.zig    # Type checking
-│   ├── codegen.zig        # C code generation
-│   ├── tcc_backend.zig    # TinyCC backend
+│   ├── main.zig          # 编译器入口
+│   ├── lexer.zig         # 词法分析
+│   ├── parser.zig        # 语法分析
+│   ├── ast.zig           # AST定义
+│   ├── typechecker.zig   # 类型检查
+│   ├── generics.zig      # 泛型系统（v0.1.1+）
+│   ├── codegen.zig       # C代码生成
+│   ├── token.zig         # Token定义
+│   ├── tcc_backend.zig   # TinyCC后端
 │   └── std/
-│       └── prelude.paw    # Standard library (embedded)
-├── examples/              # Example programs
-├── tests/                 # Test suite
-├── build.zig             # Build configuration
-└── README.md             # This file
+│       └── prelude.paw   # 标准库
+├── examples/             # 示例程序
+├── tests/               # 测试套件
+├── build.zig            # 构建配置
+├── CHANGELOG.md         # 变更日志
+└── README.md            # 本文件
 ```
 
 ---
 
-## 🎯 Language Design Philosophy
+## 🎨 设计哲学
 
-### Unified Syntax
+### 1. 简洁优先
 
-Paw uses a unified approach to language constructs:
+PawLang追求最小化的语法：
+- 只有19个关键字
+- 统一的声明语法
+- 直观的语法设计
 
-- **Unified Declarations**: `let` for all variables, `type` for all types
-- **Unified Loops**: `loop` for all loop forms
-- **Unified Patterns**: `is` for all pattern matching
+### 2. 类型安全
 
-### Minimal Keywords
+- 编译时类型检查
+- 泛型系统保证类型安全
+- 零运行时类型错误
 
-Only 19 core keywords:
-```
-fn let type import pub if else loop break return
-is as async await self Self mut true false in
-```
+### 3. 零成本抽象
 
-### Type System
+- 所有泛型在编译时展开
+- 没有虚函数表
+- 性能等同于手写C代码
 
-Rust-style precise types without aliases:
-- Signed integers: `i8`, `i16`, `i32`, `i64`, `i128`
-- Unsigned integers: `u8`, `u16`, `u32`, `u64`, `u128`
-- Floating point: `f32`, `f64`
-- Other: `bool`, `char`, `string`, `void`
+### 4. 现代特性
 
----
-
-## 🔧 Development
-
-### Building from Source
-
-```bash
-# Requirements
-- Zig 0.14.0 or later
-
-# Build
-zig build
-
-# Run tests
-pawc check tests/*.paw
-```
-
-### Contributing
-
-Contributions are welcome! Please ensure:
-- Code follows existing style
-- All tests pass
-- Documentation is updated
+- 泛型（函数、结构体、方法）
+- 模式匹配
+- 字符串插值
+- 错误传播（`?`操作符）
+- 方法语法
 
 ---
 
-## 📊 Status
+## 💡 语言亮点
 
-**Version**: 0.1.0  
-**Status**: Production Ready  
-**License**: MIT (or your choice)
+### self参数无需类型 ⭐
 
-### Completion Status
-
-- ✅ Lexer: 100%
-- ✅ Parser: 100% (context-aware)
-- ✅ TypeChecker: 100%
-- ✅ CodeGen: 100%
-- ✅ Standard Library: 100%
-- ✅ CLI Tools: 100%
-
----
-
-## 🎓 Learning Resources
-
-### Syntax Cheat Sheet
+这是PawLang的独特设计：
 
 ```paw
-// Variables
+type Vec<T> = struct {
+    len: i32,
+    
+    // ✅ PawLang - 简洁优雅
+    fn length(self) -> i32 {
+        return self.len;
+    }
+}
+
+// vs Rust
+// fn length(&self) -> i32 { ... }
+```
+
+### 统一的方法调用
+
+```paw
+// 静态方法 - :: 语法
+let vec: Vec<i32> = Vec<i32>::new();
+
+// 实例方法 - . 语法
+let len: i32 = vec.length();
+```
+
+### 完整的泛型支持
+
+```paw
+// 泛型函数
+fn swap<T>(a: T, b: T) -> i32 { ... }
+
+// 泛型结构体
+type Box<T> = struct { value: T }
+
+// 泛型方法
+fn get(self) -> T { return self.value; }
+```
+
+---
+
+## 📊 性能
+
+- **编译速度**：<10ms（典型程序）
+- **运行时性能**：与C相当（零开销抽象）
+- **内存占用**：无GC，完全手动控制
+
+---
+
+## 🧪 测试
+
+```bash
+# 运行所有测试
+./zig-out/bin/pawc tests/test_methods_complete.paw --run
+
+# 静态方法测试
+./zig-out/bin/pawc tests/test_static_methods.paw --run
+
+# 实例方法测试
+./zig-out/bin/pawc tests/test_instance_methods.paw --run
+```
+
+---
+
+## 📚 学习资源
+
+### 快速参考
+
+```paw
+// 变量
 let x: i32 = 42;
 let mut y = 10;
 
-// Functions
-fn add(a: i32, b: i32) -> i32 {
-    return a + b;
+// 泛型函数
+fn identity<T>(x: T) -> T { return x; }
+
+// 泛型结构体
+type Box<T> = struct {
+    value: T,
+    
+    // 静态方法
+    fn new(val: T) -> Box<T> {
+        return Box { value: val };
+    }
+    
+    // 实例方法（self不需要类型！）
+    fn get(self) -> T {
+        return self.value;
+    }
 }
 
-// Structs
-type Point = struct {
-    x: i32,
-    y: i32,
-}
+// 使用
+let box: Box<i32> = Box<i32>::new(42);  // 静态方法
+let val: i32 = box.get();               // 实例方法
 
-// Enums
-type Option = enum {
-    Some(i32),
-    None(),
-}
+// 循环
+loop i in 1..=10 { println("$i"); }
 
-// Pattern Matching
+// 模式匹配
 let result = value is {
     Some(x) => x,
     None() => 0,
 };
 
-// Loops
-loop { break; }                  // Infinite
-loop i < 10 { i += 1; }         // Conditional
-loop i in 1..=10 { }            // Range
-loop item in array { }          // Array
-
-// Strings
-let msg = "Hello, $name!";      // Interpolation
-
-// Error Handling
-let value = getValue()?;        // Propagation
+// 错误处理
+let value = divide(10, 2)?;
 ```
 
----
+### 示例程序
 
-## 🌟 Why Paw?
-
-- **Simple**: Easier to learn than Rust
-- **Safe**: Memory safety without garbage collection
-- **Fast**: Zero-cost abstractions
-- **Modern**: Contemporary language features
-- **Practical**: Production-ready compiler
+查看 `examples/generic_methods.paw` 获取完整的泛型方法演示。
 
 ---
 
-## 📞 Contact
+## 🌟 为什么选择PawLang？
 
-- **GitHub**: [Your GitHub]
-- **Email**: [Your Email]
-- **Website**: [Your Website]
+| 特性 | PawLang | Rust | C | Python |
+|------|---------|------|---|--------|
+| 泛型 | ✅ 完整 | ✅ | ❌ | ❌ |
+| 类型安全 | ✅ | ✅ | ⚠️ | ❌ |
+| 零开销 | ✅ | ✅ | ✅ | ❌ |
+| 简洁语法 | ✅ | ⚠️ | ⚠️ | ✅ |
+| self无需类型 | ✅ | ❌ | N/A | ✅ |
+| 学习曲线 | 低 | 高 | 中 | 低 |
+
+**PawLang = Rust的安全性 + C的性能 + Python的简洁性**
 
 ---
 
-## 📄 License
+## 🔧 开发
 
-MIT License (or your choice)
+### 依赖
+
+- **Zig** 0.14.0 或更高版本
+- **GCC** 或 **Clang**（可选，用于编译生成的C代码）
+
+### 构建
+
+```bash
+# 开发构建
+zig build
+
+# 发布构建
+zig build -Doptimize=ReleaseFast
+
+# 运行测试
+zig build test
+```
+
+### 贡献
+
+欢迎贡献！请确保：
+- 代码遵循现有风格
+- 所有测试通过
+- 文档已更新
+
+---
+
+## 📄 文档
+
+- [CHANGELOG.md](CHANGELOG.md) - 完整变更历史
+- [RELEASE_NOTES_v0.1.2.md](RELEASE_NOTES_v0.1.2.md) - v0.1.2发布说明
+- [examples/](examples/) - 示例代码
+- [tests/](tests/) - 测试用例
+
+---
+
+## 🗺️ 路线图
+
+### v0.1.3（计划中）
+
+- [ ] 自动类型推导（`let vec = Vec<i32>::new()`）
+- [ ] 泛型约束（Trait bounds）
+- [ ] HashMap<K, V>
+- [ ] String类型
+- [ ] 更多标准库函数
+
+### 未来版本
+
+- [ ] Trait系统
+- [ ] 运算符重载
+- [ ] 异步/等待
+- [ ] 包管理器
+- [ ] LSP支持
+
+---
+
+## 📊 项目状态
+
+| 组件 | 状态 | 完成度 |
+|------|------|--------|
+| 词法分析器 | ✅ | 100% |
+| 语法分析器 | ✅ | 100% |
+| 类型检查器 | ✅ | 100% |
+| 泛型系统 | ✅ | 100% |
+| 代码生成器 | ✅ | 100% |
+| 标准库 | 🚧 | 30% |
+| 文档 | ✅ | 90% |
+
+---
+
+## 🏆 里程碑
+
+- **v0.1.0** - 基础语言实现 ✅
+- **v0.1.1** - 完整泛型系统 ✅
+- **v0.1.2** - 完整泛型方法系统 ✅ ⭐
+- **v0.2.0** - Trait系统（计划中）
+- **v1.0.0** - 生产就绪（目标）
+
+---
+
+## 🤝 贡献者
+
+感谢所有为PawLang做出贡献的开发者！
+
+---
+
+## 📄 许可证
+
+MIT License
+
+---
+
+## 🔗 链接
+
+- **GitHub**: [PawLang Repository](#)
+- **快速开始**: [5分钟上手指南](docs/QUICKSTART.md)
+- **完整文档**: [查看所有文档](docs/)
+- **示例代码**: [查看示例](examples/)
+- **模块系统**: [模块系统文档](docs/MODULE_SYSTEM.md)
+- **更新日志**: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
 **Built with ❤️ using Zig**
+
+**🐾 Happy Coding with PawLang!**

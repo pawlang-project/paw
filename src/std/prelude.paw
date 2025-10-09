@@ -55,11 +55,25 @@ type Vec<T> = struct {
     ptr: i32,       // 简化：实际应为 *T（数据指针）
     len: i32,       // 当前长度
     cap: i32,       // 容量
+    
+    // 🆕 v0.1.2: 泛型静态方法
+    fn new() -> Vec<T> {
+        return Vec { ptr: 0, len: 0, cap: 0 };
+    }
+    
+    fn with_capacity(capacity: i32) -> Vec<T> {
+        return Vec { ptr: 0, len: 0, cap: capacity };
+    }
+    
+    // 🆕 v0.1.2: 泛型实例方法（self不带类型！）
+    fn length(self) -> i32 {
+        return self.len;
+    }
+    
+    fn capacity_method(self) -> i32 {
+        return self.cap;
+    }
 }
-
-// 注意：泛型方法将在 v0.1.2 实现
-// 当前使用结构体初始化：
-//   let vec = Vec { ptr: 0, len: 0, cap: 0 };
 
 // ============================================
 // 5. Box<T> - 智能指针（泛型结构体）
@@ -67,11 +81,12 @@ type Vec<T> = struct {
 
 type Box<T> = struct {
     value: T,
+    
+    // 🆕 v0.1.2: 泛型静态方法
+    fn new(val: T) -> Box<T> {
+        return Box { value: val };
+    }
 }
-
-// 注意：泛型方法将在 v0.1.2 实现
-// 当前使用结构体初始化：
-//   let box = Box { value: 42 };
 
 // ============================================
 // 6. 数组和集合操作
