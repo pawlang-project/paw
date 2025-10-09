@@ -39,4 +39,7 @@ vendor/*.tar.gz
 
 # Local LLVM source and build (exclude all - too large for git)
 /llvm/             # Exclude entire LLVM directory
+/llvm/*
+/llvm/build/
+llvm/install/
 !llvm/.gitkeep     # Keep directory structure marker
