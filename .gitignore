@@ -4,9 +4,17 @@ zig-out/
 
 # Compiler output
 output.c
+output.ll
 output
 *.o
 *.out
+*.s
+
+# Test executables
+test_c
+test_llvm
+test_output
+final_test
 
 # IDE
 .idea/
@@ -23,3 +31,12 @@ Thumbs.db
 mylib/
 test*.paw
 !tests/test*.paw
+
+# Vendor (LLVM - too large for git)
+vendor/llvm/
+vendor/*.tar.xz
+vendor/*.tar.gz
+
+# Local LLVM source and build (exclude all - too large for git)
+/llvm/             # Exclude entire LLVM directory
+!llvm/.gitkeep     # Keep directory structure marker

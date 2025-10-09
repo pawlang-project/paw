@@ -1,0 +1,10 @@
+// LLVM Backend Test 2: Arithmetic
+// Variables and basic operations
+
+fn main() -> i32 {
+    let a = 10;
+    let b = 20;
+    let sum = a + b;
+    return sum;
+}
+
