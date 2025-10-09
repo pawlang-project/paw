@@ -1,0 +1,31 @@
+// 泛型结构体完整测试
+
+// 单类型参数
+type Box<T> = struct {
+    value: T,
+}
+
+// 多类型参数
+type Pair<A, B> = struct {
+    first: A,
+    second: B,
+}
+
+fn main() -> i32 {
+    // 测试 Box<i32>
+    let box_int = Box { value: 42 };
+    let val1 = box_int.value;
+    println("Box<i32> value: ${val1}");
+    
+    // 测试 Box<f64>
+    let box_float = Box { value: 3.14 };
+    let val2 = box_float.value;
+    
+    // 测试 Pair<i32, f64>
+    let pair = Pair { first: 100, second: 2.71 };
+    let a = pair.first;
+    let b = pair.second;
+    println("Pair<i32, f64>: ${a}");
+    
+    return val1;
+}

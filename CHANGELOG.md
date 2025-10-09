@@ -2,6 +2,117 @@
 
 All notable changes to the Paw programming language will be documented in this file.
 
+## [0.1.3] - 2025-10-09
+
+### 🎨 自动类型推导 + 🏗️ 工程化模块系统
+
+**核心更新**：类型推导 + 泛型类型系统 + 工程化模块支持
+
+#### 新增特性
+
+**自动类型推导** ⭐：
+
+**基础推导**：
+- ✅ **字面量推导**：`let x = 42;` 自动推导为 `i32`
+- ✅ **函数返回值推导**：`let result = add(1, 2);` 从函数签名推导类型
+- ✅ **结构体字面量推导**：`let p = Point { x: 1, y: 2 };` 推导为 `Point`
+- ✅ **字符串推导**：`let s = "hello";` 推导为 `string`
+
+**高级推导**：
+- ✅ **泛型方法返回值**：`let vec = Vec<i32>::new();` 推导为 `Vec<i32>`
+- ✅ **结构体字段访问**：`let x = point.x;` 从字段类型推导
+- ✅ **数组字面量**：`let arr = [1, 2, 3];` 推导为 `[i32; 3]`
+- ✅ **复杂表达式**：`let sum = a + b;` 从操作数推导
+- ✅ **链式调用**：`let len = vec.length();` 从方法返回类型推导
+
+**代码示例**：
+```paw
+// 之前（v0.1.2）
+let x: i32 = 42;
+let sum: i32 = add(10, 20);
+let vec: Vec<i32> = Vec<i32>::new();
+
+// 现在（v0.1.3）
+let x = 42;                  // 自动推导为 i32
+let sum = add(10, 20);       // 自动推导为 i32  
+let vec = Vec<i32>::new();   // 自动推导为 Vec<i32>
+```
+
+**优点**：
+- 📝 更少的样板代码
+- 🚀 提升开发效率
+- 🔒 保持类型安全
+- 💡 代码更清晰
+
+**兼容性**：
+- ✅ 完全向后兼容
+- ✅ 显式类型注解仍然支持
+- ✅ 可混合使用两种风格
+
+#### 文档和测试
+- ✅ 新增 `examples/type_inference_demo.paw`
+- ✅ 新增测试文件验证功能
+- ✅ 更新 README.md 文档
+- ✅ 详细的使用指南
+
+#### 类型系统增强 🔧
+- ✅ **函数调用参数验证**：检查参数数量和类型
+- ✅ **泛型类型推导**：自动推导泛型类型参数（`T`）
+- ✅ **泛型类型统一**：确保类型参数一致性
+- ✅ **详细错误消息**：明确指出类型不匹配的位置
+
+**示例**：
+```paw
+fn add<T>(a: T, b: T) -> T { a + b }
+
+let sum = add(10, 20);      // ✅ OK: T = i32
+let bad = add(10, "hello"); // ❌ Error: T cannot be both i32 and string
+let wrong = add(32);        // ❌ Error: expects 2 arguments, got 1
+```
+
+**工程化模块系统** 🏗️：
+
+**多项导入**：
+- ✅ **批量导入语法**：`import math.{add, multiply, Vec2};`
+- ✅ **减少import语句**：一行导入多个项
+- ✅ **向后兼容**：旧语法`import math.add;`仍然支持
+
+**模块组织**：
+- ✅ **mod.paw入口**：支持`mylib/mod.paw`作为模块入口
+- ✅ **模块目录**：`import mylib.hello`查找`mylib/mod.paw`
+- ✅ **查找优先级**：`math.paw` → `math/mod.paw`
+
+**标准库结构**：
+- ✅ **模块化组织**：`stdlib/collections/`, `stdlib/io/`
+- ✅ **prelude自动导入**：Vec, Box, println自动可用
+- ✅ **可选导入**：其他标准库按需导入
+
+**代码示例**：
+```paw
+// 单项导入（v0.1.2方式，继续支持）
+import math.add;
+import math.multiply;
+
+// 🆕 多项导入（v0.1.3新增）
+import math.{add, multiply, Vec2};
+
+// 🆕 从mod.paw导入
+import mylib.{hello, Data, process};  // mylib/mod.paw
+```
+
+#### 技术细节
+- AST 已支持可选类型（`type: ?Type`）
+- AST 支持多项导入（`ImportItems union`）
+- Parser 允许省略类型注解
+- Parser 支持`{item1, item2}`语法
+- TypeChecker 自动从表达式推导类型
+- TypeChecker 验证泛型类型统一性
+- 完整的参数验证（数量和类型）
+- ModuleLoader 支持mod.paw查找
+- 无需额外开销，零运行时成本
+
+---
+
 ## [0.1.2] - 2025-10-08
 
 ### 🎉 重大更新：完整泛型方法系统 + 模块系统 + 内存优化

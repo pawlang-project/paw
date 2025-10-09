@@ -1,0 +1,46 @@
+// 测试多类型参数泛型
+
+// 泛型函数 - 2个类型参数
+fn pair<A, B>(first: A, second: B) -> i32 {
+    println("Pair function called");
+    return 0;
+}
+
+// 泛型函数 - 3个类型参数
+fn triple<X, Y, Z>(x: X, y: Y, z: Z) -> i32 {
+    println("Triple function called");
+    return 0;
+}
+
+// 泛型结构体 - 2个类型参数
+type Pair<A, B> = struct {
+    first: A,
+    second: B,
+}
+
+// 泛型结构体 - 3个类型参数
+type Triple<X, Y, Z> = struct {
+    x: X,
+    y: Y,
+    z: Z,
+}
+
+fn main() -> i32 {
+    // 测试泛型函数
+    let r1 = pair(42, 3.14);           // pair_i32_f64
+    let r2 = triple(42, 3.14, true);   // triple_i32_f64_bool
+    
+    // 测试泛型结构体
+    let p = Pair { first: 100, second: 2.71 };      // Pair_i32_f64
+    let t = Triple { x: 1, y: 2.5, z: true };       // Triple_i32_f64_bool
+    
+    // 访问字段
+    let a = p.first;
+    let b = p.second;
+    let x = t.x;
+    let y = t.y;
+    let z = t.z;
+    
+    println("All multi-type generics work!");
+    return a;
+}

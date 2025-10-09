@@ -1,0 +1,35 @@
+// v0.1.3 类型推导 - Phase 1 测试
+// 测试当前已经工作的类型推导功能
+
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+fn multiply(x: i32, y: i32) -> i32 {
+    x * y
+}
+
+type Point = struct {
+    x: i32,
+    y: i32,
+}
+
+fn main() -> i32 {
+    // ✅ 整数字面量推导
+    let x = 42;
+    let y = 10;
+    
+    // ✅ 字符串字面量推导  
+    let s = "Hello, Type Inference!";
+    
+    // ✅ 函数调用返回值推导
+    let sum = add(x, y);
+    let product = multiply(3, 4);
+    
+    // ✅ 结构体字面量推导
+    let p = Point { x: 100, y: 200 };
+    
+    // 返回结果
+    return sum + product + p.x;
+}
+

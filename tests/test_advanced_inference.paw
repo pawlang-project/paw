@@ -1,0 +1,31 @@
+// 测试Advanced Inference - v0.1.3 Phase 2
+
+type Point = struct {
+    x: i32,
+    y: i32,
+}
+
+fn process(vec: Vec<i32>) -> i32 {
+    vec.length()
+}
+
+fn main() -> i32 {
+    // 2.1 函数参数推导
+    let v = Vec<i32>::new();
+    let result = process(v);  // result应该推导为i32
+    
+    // 2.2 结构体字段推导
+    let p = Point { x: 100, y: 200 };  // p推导为Point
+    let x = p.x;                        // x应该推导为i32
+    let y = p.y;                        // y应该推导为i32
+    
+    // 2.3 数组字面量推导
+    let arr = [1, 2, 3];       // 应该推导为[i32; 3]或[i32]
+    
+    // 复杂表达式推导
+    let sum = x + y;           // 应该推导为i32
+    let doubled = sum * 2;     // 应该推导为i32
+    
+    return result + sum + doubled;
+}
+

@@ -1,0 +1,18 @@
+// 测试mod.paw模块入口 - v0.1.3工程化模块
+
+// 🆕 从mylib/mod.paw导入
+import mylib.{hello, Data, process};
+
+fn main() -> i32 {
+    // 使用导入的函数
+    let result = hello();
+    
+    // 使用导入的类型
+    let data = Data { value: 10 };
+    
+    // 使用导入的函数处理数据
+    let processed = process(data);
+    
+    return result + processed;
+}
+

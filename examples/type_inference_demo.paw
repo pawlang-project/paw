@@ -1,0 +1,81 @@
+// PawLang v0.1.3 - Type Inference Demo
+// Demonstrates automatic type inference feature
+
+// Define some helper functions
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+fn multiply(x: i32, y: i32) -> i32 {
+    x * y
+}
+
+fn greet(name: string) -> string {
+    name
+}
+
+// Define a struct
+type Point = struct {
+    x: i32,
+    y: i32,
+}
+
+fn calculate_distance(p1: Point, p2: Point) -> i32 {
+    let dx = p1.x - p2.x;
+    let dy = p1.y - p2.y;
+    dx * dx + dy * dy
+}
+
+fn main() -> i32 {
+    // ==========================================
+    // Type Inference Examples
+    // ==========================================
+    
+    // 1. Integer literal inference
+    let x = 42;              // Inferred as i32
+    let y = 100;             // Inferred as i32
+    
+    // 2. String literal inference
+    let message = "Hello, Type Inference!";  // Inferred as string
+    let name = "PawLang";                     // Inferred as string
+    
+    // 3. Function call inference
+    let sum = add(x, y);           // Inferred as i32 from add's return type
+    let product = multiply(10, 5); // Inferred as i32 from multiply's return type
+    let greeting = greet(name);    // Inferred as string from greet's return type
+    
+    // 4. Struct literal inference
+    let p1 = Point { x: 0, y: 0 };     // Inferred as Point
+    let p2 = Point { x: 3, y: 4 };     // Inferred as Point
+    
+    // 5. Chained inference
+    let dist = calculate_distance(p1, p2);  // Inferred as i32
+    let total = sum + product;               // Inferred as i32
+    
+    // 6. Generic method return type inference (Advanced!)
+    let vec = Vec<i32>::new();             // Inferred as Vec<i32>!
+    let capacity = vec.capacity_method();  // Inferred as i32
+    let length = vec.length();             // Inferred as i32
+    
+    // 7. Struct field access inference (Advanced!)
+    let p1_x = p1.x;  // Inferred as i32 from field type
+    let p2_y = p2.y;  // Inferred as i32 from field type
+    
+    // 8. Array literal inference (Advanced!)
+    let numbers = [1, 2, 3, 4, 5];  // Inferred as [i32; 5]
+    
+    // ==========================================
+    // Compare with explicit typing (still works!)
+    // ==========================================
+    
+    // You can still be explicit if you want
+    let explicit_x: i32 = 42;
+    let explicit_s: string = "hello";
+    let explicit_p: Point = Point { x: 1, y: 2 };
+    
+    // Both styles work - use whichever is clearer!
+    
+    // Return result
+    return sum + product + dist;
+}
+

@@ -2,7 +2,7 @@
 
 **一个现代的、带有Rust级别安全性和更简洁语法的系统编程语言**
 
-[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
 
@@ -46,37 +46,116 @@ gcc output.c -o hello            # 编译
 
 ## ✨ 核心特性
 
-### 🔗 模块系统（v0.1.2 新功能！）⭐
+### 🎨 自动类型推导（v0.1.3 新功能！）⭐
 
-**简洁的导入语法**：
+**更简洁的代码，相同的类型安全**：
 
 ```paw
-// math.paw - 模块文件
-pub fn add(a: i32, b: i32) -> i32 {
-    return a + b;
+// 之前（v0.1.2）：需要显式类型注解
+let x: i32 = 42;
+let sum: i32 = add(10, 20);
+let vec: Vec<i32> = Vec<i32>::new();
+
+// 现在（v0.1.3）：自动推导类型！
+let x = 42;                    // 推导为 i32
+let sum = add(10, 20);         // 推导为 i32
+let vec = Vec<i32>::new();     // 推导为 Vec<i32>
+```
+
+**支持的推导**：
+- ✅ 字面量（整数、字符串、布尔值）
+- ✅ 函数调用返回值
+- ✅ 泛型实例化
+- ✅ 结构体字面量
+- ✅ 表达式计算结果
+
+**示例**：
+```paw
+fn calculate(a: i32, b: i32) -> i32 {
+    a + b
 }
 
-pub type Vec2 = struct {
-    x: i32,
-    y: i32,
-}
-
-// main.paw - 使用模块
-import math.add;      // 导入函数
-import math.Vec2;     // 导入类型
+type Point = struct { x: i32, y: i32, }
 
 fn main() -> i32 {
-    let sum = add(10, 20);
-    let v = Vec2 { x: 1, y: 2 };
-    return 0;
+    let x = 42;                          // i32
+    let message = "Hello";                // string
+    let result = calculate(10, 20);      // i32
+    let p = Point { x: 1, y: 2 };        // Point
+    let vec = Vec<i32>::new();           // Vec<i32>
+    
+    // 仍然可以使用显式类型（可选）
+    let explicit: i32 = 42;
+    
+    return result;
 }
 ```
 
+**类型系统增强**：
+```paw
+fn add<T>(a: T, b: T) -> T { a + b }
+
+let sum = add(10, 20);      // ✅ OK: T = i32
+let bad = add(10, "hello"); // ❌ Error: T cannot be both i32 and string
+let wrong = add(32);        // ❌ Error: expects 2 arguments, got 1
+```
+
+**好处**：
+- 📝 更少的样板代码
+- 🚀 更快的开发速度
+- 🔒 保持完全的类型安全
+- 💡 更清晰的代码意图
+- ✅ 编译时错误检查（参数验证）
+
+---
+
+### 🏗️ 工程化模块系统（v0.1.3升级）⭐
+
+**多项导入语法**：
+
+```paw
+// math.paw - 模块文件
+pub fn add(a: i32, b: i32) -> i32 { a + b }
+pub fn multiply(a: i32, b: i32) -> i32 { a * b }
+pub type Vec2 = struct { x: i32, y: i32, }
+
+// main.paw - 使用模块
+// 🆕 v0.1.3: 多项导入（推荐）
+import math.{add, multiply, Vec2};
+
+// v0.1.2: 单项导入（仍然支持）
+import math.add;
+import math.multiply;
+import math.Vec2;
+
+fn main() -> i32 {
+    let sum = add(10, 20);
+    let product = multiply(5, 6);
+    let v = Vec2 { x: 1, y: 2 };
+    return sum + product;
+}
+```
+
+**mod.paw模块入口**：
+```
+mylib/
+├── mod.paw       # 模块入口（重新导出）
+├── core.paw      # 核心功能
+└── utils.paw     # 工具函数
+
+使用:
+import mylib.{hello, Data};  // 从mod.paw导入
+```
+
 **特点**：
+- ✅ 多项导入减少代码量
+- ✅ mod.paw模块入口支持
+- ✅ 标准库模块化组织
 - ✅ 使用`.`语法（不是`::`）
 - ✅ 直接`import`（不需要`use`）
 - ✅ `pub`控制导出
 - ✅ 自动模块加载和缓存
+- ✅ 向后兼容旧语法
 
 ### 🎯 完整的泛型系统（v0.1.2 新功能！）
 

@@ -666,8 +666,9 @@ pub const Parser = struct {
     }
 
     fn parseImportDecl(self: *Parser) !ast.ImportDecl {
-        // 解析模块路径：import math.add;
-        // 格式：import module_path.item_name;
+        // 🆕 支持两种格式：
+        // 1. import math.add;           (单项导入)
+        // 2. import math.{add, sub};    (多项导入)
         
         var path_parts = std.ArrayList([]const u8).init(self.allocator);
         defer path_parts.deinit();
@@ -676,32 +677,65 @@ pub const Parser = struct {
         const first = try self.consume(.identifier);
         try path_parts.append(first.lexeme);
         
-        // 解析 .identifier 链
-        while (self.match(.dot)) {
+        // 解析 .identifier 链，直到遇到 { 或 ;
+        while (self.match(.dot) and !self.check(.lbrace)) {
             const part = try self.consume(.identifier);
             try path_parts.append(part.lexeme);
         }
         
-        _ = self.match(.semicolon);
-        
-        // 最后一个是item_name，其余是module_path
-        if (path_parts.items.len < 2) {
-            return error.InvalidImportPath;
-        }
-        
-        const item_name = path_parts.items[path_parts.items.len - 1];
-        
-        // 构建module_path：math.vec -> "math/vec"
+        // 构建module_path
         var module_path = std.ArrayList(u8).init(self.allocator);
-        for (path_parts.items[0..path_parts.items.len - 1], 0..) |part, i| {
+        for (path_parts.items, 0..) |part, i| {
             if (i > 0) try module_path.append('/');
             try module_path.appendSlice(part);
         }
+        const module_path_owned = try module_path.toOwnedSlice();
         
-        return ast.ImportDecl{
-            .module_path = try module_path.toOwnedSlice(),
-            .item_name = item_name,
-        };
+        // 检查是否是多项导入
+        if (self.match(.lbrace)) {
+            // 多项导入：import math.{add, sub, Vec2}
+            var items = std.ArrayList([]const u8).init(self.allocator);
+            
+            while (!self.check(.rbrace)) {
+                const item = try self.consume(.identifier);
+                try items.append(item.lexeme);
+                
+                if (!self.match(.comma)) {
+                    break;
+                }
+            }
+            
+            _ = try self.consume(.rbrace);
+            _ = self.match(.semicolon);
+            
+            return ast.ImportDecl{
+                .module_path = module_path_owned,
+                .items = .{ .multiple = try items.toOwnedSlice() },
+            };
+        } else {
+            // 单项导入：import math.add;
+            // 最后一个部分是item_name
+            if (path_parts.items.len < 2) {
+                return error.InvalidImportPath;
+            }
+            
+            const item_name = path_parts.items[path_parts.items.len - 1];
+            
+            // 重新构建module_path（去掉最后一个部分）
+            self.allocator.free(module_path_owned);
+            var module_path2 = std.ArrayList(u8).init(self.allocator);
+            for (path_parts.items[0..path_parts.items.len - 1], 0..) |part, i| {
+                if (i > 0) try module_path2.append('/');
+                try module_path2.appendSlice(part);
+            }
+            
+            _ = self.match(.semicolon);
+            
+            return ast.ImportDecl{
+                .module_path = try module_path2.toOwnedSlice(),
+                .items = .{ .single = item_name },
+            };
+        }
     }
 
     fn parseType(self: *Parser) !ast.Type {
