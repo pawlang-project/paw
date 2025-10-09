@@ -100,12 +100,24 @@ let total = sum + double; // i32 inferred
 - ✅ **Faster Development**: Write code more quickly
 - ✅ **Clearer Intent**: Focus on logic, not types
 - ✅ **Easier Refactoring**: Change return types in one place
+- ✅ **Better Errors**: Catch mistakes at PawLang compile time
 
-### Type Safety
-- ✅ **Full Type Checking**: All types still verified
-- ✅ **Compile-Time Errors**: Catch mistakes early
+### Type Safety ⭐
+- ✅ **Full Type Checking**: All types verified
+- ✅ **Argument Validation**: Parameter count and type checking
+- ✅ **Generic Unification**: Ensures type parameter consistency
+- ✅ **Compile-Time Errors**: Catch mistakes before C compilation
 - ✅ **No Runtime Cost**: Zero overhead
 - ✅ **Explicit When Needed**: Can still add type annotations
+
+### Error Detection (NEW!)
+```paw
+fn add<T>(a: T, b: T) -> T { a + b }
+
+let wrong1 = add(32);           // Error: expects 2 arguments, got 1
+let wrong2 = add(10, "hello");  // Error: T cannot be both i32 and string
+let correct = add(10, 20);      // ✅ OK: T = i32
+```
 
 ### Code Quality
 - ✅ **More Readable**: Less visual noise

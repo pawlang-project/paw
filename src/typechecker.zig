@@ -376,6 +376,76 @@ pub const TypeChecker = struct {
         return false;
     }
     
+    /// 🆕 从函数调用推导泛型类型参数
+    fn inferGenericTypes(
+        self: *TypeChecker,
+        func: ast.FunctionDecl,
+        call_args: []ast.Expr,
+        scope: *std.StringHashMap(ast.Type)
+    ) ![]ast.Type {
+        var type_map = std.StringHashMap(ast.Type).init(self.allocator);
+        defer type_map.deinit();
+        
+        // 从每个参数推导类型
+        for (func.params, call_args) |param, arg| {
+            const arg_type = try self.checkExpr(arg, scope);
+            
+            if (param.type == .generic) {
+                const type_param_name = param.type.generic;
+                
+                if (type_map.get(type_param_name)) |existing| {
+                    // 类型参数已推导，检查一致性
+                    if (!existing.eql(arg_type)) {
+                        const err_msg = try std.fmt.allocPrint(
+                            self.allocator,
+                            "Error: Type parameter '{s}' cannot be both {s} and {s}",
+                            .{type_param_name, @tagName(existing), @tagName(arg_type)}
+                        );
+                        try self.errors.append(err_msg);
+                    }
+                } else {
+                    // 第一次推导此类型参数
+                    try type_map.put(type_param_name, arg_type);
+                }
+            }
+        }
+        
+        // 按顺序收集推导的类型
+        var inferred_types = std.ArrayList(ast.Type).init(self.allocator);
+        for (func.type_params) |param_name| {
+            if (type_map.get(param_name)) |inferred| {
+                try inferred_types.append(inferred);
+            } else {
+                // 无法推导此类型参数，使用i32作为默认
+                try inferred_types.append(ast.Type.i32);
+            }
+        }
+        
+        return inferred_types.toOwnedSlice();
+    }
+    
+    /// 🆕 将泛型类型参数替换为具体类型
+    fn substituteType(
+        self: *TypeChecker,
+        ty: ast.Type,
+        type_params: [][]const u8,
+        type_args: []ast.Type
+    ) !ast.Type {
+        _ = self;
+        switch (ty) {
+            .generic => |name| {
+                // 查找对应的类型参数
+                for (type_params, type_args) |param, arg| {
+                    if (std.mem.eql(u8, name, param)) {
+                        return arg;
+                    }
+                }
+                return ty;
+            },
+            else => return ty,
+        }
+    }
+    
     // ============================================================================
     // Expression Checking
     // ============================================================================
@@ -466,17 +536,47 @@ pub const TypeChecker = struct {
                     
                     // 不是enum构造器，检查是否是函数
                     if (self.function_table.get(func_name)) |func| {
-                        // 🆕 泛型函数处理：如果返回类型是泛型，需要推导
-                        if (func.return_type == .generic) {
-                            // 简化实现：返回第一个参数的类型
-                            if (call.args.len > 0) {
-                                const arg_type = try self.checkExpr(call.args[0], scope);
-                                break :blk arg_type;
-                            }
-                            // 如果没有参数，返回i32作为默认
-                            break :blk ast.Type.i32;
+                        // 🆕 检查参数数量
+                        if (call.args.len != func.params.len) {
+                            const err_msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "Error: Function '{s}' expects {d} arguments, but got {d}",
+                                .{func_name, func.params.len, call.args.len}
+                            );
+                            try self.errors.append(err_msg);
+                            break :blk ast.Type.void;
                         }
-                        break :blk func.return_type;
+                        
+                        if (func.type_params.len > 0) {
+                            // 🆕 泛型函数：推导类型参数
+                            const inferred_types = try self.inferGenericTypes(func, call.args, scope);
+                            defer self.allocator.free(inferred_types);
+                            
+                            // 返回替换后的返回类型
+                            const return_type = try self.substituteType(
+                                func.return_type,
+                                func.type_params,
+                                inferred_types
+                            );
+                            break :blk return_type;
+                        } else {
+                            // 非泛型函数：检查参数类型
+                            for (call.args, 0..) |arg, i| {
+                                const arg_type = try self.checkExpr(arg, scope);
+                                const param_type = func.params[i].type;
+                                
+                                if (!self.isTypeCompatible(arg_type, param_type)) {
+                                    const err_msg = try std.fmt.allocPrint(
+                                        self.allocator,
+                                        "Error: Argument {d} type mismatch in '{s}'",
+                                        .{i + 1, func_name}
+                                    );
+                                    try self.errors.append(err_msg);
+                                }
+                            }
+                            
+                            break :blk func.return_type;
+                        }
                     }
                 }
                 
