@@ -2,10 +2,11 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const CodeGen = @import("codegen.zig").CodeGen;
 
-/// C Backend - Compiles and executes C code using available system compiler
+/// C Backend - Compiles and executes C code using available system compiler (gcc/clang/tcc)
+/// Supports multiple C compilers with automatic fallback
 pub const CBackend = struct {
     allocator: std.mem.Allocator,
-    tcc_path: ?[]const u8, // TCC 可执行文件路径（如果有）
+    tcc_path: ?[]const u8, // Optional TCC executable path if available
     
     pub fn init(allocator: std.mem.Allocator) CBackend {
         return CBackend{
@@ -14,9 +15,9 @@ pub const CBackend = struct {
         };
     }
     
-    /// 检测系统是否安装了 TCC
+    /// Detect if TCC (TinyCC) is installed on the system
     pub fn detectTcc(self: *CBackend) !bool {
-        // 尝试运行 tcc --version
+        // Try to run tcc --version
         const result = std.process.Child.run(.{
             .allocator = self.allocator,
             .argv = &[_][]const u8{ "tcc", "--version" },
@@ -34,13 +35,14 @@ pub const CBackend = struct {
         return false;
     }
     
-    /// 使用 C 编译器编译 C 代码为可执行文件
+    /// Compile C code to executable using available C compiler
+    /// Priority: TCC (fast) > gcc > clang
     pub fn compile(
         self: *CBackend,
         c_code: []const u8,
         output_file: []const u8,
     ) !void {
-        // 1. 将 C 代码写入临时文件
+        // 1. Write C code to temporary file
         const temp_c_file = try std.fmt.allocPrint(
             self.allocator,
             "{s}.c",
@@ -52,21 +54,21 @@ pub const CBackend = struct {
         defer c_file.close();
         _ = try c_file.write(c_code);
         
-        // 2. 检测 TCC
+        // 2. Detect and use appropriate compiler
         const has_tcc = try self.detectTcc();
         
         if (has_tcc) {
-            // 使用 TCC 编译
+            // Use TCC (fastest compilation)
             std.debug.print("🔧 Compiling with TinyCC...\n", .{});
             try self.compileWithTcc(temp_c_file, output_file);
         } else {
-            // 回退到 GCC/Clang
+            // Fallback to GCC/Clang
             std.debug.print("⚠️  TinyCC not found, using system C compiler...\n", .{});
             try self.compileWithSystemCompiler(temp_c_file, output_file);
         }
     }
     
-    /// 使用 TCC 编译
+    /// Compile using TCC (TinyCC)
     fn compileWithTcc(
         self: *CBackend,
         c_file: []const u8,
@@ -94,16 +96,16 @@ pub const CBackend = struct {
         std.debug.print("✅ Compilation successful: {s}\n", .{output_file});
     }
     
-    /// 使用系统 C 编译器（GCC/Clang）
+    /// Compile using system C compiler (GCC/Clang)
     fn compileWithSystemCompiler(
         self: *CBackend,
         c_file: []const u8,
         output_file: []const u8,
     ) !void {
-        // 尝试查找可用的 C 编译器
+        // Try to find available C compiler
         var compiler: []const u8 = "gcc";
         
-        // 先尝试 gcc
+        // Try gcc first
         if (std.process.Child.run(.{
             .allocator = self.allocator,
             .argv = &[_][]const u8{ "gcc", "--version" },

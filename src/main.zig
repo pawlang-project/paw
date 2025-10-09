@@ -284,7 +284,7 @@ pub fn main() !void {
         std.debug.print("[PERF] Type checking: {d}μs\n", .{@divTrunc(typecheck_time - start_time, 1000)});
     }
 
-        // 4. Code generation - 🆕 v0.1.4: 支持多后端
+        // 4. Code generation - 🆕 v0.1.4: 双后端架构 (C + LLVM Native)
         const output_code = switch (backend) {
             .c => blk: {
                 var codegen = CodeGen.init(allocator);
@@ -301,7 +301,7 @@ pub fn main() !void {
                 break :blk try llvm_native.generate(ast);
             },
         };
-    defer allocator.free(output_code);  // 🔧 释放生成的代码（来自codegen/llvm_backend）
+    defer allocator.free(output_code);  // 🔧 释放生成的代码（来自 codegen 或 llvm_native_backend）
     
     const total_time = std.time.nanoTimestamp();
     
