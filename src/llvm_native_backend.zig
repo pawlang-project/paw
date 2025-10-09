@@ -150,7 +150,10 @@ pub const LLVMNativeBackend = struct {
                 _ = try self.generateExpr(expr);
             },
             .while_loop => |while_stmt| {
-                try self.generateWhileLoop(while_stmt);
+                try self.generateWhileLoop(.{
+                    .condition = while_stmt.condition,
+                    .body = while_stmt.body,
+                });
             },
             .break_stmt => |_| {
                 if (self.current_loop_exit) |exit_block| {
