@@ -1,0 +1,31 @@
+// LLVM Backend Demo
+// This example demonstrates PawLang's LLVM backend
+//
+// Compile with:
+//   pawc examples/llvm_demo.paw --backend=llvm
+//   clang output.ll -o demo
+//   ./demo
+
+fn fibonacci(n: i32) -> i32 {
+    let a = 0;
+    let b = 1;
+    let temp = a + b;
+    return temp;
+}
+
+fn calculate(x: i32, y: i32) -> i32 {
+    let sum = x + y;
+    let product = x * y;
+    let result = sum + product;
+    return result;
+}
+
+fn main() -> i32 {
+    let fib = fibonacci(10);
+    let calc = calculate(3, 4);
+    let total = fib + calc;
+    return total;
+}
+
+// Expected: fibonacci(10) = 1, calculate(3,4) = 19, total = 20
+
