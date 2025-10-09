@@ -15,6 +15,20 @@ pub fn build(b: *std.Build) void {
         .root_module = main_mod,
     });
 
+    // 🆕 添加 LLVM 依赖 (v0.1.4)
+    const llvm_dep = b.dependency("llvm", .{
+        .target = target,
+        .optimize = optimize,
+    }) catch null;
+    
+    if (llvm_dep) |dep| {
+        const llvm_mod = dep.module("llvm");
+        exe.root_module.addImport("llvm", llvm_mod);
+        std.debug.print("✓ LLVM backend enabled\n", .{});
+    } else {
+        std.debug.print("⚠ LLVM backend disabled (dependency not found)\n", .{});
+    }
+
     // 链接标准库
     exe.linkLibC();
 
