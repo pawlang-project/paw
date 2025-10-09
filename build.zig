@@ -47,16 +47,14 @@ pub fn build(b: *std.Build) void {
         // Link C++ standard library (LLVM is C++)
         exe.linkLibCpp();
         
-        std.debug.print("✅ LLVM native API enabled (3 backends available)\n", .{});
-        std.debug.print("   • C backend (default, stable)\n", .{});
-        std.debug.print("   • LLVM text mode (--backend=llvm)\n", .{});
-        std.debug.print("   • LLVM native API (--backend=llvm-native)\n", .{});
+        std.debug.print("✅ LLVM native API enabled\n", .{});
+        std.debug.print("   • C backend: --backend=c (default)\n", .{});
+        std.debug.print("   • LLVM backend: --backend=llvm (uses native API)\n", .{});
     } else {
-        std.debug.print("ℹ️  LLVM not found - using 2 backends\n", .{});
-        std.debug.print("   • C backend (default, stable)\n", .{});
-        std.debug.print("   • LLVM text mode (--backend=llvm)\n", .{});
-        std.debug.print("   💡 To enable native LLVM:\n", .{});
-        std.debug.print("      ./scripts/setup_llvm_source.sh && ./scripts/build_llvm_local.sh\n", .{});
+        std.debug.print("ℹ️  LLVM not found\n", .{});
+        std.debug.print("   • C backend: --backend=c (default)\n", .{});
+        std.debug.print("   • LLVM backend: --backend=llvm (text mode)\n", .{});
+        std.debug.print("   💡 For native API: ./scripts/setup_llvm_source.sh && ./scripts/build_llvm_local.sh\n", .{});
     }
     
     // 链接标准库

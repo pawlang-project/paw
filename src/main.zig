@@ -15,9 +15,8 @@ const VERSION = "0.1.4-dev";
 
 // 🆕 v0.1.4: Backend选择
 const Backend = enum {
-    c,           // C backend (default, stable)
-    llvm,        // LLVM backend (text IR, experimental)
-    llvm_native, // LLVM native API (requires -Dwith-llvm=true)
+    c,      // C backend (default, stable)
+    llvm,   // LLVM backend (auto: native API if available, else text IR)
 };
 
 // 🆕 check command: type checking only
@@ -165,11 +164,8 @@ pub fn main() !void {
         } else if (std.mem.eql(u8, arg, "--compile")) {
             should_compile = true;
             } else if (std.mem.eql(u8, arg, "--backend=llvm")) {
-                // 🆕 v0.1.4: LLVM后端 (文本IR)
+                // 🆕 v0.1.4: LLVM后端 (自动选择最佳模式)
                 backend = .llvm;
-            } else if (std.mem.eql(u8, arg, "--backend=llvm-native")) {
-                // 🆕 v0.1.4: LLVM原生API
-                backend = .llvm_native;
             } else if (std.mem.eql(u8, arg, "--backend=c")) {
                 backend = .c;
             }
@@ -296,39 +292,34 @@ pub fn main() !void {
                 break :blk try codegen.generate(ast);
             },
             .llvm => blk: {
-                var llvm_codegen = LLVMBackend.init(allocator);
-                defer llvm_codegen.deinit();
-                break :blk try llvm_codegen.generate(ast);
-            },
-            .llvm_native => blk: {
-                // Check if LLVM native API is available
-                const has_llvm = comptime blk_check: {
+                // 🆕 智能选择: 优先使用原生 API，否则使用文本模式
+                const has_llvm_native = comptime blk_check: {
                     break :blk_check @hasDecl(@This(), "LLVMNativeBackend");
                 };
                 
-                if (!has_llvm) {
-                    std.debug.print("❌ LLVM native backend not available\n", .{});
-                    std.debug.print("💡 Rebuild with: zig build -Dwith-llvm=true\n", .{});
-                    return;
+                if (has_llvm_native) {
+                    // 使用原生 API (更快，更好的优化)
+                    if (verbose) {
+                        std.debug.print("[INFO] Using LLVM native API\n", .{});
+                    }
+                    var llvm_native = try LLVMNativeBackend.init(allocator, "pawlang_module");
+                    defer llvm_native.deinit();
+                    break :blk try llvm_native.generate(ast);
+                } else {
+                    // 降级到文本模式 (无需 LLVM)
+                    if (verbose) {
+                        std.debug.print("[INFO] Using LLVM text mode (native API not available)\n", .{});
+                    }
+                    var llvm_codegen = LLVMBackend.init(allocator);
+                    defer llvm_codegen.deinit();
+                    break :blk try llvm_codegen.generate(ast);
                 }
-                
-                var llvm_native = try LLVMNativeBackend.init(allocator, "pawlang_module");
-                defer llvm_native.deinit();
-                break :blk try llvm_native.generate(ast);
             },
         };
     
     const total_time = std.time.nanoTimestamp();
     
-    // 🆕 显示使用的后端
-    if (verbose) {
-        const backend_name = switch (backend) {
-            .c => "C",
-            .llvm => "LLVM (text IR)",
-            .llvm_native => "LLVM (native API)",
-        };
-        std.debug.print("[INFO] Backend: {s}\n", .{backend_name});
-    }
+    // Backend name already printed in code generation if verbose
     
     // 5. Output based on options
     if (should_compile) {
@@ -409,11 +400,11 @@ pub fn main() !void {
                 std.fs.cwd().deleteFile(temp_c_file) catch {};
             }
             
-        } else if (backend == .llvm or backend == .llvm_native) {
+        } else if (backend == .llvm) {
             // LLVM 后端: 生成 IR 然后用 Clang 编译
-            std.debug.print("❌ Error: LLVM backends do not support --compile/--run yet\n", .{});
+            std.debug.print("❌ Error: LLVM backend does not support --compile/--run yet\n", .{});
             std.debug.print("💡 Use manual workflow:\n", .{});
-            std.debug.print("   pawc file.paw --backend=llvm-native\n", .{});
+            std.debug.print("   pawc file.paw --backend=llvm\n", .{});
             std.debug.print("   llvm/install/bin/clang output.ll -o program\n", .{});
             return;
         } else {
@@ -444,7 +435,7 @@ pub fn main() !void {
             const output_name = output_file orelse "output";
             const output_ext = switch (backend) {
                 .c => ".c",
-                .llvm, .llvm_native => ".ll", // LLVM IR文件扩展名
+                .llvm => ".ll", // LLVM IR文件扩展名
             };
         const code_filename = try std.fmt.allocPrint(allocator, "{s}{s}", .{output_name, output_ext});
         defer allocator.free(code_filename);
@@ -469,21 +460,15 @@ pub fn main() !void {
                         std.debug.print("✅ C code generated: {s}\n", .{code_filename});
                         std.debug.print("💡 Hints:\n", .{});
                         std.debug.print("   • Compile: gcc {s} -o {s}\n", .{ code_filename, output_name });
+                        std.debug.print("   • Or with local Clang: llvm/install/bin/clang {s} -o {s}\n", .{ code_filename, output_name });
                         std.debug.print("   • Run: ./{s}\n", .{output_name});
                     },
                     .llvm => {
-                        std.debug.print("✅ LLVM IR generated (text mode): {s}\n", .{code_filename});
-                        std.debug.print("💡 Hints (experimental):\n", .{});
-                        std.debug.print("   • Compile: llc {s} -o {s}.s && gcc {s}.s -o {s}\n", 
-                            .{ code_filename, output_name, output_name, output_name });
-                        std.debug.print("   • Or: clang {s} -o {s}\n", .{ code_filename, output_name });
-                    },
-                    .llvm_native => {
-                        std.debug.print("✅ LLVM IR generated (native API): {s}\n", .{code_filename});
-                        std.debug.print("💡 Hints (experimental):\n", .{});
-                        std.debug.print("   • Compile: llc {s} -o {s}.s && gcc {s}.s -o {s}\n", 
-                            .{ code_filename, output_name, output_name, output_name });
-                        std.debug.print("   • Or: clang {s} -o {s}\n", .{ code_filename, output_name });
+                        std.debug.print("✅ LLVM IR generated: {s}\n", .{code_filename});
+                        std.debug.print("💡 Hints:\n", .{});
+                        std.debug.print("   • Compile: llvm/install/bin/clang {s} -o {s}\n", .{ code_filename, output_name });
+                        std.debug.print("   • Or: clang {s} -o {s} (system clang)\n", .{ code_filename, output_name });
+                        std.debug.print("   • Run: ./{s}\n", .{output_name});
                     },
                 }
         } else {
@@ -514,15 +499,13 @@ fn printUsage() void {
     std.debug.print("\n", .{});
     std.debug.print("Backends:\n", .{});
     std.debug.print("  --backend=c              Use C backend (default, stable)\n", .{});
-    std.debug.print("  --backend=llvm           Use LLVM text IR backend (no deps) 🆕\n", .{});
-    std.debug.print("  --backend=llvm-native    Use LLVM native API (requires local LLVM) ⭐\n", .{});
+    std.debug.print("  --backend=llvm           Use LLVM backend (auto: native API or text) 🆕\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Examples:\n", .{});
     std.debug.print("  pawc hello.paw                       Generate C code -> output.c\n", .{});
     std.debug.print("  pawc hello.paw --compile             Compile to executable -> output\n", .{});
     std.debug.print("  pawc hello.paw --run                 Compile and run\n", .{});
-    std.debug.print("  pawc hello.paw --backend=llvm        Generate LLVM IR -> output.ll\n", .{});
-    std.debug.print("  pawc hello.paw --backend=llvm-native Generate LLVM IR (native) 🚀\n", .{});
+    std.debug.print("  pawc hello.paw --backend=llvm        Generate LLVM IR -> output.ll 🚀\n", .{});
     std.debug.print("  pawc check hello.paw                 Type check only\n", .{});
     std.debug.print("  pawc init my_project                 Create new project\n", .{});
     std.debug.print("\n", .{});
