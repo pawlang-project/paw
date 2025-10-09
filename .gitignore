@@ -37,8 +37,6 @@ vendor/llvm/
 vendor/*.tar.xz
 vendor/*.tar.gz
 
-# Local LLVM source and build
-/llvm/19.1.6/      # LLVM source (keep in git or use .gitkeep)
-/llvm/build/       # Build artifacts (exclude)
-/llvm/install/     # Installation (exclude)
-/llvm/.DS_Store
+# Local LLVM source and build (exclude all - too large for git)
+/llvm/             # Exclude entire LLVM directory
+!llvm/.gitkeep     # Keep directory structure marker
