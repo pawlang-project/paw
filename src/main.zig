@@ -3,9 +3,8 @@ const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
 const TypeChecker = @import("typechecker.zig").TypeChecker;
 const CodeGen = @import("codegen.zig").CodeGen;
-const LLVMBackend = @import("llvm_backend.zig").LLVMBackend; // 🆕 v0.1.4 - Text mode
-const LLVMNativeBackend = @import("llvm_native_backend.zig").LLVMNativeBackend; // 🆕 v0.1.4 - Native API
-const TccBackend = @import("tcc_backend.zig").TccBackend;
+const LLVMNativeBackend = @import("llvm_native_backend.zig").LLVMNativeBackend; // 🆕 v0.1.4
+const CBackend = @import("c_backend.zig").CBackend;
 const ModuleLoader = @import("module.zig").ModuleLoader;
 const ast_mod = @import("ast.zig");
 
@@ -13,10 +12,10 @@ const builtin = @import("builtin");
 
 const VERSION = "0.1.4-dev";
 
-// 🆕 v0.1.4: Backend选择
+// 🆕 v0.1.4: Simplified backend selection
 const Backend = enum {
     c,      // C backend (default, stable)
-    llvm,   // LLVM backend (auto: native API if available, else text IR)
+    llvm,   // LLVM native backend
 };
 
 // 🆕 check command: type checking only
@@ -293,28 +292,13 @@ pub fn main() !void {
                 break :blk try codegen.generate(ast);
             },
             .llvm => blk: {
-                // 🆕 智能选择: 优先使用原生 API，否则使用文本模式
-                const has_llvm_native = comptime blk_check: {
-                    break :blk_check @hasDecl(@This(), "LLVMNativeBackend");
-                };
-                
-                if (has_llvm_native) {
-                    // 使用原生 API (更快，更好的优化)
-                    if (verbose) {
-                        std.debug.print("[INFO] Using LLVM native API\n", .{});
-                    }
-                    var llvm_native = try LLVMNativeBackend.init(allocator, "pawlang_module");
-                    defer llvm_native.deinit();
-                    break :blk try llvm_native.generate(ast);
-                } else {
-                    // 降级到文本模式 (无需 LLVM)
-                    if (verbose) {
-                        std.debug.print("[INFO] Using LLVM text mode (native API not available)\n", .{});
-                    }
-                    var llvm_codegen = LLVMBackend.init(allocator);
-                    defer llvm_codegen.deinit();
-                    break :blk try llvm_codegen.generate(ast);
+                // Use LLVM native API
+                if (verbose) {
+                    std.debug.print("[INFO] Using LLVM native backend\n", .{});
                 }
+                var llvm_native = try LLVMNativeBackend.init(allocator, "pawlang_module");
+                defer llvm_native.deinit();
+                break :blk try llvm_native.generate(ast);
             },
         };
     defer allocator.free(output_code);  // 🔧 释放生成的代码（来自codegen/llvm_backend）
@@ -410,18 +394,18 @@ pub fn main() !void {
             std.debug.print("   llvm/install/bin/clang output.ll -o program\n", .{});
             return;
         } else {
-            // 回退到 TCC（如果没有本地 Clang）
+            // Fallback to system C compiler
             if (verbose) {
-                std.debug.print("🔨 Using TCC for compilation\n", .{});
+                std.debug.print("🔨 Using system C compiler\n", .{});
             }
             
-            var tcc_backend = TccBackend.init(allocator);
+            var c_backend = CBackend.init(allocator);
             
             if (should_run) {
                 std.debug.print("🔥 Compiling and running: {s}\n", .{source_file});
-                try tcc_backend.compileAndRun(output_code);
+                try c_backend.compileAndRun(output_code);
             } else {
-                try tcc_backend.compile(output_code, output_name);
+                try c_backend.compile(output_code, output_name);
             }
             
             if (verbose) {
@@ -500,8 +484,8 @@ fn printUsage() void {
     std.debug.print("  --run            Compile and run immediately (C backend only)\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Backends:\n", .{});
-    std.debug.print("  --backend=c              Use C backend (default, stable)\n", .{});
-    std.debug.print("  --backend=llvm           Use LLVM backend (auto: native API or text) 🆕\n", .{});
+    std.debug.print("  --backend=c              Use C backend (default)\n", .{});
+    std.debug.print("  --backend=llvm           Use LLVM native backend 🆕\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Examples:\n", .{});
     std.debug.print("  pawc hello.paw                       Generate C code -> output.c\n", .{});

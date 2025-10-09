@@ -2,13 +2,13 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const CodeGen = @import("codegen.zig").CodeGen;
 
-/// TinyCC 后端 - 使用嵌入式 TCC 编译器就地编译 C 代码
-pub const TccBackend = struct {
+/// C Backend - Compiles and executes C code using available system compiler
+pub const CBackend = struct {
     allocator: std.mem.Allocator,
     tcc_path: ?[]const u8, // TCC 可执行文件路径（如果有）
     
-    pub fn init(allocator: std.mem.Allocator) TccBackend {
-        return TccBackend{
+    pub fn init(allocator: std.mem.Allocator) CBackend {
+        return CBackend{
             .allocator = allocator,
             .tcc_path = null,
         };
@@ -34,9 +34,9 @@ pub const TccBackend = struct {
         return false;
     }
     
-    /// 使用 TCC 编译 C 代码为可执行文件
+    /// 使用 C 编译器编译 C 代码为可执行文件
     pub fn compile(
-        self: *TccBackend,
+        self: *CBackend,
         c_code: []const u8,
         output_file: []const u8,
     ) !void {
@@ -68,7 +68,7 @@ pub const TccBackend = struct {
     
     /// 使用 TCC 编译
     fn compileWithTcc(
-        self: *TccBackend,
+        self: *CBackend,
         c_file: []const u8,
         output_file: []const u8,
     ) !void {
@@ -96,7 +96,7 @@ pub const TccBackend = struct {
     
     /// 使用系统 C 编译器（GCC/Clang）
     fn compileWithSystemCompiler(
-        self: *TccBackend,
+        self: *CBackend,
         c_file: []const u8,
         output_file: []const u8,
     ) !void {
@@ -154,7 +154,7 @@ pub const TccBackend = struct {
     
     /// Compile and run (for REPL or quick testing)
     pub fn compileAndRun(
-        self: *TccBackend,
+        self: *CBackend,
         c_code: []const u8,
     ) !void {
         const temp_output = "temp_paw_output";
