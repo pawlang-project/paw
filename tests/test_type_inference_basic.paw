@@ -1,0 +1,30 @@
+// 测试基础类型推导 - v0.1.3
+
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+fn main() -> i32 {
+    // 测试1: 字面量推导
+    let x = 42;              // 推导为 i32
+    let y = 3.14;            // 推导为 f64  
+    let s = "hello";         // 推导为 string
+    let b = true;            // 推导为 bool
+    
+    // 测试2: 函数调用推导
+    let result = add(10, 20);  // 推导为 i32
+    
+    // 测试3: 泛型实例化推导
+    let vec = Vec<i32>::new();  // 推导为 Vec<i32>
+    
+    // 测试4: 结构体字面量推导  
+    let p = Point { x: 1, y: 2 };  // 需要Point定义
+    
+    return x + result;
+}
+
+type Point = struct {
+    x: i32,
+    y: i32,
+}
+
