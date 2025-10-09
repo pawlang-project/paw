@@ -123,7 +123,8 @@ pub const CodeGen = struct {
         // 🆕 第五遍：生成泛型实例化的函数实现
         try self.generateMonomorphizedFunctions();
         
-        return self.output.items;
+        // 🔧 v0.1.4: Return a copy to avoid use-after-free
+        return try self.allocator.dupe(u8, self.output.items);
     }
     
     // ============================================================================
