@@ -15,7 +15,7 @@ pub const CBackend = struct {
     }
     
     /// 检测系统是否安装了 TCC
-    pub fn detectTcc(self: *TccBackend) !bool {
+    pub fn detectTcc(self: *CBackend) !bool {
         // 尝试运行 tcc --version
         const result = std.process.Child.run(.{
             .allocator = self.allocator,
