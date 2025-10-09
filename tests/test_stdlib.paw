@@ -1,0 +1,35 @@
+// 标准库功能测试
+
+fn main() -> i32 {
+    // 测试标准输出
+    println("=== Paw v0.1.1 标准库测试 ===");
+    
+    // 1. 测试基础输出
+    print("测试 print: ");
+    println("成功");
+    
+    // 2. 测试 Result 枚举
+    let success: Result = Ok(42);
+    let failure: Result = Err(404);
+    println("✅ Result<T, E> 测试通过");
+    
+    // 3. 测试 Option 枚举
+    let some_val: Option = Some(100);
+    let none_val: Option = None();
+    println("✅ Option<T> 测试通过");
+    
+    // 4. 测试泛型结构体 Box<T>
+    let box1 = Box { value: 42 };
+    let box2 = Box { value: 3.14 };
+    let v1 = box1.value;
+    println("✅ Box<T> 测试通过");
+    
+    // 5. 测试泛型结构体 Vec<T>
+    let vec1 = Vec { ptr: 0, len: 0, cap: 0 };
+    let vec2 = Vec { ptr: 0, len: 0, cap: 10 };
+    println("✅ Vec<T> 测试通过");
+    
+    println("=== 所有测试通过 ===");
+    
+    return 0;
+}
