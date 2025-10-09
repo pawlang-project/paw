@@ -36,3 +36,9 @@ test*.paw
 vendor/llvm/
 vendor/*.tar.xz
 vendor/*.tar.gz
+
+# Local LLVM source and build
+/llvm/19.1.6/      # LLVM source (keep in git or use .gitkeep)
+/llvm/build/       # Build artifacts (exclude)
+/llvm/install/     # Installation (exclude)
+/llvm/.DS_Store
