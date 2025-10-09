@@ -8,7 +8,7 @@ LLVM_SRC="$PROJECT_ROOT/llvm/19.1.6"
 LLVM_BUILD="$PROJECT_ROOT/llvm/build"
 LLVM_INSTALL="$PROJECT_ROOT/llvm/install"
 
-echo "🔨 开始构建 LLVM..."
+echo "🔨 Starting LLVM build..."
 
 # Get CPU count
 CPU_COUNT=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
@@ -33,13 +33,13 @@ cmake "$LLVM_SRC/llvm" \
     -G Ninja
 
 # Build
-echo "🔨 构建中... (使用 $CPU_COUNT 个核心)"
+echo "🔨 Building... (using $CPU_COUNT cores)"
 ninja -j "$CPU_COUNT"
 
 # Install
-echo "📦 安装中..."
+echo "📦 Installing..."
 ninja install
 
-echo "✅ LLVM 构建完成!"
-echo "   位置: $LLVM_INSTALL"
-echo "   版本: $($LLVM_INSTALL/bin/llvm-config --version)"
+echo "✅ LLVM build completed!"
+echo "   Location: $LLVM_INSTALL"
+echo "   Version: $($LLVM_INSTALL/bin/llvm-config --version)"

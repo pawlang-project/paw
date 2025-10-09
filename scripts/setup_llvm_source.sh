@@ -11,24 +11,24 @@ LLVM_BUILD_DIR="$PROJECT_ROOT/llvm/build"
 LLVM_INSTALL_DIR="$PROJECT_ROOT/llvm/install"
 
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║        📦 LLVM 源码设置脚本 v$LLVM_VERSION                      ║"
+echo "║        📦 LLVM Source Setup Script v$LLVM_VERSION             ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
 # Check if LLVM source already exists
 check_existing_source() {
     if [ -d "$LLVM_SRC_DIR/llvm" ]; then
-        echo "✅ LLVM 源码已存在: $LLVM_SRC_DIR"
-        echo "   大小: $(du -sh "$LLVM_SRC_DIR" | cut -f1)"
+        echo "✅ LLVM source already exists: $LLVM_SRC_DIR"
+        echo "   Size: $(du -sh "$LLVM_SRC_DIR" | cut -f1)"
         echo ""
-        read -p "重新下载源码? (y/N) " -n 1 -r
+        read -p "Re-download source? (y/N) " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-            echo "🗑️  删除现有源码..."
+            echo "🗑️  Removing existing source..."
             rm -rf "$LLVM_SRC_DIR"
             return 1
         else
-            echo "✅ 使用现有源码"
+            echo "✅ Using existing source"
             return 0
         fi
     fi
@@ -37,8 +37,8 @@ check_existing_source() {
 
 # Download LLVM source code
 download_llvm_source() {
-    echo "📥 下载 LLVM $LLVM_VERSION 源码..."
-    echo "   目标目录: $LLVM_SRC_DIR"
+    echo "📥 Downloading LLVM $LLVM_VERSION source..."
+    echo "   Target directory: $LLVM_SRC_DIR"
     echo ""
     
     # Create directory
@@ -47,18 +47,18 @@ download_llvm_source() {
     
     # Download using git (recommended)
     if command -v git >/dev/null 2>&1; then
-        echo "🔗 使用 Git 克隆 LLVM 项目..."
+        echo "🔗 Cloning LLVM project with Git..."
         git clone --depth 1 --branch "llvmorg-$LLVM_VERSION" \
             https://github.com/llvm/llvm-project.git .
         
         if [ $? -eq 0 ]; then
-            echo "✅ Git 克隆完成"
+            echo "✅ Git clone completed"
         else
-            echo "❌ Git 克隆失败，尝试下载压缩包..."
+            echo "❌ Git clone failed, trying archive download..."
             download_llvm_archive
         fi
     else
-        echo "⚠️  Git 未安装，下载压缩包..."
+        echo "⚠️  Git not installed, downloading archive..."
         download_llvm_archive
     fi
 }
@@ -68,7 +68,7 @@ download_llvm_archive() {
     local archive_url="https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-$LLVM_VERSION.tar.gz"
     local archive_name="llvmorg-$LLVM_VERSION.tar.gz"
     
-    echo "📦 下载压缩包: $archive_url"
+    echo "📦 Downloading archive: $archive_url"
     
     # Download
     if command -v curl >/dev/null 2>&1; then
@@ -76,16 +76,16 @@ download_llvm_archive() {
     elif command -v wget >/dev/null 2>&1; then
         wget --progress=bar -O "$archive_name" "$archive_url"
     else
-        echo "❌ 需要 curl 或 wget 来下载"
+        echo "❌ Need curl or wget to download"
         exit 1
     fi
     
     if [ $? -ne 0 ]; then
-        echo "❌ 下载失败"
+        echo "❌ Download failed"
         exit 1
     fi
     
-    echo "📦 解压源码..."
+    echo "📦 Extracting source..."
     tar -xzf "$archive_name"
     
     # Move contents to current directory
@@ -96,32 +96,32 @@ download_llvm_archive() {
     # Clean up
     rm -f "$archive_name"
     
-    echo "✅ 源码解压完成"
+    echo "✅ Source extraction completed"
 }
 
 # Verify LLVM source
 verify_llvm_source() {
-    echo "🔍 验证 LLVM 源码..."
+    echo "🔍 Verifying LLVM source..."
     
     if [ ! -d "$LLVM_SRC_DIR/llvm" ]; then
-        echo "❌ LLVM 源码目录不存在: $LLVM_SRC_DIR/llvm"
+        echo "❌ LLVM source directory not found: $LLVM_SRC_DIR/llvm"
         exit 1
     fi
     
     if [ ! -f "$LLVM_SRC_DIR/llvm/CMakeLists.txt" ]; then
-        echo "❌ LLVM CMakeLists.txt 不存在"
+        echo "❌ LLVM CMakeLists.txt not found"
         exit 1
     fi
     
-    echo "✅ LLVM 源码验证通过"
-    echo "   版本: $LLVM_VERSION"
-    echo "   大小: $(du -sh "$LLVM_SRC_DIR" | cut -f1)"
-    echo "   目录: $LLVM_SRC_DIR"
+    echo "✅ LLVM source verification passed"
+    echo "   Version: $LLVM_VERSION"
+    echo "   Size: $(du -sh "$LLVM_SRC_DIR" | cut -f1)"
+    echo "   Directory: $LLVM_SRC_DIR"
 }
 
 # Check build dependencies
 check_build_dependencies() {
-    echo "🔧 检查构建依赖..."
+    echo "🔧 Checking build dependencies..."
     
     local missing=()
     
@@ -166,9 +166,9 @@ check_build_dependencies() {
     esac
     
     if [ ${#missing[@]} -gt 0 ]; then
-        echo "❌ 缺少依赖: ${missing[*]}"
+        echo "❌ Missing dependencies: ${missing[*]}"
         echo ""
-        echo "安装依赖:"
+        echo "Install dependencies:"
         case "$(uname -s)" in
             Darwin*)
                 echo "  brew install cmake ninja"
@@ -188,7 +188,7 @@ check_build_dependencies() {
         exit 1
     fi
     
-    echo "✅ 构建依赖检查通过"
+    echo "✅ Build dependencies check passed"
     echo "   CMake: $(cmake --version | head -1)"
     echo "   Ninja: $(ninja --version)"
     echo "   C++: $cxx_compiler"
@@ -196,7 +196,7 @@ check_build_dependencies() {
 
 # Create build configuration
 create_build_config() {
-    echo "⚙️  创建构建配置..."
+    echo "⚙️  Creating build configuration..."
     
     # Create build directory
     mkdir -p "$LLVM_BUILD_DIR"
@@ -253,18 +253,18 @@ EOF
     
     chmod +x "$PROJECT_ROOT/scripts/build_llvm_local.sh"
     
-    echo "✅ 构建脚本已创建: scripts/build_llvm_local.sh"
+    echo "✅ Build script created: scripts/build_llvm_local.sh"
 }
 
 # Update build.zig for LLVM integration
 update_build_zig() {
-    echo "🔧 更新 build.zig 配置..."
+    echo "🔧 Updating build.zig configuration..."
     
     local build_zig="$PROJECT_ROOT/build.zig"
     
     # Check if LLVM integration already exists
     if grep -q "with-llvm" "$build_zig"; then
-        echo "✅ build.zig 已包含 LLVM 配置"
+        echo "✅ build.zig already contains LLVM configuration"
         return 0
     fi
     
@@ -299,12 +299,12 @@ update_build_zig() {
     }
 EOF
     
-    echo "✅ build.zig 已更新"
+    echo "✅ build.zig updated"
 }
 
 # Main execution
 main() {
-    echo "🎯 设置 LLVM 源码环境"
+    echo "🎯 Setting up LLVM source environment"
     echo ""
     
     # Check existing source
@@ -330,23 +330,23 @@ main() {
     echo ""
     
     echo "════════════════════════════════════════════════════════════════"
-    echo "✅ LLVM 源码设置完成!"
+    echo "✅ LLVM source setup completed!"
     echo "════════════════════════════════════════════════════════════════"
     echo ""
-    echo "📊 设置信息:"
-    echo "   版本: $LLVM_VERSION"
-    echo "   源码: $LLVM_SRC_DIR"
-    echo "   构建: $LLVM_BUILD_DIR"
-    echo "   安装: $LLVM_INSTALL_DIR"
+    echo "📊 Setup information:"
+    echo "   Version: $LLVM_VERSION"
+    echo "   Source: $LLVM_SRC_DIR"
+    echo "   Build: $LLVM_BUILD_DIR"
+    echo "   Install: $LLVM_INSTALL_DIR"
     echo ""
-    echo "🎯 下一步:"
-    echo "   1. 构建 LLVM:"
+    echo "🎯 Next steps:"
+    echo "   1. Build LLVM:"
     echo "      ./scripts/build_llvm_local.sh"
     echo ""
-    echo "   2. 构建 PawLang (使用 LLVM):"
+    echo "   2. Build PawLang (with LLVM):"
     echo "      zig build -Dwith-llvm=true"
     echo ""
-    echo "   3. 测试 LLVM 后端:"
+    echo "   3. Test LLVM backend:"
     echo "      ./zig-out/bin/pawc hello.paw --backend=llvm"
     echo ""
 }
