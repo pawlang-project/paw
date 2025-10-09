@@ -201,10 +201,11 @@ pub fn main() !void {
 
     // 2. Parsing
     var parser = Parser.init(allocator, tokens);
-    defer parser.deinit();
+    defer parser.deinit();  // 这会自动释放所有 AST 内存（通过 arena）
     
-    var ast_result = try parser.parse();
-    defer ast_result.deinit(allocator);
+    const ast_result = try parser.parse();
+    // 注意: ast_result 的内存由 parser.arena 管理，不需要单独 deinit
+    // AST 会在 parser.deinit() 时自动释放
     
     if (verbose) {
         const parse_time = std.time.nanoTimestamp();
@@ -316,6 +317,7 @@ pub fn main() !void {
                 }
             },
         };
+    defer allocator.free(output_code);  // 🔧 释放生成的代码（来自codegen/llvm_backend）
     
     const total_time = std.time.nanoTimestamp();
     
