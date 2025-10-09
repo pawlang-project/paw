@@ -31,3 +31,8 @@ Thumbs.db
 mylib/
 test*.paw
 !tests/test*.paw
+
+# Vendor (LLVM - too large for git)
+vendor/llvm/
+vendor/*.tar.xz
+vendor/*.tar.gz
