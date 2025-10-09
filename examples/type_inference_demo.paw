@@ -52,9 +52,17 @@ fn main() -> i32 {
     let dist = calculate_distance(p1, p2);  // Inferred as i32
     let total = sum + product;               // Inferred as i32
     
-    // 6. Generic type inference
-    let vec = Vec<i32>::new();      // Inferred as Vec<i32>
+    // 6. Generic method return type inference (Advanced!)
+    let vec = Vec<i32>::new();             // Inferred as Vec<i32>!
     let capacity = vec.capacity_method();  // Inferred as i32
+    let length = vec.length();             // Inferred as i32
+    
+    // 7. Struct field access inference (Advanced!)
+    let p1_x = p1.x;  // Inferred as i32 from field type
+    let p2_y = p2.y;  // Inferred as i32 from field type
+    
+    // 8. Array literal inference (Advanced!)
+    let numbers = [1, 2, 3, 4, 5];  // Inferred as [i32; 5]
     
     // ==========================================
     // Compare with explicit typing (still works!)

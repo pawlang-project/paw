@@ -11,11 +11,19 @@ All notable changes to the Paw programming language will be documented in this f
 #### 新增特性
 
 **自动类型推导** ⭐：
+
+**基础推导**：
 - ✅ **字面量推导**：`let x = 42;` 自动推导为 `i32`
 - ✅ **函数返回值推导**：`let result = add(1, 2);` 从函数签名推导类型
-- ✅ **泛型实例化推导**：`let vec = Vec<i32>::new();` 推导为 `Vec<i32>`
 - ✅ **结构体字面量推导**：`let p = Point { x: 1, y: 2 };` 推导为 `Point`
-- ✅ **表达式推导**：支持复杂表达式的类型推导
+- ✅ **字符串推导**：`let s = "hello";` 推导为 `string`
+
+**高级推导**：
+- ✅ **泛型方法返回值**：`let vec = Vec<i32>::new();` 推导为 `Vec<i32>`
+- ✅ **结构体字段访问**：`let x = point.x;` 从字段类型推导
+- ✅ **数组字面量**：`let arr = [1, 2, 3];` 推导为 `[i32; 3]`
+- ✅ **复杂表达式**：`let sum = a + b;` 从操作数推导
+- ✅ **链式调用**：`let len = vec.length();` 从方法返回类型推导
 
 **代码示例**：
 ```paw
