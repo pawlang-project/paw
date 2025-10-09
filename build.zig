@@ -15,9 +15,8 @@ pub fn build(b: *std.Build) void {
         .root_module = main_mod,
     });
 
-    // TODO: 添加 LLVM 依赖 (v0.1.4 - 暂时跳过，先搭建架构)
-
     // 链接标准库
+    // 注意: LLVM 后端生成文本 IR，不需要链接 LLVM 库
     exe.linkLibC();
 
     b.installArtifact(exe);
