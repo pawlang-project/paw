@@ -30,6 +30,7 @@ pub const TypeChecker = struct {
     type_methods: std.StringHashMap(TypeMethods),  // 新增：存储类型的方法
     current_function_is_async: bool,  // 追踪当前函数是否异步
     generic_context: generics.GenericContext,  // 🆕 泛型上下文
+    mutable_vars: std.StringHashMap(bool),  // 🆕 v0.1.6: 跟踪可变变量 (变量名 -> 是否可变)
 
     pub fn init(allocator: std.mem.Allocator) TypeChecker {
         return TypeChecker{
@@ -43,11 +44,17 @@ pub const TypeChecker = struct {
             .type_methods = std.StringHashMap(TypeMethods).init(allocator),
             .current_function_is_async = false,
             .generic_context = generics.GenericContext.init(allocator),  // 🆕 初始化泛型上下文
+            .mutable_vars = std.StringHashMap(bool).init(allocator),  // 🆕 v0.1.6: 初始化可变变量表
         };
     }
 
     pub fn deinit(self: *TypeChecker) void {
+        // 🆕 v0.1.6: 释放错误消息内存
+        for (self.errors.items) |error_msg| {
+            self.allocator.free(error_msg);
+        }
         self.errors.deinit();
+        
         self.symbol_table.deinit();
         self.function_table.deinit();
         self.type_table.deinit();
@@ -63,6 +70,9 @@ pub const TypeChecker = struct {
         
         // 🆕 清理泛型上下文
         self.generic_context.deinit();
+        
+        // 🆕 v0.1.6: 清理可变变量表
+        self.mutable_vars.deinit();
         
         // 🆕 释放 arena（自动释放所有临时类型分配）
         self.arena.deinit();
@@ -204,6 +214,9 @@ pub const TypeChecker = struct {
         self.current_function_is_async = func.is_async;
         defer self.current_function_is_async = prev_async;
         
+        // 🆕 v0.1.6: 清空可变变量表（每个函数有自己的作用域）
+        self.mutable_vars.clearRetainingCapacity();
+        
         var local_scope = std.StringHashMap(ast.Type).init(self.allocator);
         defer local_scope.deinit();
 
@@ -212,8 +225,10 @@ pub const TypeChecker = struct {
             try local_scope.put(type_param, ast.Type{ .generic = type_param });
         }
 
+        // 🆕 v0.1.6: 记录函数参数的可变性
         for (func.params) |param| {
             try local_scope.put(param.name, param.type);
+            try self.mutable_vars.put(param.name, param.is_mut);  // 使用参数的 is_mut
         }
 
         for (func.body) |stmt| {
@@ -224,6 +239,42 @@ pub const TypeChecker = struct {
     // ============================================================================
     // Helper Functions
     // ============================================================================
+    
+    /// 🆕 v0.1.6: 检查表达式是否可变（用于赋值检查）
+    fn checkMutability(self: *TypeChecker, expr: ast.Expr) !void {
+        switch (expr) {
+            .identifier => |name| {
+                // 检查变量是否存在
+                if (self.mutable_vars.get(name)) |is_mut| {
+                    if (!is_mut) {
+                        const error_msg = try std.fmt.allocPrint(
+                            self.allocator,
+                            "Error: Cannot assign to immutable variable '{s}'. Use 'let mut {s}' to make it mutable.",
+                            .{name, name}
+                        );
+                        try self.errors.append(error_msg);
+                    }
+                } else {
+                    // 变量不存在（这应该在其他地方被捕获）
+                    const error_msg = try std.fmt.allocPrint(
+                        self.allocator,
+                        "Error: Variable '{s}' not found.",
+                        .{name}
+                    );
+                    try self.errors.append(error_msg);
+                }
+            },
+            .field_access => {
+                // 字段访问：暂时允许（将来可以添加结构体字段可变性检查）
+            },
+            .array_index => {
+                // 数组索引：暂时允许（将来可以添加数组可变性检查）
+            },
+            else => {
+                try self.errors.append("Error: Invalid assignment target.");
+            },
+        }
+    }
     
     /// 创建子作用域（复制父作用域）
     fn createChildScope(self: *TypeChecker, parent: *std.StringHashMap(ast.Type)) !std.StringHashMap(ast.Type) {
@@ -246,6 +297,9 @@ pub const TypeChecker = struct {
             },
             // 🆕 赋值语句
             .assign => |assign| {
+                // 🆕 v0.1.6: 检查目标是否可变
+                try self.checkMutability(assign.target);
+                
                 const target_type = try self.checkExpr(assign.target, scope);
                 const value_type = try self.checkExpr(assign.value, scope);
                 if (!target_type.eql(value_type)) {
@@ -254,6 +308,9 @@ pub const TypeChecker = struct {
             },
             // 🆕 复合赋值语句
             .compound_assign => |ca| {
+                // 🆕 v0.1.6: 检查目标是否可变
+                try self.checkMutability(ca.target);
+                
                 const target_type = try self.checkExpr(ca.target, scope);
                 const value_type = try self.checkExpr(ca.value, scope);
                 // 复合赋值要求类型匹配且支持相应运算
@@ -262,6 +319,9 @@ pub const TypeChecker = struct {
                 }
             },
             .let_decl => |let| {
+                // 🆕 v0.1.6: 记录变量的可变性
+                try self.mutable_vars.put(let.name, let.is_mut);
+                
                 if (let.init) |init_expr| {
                     const init_type = try self.checkExpr(init_expr, scope);
                     

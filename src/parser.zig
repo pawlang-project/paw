@@ -180,8 +180,10 @@ pub const Parser = struct {
             // 🆕 支持 self 和 mut self 参数
             var param_name: []const u8 = undefined;
             var param_type: ast.Type = undefined;
+            var param_is_mut: bool = false;  // 🆕 v0.1.6: 跟踪参数可变性
             
             if (self.match(.keyword_mut)) {
+                param_is_mut = true;  // 🆕 v0.1.6: 标记为可变
                 // mut self 或 mut identifier: Type
                 if (self.match(.keyword_self)) {
                     param_name = "self";
@@ -248,6 +250,7 @@ pub const Parser = struct {
             try params.append(ast.Param{
                 .name = param_name,
                 .type = param_type,
+                .is_mut = param_is_mut,  // 🆕 v0.1.6: 记录可变性
             });
             
             if (!self.match(.comma)) break;
@@ -398,8 +401,10 @@ pub const Parser = struct {
                     // 🆕 支持 self 和 mut self
                     var param_name: []const u8 = undefined;
                     var param_type: ast.Type = undefined;
+                    var param_is_mut: bool = false;  // 🆕 v0.1.6
                     
                     if (self.match(.keyword_mut)) {
+                        param_is_mut = true;  // 🆕 v0.1.6
                         if (self.match(.keyword_self)) {
                             param_name = "self";
                             param_type = ast.Type{ .named = "Self" };
@@ -422,6 +427,7 @@ pub const Parser = struct {
                     try params.append(ast.Param{
                         .name = param_name,
                         .type = param_type,
+                        .is_mut = param_is_mut,  // 🆕 v0.1.6
                     });
                     
                     if (!self.match(.comma)) break;
@@ -595,8 +601,10 @@ pub const Parser = struct {
                 // 🆕 支持 self 和 mut self
                 var param_name: []const u8 = undefined;
                 var param_type: ast.Type = undefined;
+                var param_is_mut: bool = false;  // 🆕 v0.1.6
                 
                 if (self.match(.keyword_mut)) {
+                    param_is_mut = true;  // 🆕 v0.1.6
                     if (self.match(.keyword_self)) {
                         param_name = "self";
                         param_type = ast.Type{ .named = "Self" };
@@ -619,6 +627,7 @@ pub const Parser = struct {
                 try params.append(ast.Param{
                     .name = param_name,
                     .type = param_type,
+                    .is_mut = param_is_mut,  // 🆕 v0.1.6
                 });
                 
                 if (!self.match(.comma)) break;

@@ -476,6 +476,7 @@ pub const LoopIterator = struct {
 pub const Param = struct {
     name: []const u8,
     type: Type,
+    is_mut: bool,  // 🆕 v0.1.6: 参数是否可变 (用于 mut self)
 };
 
 pub const FunctionDecl = struct {
