@@ -170,9 +170,9 @@ fn test_loop_condition() -> i32 {
 
 // 测试 13: 块表达式
 fn test_block() -> i32 {
+    let x = 10;
+    let y = 20;
     let result = {
-        let x = 10;
-        let y = 20;
         x + y
     };
     return result;          // 30
