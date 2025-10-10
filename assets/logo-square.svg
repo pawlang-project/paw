@@ -1,0 +1,28 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Square background -->
+  <rect x="20" y="20" width="160" height="160" rx="20" fill="#FF6B35" filter="url(#glow)" opacity="0.8"/>
+  
+  <!-- Main cat head -->
+  <circle cx="100" cy="100" r="50" fill="#FF6B35"/>
+  
+  <!-- Cat ears -->
+  <polygon points="70,70 85,40 100,70" fill="#FF6B35"/>
+  <polygon points="100,70 115,40 130,70" fill="#FF6B35"/>
+  
+  <!-- Eyes (closed) -->
+  <path d="M 85 90 Q 90 85 95 90" stroke="#E55A2B" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M 105 90 Q 110 85 115 90" stroke="#E55A2B" stroke-width="2" fill="none" stroke-linecap="round"/>
+  
+  <!-- Nose and mouth -->
+  <path d="M 95 105 Q 100 110 105 105 Q 100 115 95 105" fill="white"/>
+</svg>

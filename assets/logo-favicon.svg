@@ -1,0 +1,25 @@
+<svg width="32" height="32" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Simplified cat head for small sizes -->
+  <circle cx="100" cy="100" r="60" fill="#FF6B35" filter="url(#glow)"/>
+  
+  <!-- Cat ears -->
+  <polygon points="70,60 85,30 100,60" fill="#FF6B35"/>
+  <polygon points="100,60 115,30 130,60" fill="#FF6B35"/>
+  
+  <!-- Simple eyes -->
+  <circle cx="90" cy="90" r="3" fill="#D14A1A"/>
+  <circle cx="110" cy="90" r="3" fill="#D14A1A"/>
+  
+  <!-- Simple nose -->
+  <circle cx="100" cy="105" r="2" fill="white"/>
+</svg>
