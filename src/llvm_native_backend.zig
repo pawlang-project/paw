@@ -16,6 +16,7 @@ pub const LLVMNativeBackend = struct {
     // Symbol tables
     functions: std.StringHashMap(llvm.ValueRef),
     variables: std.StringHashMap(llvm.ValueRef),
+    variable_types: std.StringHashMap(llvm.TypeRef),  // Track variable types for load/store
     
     // Current function context
     current_function: ?llvm.ValueRef,
@@ -41,6 +42,7 @@ pub const LLVMNativeBackend = struct {
             .builder = builder,
             .functions = std.StringHashMap(llvm.ValueRef).init(allocator),
             .variables = std.StringHashMap(llvm.ValueRef).init(allocator),
+            .variable_types = std.StringHashMap(llvm.TypeRef).init(allocator),
             .current_function = null,
             .current_loop_exit = null,
             .current_loop_continue = null,
@@ -50,6 +52,7 @@ pub const LLVMNativeBackend = struct {
     pub fn deinit(self: *LLVMNativeBackend) void {
         self.functions.deinit();
         self.variables.deinit();
+        self.variable_types.deinit();
         self.builder.dispose();
         self.module.dispose();
         self.context.dispose();
@@ -116,9 +119,19 @@ pub const LLVMNativeBackend = struct {
         
         // Store parameters in variables map
         self.variables.clearRetainingCapacity();
+        self.variable_types.clearRetainingCapacity();
         for (func.params, 0..) |param, i| {
             const param_value = llvm.LLVMGetParam(llvm_func, @intCast(i));
-            try self.variables.put(param.name, param_value);
+            const param_type = try self.toLLVMType(param.type);
+            
+            // Allocate space for parameter and store it
+            const alloca_name_z = try self.allocator.dupeZ(u8, param.name);
+            defer self.allocator.free(alloca_name_z);
+            const alloca = self.builder.buildAlloca(param_type, alloca_name_z);
+            _ = self.builder.buildStore(param_value, alloca);
+            
+            try self.variables.put(param.name, alloca);
+            try self.variable_types.put(param.name, param_type);
         }
         
         // Generate function body
@@ -143,7 +156,74 @@ pub const LLVMNativeBackend = struct {
             .let_decl => |let_stmt| {
                 if (let_stmt.init) |init_expr| {
                     const init_value = try self.generateExpr(init_expr);
-                    try self.variables.put(let_stmt.name, init_value);
+                    
+                    // Determine variable type
+                    const var_type = if (let_stmt.type) |typ|
+                        try self.toLLVMType(typ)
+                    else
+                        llvm.LLVMTypeOf(init_value);
+                    
+                    // Allocate space for variable
+                    const alloca_name_z = try self.allocator.dupeZ(u8, let_stmt.name);
+                    defer self.allocator.free(alloca_name_z);
+                    const alloca = self.builder.buildAlloca(var_type, alloca_name_z);
+                    
+                    // Store initial value
+                    _ = self.builder.buildStore(init_value, alloca);
+                    
+                    // Store pointer in variables map
+                    try self.variables.put(let_stmt.name, alloca);
+                    try self.variable_types.put(let_stmt.name, var_type);
+                }
+            },
+            .assign => |assign_stmt| {
+                // Handle assignment to existing variable
+                if (assign_stmt.target == .identifier) {
+                    const var_name = assign_stmt.target.identifier;
+                    if (self.variables.get(var_name)) |var_ptr| {
+                        const new_value = try self.generateExpr(assign_stmt.value);
+                        _ = self.builder.buildStore(new_value, var_ptr);
+                    } else {
+                        std.debug.print("⚠️  Undefined variable in assignment: {s}\n", .{var_name});
+                    }
+                } else {
+                    std.debug.print("⚠️  Complex assignment target not yet supported\n", .{});
+                }
+            },
+            .compound_assign => |compound_stmt| {
+                // Handle compound assignment (+=, -=, etc.)
+                if (compound_stmt.target == .identifier) {
+                    const var_name = compound_stmt.target.identifier;
+                    if (self.variables.get(var_name)) |var_ptr| {
+                        if (self.variable_types.get(var_name)) |var_type| {
+                            // Load current value
+                            const load_name_z = try self.allocator.dupeZ(u8, var_name);
+                            defer self.allocator.free(load_name_z);
+                            const current_value = self.builder.buildLoad(var_type, var_ptr, load_name_z);
+                            
+                            // Generate right-hand side value
+                            const rhs_value = try self.generateExpr(compound_stmt.value);
+                            
+                            // Perform operation
+                            const op_name_z = try self.allocator.dupeZ(u8, "compound_op");
+                            defer self.allocator.free(op_name_z);
+                            
+                            const result = switch (compound_stmt.op) {
+                                .add_assign => self.builder.buildAdd(current_value, rhs_value, op_name_z),
+                                .sub_assign => self.builder.buildSub(current_value, rhs_value, op_name_z),
+                                .mul_assign => self.builder.buildMul(current_value, rhs_value, op_name_z),
+                                .div_assign => self.builder.buildSDiv(current_value, rhs_value, op_name_z),
+                                else => current_value,
+                            };
+                            
+                            // Store result back
+                            _ = self.builder.buildStore(result, var_ptr);
+                        }
+                    } else {
+                        std.debug.print("⚠️  Undefined variable in compound assignment: {s}\n", .{var_name});
+                    }
+                } else {
+                    std.debug.print("⚠️  Complex compound assignment target not yet supported\n", .{});
                 }
             },
             .expr => |expr| {
@@ -154,6 +234,21 @@ pub const LLVMNativeBackend = struct {
                     .condition = while_stmt.condition,
                     .body = while_stmt.body,
                 });
+            },
+            .loop_stmt => |loop_stmt| {
+                if (loop_stmt.condition) |cond| {
+                    // loop condition { } - 条件循环
+                    try self.generateWhileLoop(.{
+                        .condition = cond,
+                        .body = loop_stmt.body,
+                    });
+                } else if (loop_stmt.iterator) |_| {
+                    // loop item in collection { } - 迭代循环 (TODO: 未实现)
+                    std.debug.print("⚠️  Loop iterators not yet implemented in LLVM backend\n", .{});
+                } else {
+                    // loop { } - 无限循环 (TODO: 未实现)
+                    std.debug.print("⚠️  Infinite loops not yet implemented in LLVM backend\n", .{});
+                }
             },
             .break_stmt => |_| {
                 if (self.current_loop_exit) |exit_block| {
@@ -217,9 +312,25 @@ pub const LLVMNativeBackend = struct {
             .float_literal => |val| blk: {
                 break :blk llvm.constDouble(self.context, val);
             },
+            .bool_literal => |val| blk: {
+                const i1_type = self.context.i1Type();
+                break :blk llvm.LLVMConstInt(i1_type, if (val) 1 else 0, 0);
+            },
+            .char_literal => |val| blk: {
+                const i32_type = self.context.i32Type();
+                break :blk llvm.LLVMConstInt(i32_type, @intCast(val), 0);
+            },
             .identifier => |name| blk: {
-                if (self.variables.get(name)) |value| {
-                    break :blk value;
+                if (self.variables.get(name)) |var_ptr| {
+                    // Load value from pointer
+                    if (self.variable_types.get(name)) |var_type| {
+                        const load_name_z = try self.allocator.dupeZ(u8, name);
+                        defer self.allocator.free(load_name_z);
+                        break :blk self.builder.buildLoad(var_type, var_ptr, load_name_z);
+                    } else {
+                        // Fallback: assume it's a direct value (for backward compatibility)
+                        break :blk var_ptr;
+                    }
                 } else {
                     std.debug.print("⚠️  Undefined variable: {s}\n", .{name});
                     break :blk llvm.constI32(self.context, 0);
@@ -237,7 +348,29 @@ pub const LLVMNativeBackend = struct {
                     .sub => self.builder.buildSub(lhs, rhs, result_name_z),
                     .mul => self.builder.buildMul(lhs, rhs, result_name_z),
                     .div => self.builder.buildSDiv(lhs, rhs, result_name_z),
+                    // Comparison operators
+                    .eq => self.builder.buildICmp(.EQ, lhs, rhs, result_name_z),
+                    .ne => self.builder.buildICmp(.NE, lhs, rhs, result_name_z),
+                    .lt => self.builder.buildICmp(.SLT, lhs, rhs, result_name_z),
+                    .le => self.builder.buildICmp(.SLE, lhs, rhs, result_name_z),
+                    .gt => self.builder.buildICmp(.SGT, lhs, rhs, result_name_z),
+                    .ge => self.builder.buildICmp(.SGE, lhs, rhs, result_name_z),
+                    // Logical operators
+                    .and_op => self.builder.buildAnd(lhs, rhs, result_name_z),
+                    .or_op => self.builder.buildOr(lhs, rhs, result_name_z),
                     else => llvm.constI32(self.context, 0),
+                };
+                break :blk result;
+            },
+            .unary => |unop| blk: {
+                const operand = try self.generateExpr(unop.operand.*);
+                
+                const result_name_z = try self.allocator.dupeZ(u8, "unop");
+                defer self.allocator.free(result_name_z);
+                
+                const result = switch (unop.op) {
+                    .neg => self.builder.buildNeg(operand, result_name_z),
+                    .not => self.builder.buildNot(operand, result_name_z),
                 };
                 break :blk result;
             },
@@ -260,21 +393,50 @@ pub const LLVMNativeBackend = struct {
                 // Generate then branch
                 self.builder.positionAtEnd(then_block);
                 const then_value = try self.generateExpr(if_expr.then_branch.*);
+                const then_end_block = self.builder.getInsertBlock();
                 _ = self.builder.buildBr(cont_block);
                 
                 // Generate else branch
                 self.builder.positionAtEnd(else_block);
-                _ = if (if_expr.else_branch) |else_br|
+                const else_value = if (if_expr.else_branch) |else_br|
                     try self.generateExpr(else_br.*)
                 else
                     llvm.constI32(self.context, 0);
+                const else_end_block = self.builder.getInsertBlock();
                 _ = self.builder.buildBr(cont_block);
                 
-                // Continue block
+                // Continue block with PHI node
                 self.builder.positionAtEnd(cont_block);
                 
-                // For now, just return then_value (proper PHI node needed for full support)
-                break :blk then_value;
+                // Create PHI node to merge values from both branches
+                const result_type = llvm.LLVMTypeOf(then_value);
+                const phi_name_z = try self.allocator.dupeZ(u8, "if.result");
+                defer self.allocator.free(phi_name_z);
+                const phi = self.builder.buildPhi(result_type, phi_name_z);
+                
+                // Add incoming values
+                var incoming_values = [_]llvm.ValueRef{ then_value, else_value };
+                var incoming_blocks = [_]llvm.BasicBlockRef{ then_end_block, else_end_block };
+                llvm.LLVMAddIncoming(phi, &incoming_values, &incoming_blocks, 2);
+                
+                break :blk phi;
+            },
+            .block => |stmts| blk: {
+                // Execute all statements in the block
+                var last_value: ?llvm.ValueRef = null;
+                for (stmts) |stmt| {
+                    switch (stmt) {
+                        .expr => |block_expr| {
+                            // Save the last expression value as the block result
+                            last_value = try self.generateExpr(block_expr);
+                        },
+                        else => {
+                            try self.generateStmt(stmt);
+                        },
+                    }
+                }
+                // Return the last expression value, or 0 if none
+                break :blk last_value orelse llvm.constI32(self.context, 0);
             },
             .call => |call_expr| blk: {
                 // Get function name

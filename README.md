@@ -62,7 +62,7 @@ pawc hello.paw --backend=llvm     # Generates LLVM IR
 **Features:**
 - ✅ **C Backend**: Stable, portable, works everywhere
 - ✅ **LLVM Backend**: Native API integration, control flow support
-- ✅ **Control Flow**: if/else, while loops, break/continue
+- ✅ **Control Flow**: if/else, loop (unified), break/continue
 - ✅ **Zero Memory Leaks**: Arena allocator, fully leak-free
 - ✅ **Local LLVM Toolchain**: No system dependencies
 
@@ -80,7 +80,7 @@ fn fibonacci(n: i32) -> i32 {
 fn sum_to_n(n: i32) -> i32 {
     let sum = 0;
     let i = 0;
-    while i <= n {
+    loop i <= n {
         sum = sum + i;
         i = i + 1;
     }
@@ -470,7 +470,7 @@ Check the `tests/` directory:
 
 - ✅ LLVM 19.1.7 native backend
 - ✅ Dual backend architecture (C + LLVM)
-- ✅ Control flow support (if/else, while, break, continue)
+- ✅ Control flow support (if/else, loop, break, continue)
 - ✅ Zero memory leaks (Arena allocator)
 - ✅ Local LLVM toolchain (no system dependencies)
 - ✅ Custom C API bindings
@@ -793,7 +793,7 @@ Contributions welcome! Please ensure:
 
 ### v0.1.5 (Planned)
 
-- [ ] for loops in LLVM backend
+- [ ] loop iterators (loop item in collection) in LLVM backend
 - [ ] More LLVM optimizations
 - [ ] Enhanced error messages
 - [ ] String type improvements

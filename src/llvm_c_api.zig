@@ -109,6 +109,9 @@ pub extern "c" fn LLVMInt64TypeInContext(C: ContextRef) TypeRef;
 /// Get double type (f64)
 pub extern "c" fn LLVMDoubleTypeInContext(C: ContextRef) TypeRef;
 
+/// Get type of a value
+pub extern "c" fn LLVMTypeOf(Val: ValueRef) TypeRef;
+
 /// Get pointer type
 pub extern "c" fn LLVMPointerType(ElementType: TypeRef, AddressSpace: c_uint) TypeRef;
 
@@ -268,6 +271,54 @@ pub extern "c" fn LLVMBuildCondBr(
 /// Build unconditional branch
 pub extern "c" fn LLVMBuildBr(Builder: BuilderRef, Dest: BasicBlockRef) ValueRef;
 
+/// Build logical AND instruction
+pub extern "c" fn LLVMBuildAnd(
+    Builder: BuilderRef,
+    LHS: ValueRef,
+    RHS: ValueRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build logical OR instruction
+pub extern "c" fn LLVMBuildOr(
+    Builder: BuilderRef,
+    LHS: ValueRef,
+    RHS: ValueRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build logical NOT instruction
+pub extern "c" fn LLVMBuildNot(
+    Builder: BuilderRef,
+    V: ValueRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build negation instruction
+pub extern "c" fn LLVMBuildNeg(
+    Builder: BuilderRef,
+    V: ValueRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build PHI node
+pub extern "c" fn LLVMBuildPhi(
+    Builder: BuilderRef,
+    Ty: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Add incoming value to PHI node
+pub extern "c" fn LLVMAddIncoming(
+    PhiNode: ValueRef,
+    IncomingValues: [*]ValueRef,
+    IncomingBlocks: [*]BasicBlockRef,
+    Count: c_uint,
+) void;
+
+/// Get basic block of a value (for PHI nodes)
+pub extern "c" fn LLVMGetInsertBlock(Builder: BuilderRef) BasicBlockRef;
+
 // ============================================================================
 // Wrapper Types for Better Zig Experience
 // ============================================================================
@@ -298,6 +349,10 @@ pub const Context = struct {
 
     pub fn voidType(self: Context) TypeRef {
         return LLVMVoidTypeInContext(self.ref);
+    }
+
+    pub fn i1Type(self: Context) TypeRef {
+        return LLVMInt1TypeInContext(self.ref);
     }
 
     pub fn i32Type(self: Context) TypeRef {
@@ -396,6 +451,46 @@ pub const Builder = struct {
     
     pub fn buildBr(self: Builder, dest: BasicBlockRef) ValueRef {
         return LLVMBuildBr(self.ref, dest);
+    }
+    
+    pub fn buildICmp(self: Builder, op: IntPredicate, lhs: ValueRef, rhs: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildICmp(self.ref, op, lhs, rhs, name.ptr);
+    }
+    
+    pub fn buildAnd(self: Builder, lhs: ValueRef, rhs: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildAnd(self.ref, lhs, rhs, name.ptr);
+    }
+    
+    pub fn buildOr(self: Builder, lhs: ValueRef, rhs: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildOr(self.ref, lhs, rhs, name.ptr);
+    }
+    
+    pub fn buildNot(self: Builder, value: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildNot(self.ref, value, name.ptr);
+    }
+    
+    pub fn buildNeg(self: Builder, value: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildNeg(self.ref, value, name.ptr);
+    }
+    
+    pub fn buildAlloca(self: Builder, ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildAlloca(self.ref, ty, name.ptr);
+    }
+    
+    pub fn buildLoad(self: Builder, ty: TypeRef, ptr: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildLoad2(self.ref, ty, ptr, name.ptr);
+    }
+    
+    pub fn buildStore(self: Builder, value: ValueRef, ptr: ValueRef) ValueRef {
+        return LLVMBuildStore(self.ref, value, ptr);
+    }
+    
+    pub fn buildPhi(self: Builder, ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildPhi(self.ref, ty, name.ptr);
+    }
+    
+    pub fn getInsertBlock(self: Builder) BasicBlockRef {
+        return LLVMGetInsertBlock(self.ref);
     }
 };
 
