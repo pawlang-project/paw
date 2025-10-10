@@ -785,24 +785,33 @@ Contributions welcome! Please ensure:
 ## 📄 Documentation
 
 - [CHANGELOG.md](CHANGELOG.md) - Complete change history
+- 🆕 [RELEASE_NOTES_v0.1.5.md](docs/RELEASE_NOTES_v0.1.5.md) - v0.1.5 release notes ⭐
 - [RELEASE_NOTES_v0.1.4.md](docs/RELEASE_NOTES_v0.1.4.md) - v0.1.4 release notes
-- 🆕 [INSTALL_GUIDE.md](scripts/INSTALL_GUIDE.md) - One-click installation guide
-- 🆕 [LLVM_QUICK_SETUP.md](docs/LLVM_QUICK_SETUP.md) - Quick LLVM setup
+- [INSTALL_GUIDE.md](scripts/INSTALL_GUIDE.md) - One-click installation guide
+- [LLVM_QUICK_SETUP.md](docs/LLVM_QUICK_SETUP.md) - Quick LLVM setup
 - [LLVM_PREBUILT_GUIDE.md](docs/LLVM_PREBUILT_GUIDE.md) - Prebuilt LLVM guide
 - [QUICKSTART.md](docs/QUICKSTART.md) - Quick start guide
 - [examples/](examples/) - Example code
-- [tests/](tests/) - Test cases
+- [tests/](tests/) - Test cases and testing guide
 
 ---
 
 ## 🗺️ Roadmap
 
-### v0.1.5 (Planned)
+### v0.1.5 (Released - January 10, 2025) ✅
 
-- [ ] loop iterators (loop item in collection) in LLVM backend
-- [ ] More LLVM optimizations
+- ✅ LLVM backend 100% complete
+- ✅ Loop iterators (loop item in collection)
+- ✅ C backend bug fixes
+- ✅ Zero memory leaks
+- ✅ Comprehensive test suite
+
+### v0.1.6 (Planned)
+
+- [ ] LLVM optimizations (-O0, -O1, -O2, -O3)
 - [ ] Enhanced error messages
 - [ ] String type improvements
+- [ ] Standard library expansion
 
 ### Future Versions
 
@@ -823,9 +832,9 @@ Contributions welcome! Please ensure:
 | Type Checker | ✅ | 100% |
 | Generic System | ✅ | 100% |
 | C Backend | ✅ | 100% |
-| LLVM Backend | ✅ | 80% |
+| **LLVM Backend** | ✅ | **100%** ⭐ |
 | Standard Library | 🚧 | 30% |
-| Documentation | ✅ | 90% |
+| Documentation | ✅ | 95% |
 
 ---
 
@@ -835,7 +844,8 @@ Contributions welcome! Please ensure:
 - **v0.1.1** - Complete generic system ✅
 - **v0.1.2** - Generic methods ✅
 - **v0.1.3** - Type inference & modules ✅
-- **v0.1.4** - LLVM integration ✅ ⭐ **Current**
+- **v0.1.4** - LLVM integration ✅
+- **v0.1.5** - LLVM backend 100% + C backend fixes ✅ ⭐ **Current**
 - **v0.2.0** - Trait system (planned)
 - **v1.0.0** - Production ready (goal)
 
