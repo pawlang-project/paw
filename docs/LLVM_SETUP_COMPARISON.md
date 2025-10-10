@@ -56,9 +56,9 @@ python3 scripts/setup_llvm.py  # 默认使用预编译版本
 
 ### 来源
 
-预编译版本来自：https://github.com/KinLeoapple/llvm-build/releases/tag/19.1.7
+预编译版本来自：https://github.com/PawLang/llvm-build/releases/tag/llvm-19.1.7
 
-这是一个可信的 LLVM 预编译仓库，fork 自 https://github.com/terralang/llvm-build
+这是 PawLang 官方维护的 LLVM 预编译仓库，基于 https://github.com/terralang/llvm-build
 
 ### 适用场景
 

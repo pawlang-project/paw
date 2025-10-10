@@ -27,7 +27,7 @@
 - Linux aarch64 (ARM64)
 - Windows x86_64
 
-**下载源**: https://github.com/KinLeoapple/llvm-build/releases/tag/19.1.7
+**下载源**: https://github.com/PawLang/llvm-build/releases/tag/llvm-19.1.7
 
 ### 2. 更新 setup_llvm.py 脚本
 
@@ -92,7 +92,7 @@ python3 scripts/setup_llvm.py --method=git
 
 - **LLVM 预编译版本**: 19.1.7
 - **LLVM 源码版本**: 19.1.7
-- **来源仓库**: KinLeoapple/llvm-build (fork from terralang/llvm-build)
+- **来源仓库**: PawLang/llvm-build (based on terralang/llvm-build)
 
 ## 📊 对比优势
 
