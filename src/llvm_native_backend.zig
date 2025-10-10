@@ -320,6 +320,17 @@ pub const LLVMNativeBackend = struct {
                 const i32_type = self.context.i32Type();
                 break :blk llvm.LLVMConstInt(i32_type, @intCast(val), 0);
             },
+            .string_literal => |str| blk: {
+                // Create null-terminated string
+                const str_z = try self.allocator.dupeZ(u8, str);
+                defer self.allocator.free(str_z);
+                
+                const name_z = try self.allocator.dupeZ(u8, "str");
+                defer self.allocator.free(name_z);
+                
+                // Build global string pointer
+                break :blk self.builder.buildGlobalStringPtr(str_z, name_z);
+            },
             .identifier => |name| blk: {
                 if (self.variables.get(name)) |var_ptr| {
                     // Load value from pointer
@@ -437,6 +448,37 @@ pub const LLVMNativeBackend = struct {
                 }
                 // Return the last expression value, or 0 if none
                 break :blk last_value orelse llvm.constI32(self.context, 0);
+            },
+            .array_index => |index_expr| blk: {
+                // Array/string indexing: arr[index]
+                const array_value = try self.generateExpr(index_expr.array.*);
+                const index_value = try self.generateExpr(index_expr.index.*);
+                
+                // Build GEP instruction
+                var indices = [_]llvm.ValueRef{ llvm.constI32(self.context, 0), index_value };
+                
+                const gep_name_z = try self.allocator.dupeZ(u8, "index");
+                defer self.allocator.free(gep_name_z);
+                
+                // Get element type (assuming i32 for now, should be improved)
+                const element_type = self.context.i32Type();
+                const array_type = llvm.arrayType(element_type, 0);  // Size doesn't matter for GEP
+                
+                const gep = self.builder.buildInBoundsGEP(array_type, array_value, &indices, gep_name_z);
+                
+                // Load the value
+                const load_name_z = try self.allocator.dupeZ(u8, "elem");
+                defer self.allocator.free(load_name_z);
+                break :blk self.builder.buildLoad(element_type, gep, load_name_z);
+            },
+            .field_access => |field_expr| blk: {
+                // Struct field access: obj.field
+                _ = try self.generateExpr(field_expr.object.*);
+                
+                // For now, return a placeholder
+                // TODO: Need type information to determine field index
+                std.debug.print("⚠️  Field access not yet fully implemented: {s}\n", .{field_expr.field});
+                break :blk llvm.constI32(self.context, 0);
             },
             .call => |call_expr| blk: {
                 // Get function name
