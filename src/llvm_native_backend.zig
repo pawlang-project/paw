@@ -182,8 +182,18 @@ pub const LLVMNativeBackend = struct {
         }
         
         // Generate function body
-        for (func.body) |stmt| {
-            try self.generateStmt(stmt);
+        // 🆕 v0.1.6: 特殊处理最后一个表达式语句 - 应该生成 return
+        for (func.body, 0..) |stmt, i| {
+            const is_last = (i == func.body.len - 1);
+            const is_non_void = func.return_type != .void;
+            
+            // 如果是最后一个语句，且是表达式语句，且函数返回非void，生成return
+            if (is_last and stmt == .expr and is_non_void) {
+                const ret_value = try self.generateExpr(stmt.expr);
+                _ = self.builder.buildRet(ret_value);
+            } else {
+                try self.generateStmt(stmt);
+            }
         }
         
         // Clear function context

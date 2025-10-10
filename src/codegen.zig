@@ -260,8 +260,19 @@ pub const CodeGen = struct {
         try self.output.appendSlice(") {\n");
         
         // 生成方法体
-        for (method.body) |stmt| {
-            try self.generateStmt(stmt);
+        // 🆕 v0.1.6: 特殊处理最后一个表达式语句 - 应该生成 return
+        for (method.body, 0..) |stmt, i| {
+            const is_last = (i == method.body.len - 1);
+            const is_non_void = method.return_type != .void;
+            
+            // 如果是最后一个语句，且是表达式语句，且方法返回非void，生成return
+            if (is_last and stmt == .expr and is_non_void) {
+                try self.output.appendSlice("return ");
+                _ = try self.generateExpr(stmt.expr);
+                try self.output.appendSlice(";\n");
+            } else {
+                try self.generateStmt(stmt);
+            }
         }
         
         try self.output.appendSlice("}\n\n");
@@ -291,8 +302,19 @@ pub const CodeGen = struct {
         try self.output.appendSlice(") {\n");
         
         // 生成函数体
-        for (func.body) |stmt| {
-            try self.generateStmt(stmt);
+        // 🆕 v0.1.6: 特殊处理最后一个表达式语句 - 应该生成 return
+        for (func.body, 0..) |stmt, i| {
+            const is_last = (i == func.body.len - 1);
+            const is_non_void = func.return_type != .void;
+            
+            // 如果是最后一个语句，且是表达式语句，且函数返回非void，生成return
+            if (is_last and stmt == .expr and is_non_void) {
+                try self.output.appendSlice("return ");
+                _ = try self.generateExpr(stmt.expr);
+                try self.output.appendSlice(";\n");
+            } else {
+                try self.generateStmt(stmt);
+            }
         }
 
         try self.output.appendSlice("}\n");

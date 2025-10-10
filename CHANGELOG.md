@@ -2,6 +2,100 @@
 
 All notable changes to the Paw programming language will be documented in this file.
 
+## [0.1.6] - TBD
+
+### 🎯 完善 let mut 系统
+
+**Major Update**: 实现完整的可变性控制系统，向 Rust 级别内存安全迈出重要一步。
+
+#### New Features
+
+**let mut 系统** ⭐:
+- ✅ **let vs let mut**: 变量默认不可变，必须显式声明 `mut` 才能修改
+- ✅ **编译期检查**: 尝试修改不可变变量会导致编译错误
+- ✅ **清晰错误消息**: `Cannot assign to immutable variable 'x'. Use 'let mut x' to make it mutable.`
+
+**mut self 支持** ⭐:
+- ✅ **可变方法**: 方法可以声明 `mut self` 来修改对象
+- ✅ **不可变方法**: 普通 `self` 方法不能修改对象
+- ✅ **编译期验证**: 确保可变性正确性
+
+#### Bug Fixes
+
+**C Backend**:
+- ✅ 修复函数最后表达式不生成 `return` 语句的问题
+- ✅ 现在 `fn test() -> i32 { counter }` 正确生成 `return counter;`
+
+**LLVM Backend**:
+- ✅ 修复函数最后表达式不生成 `ret` 指令的问题
+- ✅ 与 C backend 保持行为一致
+
+**TypeChecker**:
+- ✅ 修复错误消息内存泄漏
+
+#### Technical Improvements
+
+**AST**:
+- `Param.is_mut: bool` - 记录参数可变性
+
+**TypeChecker**:
+- `mutable_vars: StringHashMap(bool)` - 跟踪变量可变性
+- `checkMutability()` - 验证赋值目标是否可变
+- 在 `deinit()` 中释放错误消息内存
+
+**Parser**:
+- 三处参数解析正确处理 `mut self` 和 `mut` 参数
+
+**Code Generators**:
+- C Backend: 特殊处理最后表达式生成 `return`
+- LLVM Backend: 特殊处理最后表达式生成 `ret`
+
+#### Code Examples
+
+**let vs let mut**:
+```paw
+let x = 10;
+// x = 20;  // ❌ 编译错误
+
+let mut y = 10;
+y = 20;     // ✅ OK
+```
+
+**mut self**:
+```paw
+type Counter = struct {
+    value: i32,
+    
+    fn get(self) -> i32 {
+        return self.value;
+    }
+    
+    fn increment(mut self) -> i32 {
+        self.value = self.value + 1;
+        return self.value;
+    }
+}
+```
+
+#### Testing
+
+**新增测试**:
+- `tests/syntax/let_mut_complete_test.paw` - 完整测试套件
+- `tests/syntax/test_immutable_error.paw` - 错误检测测试
+- `tests/syntax/test_mut_self.paw` - mut self 功能测试
+
+**测试结果**:
+- ✅ C Backend 和 LLVM Backend 结果一致
+- ✅ 所有测试通过
+
+#### Documentation
+
+- ✅ 创建 `docs/RELEASE_NOTES_v0.1.6.md`
+- ✅ 更新 CHANGELOG.md
+- ⏳ 更新 README.md（待完成）
+
+---
+
 ## [0.1.5] - 2025-01-10
 
 ### 🎯 LLVM Backend Completion + C Backend Bug Fixes

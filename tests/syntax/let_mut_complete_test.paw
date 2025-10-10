@@ -1,0 +1,71 @@
+// 🆕 v0.1.6: 完整的 let mut 测试套件
+// 测试 let mut 语法的核心场景
+
+// 测试 1: 基本可变变量
+fn test_basic_mut() -> i32 {
+    let mut x = 10;
+    x = 20;
+    x = 30;
+    return x;  // 30
+}
+
+// 测试 2: 复合赋值
+fn test_compound_assign() -> i32 {
+    let mut counter = 0;
+    counter += 10;
+    counter += 20;
+    return counter;  // 30
+}
+
+// 测试 3: 多个可变变量
+fn test_multiple_mut() -> i32 {
+    let mut a = 1;
+    let mut b = 2;
+    
+    a = a + 10;  // 11
+    b = b * 5;   // 10
+    
+    return a + b;  // 21
+}
+
+// 测试 4: 混合可变和不可变
+fn test_mixed() -> i32 {
+    let immut = 10;
+    let mut mut_var = 20;
+    
+    mut_var = mut_var + immut;
+    
+    return mut_var;  // 30
+}
+
+// 测试 5: 循环中修改
+fn test_loop() -> i32 {
+    let mut sum = 0;
+    
+    loop i in 1..6 {
+        sum = sum + i;
+    }
+    
+    return sum;  // 15
+}
+
+// 测试 6: 不可变变量（对比）
+fn test_immutable() -> i32 {
+    let x = 42;
+    let y = 58;
+    return x + y;  // 100
+}
+
+// 主测试
+fn main() -> i32 {
+    let r1 = test_basic_mut();        // 30
+    let r2 = test_compound_assign();  // 30
+    let r3 = test_multiple_mut();     // 21
+    let r4 = test_mixed();            // 30
+    let r5 = test_loop();             // 15
+    let r6 = test_immutable();        // 100
+    
+    let total = r1 + r2 + r3 + r4 + r5 + r6;
+    
+    return total;  // 30+30+21+30+15+100 = 226
+}

@@ -265,6 +265,46 @@ let len: i32 = vec.length();                // Instance method
 - **Compile-time type checking**
 - **Zero runtime overhead** (full monomorphization)
 
+### 🛡️ Mutability Control (v0.1.6) ⭐
+
+**Immutable by default, mutable when needed:**
+
+```paw
+// Immutable variable (default)
+let x = 10;
+// x = 20;  // ❌ Compile error!
+
+// Mutable variable (explicit)
+let mut y = 10;
+y = 20;     // ✅ OK
+y += 5;     // ✅ OK
+```
+
+**mut self for methods:**
+
+```paw
+type Counter = struct {
+    value: i32,
+    
+    // Immutable method
+    fn get(self) -> i32 {
+        return self.value;
+    }
+    
+    // Mutable method
+    fn increment(mut self) -> i32 {
+        self.value = self.value + 1;  // ✅ OK
+        return self.value;
+    }
+}
+```
+
+**Benefits:**
+- 🔒 **Safety**: Prevents accidental mutations
+- 📝 **Clarity**: Code intent is explicit
+- 🚀 **Performance**: Enables better optimizations
+- 🧵 **Concurrency**: Immutable data is thread-safe
+
 ### 🎨 Clean Syntax
 
 **Only 19 Core Keywords:**
@@ -470,7 +510,20 @@ Check the `tests/` directory:
 
 ## 🎯 Version History
 
-### v0.1.5 (In Progress) - Current Version 🚀
+### v0.1.6 (In Progress) - Current Version 🚀
+
+**Mutability Control System**
+
+- ✅ let mut system (immutable by default)
+- ✅ mut self support for methods
+- ✅ Compile-time mutability checking
+- ✅ C Backend bug fixes (return statement)
+- ✅ LLVM Backend bug fixes (ret instruction)
+- ✅ Memory leak fixes
+
+[Read More →](docs/RELEASE_NOTES_v0.1.6.md)
+
+### v0.1.5 (2025-01-10)
 
 **Complete LLVM Integration**
 
@@ -482,7 +535,7 @@ Check the `tests/` directory:
 - ✅ Custom C API bindings
 - ✅ Simplified backend selection
 
-[Read More →](RELEASE_NOTES_v0.1.4.md)
+[Read More →](docs/RELEASE_NOTES_v0.1.5.md)
 
 ### v0.1.3 (2025-10-09)
 
@@ -785,7 +838,8 @@ Contributions welcome! Please ensure:
 ## 📄 Documentation
 
 - [CHANGELOG.md](CHANGELOG.md) - Complete change history
-- 🆕 [RELEASE_NOTES_v0.1.5.md](docs/RELEASE_NOTES_v0.1.5.md) - v0.1.5 release notes ⭐
+- 🆕 [RELEASE_NOTES_v0.1.6.md](docs/RELEASE_NOTES_v0.1.6.md) - v0.1.6 release notes ⭐
+- [RELEASE_NOTES_v0.1.5.md](docs/RELEASE_NOTES_v0.1.5.md) - v0.1.5 release notes
 - [RELEASE_NOTES_v0.1.4.md](docs/RELEASE_NOTES_v0.1.4.md) - v0.1.4 release notes
 - [INSTALL_GUIDE.md](scripts/INSTALL_GUIDE.md) - One-click installation guide
 - [LLVM_QUICK_SETUP.md](docs/LLVM_QUICK_SETUP.md) - Quick LLVM setup
@@ -798,6 +852,21 @@ Contributions welcome! Please ensure:
 
 ## 🗺️ Roadmap
 
+### v0.1.6 (In Progress) 🚧
+
+- ✅ let mut system
+- ✅ mut self support
+- ✅ Compile-time mutability checking
+- ✅ Backend bug fixes
+- ⏳ Documentation updates
+
+### v0.1.7 (Planned)
+
+- [ ] LLVM optimizations (-O0, -O1, -O2, -O3)
+- [ ] Enhanced error messages (source locations, colors)
+- [ ] String type improvements
+- [ ] Standard library expansion
+
 ### v0.1.5 (Released - January 10, 2025) ✅
 
 - ✅ LLVM backend 100% complete
@@ -805,13 +874,6 @@ Contributions welcome! Please ensure:
 - ✅ C backend bug fixes
 - ✅ Zero memory leaks
 - ✅ Comprehensive test suite
-
-### v0.1.6 (Planned)
-
-- [ ] LLVM optimizations (-O0, -O1, -O2, -O3)
-- [ ] Enhanced error messages
-- [ ] String type improvements
-- [ ] Standard library expansion
 
 ### Future Versions
 
