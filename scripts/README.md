@@ -10,53 +10,64 @@ These scripts work on **Windows, Linux, and macOS**:
 
 | Script | Description | Time |
 |--------|-------------|------|
-| **`setup_llvm.py`** | Download LLVM source code | 5-10 min |
-| **`build_llvm.py`** | Build LLVM from source | 30-60 min |
-| **`compile_with_local_llvm.ps1`** | Compile PawLang programs (Windows) | < 1 min |
-| **`compile_with_local_llvm.sh`** | Compile PawLang programs (Unix/Linux/macOS) | < 1 min |
+| **`install_llvm_complete.py`** | ⭐ One-click complete install (Download+Install+Build+Test) | 10-25 min |
 
-**Requirements**: Python 3.6+, CMake, Ninja, C++ compiler
+**Requirements**: 
+- Python 3.6+
+- Zig compiler
+- gcc or clang (system compiler)
 
 ## 🚀 Quick Start
 
-### Windows
-
-```powershell
-# 1. Download LLVM source (~2GB, 5-10 minutes)
-python scripts/setup_llvm.py
-
-# 2. Build LLVM (30-60 minutes, ~10GB disk space)
-python scripts/build_llvm.py
-
-# 3. Build PawLang
-zig build
-
-# 4. Test LLVM backend
-.\zig-out\bin\pawc.exe examples\hello.paw --backend=llvm
-
-# 5. Or use the compile helper
-.\scripts\compile_with_local_llvm.ps1 examples\hello.paw my_program
-```
-
-### Linux / macOS
+### ⭐ Option 1: One-Click Complete Install (Recommended!)
 
 ```bash
-# 1. Download LLVM source (~2GB, 5-10 minutes)
-python3 scripts/setup_llvm.py
+# One command to rule them all!
+python3 scripts/install_llvm_complete.py --yes
 
-# 2. Build LLVM (30-60 minutes, ~10GB disk space)
-python3 scripts/build_llvm.py
+# Or interactive mode (see detailed progress)
+python3 scripts/install_llvm_complete.py
+```
+
+**What it does**:
+1. Detects your platform (macOS/Linux, Intel/ARM)
+2. Downloads LLVM 19.1.7 prebuilt binaries (~600 MB)
+3. Extracts and installs to `llvm/install/`
+4. Builds PawLang with LLVM backend support
+5. Runs test compilation
+6. Shows you how to use it
+
+**Time**: 10-25 minutes (mostly downloading)  
+**Space**: ~650-800 MB
+
+---
+
+### Alternative: Build LLVM from Source (Advanced Users)
+
+If you need custom LLVM configuration, see [LLVM Build Guide](../docs/LLVM_BUILD_GUIDE.md).
+
+**Quick steps**:
+```bash
+# 1. Download LLVM source
+git clone --depth 1 --branch llvmorg-19.1.7 \
+  https://github.com/llvm/llvm-project.git llvm/19.1.7
+
+# 2. Configure and build
+mkdir -p llvm/build llvm/install
+cd llvm/build
+cmake -G Ninja ../19.1.7/llvm \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=../install \
+  -DLLVM_ENABLE_PROJECTS="clang;lld" \
+  -DLLVM_TARGETS_TO_BUILD="host"
+ninja install
 
 # 3. Build PawLang
+cd ../..
 zig build
-
-# 4. Test LLVM backend
-./zig-out/bin/pawc examples/hello.paw --backend=llvm
-
-# 5. Or use the compile helper
-chmod +x scripts/compile_with_local_llvm.sh
-./scripts/compile_with_local_llvm.sh examples/hello.paw my_program
 ```
+
+**Note**: Time: 30-60 min, Space: ~10 GB. Only recommended for advanced users.
 
 ## 📋 Prerequisites
 
@@ -578,17 +589,15 @@ After running the scripts, you'll have:
 ```
 PawLang/
 ├── llvm/
-│   ├── 19.1.6/          # LLVM source code (~2GB)
+│   ├── 19.1.7/          # LLVM source code (~2GB)
 │   ├── build/           # Build artifacts (~6GB, can be deleted after install)
 │   └── install/         # Installed LLVM (~2GB)
 │       ├── bin/         # LLVM tools (clang, llvm-config, etc.)
 │       ├── lib/         # LLVM libraries
 │       └── include/     # LLVM headers
 └── scripts/
-    ├── setup_llvm.py              # Download source (cross-platform)
-    ├── build_llvm.py              # Build LLVM (cross-platform)
-    ├── compile_with_local_llvm.ps1  # Compile helper (Windows)
-    ├── compile_with_local_llvm.sh   # Compile helper (Unix/macOS)
+    ├── install_llvm_complete.py   # ⭐ One-click complete install
+    ├── INSTALL_GUIDE.md           # Installation guide
     └── README.md                  # This file
 ```
 
@@ -610,7 +619,7 @@ PawLang/
 **Problem**: Download is slow or fails
 - Try the alternative download method in the script (Git vs Archive)
 - Check internet connection
-- Download manually: https://github.com/llvm/llvm-project/releases/tag/llvmorg-19.1.6
+- Download manually: https://github.com/llvm/llvm-project/releases/tag/llvmorg-19.1.7
 
 ### Build Issues
 
@@ -657,25 +666,33 @@ zig build
 llvm/install/bin/clang output.ll -o program
 ```
 
-### Compile Helpers
+### Compiling Programs
 
-For convenience, use the compile helper scripts:
+After setup, compile and run programs:
 
 **Windows**:
 ```powershell
-.\scripts\compile_with_local_llvm.ps1 examples\hello.paw my_program
-.\my_program.exe
+# Compile to LLVM IR
+.\zig-out\bin\pawc.exe examples\hello.paw --backend=llvm
+
+# Compile to executable
+llvm\install\bin\clang.exe output.ll -o hello.exe
+
+# Run
+.\hello.exe
 ```
 
 **Linux/macOS**:
 ```bash
-./scripts/compile_with_local_llvm.sh examples/hello.paw my_program
-./my_program
-```
+# Compile to LLVM IR
+./zig-out/bin/pawc examples/hello.paw --backend=llvm
 
-These scripts handle the full pipeline:
-1. Compile PawLang → LLVM IR
-2. Compile LLVM IR → Executable
+# Compile to executable
+llvm/install/bin/clang output.ll -o hello
+
+# Run
+./hello
+```
 
 ## ❓ FAQ
 
@@ -709,31 +726,57 @@ A: Python 3.6 or higher. Check with: `python --version` or `python3 --version`
 
 ## 📚 Additional Resources
 
+- **[LLVM Prebuilt Guide](../docs/LLVM_PREBUILT_GUIDE.md)** 🆕 - Guide for using prebuilt LLVM
+- [LLVM Build Guide](../docs/LLVM_BUILD_GUIDE.md) - Building LLVM from source
 - [LLVM Documentation](https://llvm.org/docs/)
 - [PawLang Documentation](../docs/)
-- [LLVM Build Guide](../docs/LLVM_BUILD_GUIDE.md)
 - [PawLang Quick Start](../docs/QUICKSTART.md)
+- [KinLeoapple/llvm-build Releases](https://github.com/KinLeoapple/llvm-build/releases/tag/19.1.7) - Prebuilt LLVM repository
 
 ## 🎯 What Each Script Does
 
-### `setup_llvm.py`
-1. Checks if LLVM source already exists
-2. Downloads LLVM source via Git or HTTP archive
-3. Verifies the downloaded source
-4. Checks build dependencies
-5. Creates necessary directories
+### `install_llvm_complete.py` ⭐
+**One-Click Complete Installation Script**
 
-### `build_llvm.py`
-1. Verifies LLVM source exists
-2. Checks build dependencies
-3. Configures LLVM build with CMake
-4. Builds LLVM with Ninja (parallel build)
-5. Installs LLVM to `llvm/install/`
+Automates the entire process:
+1. Detects platform (OS + architecture)
+2. Downloads LLVM 19.1.7 prebuilt binaries (~600 MB)
+3. Extracts files
+4. Installs to `llvm/install/`
+5. Builds PawLang with LLVM backend support
+6. Runs test program
+7. Shows usage guide
 
-### `compile_with_local_llvm.*`
-1. Compiles `.paw` file to LLVM IR using PawLang compiler
-2. Compiles LLVM IR to native executable using local Clang
-3. Provides ready-to-run executable
+**Features**:
+- ✅ Smart progress bar (standard + tqdm modes)
+- ✅ Complete error handling
+- ✅ Auto cleanup of temporary files
+- ✅ Non-interactive mode (--yes)
+- ✅ Optional skip build (--skip-build)
+- ✅ Optional skip test (--skip-test)
+
+**Supported Platforms**:
+- macOS x86_64 (Intel)
+- macOS arm64 (Apple Silicon M1/M2/M3)
+- Linux x86_64
+- Linux aarch64 (ARM64)
+
+**Usage**:
+```bash
+# Interactive mode
+python3 scripts/install_llvm_complete.py
+
+# Auto mode (recommended)
+python3 scripts/install_llvm_complete.py --yes
+
+# Install LLVM only (skip PawLang build)
+python3 scripts/install_llvm_complete.py --yes --skip-build
+
+# Help
+python3 scripts/install_llvm_complete.py --help
+```
+
+**For building from source**, see the inline CMake commands in Quick Start section above, or refer to [LLVM Build Guide](../docs/LLVM_BUILD_GUIDE.md).
 
 ## 📝 License
 

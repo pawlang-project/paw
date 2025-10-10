@@ -6,7 +6,7 @@ All notable changes to the Paw programming language will be documented in this f
 
 ### 🚀 LLVM Native Backend Integration + Zero Memory Leaks
 
-**Major Update**: Complete LLVM 19.1.6 integration with dual backend architecture and full memory leak elimination.
+**Major Update**: Complete LLVM 19.1.7 integration with dual backend architecture and full memory leak elimination.
 
 #### New Features
 
@@ -17,7 +17,7 @@ All notable changes to the Paw programming language will be documented in this f
 - ✅ **Intelligent Auto-detection**: Automatically uses best available backend
 
 **LLVM Integration** 🚀:
-- ✅ **LLVM 19.1.6**: Latest stable version with full support
+- ✅ **LLVM 19.1.7**: Latest stable version with full support
 - ✅ **Custom C API Bindings**: Direct Zig bindings to LLVM C API (~400 lines)
 - ✅ **Local Toolchain**: Self-contained LLVM installation (no system dependencies)
 - ✅ **Native IR Generation**: Direct LLVM IR generation via C API
@@ -105,7 +105,7 @@ Total: 75+ leaks → 0 leaks ✅
 **LLVM Setup Scripts**:
 - ✅ `setup_llvm_source.sh` - Download and prepare LLVM source
 - ✅ `build_llvm_local.sh` - Build LLVM locally (~30-60 min)
-- ✅ `compile_with_local_llvm.sh` - Compile workflow helper
+- ✅ Simple two-command workflow: `pawc --backend=llvm` → `clang output.ll`
 
 #### Technical Details
 

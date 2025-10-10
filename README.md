@@ -468,7 +468,7 @@ Check the `tests/` directory:
 
 **Complete LLVM Integration**
 
-- ✅ LLVM 19.1.6 native backend
+- ✅ LLVM 19.1.7 native backend
 - ✅ Dual backend architecture (C + LLVM)
 - ✅ Control flow support (if/else, while, break, continue)
 - ✅ Zero memory leaks (Arena allocator)
@@ -557,13 +557,13 @@ PawLang/
 │   └── std/
 │       └── prelude.paw           # Standard library
 ├── llvm/                         # Local LLVM installation (v0.1.4)
-│   ├── 19.1.6/                   # LLVM source
+│   ├── 19.1.7/                   # LLVM source
 │   ├── build/                    # Build artifacts
 │   └── install/                  # Installed LLVM
 ├── scripts/                      # Build scripts (v0.1.4)
-│   ├── setup_llvm_source.sh      # LLVM setup
-│   ├── build_llvm_local.sh       # LLVM build
-│   └── compile_with_local_llvm.sh # LLVM compile helper
+│   ├── download_llvm_prebuilt.py # Download prebuilt LLVM (recommended)
+│   ├── setup_llvm.py             # Setup LLVM (unified entry)
+│   └── build_llvm.py             # Build LLVM from source
 ├── examples/                     # Example programs
 ├── tests/                        # Test suite
 ├── docs/                         # Documentation
@@ -731,20 +731,34 @@ zig build
 zig build run-llvm
 ```
 
-### Building Local LLVM (Optional)
+### Setting Up LLVM (Optional)
+
+**Option 1: Prebuilt LLVM (Recommended - Fast & Easy)** ⭐
 
 ```bash
-# Setup LLVM source
-./scripts/setup_llvm_source.sh
-
-# Build LLVM locally (~30-60 minutes)
-./scripts/build_llvm_local.sh
+# Download prebuilt LLVM (~500MB, 5-10 minutes)
+python3 scripts/download_llvm_prebuilt.py
 
 # Now LLVM backend is available!
 ./zig-out/bin/pawc app.paw --backend=llvm
 ```
 
-For detailed LLVM setup, see [LLVM Build Guide](docs/LLVM_BUILD_GUIDE.md).
+**Option 2: Build from Source (Advanced)**
+
+```bash
+# Setup LLVM source
+python3 scripts/setup_llvm.py --method=git
+
+# Build LLVM locally (~30-60 minutes)
+python3 scripts/build_llvm.py
+
+# Now LLVM backend is available!
+./zig-out/bin/pawc app.paw --backend=llvm
+```
+
+**Guides**:
+- 🆕 [Prebuilt LLVM Guide](docs/LLVM_PREBUILT_GUIDE.md) - Using prebuilt binaries (recommended)
+- [LLVM Build Guide](docs/LLVM_BUILD_GUIDE.md) - Building from source
 
 ### Contributing
 
@@ -759,7 +773,8 @@ Contributions welcome! Please ensure:
 
 - [CHANGELOG.md](CHANGELOG.md) - Complete change history
 - [RELEASE_NOTES_v0.1.4.md](RELEASE_NOTES_v0.1.4.md) - v0.1.4 release notes
-- [LLVM_BUILD_GUIDE.md](docs/LLVM_BUILD_GUIDE.md) - LLVM setup guide
+- 🆕 [LLVM_PREBUILT_GUIDE.md](docs/LLVM_PREBUILT_GUIDE.md) - Using prebuilt LLVM (recommended)
+- [LLVM_BUILD_GUIDE.md](docs/LLVM_BUILD_GUIDE.md) - Building LLVM from source
 - [QUICKSTART.md](docs/QUICKSTART.md) - Quick start guide
 - [examples/](examples/) - Example code
 - [tests/](tests/) - Test cases
@@ -831,7 +846,8 @@ MIT License
 - **Full Documentation**: [View All Docs](docs/)
 - **Example Code**: [View Examples](examples/)
 - **Module System**: [Module System Docs](docs/MODULE_SYSTEM.md)
-- **LLVM Guide**: [LLVM Build Guide](docs/LLVM_BUILD_GUIDE.md)
+- 🆕 **LLVM Prebuilt**: [Prebuilt Guide](docs/LLVM_PREBUILT_GUIDE.md)
+- **LLVM Source Build**: [Build Guide](docs/LLVM_BUILD_GUIDE.md)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
 ---
