@@ -2,7 +2,7 @@
 
 **A modern systems programming language with Rust-level safety and cleaner syntax**
 
-[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
 
@@ -14,8 +14,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/PawLang.git
-cd PawLang
+git clone https://github.com/pawlang-project/paw.git
+cd paw
 
 # Build the compiler
 zig build
@@ -464,7 +464,7 @@ Check the `tests/` directory:
 
 ## 🎯 Version History
 
-### v0.1.4 (2025-01-09) - Current Version 🚀
+### v0.1.5 (In Progress) - Current Version 🚀
 
 **Complete LLVM Integration**
 
@@ -560,10 +560,10 @@ PawLang/
 │   ├── 19.1.7/                   # LLVM source
 │   ├── build/                    # Build artifacts
 │   └── install/                  # Installed LLVM
-├── scripts/                      # Build scripts (v0.1.4)
-│   ├── download_llvm_prebuilt.py # Download prebuilt LLVM (recommended)
-│   ├── setup_llvm.py             # Setup LLVM (unified entry)
-│   └── build_llvm.py             # Build LLVM from source
+├── scripts/                      # Setup scripts (v0.1.5)
+│   ├── install_llvm_complete.py  # One-click LLVM installation (recommended)
+│   ├── INSTALL_GUIDE.md          # Installation guide
+│   └── README.md                 # Scripts documentation
 ├── examples/                     # Example programs
 ├── tests/                        # Test suite
 ├── docs/                         # Documentation
@@ -733,32 +733,39 @@ zig build run-llvm
 
 ### Setting Up LLVM (Optional)
 
-**Option 1: Prebuilt LLVM (Recommended - Fast & Easy)** ⭐
+**One-Click Installation (Recommended)** ⭐
 
 ```bash
-# Download prebuilt LLVM (~500MB, 5-10 minutes)
-python3 scripts/download_llvm_prebuilt.py
+# Download, install, build, and test - all in one command!
+python3 scripts/install_llvm_complete.py --yes
+
+# This script will:
+# 1. Download pre-built LLVM 19.1.7 (~500MB)
+# 2. Extract and install to llvm/install/
+# 3. Build PawLang compiler
+# 4. Run LLVM backend test
 
 # Now LLVM backend is available!
 ./zig-out/bin/pawc app.paw --backend=llvm
 ```
 
-**Option 2: Build from Source (Advanced)**
-
+**Options:**
 ```bash
-# Setup LLVM source
-python3 scripts/setup_llvm.py --method=git
+# Interactive mode (with prompts)
+python3 scripts/install_llvm_complete.py
 
-# Build LLVM locally (~30-60 minutes)
-python3 scripts/build_llvm.py
+# Skip build and test
+python3 scripts/install_llvm_complete.py --yes --skip-build --skip-test
 
-# Now LLVM backend is available!
-./zig-out/bin/pawc app.paw --backend=llvm
+# Full installation guide
+cat scripts/INSTALL_GUIDE.md
 ```
 
 **Guides**:
-- 🆕 [Prebuilt LLVM Guide](docs/LLVM_PREBUILT_GUIDE.md) - Using prebuilt binaries (recommended)
-- [LLVM Build Guide](docs/LLVM_BUILD_GUIDE.md) - Building from source
+- 🆕 [Installation Guide](scripts/INSTALL_GUIDE.md) - One-click setup (recommended)
+- 🆕 [Prebuilt LLVM Guide](docs/LLVM_PREBUILT_GUIDE.md) - Using prebuilt binaries
+- 🆕 [Quick Setup](docs/LLVM_QUICK_SETUP.md) - Fast setup guide
+- [Setup Comparison](docs/LLVM_SETUP_COMPARISON.md) - Compare different methods
 
 ### Contributing
 
@@ -772,9 +779,10 @@ Contributions welcome! Please ensure:
 ## 📄 Documentation
 
 - [CHANGELOG.md](CHANGELOG.md) - Complete change history
-- [RELEASE_NOTES_v0.1.4.md](RELEASE_NOTES_v0.1.4.md) - v0.1.4 release notes
-- 🆕 [LLVM_PREBUILT_GUIDE.md](docs/LLVM_PREBUILT_GUIDE.md) - Using prebuilt LLVM (recommended)
-- [LLVM_BUILD_GUIDE.md](docs/LLVM_BUILD_GUIDE.md) - Building LLVM from source
+- [RELEASE_NOTES_v0.1.4.md](docs/RELEASE_NOTES_v0.1.4.md) - v0.1.4 release notes
+- 🆕 [INSTALL_GUIDE.md](scripts/INSTALL_GUIDE.md) - One-click installation guide
+- 🆕 [LLVM_QUICK_SETUP.md](docs/LLVM_QUICK_SETUP.md) - Quick LLVM setup
+- [LLVM_PREBUILT_GUIDE.md](docs/LLVM_PREBUILT_GUIDE.md) - Prebuilt LLVM guide
 - [QUICKSTART.md](docs/QUICKSTART.md) - Quick start guide
 - [examples/](examples/) - Example code
 - [tests/](tests/) - Test cases
@@ -841,13 +849,14 @@ MIT License
 
 ## 🔗 Links
 
-- **GitHub**: [PawLang Repository](#)
+- **GitHub**: [pawlang-project/paw](https://github.com/pawlang-project/paw)
+- **LLVM Build**: [pawlang-project/llvm-build](https://github.com/pawlang-project/llvm-build)
 - **Quick Start**: [5-Minute Guide](docs/QUICKSTART.md)
+- 🆕 **Installation**: [One-Click Setup](scripts/INSTALL_GUIDE.md)
+- 🆕 **LLVM Setup**: [Quick Setup Guide](docs/LLVM_QUICK_SETUP.md)
 - **Full Documentation**: [View All Docs](docs/)
 - **Example Code**: [View Examples](examples/)
 - **Module System**: [Module System Docs](docs/MODULE_SYSTEM.md)
-- 🆕 **LLVM Prebuilt**: [Prebuilt Guide](docs/LLVM_PREBUILT_GUIDE.md)
-- **LLVM Source Build**: [Build Guide](docs/LLVM_BUILD_GUIDE.md)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
 ---
