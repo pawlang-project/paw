@@ -1,8 +1,14 @@
+<div align="center">
+
 # 🐾 PawLang
+
+![PawLang Logo](assets/logo.svg)
 
 **A modern systems programming language with Rust-level safety and cleaner syntax**
 
-[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](CHANGELOG.md)
+</div>
+
+[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
 
@@ -14,8 +20,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/PawLang.git
-cd PawLang
+git clone https://github.com/pawlang-project/paw.git
+cd paw
 
 # Build the compiler
 zig build
@@ -62,7 +68,7 @@ pawc hello.paw --backend=llvm     # Generates LLVM IR
 **Features:**
 - ✅ **C Backend**: Stable, portable, works everywhere
 - ✅ **LLVM Backend**: Native API integration, control flow support
-- ✅ **Control Flow**: if/else, while loops, break/continue
+- ✅ **Control Flow**: if/else, loop (unified), break/continue
 - ✅ **Zero Memory Leaks**: Arena allocator, fully leak-free
 - ✅ **Local LLVM Toolchain**: No system dependencies
 
@@ -80,7 +86,7 @@ fn fibonacci(n: i32) -> i32 {
 fn sum_to_n(n: i32) -> i32 {
     let sum = 0;
     let i = 0;
-    while i <= n {
+    loop i <= n {
         sum = sum + i;
         i = i + 1;
     }
@@ -464,13 +470,13 @@ Check the `tests/` directory:
 
 ## 🎯 Version History
 
-### v0.1.4 (2025-01-09) - Current Version 🚀
+### v0.1.5 (In Progress) - Current Version 🚀
 
 **Complete LLVM Integration**
 
-- ✅ LLVM 19.1.6 native backend
+- ✅ LLVM 19.1.7 native backend
 - ✅ Dual backend architecture (C + LLVM)
-- ✅ Control flow support (if/else, while, break, continue)
+- ✅ Control flow support (if/else, loop, break, continue)
 - ✅ Zero memory leaks (Arena allocator)
 - ✅ Local LLVM toolchain (no system dependencies)
 - ✅ Custom C API bindings
@@ -557,13 +563,13 @@ PawLang/
 │   └── std/
 │       └── prelude.paw           # Standard library
 ├── llvm/                         # Local LLVM installation (v0.1.4)
-│   ├── 19.1.6/                   # LLVM source
+│   ├── 19.1.7/                   # LLVM source
 │   ├── build/                    # Build artifacts
 │   └── install/                  # Installed LLVM
-├── scripts/                      # Build scripts (v0.1.4)
-│   ├── setup_llvm_source.sh      # LLVM setup
-│   ├── build_llvm_local.sh       # LLVM build
-│   └── compile_with_local_llvm.sh # LLVM compile helper
+├── scripts/                      # Setup scripts (v0.1.5)
+│   ├── install_llvm_complete.py  # One-click LLVM installation (recommended)
+│   ├── INSTALL_GUIDE.md          # Installation guide
+│   └── README.md                 # Scripts documentation
 ├── examples/                     # Example programs
 ├── tests/                        # Test suite
 ├── docs/                         # Documentation
@@ -731,20 +737,41 @@ zig build
 zig build run-llvm
 ```
 
-### Building Local LLVM (Optional)
+### Setting Up LLVM (Optional)
+
+**One-Click Installation (Recommended)** ⭐
 
 ```bash
-# Setup LLVM source
-./scripts/setup_llvm_source.sh
+# Download, install, build, and test - all in one command!
+python3 scripts/install_llvm_complete.py --yes
 
-# Build LLVM locally (~30-60 minutes)
-./scripts/build_llvm_local.sh
+# This script will:
+# 1. Download pre-built LLVM 19.1.7 (~500MB)
+# 2. Extract and install to llvm/install/
+# 3. Build PawLang compiler
+# 4. Run LLVM backend test
 
 # Now LLVM backend is available!
 ./zig-out/bin/pawc app.paw --backend=llvm
 ```
 
-For detailed LLVM setup, see [LLVM Build Guide](docs/LLVM_BUILD_GUIDE.md).
+**Options:**
+```bash
+# Interactive mode (with prompts)
+python3 scripts/install_llvm_complete.py
+
+# Skip build and test
+python3 scripts/install_llvm_complete.py --yes --skip-build --skip-test
+
+# Full installation guide
+cat scripts/INSTALL_GUIDE.md
+```
+
+**Guides**:
+- 🆕 [Installation Guide](scripts/INSTALL_GUIDE.md) - One-click setup (recommended)
+- 🆕 [Prebuilt LLVM Guide](docs/LLVM_PREBUILT_GUIDE.md) - Using prebuilt binaries
+- 🆕 [Quick Setup](docs/LLVM_QUICK_SETUP.md) - Fast setup guide
+- [Setup Comparison](docs/LLVM_SETUP_COMPARISON.md) - Compare different methods
 
 ### Contributing
 
@@ -758,8 +785,10 @@ Contributions welcome! Please ensure:
 ## 📄 Documentation
 
 - [CHANGELOG.md](CHANGELOG.md) - Complete change history
-- [RELEASE_NOTES_v0.1.4.md](RELEASE_NOTES_v0.1.4.md) - v0.1.4 release notes
-- [LLVM_BUILD_GUIDE.md](docs/LLVM_BUILD_GUIDE.md) - LLVM setup guide
+- [RELEASE_NOTES_v0.1.4.md](docs/RELEASE_NOTES_v0.1.4.md) - v0.1.4 release notes
+- 🆕 [INSTALL_GUIDE.md](scripts/INSTALL_GUIDE.md) - One-click installation guide
+- 🆕 [LLVM_QUICK_SETUP.md](docs/LLVM_QUICK_SETUP.md) - Quick LLVM setup
+- [LLVM_PREBUILT_GUIDE.md](docs/LLVM_PREBUILT_GUIDE.md) - Prebuilt LLVM guide
 - [QUICKSTART.md](docs/QUICKSTART.md) - Quick start guide
 - [examples/](examples/) - Example code
 - [tests/](tests/) - Test cases
@@ -770,7 +799,7 @@ Contributions welcome! Please ensure:
 
 ### v0.1.5 (Planned)
 
-- [ ] for loops in LLVM backend
+- [ ] loop iterators (loop item in collection) in LLVM backend
 - [ ] More LLVM optimizations
 - [ ] Enhanced error messages
 - [ ] String type improvements
@@ -826,16 +855,26 @@ MIT License
 
 ## 🔗 Links
 
-- **GitHub**: [PawLang Repository](#)
+- **GitHub**: [pawlang-project/paw](https://github.com/pawlang-project/paw)
+- **LLVM Build**: [pawlang-project/llvm-build](https://github.com/pawlang-project/llvm-build)
 - **Quick Start**: [5-Minute Guide](docs/QUICKSTART.md)
+- 🆕 **Installation**: [One-Click Setup](scripts/INSTALL_GUIDE.md)
+- 🆕 **LLVM Setup**: [Quick Setup Guide](docs/LLVM_QUICK_SETUP.md)
 - **Full Documentation**: [View All Docs](docs/)
 - **Example Code**: [View Examples](examples/)
 - **Module System**: [Module System Docs](docs/MODULE_SYSTEM.md)
-- **LLVM Guide**: [LLVM Build Guide](docs/LLVM_BUILD_GUIDE.md)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
+---
+
+<div align="center">
+
 **Built with ❤️ using Zig and LLVM**
 
+![PawLang Logo](assets/logo.svg)
+
 **🐾 Happy Coding with PawLang!**
+
+</div>

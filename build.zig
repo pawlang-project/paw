@@ -4,23 +4,37 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // 🆕 Build options for conditional compilation
+    const build_options = b.addOptions();
+    
     const main_mod = b.createModule(.{
         .root_source_file = .{ .cwd_relative = "src/main.zig" },
         .target = target,
         .optimize = optimize,
     });
+    
+    // Add build_options to main module
+    main_mod.addOptions("build_options", build_options);
 
     const exe = b.addExecutable(.{
         .name = "pawc",
         .root_module = main_mod,
     });
+    
+    // Windows: Use system linker (MinGW ld) instead of lld-link for C++ compatibility
+    if (target.result.os.tag == .windows) {
+        exe.use_lld = false;
+        exe.use_llvm = false;
+    }
 
     // 🆕 集成 LLVM（自动检测并启用）
     // Using direct C API bindings instead of llvm-zig
     const local_llvm = "llvm/install";
-    const llvm_config_path = b.fmt("{s}/bin/llvm-config", .{local_llvm});
     
-    // 自动检测本地 LLVM
+    // 自动检测本地 LLVM（Windows needs .exe extension）
+    const llvm_config_name = if (target.result.os.tag == .windows) "llvm-config.exe" else "llvm-config";
+    const llvm_config_path = b.fmt("{s}/bin/{s}", .{local_llvm, llvm_config_name});
+    
     const has_local_llvm = blk: {
         std.fs.cwd().access(llvm_config_path, .{}) catch {
             break :blk false;
@@ -28,33 +42,107 @@ pub fn build(b: *std.Build) void {
         break :blk true;
     };
     
+    // LLVM native backend is now available on all platforms
+    const enable_llvm_native = has_local_llvm;
+    build_options.addOption(bool, "llvm_native_available", enable_llvm_native);
+    
     if (has_local_llvm) {
         std.debug.print("✓ Local LLVM detected at {s}\n", .{local_llvm});
+        std.debug.print("✅ LLVM native API enabled\n", .{});
+        std.debug.print("   • C backend: --backend=c (default)\n", .{});
+        std.debug.print("   • LLVM backend: --backend=llvm (native API)\n", .{});
         
         // Add LLVM library paths and includes
         exe.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/lib", .{local_llvm}) });
         exe.addIncludePath(.{ .cwd_relative = b.fmt("{s}/include", .{local_llvm}) });
         
-        // Link essential LLVM static libraries (minimal set)
-        exe.linkSystemLibrary("LLVMCore");
-        exe.linkSystemLibrary("LLVMSupport");
-        exe.linkSystemLibrary("LLVMBinaryFormat");
-        exe.linkSystemLibrary("LLVMRemarks");
-        exe.linkSystemLibrary("LLVMBitstreamReader");
-        exe.linkSystemLibrary("LLVMTargetParser");
-        exe.linkSystemLibrary("LLVMDemangle");
+        // Link comprehensive set of LLVM libraries
+        const llvm_libs = [_][]const u8{
+            // Core libraries
+            "LLVMCore",
+            "LLVMSupport",
+            "LLVMDemangle",
+            
+            // Analysis and optimization
+            "LLVMAnalysis",
+            "LLVMTransformUtils",
+            "LLVMScalarOpts",
+            "LLVMInstCombine",
+            "LLVMAggressiveInstCombine",
+            "LLVMipo",
+            "LLVMVectorize",
+            
+            // Target support
+            "LLVMTarget",
+            "LLVMTargetParser",
+            "LLVMMC",
+            "LLVMMCParser",
+            "LLVMBitReader",
+            "LLVMBitWriter",
+            "LLVMAsmParser",
+            "LLVMAsmPrinter",
+            
+            // Code generation for x86
+            "LLVMX86CodeGen",
+            "LLVMX86AsmParser",
+            "LLVMX86Desc",
+            "LLVMX86Info",
+            "LLVMX86Disassembler",
+            
+            // Utilities
+            "LLVMBinaryFormat",
+            "LLVMRemarks",
+            "LLVMBitstreamReader",
+            "LLVMTextAPI",
+            "LLVMProfileData",
+            "LLVMDebugInfoDWARF",
+            "LLVMDebugInfoCodeView",
+            "LLVMDebugInfoMSF",
+            "LLVMGlobalISel",
+            "LLVMSelectionDAG",
+            "LLVMCodeGen",
+            "LLVMObjCARCOpts",
+            "LLVMCoroutines",
+            "LLVMCFGuard",
+        };
         
-        // Link C++ standard library (LLVM is C++)
-        exe.linkLibCpp();
+        for (llvm_libs) |lib| {
+            exe.linkSystemLibrary(lib);
+        }
         
-        std.debug.print("✅ LLVM native API enabled\n", .{});
-        std.debug.print("   • C backend: --backend=c (default)\n", .{});
-        std.debug.print("   • LLVM backend: --backend=llvm (uses native API)\n", .{});
+        // Windows-specific: Link MinGW C++ runtime libraries
+        if (target.result.os.tag == .windows) {
+            // Use MinGW's libstdc++ (must be before other system libs)
+            exe.linkSystemLibrary("stdc++");
+            exe.linkSystemLibrary("gcc_s");
+            exe.linkSystemLibrary("gcc");
+            exe.linkSystemLibrary("pthread");
+            
+            // Windows system libraries needed by LLVM
+            exe.linkSystemLibrary("ole32");
+            exe.linkSystemLibrary("uuid");
+            exe.linkSystemLibrary("version");
+            exe.linkSystemLibrary("psapi");
+            exe.linkSystemLibrary("shell32");
+            exe.linkSystemLibrary("advapi32");
+            
+            std.debug.print("   🔧 Using MinGW C++ runtime\n", .{});
+        } else if (target.result.os.tag == .linux) {
+            // Linux: Use libstdc++
+            exe.linkSystemLibrary("stdc++");
+            exe.linkSystemLibrary("pthread");
+            std.debug.print("   🔧 Using libstdc++ (Linux)\n", .{});
+        } else {
+            // macOS and others: Use libc++
+            exe.linkLibCpp();
+            std.debug.print("   🔧 Using libc++ (macOS)\n", .{});
+        }
     } else {
+        build_options.addOption(bool, "llvm_native_available", false);
         std.debug.print("ℹ️  LLVM not found\n", .{});
         std.debug.print("   • C backend: --backend=c (default)\n", .{});
-        std.debug.print("   • LLVM backend: --backend=llvm (text mode)\n", .{});
-        std.debug.print("   💡 For native API: ./scripts/setup_llvm_source.sh && ./scripts/build_llvm_local.sh\n", .{});
+        std.debug.print("   • LLVM backend: not available (install LLVM first)\n", .{});
+        std.debug.print("   💡 For setup: python scripts/setup_llvm.py && python scripts/build_llvm.py\n", .{});
     }
     
     // 链接标准库

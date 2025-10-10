@@ -1,0 +1,71 @@
+// PawLang Loop Syntax Test
+// Tests the unified 'loop' keyword
+
+// Test 1: Loop with condition (equivalent to while)
+fn sum_to_n(n: i32) -> i32 {
+    let sum = 0;
+    let i = 0;
+    loop i <= n {
+        sum = sum + i;
+        i = i + 1;
+    }
+    return sum;
+}
+
+// Test 2: Fibonacci with loop
+fn fibonacci(n: i32) -> i32 {
+    return if n <= 1 {
+        n
+    } else {
+        fibonacci(n - 1) + fibonacci(n - 2)
+    };
+}
+
+// Test 3: Countdown with loop
+fn countdown(n: i32) -> i32 {
+    let count = 0;
+    let i = n;
+    loop i > 0 {
+        count = count + 1;
+        i = i - 1;
+    }
+    return count;
+}
+
+// Test 4: Nested loops
+fn multiply_table(n: i32) -> i32 {
+    let result = 0;
+    let i = 1;
+    loop i <= n {
+        let j = 1;
+        loop j <= n {
+            result = result + 1;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+// Test 5: Loop with break
+fn find_first_greater(limit: i32) -> i32 {
+    let i = 0;
+    loop i < 100 {
+        if i > limit {
+            break;
+        }
+        i = i + 1;
+    }
+    return i;
+}
+
+fn main() -> i32 {
+    let t1 = sum_to_n(10);         // 55
+    let t2 = fibonacci(6);         // 8
+    let t3 = countdown(10);        // 10
+    let t4 = multiply_table(5);    // 25
+    let t5 = find_first_greater(7); // 8
+    
+    return t1 + t2 + t3 + t4 + t5;  // 55 + 8 + 10 + 25 + 8 = 106
+}
+

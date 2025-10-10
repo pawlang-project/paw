@@ -109,6 +109,9 @@ pub extern "c" fn LLVMInt64TypeInContext(C: ContextRef) TypeRef;
 /// Get double type (f64)
 pub extern "c" fn LLVMDoubleTypeInContext(C: ContextRef) TypeRef;
 
+/// Get type of a value
+pub extern "c" fn LLVMTypeOf(Val: ValueRef) TypeRef;
+
 /// Get pointer type
 pub extern "c" fn LLVMPointerType(ElementType: TypeRef, AddressSpace: c_uint) TypeRef;
 
@@ -146,6 +149,12 @@ pub extern "c" fn LLVMConstInt(
 
 /// Create a constant real (floating point)
 pub extern "c" fn LLVMConstReal(RealTy: TypeRef, N: f64) ValueRef;
+
+/// Create a null constant
+pub extern "c" fn LLVMConstNull(Ty: TypeRef) ValueRef;
+
+/// Create a constant array
+pub extern "c" fn LLVMConstArray(ElementTy: TypeRef, ConstantVals: [*c]ValueRef, Length: c_uint) ValueRef;
 
 // ============================================================================
 // Basic Block Functions
@@ -268,6 +277,104 @@ pub extern "c" fn LLVMBuildCondBr(
 /// Build unconditional branch
 pub extern "c" fn LLVMBuildBr(Builder: BuilderRef, Dest: BasicBlockRef) ValueRef;
 
+/// Build logical AND instruction
+pub extern "c" fn LLVMBuildAnd(
+    Builder: BuilderRef,
+    LHS: ValueRef,
+    RHS: ValueRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build logical OR instruction
+pub extern "c" fn LLVMBuildOr(
+    Builder: BuilderRef,
+    LHS: ValueRef,
+    RHS: ValueRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build logical NOT instruction
+pub extern "c" fn LLVMBuildNot(
+    Builder: BuilderRef,
+    V: ValueRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build negation instruction
+pub extern "c" fn LLVMBuildNeg(
+    Builder: BuilderRef,
+    V: ValueRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build PHI node
+pub extern "c" fn LLVMBuildPhi(
+    Builder: BuilderRef,
+    Ty: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Add incoming value to PHI node
+pub extern "c" fn LLVMAddIncoming(
+    PhiNode: ValueRef,
+    IncomingValues: [*]ValueRef,
+    IncomingBlocks: [*]BasicBlockRef,
+    Count: c_uint,
+) void;
+
+/// Get basic block of a value (for PHI nodes)
+pub extern "c" fn LLVMGetInsertBlock(Builder: BuilderRef) BasicBlockRef;
+
+/// Build global string pointer (for string literals)
+pub extern "c" fn LLVMBuildGlobalStringPtr(
+    Builder: BuilderRef,
+    Str: [*:0]const u8,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Get element pointer (GEP) for array/struct access
+pub extern "c" fn LLVMBuildGEP2(
+    Builder: BuilderRef,
+    Ty: TypeRef,
+    Pointer: ValueRef,
+    Indices: [*]ValueRef,
+    NumIndices: c_uint,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build in-bounds GEP
+pub extern "c" fn LLVMBuildInBoundsGEP2(
+    Builder: BuilderRef,
+    Ty: TypeRef,
+    Pointer: ValueRef,
+    Indices: [*]ValueRef,
+    NumIndices: c_uint,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build struct GEP
+pub extern "c" fn LLVMBuildStructGEP2(
+    Builder: BuilderRef,
+    Ty: TypeRef,
+    Pointer: ValueRef,
+    Idx: c_uint,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Get array type
+pub extern "c" fn LLVMArrayType(
+    ElementType: TypeRef,
+    ElementCount: c_uint,
+) TypeRef;
+
+/// Get struct type
+pub extern "c" fn LLVMStructTypeInContext(
+    C: ContextRef,
+    ElementTypes: [*]TypeRef,
+    ElementCount: c_uint,
+    Packed: c_int,
+) TypeRef;
+
 // ============================================================================
 // Wrapper Types for Better Zig Experience
 // ============================================================================
@@ -300,6 +407,10 @@ pub const Context = struct {
         return LLVMVoidTypeInContext(self.ref);
     }
 
+    pub fn i1Type(self: Context) TypeRef {
+        return LLVMInt1TypeInContext(self.ref);
+    }
+
     pub fn i32Type(self: Context) TypeRef {
         return LLVMInt32TypeInContext(self.ref);
     }
@@ -310,6 +421,19 @@ pub const Context = struct {
 
     pub fn doubleType(self: Context) TypeRef {
         return LLVMDoubleTypeInContext(self.ref);
+    }
+    
+    pub fn pointerType(self: Context, address_space: c_uint) TypeRef {
+        return LLVMPointerType(self.i32Type(), address_space);
+    }
+    
+    pub fn structType(self: Context, element_types: []TypeRef, is_packed: bool) TypeRef {
+        return LLVMStructTypeInContext(
+            self.ref,
+            element_types.ptr,
+            @intCast(element_types.len),
+            if (is_packed) 1 else 0,
+        );
     }
 };
 
@@ -397,6 +521,62 @@ pub const Builder = struct {
     pub fn buildBr(self: Builder, dest: BasicBlockRef) ValueRef {
         return LLVMBuildBr(self.ref, dest);
     }
+    
+    pub fn buildICmp(self: Builder, op: IntPredicate, lhs: ValueRef, rhs: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildICmp(self.ref, op, lhs, rhs, name.ptr);
+    }
+    
+    pub fn buildAnd(self: Builder, lhs: ValueRef, rhs: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildAnd(self.ref, lhs, rhs, name.ptr);
+    }
+    
+    pub fn buildOr(self: Builder, lhs: ValueRef, rhs: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildOr(self.ref, lhs, rhs, name.ptr);
+    }
+    
+    pub fn buildNot(self: Builder, value: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildNot(self.ref, value, name.ptr);
+    }
+    
+    pub fn buildNeg(self: Builder, value: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildNeg(self.ref, value, name.ptr);
+    }
+    
+    pub fn buildAlloca(self: Builder, ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildAlloca(self.ref, ty, name.ptr);
+    }
+    
+    pub fn buildLoad(self: Builder, ty: TypeRef, ptr: ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildLoad2(self.ref, ty, ptr, name.ptr);
+    }
+    
+    pub fn buildStore(self: Builder, value: ValueRef, ptr: ValueRef) ValueRef {
+        return LLVMBuildStore(self.ref, value, ptr);
+    }
+    
+    pub fn buildPhi(self: Builder, ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildPhi(self.ref, ty, name.ptr);
+    }
+    
+    pub fn getInsertBlock(self: Builder) BasicBlockRef {
+        return LLVMGetInsertBlock(self.ref);
+    }
+    
+    pub fn buildGlobalStringPtr(self: Builder, str: [:0]const u8, name: [:0]const u8) ValueRef {
+        return LLVMBuildGlobalStringPtr(self.ref, str.ptr, name.ptr);
+    }
+    
+    pub fn buildGEP(self: Builder, ty: TypeRef, ptr: ValueRef, indices: []ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildGEP2(self.ref, ty, ptr, indices.ptr, @intCast(indices.len), name.ptr);
+    }
+    
+    pub fn buildInBoundsGEP(self: Builder, ty: TypeRef, ptr: ValueRef, indices: []ValueRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildInBoundsGEP2(self.ref, ty, ptr, indices.ptr, @intCast(indices.len), name.ptr);
+    }
+    
+    pub fn buildStructGEP(self: Builder, ty: TypeRef, ptr: ValueRef, idx: u32, name: [:0]const u8) ValueRef {
+        return LLVMBuildStructGEP2(self.ref, ty, ptr, idx, name.ptr);
+    }
 };
 
 // Helper function to create constant int
@@ -410,6 +590,15 @@ pub fn constI64(context: Context, value: i64) ValueRef {
 
 pub fn constDouble(context: Context, value: f64) ValueRef {
     return LLVMConstReal(context.doubleType(), value);
+}
+
+pub fn constNull(context: Context, ty: TypeRef) ValueRef {
+    _ = context;
+    return LLVMConstNull(ty);
+}
+
+pub fn constArray(element_ty: TypeRef, values: []ValueRef) ValueRef {
+    return LLVMConstArray(element_ty, values.ptr, @intCast(values.len));
 }
 
 pub fn functionType(
@@ -427,5 +616,9 @@ pub fn functionType(
 
 pub fn appendBasicBlock(context: Context, func: ValueRef, name: [:0]const u8) BasicBlockRef {
     return LLVMAppendBasicBlockInContext(context.ref, func, name.ptr);
+}
+
+pub fn arrayType(element_type: TypeRef, count: u32) TypeRef {
+    return LLVMArrayType(element_type, count);
 }
 

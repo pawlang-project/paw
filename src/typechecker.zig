@@ -21,6 +21,7 @@ pub const TypeMethods = struct {
 
 pub const TypeChecker = struct {
     allocator: std.mem.Allocator,
+    arena: std.heap.ArenaAllocator,  // 🆕 Arena allocator for temporary types
     errors: std.ArrayList([]const u8),
     symbol_table: std.StringHashMap(ast.Type),
     function_table: std.StringHashMap(ast.FunctionDecl),
@@ -33,6 +34,7 @@ pub const TypeChecker = struct {
     pub fn init(allocator: std.mem.Allocator) TypeChecker {
         return TypeChecker{
             .allocator = allocator,
+            .arena = std.heap.ArenaAllocator.init(allocator),
             .errors = std.ArrayList([]const u8).init(allocator),
             .symbol_table = std.StringHashMap(ast.Type).init(allocator),
             .function_table = std.StringHashMap(ast.FunctionDecl).init(allocator),
@@ -61,6 +63,9 @@ pub const TypeChecker = struct {
         
         // 🆕 清理泛型上下文
         self.generic_context.deinit();
+        
+        // 🆕 释放 arena（自动释放所有临时类型分配）
+        self.arena.deinit();
     }
 
     pub fn check(self: *TypeChecker, program: ast.Program) !void {
@@ -746,7 +751,7 @@ pub const TypeChecker = struct {
                 }
                 
                 // 返回数组类型
-                const elem_type_ptr = try self.allocator.create(ast.Type);
+                const elem_type_ptr = try self.arena.allocator().create(ast.Type);
                 elem_type_ptr.* = first_type;
                 break :blk ast.Type{
                     .array = .{

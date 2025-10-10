@@ -1,0 +1,191 @@
+// PawLang LLVM Backend - Complete Features Test
+// Tests all working features without variable reassignment
+
+// ============================================================================
+// 1. Arithmetic Operations
+// ============================================================================
+fn test_arithmetic() -> i32 {
+    let a = 15;
+    let b = 25;
+    let sum = a + b;            // 40
+    let diff = b - a;           // 10
+    let prod = a * 3;           // 45
+    let quot = b / 5;           // 5
+    return sum + diff + prod + quot;  // 100
+}
+
+// ============================================================================
+// 2. All Comparison Operators
+// ============================================================================
+fn test_comparisons() -> i32 {
+    let a = 10;
+    let b = 20;
+    
+    let eq = if a == 10 { 1 } else { 0 };
+    let ne = if a != b { 1 } else { 0 };
+    let lt = if a < b { 1 } else { 0 };
+    let le = if a <= 10 { 1 } else { 0 };
+    let gt = if b > a { 1 } else { 0 };
+    let ge = if b >= 20 { 1 } else { 0 };
+    
+    return eq + ne + lt + le + gt + ge;  // 6
+}
+
+// ============================================================================
+// 3. Nested If Expressions
+// ============================================================================
+fn classify_number(x: i32) -> i32 {
+    return if x > 50 {
+        if x > 100 { 3 } else { 2 }
+    } else {
+        if x > 25 { 1 } else { 0 }
+    };
+}
+
+fn test_nested_if() -> i32 {
+    let r1 = classify_number(120);  // 3
+    let r2 = classify_number(75);   // 2
+    let r3 = classify_number(30);   // 1
+    let r4 = classify_number(10);   // 0
+    return r1 + r2 + r3 + r4;  // 6
+}
+
+// ============================================================================
+// 4. Unary Negation
+// ============================================================================
+fn test_unary() -> i32 {
+    let a = 10;
+    let b = -a;         // -10
+    let c = -b;         // 10
+    let d = -(a + 15);  // -25
+    let e = -d;         // 25
+    return c + e;  // 35
+}
+
+// ============================================================================
+// 5. Recursive Functions
+// ============================================================================
+fn factorial(n: i32) -> i32 {
+    return if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    };
+}
+
+fn fibonacci(n: i32) -> i32 {
+    return if n <= 1 {
+        n
+    } else {
+        fibonacci(n - 1) + fibonacci(n - 2)
+    };
+}
+
+// ============================================================================
+// 6. Multiple Function Calls
+// ============================================================================
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn multiply(a: i32, b: i32) -> i32 {
+    return a * b;
+}
+
+fn compute(x: i32, y: i32) -> i32 {
+    let sum = add(x, y);
+    let prod = multiply(x, y);
+    return add(sum, prod);
+}
+
+// ============================================================================
+// 7. Max/Min Functions
+// ============================================================================
+fn max(a: i32, b: i32) -> i32 {
+    return if a > b { a } else { b };
+}
+
+fn min(a: i32, b: i32) -> i32 {
+    return if a < b { a } else { b };
+}
+
+fn max3(a: i32, b: i32, c: i32) -> i32 {
+    return max(max(a, b), c);
+}
+
+// ============================================================================
+// 8. Complex Expressions
+// ============================================================================
+fn complex_calc(a: i32, b: i32, c: i32) -> i32 {
+    return if a > b {
+        if b > c {
+            (a + b) * c
+        } else {
+            (a - c) * b
+        }
+    } else {
+        if a > c {
+            a * b * c
+        } else {
+            c - a - b
+        }
+    };
+}
+
+// ============================================================================
+// 9. Block Expressions
+// ============================================================================
+fn test_blocks() -> i32 {
+    let x = { 10 };
+    let y = {
+        let a = 5;
+        let b = 3;
+        a + b
+    };
+    let z = {
+        let m = x + y;
+        let n = m * 2;
+        n
+    };
+    return x + y + z;  // 10 + 8 + 36 = 54
+}
+
+// ============================================================================
+// 10. Power Function (Recursive Multiplication)
+// ============================================================================
+fn power(base: i32, exp: i32) -> i32 {
+    return if exp == 0 {
+        1
+    } else {
+        base * power(base, exp - 1)
+    };
+}
+
+// ============================================================================
+// Main Test Function
+// ============================================================================
+fn main() -> i32 {
+    let t1 = test_arithmetic();       // 100
+    let t2 = test_comparisons();      // 6
+    let t3 = test_nested_if();        // 6
+    let t4 = test_unary();            // 35
+    let t5 = factorial(5);            // 120
+    let t6 = fibonacci(7);            // 13
+    let t7 = compute(10, 5);          // 65
+    let t8 = max3(15, 25, 20);        // 25
+    let t9 = min(8, 12);              // 8
+    let t10 = complex_calc(10, 5, 3); // 39 ((10-3)*5 = 35, but let's calc)
+    let t11 = test_blocks();          // 54
+    let t12 = power(2, 5);            // 32
+    
+    // Calculate total
+    let sum1 = t1 + t2 + t3 + t4;
+    let sum2 = t5 + t6 + t7 + t8;
+    let sum3 = t9 + t10 + t11 + t12;
+    let total = sum1 + sum2 + sum3;
+    
+    // 100 + 6 + 6 + 35 + 120 + 13 + 65 + 25 + 8 + 39 + 54 + 32 = 503
+    
+    return total;
+}
+

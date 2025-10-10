@@ -1588,9 +1588,8 @@ pub const Parser = struct {
     }
 
     fn parseIfExpr(self: *Parser) (std.mem.Allocator.Error || error{UnexpectedToken,ExpectedType,ExpectedPattern,InvalidCharacter,Overflow})!ast.Expr {
-        _ = try self.consume(.lparen);
+        // Parse condition (no parentheses required, as per README syntax)
         const condition = try self.parseExpr();
-        _ = try self.consume(.rparen);
         
         const then_branch = try self.arenaAllocator().create(ast.Expr);
         then_branch.* = try self.parseExpr();

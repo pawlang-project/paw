@@ -36,13 +36,6 @@ llvm/install/bin/clang output.ll -o hello \
 ./hello
 ```
 
-### Method 3: Convenience Script
-
-```bash
-./scripts/compile_with_local_llvm.sh hello.paw my_program
-./my_program
-```
-
 ---
 
 ## 📋 Available Build Commands
@@ -302,7 +295,7 @@ llvm/install/bin/clang output.ll -o program.exe -lmsvcrt
 ```
 PawLang/
 ├── llvm/
-│   ├── 19.1.6/               # LLVM source code
+│   ├── 19.1.7/               # LLVM source code
 │   ├── build/                # Build directory
 │   └── install/              # Local installation
 │       ├── bin/
@@ -318,9 +311,9 @@ PawLang/
 │   ├── llvm_backend.zig      # Text IR backend
 │   └── llvm_native_backend.zig  # Native API backend ⭐
 ├── scripts/
-│   ├── setup_llvm_source.sh  # Download LLVM source
-│   ├── build_llvm_local.sh   # Build LLVM locally
-│   └── compile_with_local_llvm.sh  # Convenience script
+│   ├── download_llvm_prebuilt.py  # Download prebuilt LLVM (recommended)
+│   ├── setup_llvm.py          # Setup LLVM (unified entry)
+│   └── build_llvm.py          # Build LLVM from source
 ├── build.zig                 # Zig build configuration ⭐
 └── zig-out/
     └── bin/

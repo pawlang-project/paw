@@ -1,0 +1,29 @@
+// 测试 LLVM 后端的静态方法调用功能
+
+// 定义一个简单的结构体
+struct Point {
+    x: i32,
+    y: i32,
+    
+    // 静态方法
+    fn new(x: i32, y: i32) Point {
+        return Point { x: x, y: y };
+    }
+    
+    // 实例方法
+    fn distance(self: Point) i32 {
+        return self.x + self.y;
+    }
+}
+
+// 主函数
+fn main() i32 {
+    // 测试静态方法调用
+    let p = Point::new(10, 20);
+    
+    // 测试实例方法调用
+    let dist = p.distance();
+    
+    // 返回结果
+    return dist;
+}
