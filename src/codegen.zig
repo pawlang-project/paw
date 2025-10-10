@@ -999,10 +999,22 @@ pub const CodeGen = struct {
                 _ = try self.generateExpr(ai.index.*);
                 try self.output.appendSlice("]");
             },
-            .block => |block| {
-                // TODO: 实现 block 表达式
-                _ = block;
-                try self.output.appendSlice("0");
+            .block => |stmts| {
+                // 🆕 实现 block 表达式
+                // 简化实现：只返回最后一个表达式的值
+                // 注意：不支持 block 中的变量声明（需要 GCC/Clang 扩展）
+                if (stmts.len > 0) {
+                    const last_stmt = stmts[stmts.len - 1];
+                    if (last_stmt == .expr) {
+                        // 返回最后一个表达式
+                        try self.generateExpr(last_stmt.expr);
+                    } else {
+                        // 如果最后不是表达式，返回 0
+                        try self.output.appendSlice("0");
+                    }
+                } else {
+                    try self.output.appendSlice("0");
+                }
             },
             // 🆕 is 表达式（模式匹配）
             .is_expr => |is_match| {
