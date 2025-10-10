@@ -1,0 +1,16 @@
+// Simple Loop Test
+
+fn sum_to_5() -> i32 {
+    let sum = 0;
+    let i = 0;
+    loop i <= 5 {
+        sum = sum + i;
+        i = i + 1;
+    }
+    return sum;
+}
+
+fn main() -> i32 {
+    return sum_to_5();  // 0+1+2+3+4+5 = 15
+}
+

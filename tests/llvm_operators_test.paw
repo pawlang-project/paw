@@ -1,0 +1,94 @@
+// LLVM Backend Test: Complete Operators Test
+// Tests comparison, logical, and unary operators with correct PawLang syntax
+
+// Test 1: Basic arithmetic
+fn test_arithmetic() -> i32 {
+    let a = 10;
+    let b = 20;
+    let sum = a + b;        // 30
+    let diff = b - a;       // 10
+    let prod = a * 2;       // 20
+    let quot = b / 2;       // 10
+    let result = sum + diff + prod + quot;
+    return result;          // 70
+}
+
+// Test 2: Comparison operators
+fn test_comparison(x: i32, y: i32) -> i32 {
+    let r1 = if x == 10 { 1 } else { 0 };
+    let r2 = if x != y { 1 } else { 0 };
+    let r3 = if x < y { 1 } else { 0 };
+    let result = r1 + r2 + r3;
+    return result;  // 3
+}
+
+// Test 3: All comparison operators
+fn test_all_comparisons() -> i32 {
+    let a = 10;
+    let b = 20;
+    
+    let eq = if a == 10 { 1 } else { 0 };
+    let ne = if a != b { 1 } else { 0 };
+    let lt = if a < b { 1 } else { 0 };
+    let le = if a <= 10 { 1 } else { 0 };
+    let gt = if b > a { 1 } else { 0 };
+    let ge = if b >= 20 { 1 } else { 0 };
+    
+    let result = eq + ne + lt + le + gt + ge;
+    return result;  // 6
+}
+
+// Test 4: Unary negation
+fn test_unary() -> i32 {
+    let a = 10;
+    let b = -a;            // -10
+    let c = -b;            // 10
+    let d = -(a + 5);      // -15
+    let e = -d;            // 15
+    let result = c + e;
+    return result;         // 25
+}
+
+// Test 5: Simple if expressions
+fn max(a: i32, b: i32) -> i32 {
+    return if a > b { a } else { b };
+}
+
+fn min(a: i32, b: i32) -> i32 {
+    return if a < b { a } else { b };
+}
+
+// Test 6: Nested if expressions
+fn classify(x: i32) -> i32 {
+    return if x > 10 {
+        if x > 20 { 3 } else { 2 }
+    } else {
+        if x > 0 { 1 } else { 0 }
+    };
+}
+
+// Test 7: Fibonacci (recursive with if)
+fn fibonacci(n: i32) -> i32 {
+    return if n <= 1 {
+        n
+    } else {
+        fibonacci(n - 1) + fibonacci(n - 2)
+    };
+}
+
+// Main test function
+fn main() -> i32 {
+    let t1 = test_arithmetic();       // 70
+    let t2 = test_comparison(10, 20); // 3
+    let t3 = test_all_comparisons();  // 6
+    let t4 = test_unary();            // 25
+    let t5 = max(15, 8);              // 15
+    let t6 = min(15, 8);              // 8
+    let t7 = classify(15);            // 2
+    let t8 = fibonacci(5);            // 5
+    
+    let result = t1 + t2 + t3 + t4 + t5 + t6 + t7 + t8;
+    // 70 + 3 + 6 + 25 + 15 + 8 + 2 + 5 = 134
+    
+    return result;
+}
