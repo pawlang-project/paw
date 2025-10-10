@@ -1,6 +1,12 @@
+<div align="center">
+
 # 🐾 PawLang
 
+![PawLang Logo](assets/logo.svg)
+
 **A modern systems programming language with Rust-level safety and cleaner syntax**
+
+</div>
 
 [![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -861,6 +867,14 @@ MIT License
 
 ---
 
+---
+
+<div align="center">
+
 **Built with ❤️ using Zig and LLVM**
 
+![PawLang Logo](assets/logo.svg)
+
 **🐾 Happy Coding with PawLang!**
+
+</div>
