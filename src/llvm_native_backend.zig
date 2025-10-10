@@ -25,10 +25,11 @@ pub const LLVMNativeBackend = struct {
     current_loop_exit: ?llvm.BasicBlockRef,
     current_loop_continue: ?llvm.BasicBlockRef,
     
+    /// 初始化 LLVM 后端
+    /// 创建 LLVM 上下文、模块和构建器
     pub fn init(allocator: std.mem.Allocator, module_name: []const u8) !LLVMNativeBackend {
         const context = llvm.Context.create();
         
-        // Create null-terminated module name
         const module_name_z = try allocator.dupeZ(u8, module_name);
         defer allocator.free(module_name_z);
         
@@ -49,6 +50,7 @@ pub const LLVMNativeBackend = struct {
         };
     }
     
+    /// 释放 LLVM 后端资源
     pub fn deinit(self: *LLVMNativeBackend) void {
         self.functions.deinit();
         self.variables.deinit();
@@ -57,6 +59,51 @@ pub const LLVMNativeBackend = struct {
         self.module.dispose();
         self.context.dispose();
     }
+    
+    // ============================================================================
+    // 辅助函数
+    // ============================================================================
+    
+    /// 创建 null-terminated 字符串的辅助函数
+    fn createCString(self: *LLVMNativeBackend, str: []const u8) ![:0]const u8 {
+        return try self.allocator.dupeZ(u8, str);
+    }
+    
+    /// 创建函数类型的辅助函数
+    fn createFunctionType(self: *LLVMNativeBackend, param_count: usize) llvm.TypeRef {
+        const i32_type = self.context.i32Type();
+        var param_types = std.ArrayList(llvm.TypeRef).init(self.allocator);
+        defer param_types.deinit();
+        
+        var i: usize = 0;
+        while (i < param_count) : (i += 1) {
+            param_types.append(i32_type) catch unreachable;
+        }
+        
+        return llvm.functionType(i32_type, param_types.items, false);
+    }
+    
+    /// 保存和恢复循环上下文
+    const LoopContext = struct {
+        exit: ?llvm.BasicBlockRef,
+        continue_block: ?llvm.BasicBlockRef,
+    };
+    
+    fn saveLoopContext(self: *LLVMNativeBackend) LoopContext {
+        return LoopContext{
+            .exit = self.current_loop_exit,
+            .continue_block = self.current_loop_continue,
+        };
+    }
+    
+    fn restoreLoopContext(self: *LLVMNativeBackend, ctx: LoopContext) void {
+        self.current_loop_exit = ctx.exit;
+        self.current_loop_continue = ctx.continue_block;
+    }
+    
+    // ============================================================================
+    // 代码生成主函数
+    // ============================================================================
     
     pub fn generate(self: *LLVMNativeBackend, program: ast.Program) ![]const u8 {
         // Generate all declarations
@@ -242,12 +289,12 @@ pub const LLVMNativeBackend = struct {
                         .condition = cond,
                         .body = loop_stmt.body,
                     });
-                } else if (loop_stmt.iterator) |_| {
-                    // loop item in collection { } - 迭代循环 (TODO: 未实现)
-                    std.debug.print("⚠️  Loop iterators not yet implemented in LLVM backend\n", .{});
+                } else if (loop_stmt.iterator) |iter| {
+                    // loop item in collection { } - 迭代循环
+                    try self.generateLoopIterator(iter, loop_stmt.body);
                 } else {
-                    // loop { } - 无限循环 (TODO: 未实现)
-                    std.debug.print("⚠️  Infinite loops not yet implemented in LLVM backend\n", .{});
+                    // loop { } - 无限循环
+                    try self.generateInfiniteLoop(loop_stmt.body);
                 }
             },
             .break_stmt => |_| {
@@ -266,40 +313,144 @@ pub const LLVMNativeBackend = struct {
         }
     }
     
+    /// 生成 while 风格的条件循环
+    /// 生成: while.cond -> while.body -> while.cond (循环) | while.exit
     fn generateWhileLoop(self: *LLVMNativeBackend, loop: struct { condition: ast.Expr, body: []ast.Stmt }) !void {
         const func = self.current_function orelse return error.NoCurrentFunction;
         
-        // Create basic blocks
+        // 创建基本块
         const cond_block = llvm.appendBasicBlock(self.context, func, "while.cond");
         const body_block = llvm.appendBasicBlock(self.context, func, "while.body");
         const exit_block = llvm.appendBasicBlock(self.context, func, "while.exit");
         
-        // Save loop context
-        const saved_exit = self.current_loop_exit;
-        const saved_continue = self.current_loop_continue;
+        // 保存并设置循环上下文
+        const saved_ctx = self.saveLoopContext();
+        defer self.restoreLoopContext(saved_ctx);
+        
         self.current_loop_exit = exit_block;
         self.current_loop_continue = cond_block;
-        defer {
-            self.current_loop_exit = saved_exit;
-            self.current_loop_continue = saved_continue;
-        }
         
-        // Jump to condition
+        // 跳转到条件块
         _ = self.builder.buildBr(cond_block);
         
-        // Generate condition block
+        // 生成条件块
         self.builder.positionAtEnd(cond_block);
         const cond_value = try self.generateExpr(loop.condition);
         _ = llvm.LLVMBuildCondBr(self.builder.ref, cond_value, body_block, exit_block);
         
-        // Generate body block
+        // 生成循环体
         self.builder.positionAtEnd(body_block);
         for (loop.body) |stmt| {
             try self.generateStmt(stmt);
         }
-        _ = self.builder.buildBr(cond_block);  // Loop back
+        _ = self.builder.buildBr(cond_block);
         
-        // Continue from exit block
+        // 继续从退出块执行
+        self.builder.positionAtEnd(exit_block);
+    }
+    
+    /// 生成 loop 迭代器（范围迭代）
+    /// 生成: loop.cond -> loop.body -> loop.incr -> loop.cond (循环) | loop.exit
+    fn generateLoopIterator(self: *LLVMNativeBackend, iter: ast.LoopIterator, body: []ast.Stmt) !void {
+        const func = self.current_function orelse return error.NoCurrentFunction;
+        
+        // 只支持范围表达式
+        if (iter.iterable != .range) {
+            std.debug.print("⚠️  Only range iterators are supported in LLVM backend\n", .{});
+            return;
+        }
+        
+        const range = iter.iterable.range;
+        const i32_type = self.context.i32Type();
+        
+        // 创建并初始化循环变量
+        const iter_name_z = try self.createCString(iter.binding);
+        defer self.allocator.free(iter_name_z);
+        
+        const iter_var = self.builder.buildAlloca(i32_type, iter_name_z);
+        const start_value = try self.generateExpr(range.start.*);
+        _ = self.builder.buildStore(start_value, iter_var);
+        
+        // 注册循环变量（作用域内有效）
+        try self.variables.put(iter.binding, iter_var);
+        try self.variable_types.put(iter.binding, i32_type);
+        defer {
+            _ = self.variables.remove(iter.binding);
+            _ = self.variable_types.remove(iter.binding);
+        }
+        
+        // 生成结束值
+        const end_value = try self.generateExpr(range.end.*);
+        
+        // 创建基本块
+        const cond_block = llvm.appendBasicBlock(self.context, func, "loop.cond");
+        const body_block = llvm.appendBasicBlock(self.context, func, "loop.body");
+        const incr_block = llvm.appendBasicBlock(self.context, func, "loop.incr");
+        const exit_block = llvm.appendBasicBlock(self.context, func, "loop.exit");
+        
+        // 保存并设置循环上下文
+        const saved_ctx = self.saveLoopContext();
+        defer self.restoreLoopContext(saved_ctx);
+        
+        self.current_loop_exit = exit_block;
+        self.current_loop_continue = incr_block;
+        
+        // 跳转到条件块
+        _ = self.builder.buildBr(cond_block);
+        
+        // 生成条件块：检查 i < end 或 i <= end
+        self.builder.positionAtEnd(cond_block);
+        const current_value = self.builder.buildLoad(i32_type, iter_var, iter_name_z);
+        const predicate = if (range.inclusive) llvm.IntPredicate.SLE else llvm.IntPredicate.SLT;
+        const cond_value = self.builder.buildICmp(predicate, current_value, end_value, "loop_cond");
+        _ = llvm.LLVMBuildCondBr(self.builder.ref, cond_value, body_block, exit_block);
+        
+        // 生成循环体
+        self.builder.positionAtEnd(body_block);
+        for (body) |stmt| {
+            try self.generateStmt(stmt);
+        }
+        _ = self.builder.buildBr(incr_block);
+        
+        // 生成递增块：i = i + 1
+        self.builder.positionAtEnd(incr_block);
+        const current_value2 = self.builder.buildLoad(i32_type, iter_var, iter_name_z);
+        const one = llvm.constI32(self.context, 1);
+        const next_value = self.builder.buildAdd(current_value2, one, "loop_incr");
+        _ = self.builder.buildStore(next_value, iter_var);
+        _ = self.builder.buildBr(cond_block);
+        
+        // 继续从退出块执行
+        self.builder.positionAtEnd(exit_block);
+    }
+    
+    /// 生成无限循环
+    /// 生成: loop.body -> loop.body (无限循环，只能通过 break 退出)
+    fn generateInfiniteLoop(self: *LLVMNativeBackend, body: []ast.Stmt) !void {
+        const func = self.current_function orelse return error.NoCurrentFunction;
+        
+        // 创建基本块
+        const body_block = llvm.appendBasicBlock(self.context, func, "loop.body");
+        const exit_block = llvm.appendBasicBlock(self.context, func, "loop.exit");
+        
+        // 保存并设置循环上下文
+        const saved_ctx = self.saveLoopContext();
+        defer self.restoreLoopContext(saved_ctx);
+        
+        self.current_loop_exit = exit_block;
+        self.current_loop_continue = body_block;
+        
+        // 跳转到循环体
+        _ = self.builder.buildBr(body_block);
+        
+        // 生成循环体（无限循环回自己）
+        self.builder.positionAtEnd(body_block);
+        for (body) |stmt| {
+            try self.generateStmt(stmt);
+        }
+        _ = self.builder.buildBr(body_block);
+        
+        // 退出块（只能通过 break 到达）
         self.builder.positionAtEnd(exit_block);
     }
     
@@ -481,7 +632,64 @@ pub const LLVMNativeBackend = struct {
                 break :blk llvm.constI32(self.context, 0);
             },
             .call => |call_expr| blk: {
-                // Get function name
+                // 🆕 检查是否是实例方法调用 (obj.method 形式)
+                if (call_expr.callee.* == .field_access) {
+                    const field = call_expr.callee.field_access;
+                    
+                    // 尝试获取对象类型和生成修饰后的方法名
+                    if (field.object.* == .identifier) {
+                        const var_name = field.object.identifier;
+                        // 简化实现：假设对象是 i32 类型，方法名是 TypeName_method
+                        // TODO: 需要类型系统支持才能正确查找类型
+                        
+                        // 生成修饰后的方法名（简化版）
+                        var method_name = std.ArrayList(u8).init(self.allocator);
+                        defer method_name.deinit();
+                        
+                        // 假设类型名就是变量名的首字母大写形式
+                        try method_name.appendSlice(var_name);
+                        try method_name.appendSlice("_");
+                        try method_name.appendSlice(field.field);
+                        
+                        const mangled_method_name = try method_name.toOwnedSlice();
+                        defer self.allocator.free(mangled_method_name);
+                        
+                        // 查找方法
+                        if (self.functions.get(mangled_method_name)) |func| {
+                            // 生成参数：第一个参数是 self
+                            var args = std.ArrayList(llvm.ValueRef).init(self.allocator);
+                            defer args.deinit();
+                            
+                            // 添加 self 参数（对象本身）
+                            const obj_value = try self.generateExpr(field.object.*);
+                            try args.append(obj_value);
+                            
+                            // 添加其他参数
+                            for (call_expr.args) |arg| {
+                                const arg_value = try self.generateExpr(arg);
+                                try args.append(arg_value);
+                            }
+                            
+                            // 获取函数类型
+                            const i32_type = self.context.i32Type();
+                            var param_types = std.ArrayList(llvm.TypeRef).init(self.allocator);
+                            defer param_types.deinit();
+                            for (args.items) |_| {
+                                try param_types.append(i32_type);
+                            }
+                            const func_type = llvm.functionType(i32_type, param_types.items, false);
+                            
+                            // 构建调用
+                            const call_name_z = try self.allocator.dupeZ(u8, "method_call");
+                            defer self.allocator.free(call_name_z);
+                            
+                            const result = self.builder.buildCall(func_type, func, args.items, call_name_z);
+                            break :blk result;
+                        }
+                    }
+                }
+                
+                // 普通函数调用
                 const func_name = if (call_expr.callee.* == .identifier)
                     call_expr.callee.identifier
                 else
@@ -518,6 +726,85 @@ pub const LLVMNativeBackend = struct {
                 const result = self.builder.buildCall(func_type, func, args.items, call_name_z);
                 break :blk result;
             },
+            .static_method_call => |smc| blk: {
+                // 🆕 静态方法调用：Type<T>::method()
+                // 生成修饰后的函数名：Type_T_method
+                var func_name = std.ArrayList(u8).init(self.allocator);
+                defer func_name.deinit();
+                
+                // 添加类型名
+                try func_name.appendSlice(smc.type_name);
+                
+                // 添加类型参数
+                for (smc.type_args) |type_arg| {
+                    try func_name.appendSlice("_");
+                    const type_name = try self.getSimpleTypeName(type_arg);
+                    // 只有 generic_instance 返回的是需要释放的内存
+                    const needs_free = type_arg == .generic_instance;
+                    defer if (needs_free) self.allocator.free(type_name);
+                    try func_name.appendSlice(type_name);
+                }
+                
+                // 添加方法名
+                try func_name.appendSlice("_");
+                try func_name.appendSlice(smc.method_name);
+                
+                const mangled_name = try func_name.toOwnedSlice();
+                defer self.allocator.free(mangled_name);
+                
+                // 查找函数
+                const func = self.functions.get(mangled_name) orelse {
+                    std.debug.print("⚠️  Undefined static method: {s}\n", .{mangled_name});
+                    break :blk llvm.constI32(self.context, 0);
+                };
+                
+                // 生成参数
+                var args = std.ArrayList(llvm.ValueRef).init(self.allocator);
+                defer args.deinit();
+                
+                for (smc.args) |arg| {
+                    const arg_value = try self.generateExpr(arg);
+                    try args.append(arg_value);
+                }
+                
+                // 获取函数类型
+                const i32_type = self.context.i32Type();
+                var param_types = std.ArrayList(llvm.TypeRef).init(self.allocator);
+                defer param_types.deinit();
+                for (args.items) |_| {
+                    try param_types.append(i32_type);
+                }
+                const func_type = llvm.functionType(i32_type, param_types.items, false);
+                
+                // 构建调用
+                const call_name_z = try self.allocator.dupeZ(u8, "static_call");
+                defer self.allocator.free(call_name_z);
+                
+                const result = self.builder.buildCall(func_type, func, args.items, call_name_z);
+                break :blk result;
+            },
+            .array_literal => |elements| blk: {
+                // 🆕 数组字面量：[1, 2, 3]
+                // 简化实现：返回第一个元素的值
+                if (elements.len == 0) {
+                    break :blk llvm.constI32(self.context, 0);
+                }
+                
+                // 返回第一个元素的值（简化实现）
+                const first_element = try self.generateExpr(elements[0]);
+                break :blk first_element;
+            },
+            .struct_init => |si| blk: {
+                // 🆕 结构体字面量：Point { x: 1, y: 2 }
+                // 简化实现：返回第一个字段的值
+                if (si.fields.len == 0) {
+                    break :blk llvm.constI32(self.context, 0);
+                }
+                
+                // 返回第一个字段的值（简化实现）
+                const first_field_value = try self.generateExpr(si.fields[0].value);
+                break :blk first_field_value;
+            },
             else => llvm.constI32(self.context, 0),
         };
     }
@@ -539,6 +826,49 @@ pub const LLVMNativeBackend = struct {
             },
             .void => self.context.voidType(),
             else => self.context.i32Type(), // Default
+        };
+    }
+    
+    /// 获取类型的简化名（用于name mangling）
+    /// 注意：对于 generic_instance，调用者需要负责释放返回的字符串
+    fn getSimpleTypeName(self: *LLVMNativeBackend, paw_type: ast.Type) ![]const u8 {
+        return switch (paw_type) {
+            .i8 => "i8",
+            .i16 => "i16",
+            .i32 => "i32",
+            .i64 => "i64",
+            .i128 => "i128",
+            .u8 => "u8",
+            .u16 => "u16",
+            .u32 => "u32",
+            .u64 => "u64",
+            .u128 => "u128",
+            .f32 => "f32",
+            .f64 => "f64",
+            .bool => "bool",
+            .char => "char",
+            .string => "string",
+            .void => "void",
+            .generic => |name| name,
+            .named => |name| name,
+            .generic_instance => |gi| blk: {
+                // 🆕 处理泛型实例：Vec<i32> -> Vec_i32
+                // 注意：这会分配新内存，调用者需要释放
+                var buf = std.ArrayList(u8).init(self.allocator);
+                errdefer buf.deinit();
+                
+                try buf.appendSlice(gi.name);
+                for (gi.type_args) |arg| {
+                    try buf.appendSlice("_");
+                    const type_name = try self.getSimpleTypeName(arg);
+                    // 只有 generic_instance 返回的是需要释放的内存
+                    const needs_free = arg == .generic_instance;
+                    defer if (needs_free) self.allocator.free(type_name);
+                    try buf.appendSlice(type_name);
+                }
+                break :blk try buf.toOwnedSlice();
+            },
+            else => "unknown",
         };
     }
 };

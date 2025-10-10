@@ -150,6 +150,12 @@ pub extern "c" fn LLVMConstInt(
 /// Create a constant real (floating point)
 pub extern "c" fn LLVMConstReal(RealTy: TypeRef, N: f64) ValueRef;
 
+/// Create a null constant
+pub extern "c" fn LLVMConstNull(Ty: TypeRef) ValueRef;
+
+/// Create a constant array
+pub extern "c" fn LLVMConstArray(ElementTy: TypeRef, ConstantVals: [*c]ValueRef, Length: c_uint) ValueRef;
+
 // ============================================================================
 // Basic Block Functions
 // ============================================================================
@@ -417,6 +423,10 @@ pub const Context = struct {
         return LLVMDoubleTypeInContext(self.ref);
     }
     
+    pub fn pointerType(self: Context, address_space: c_uint) TypeRef {
+        return LLVMPointerType(self.i32Type(), address_space);
+    }
+    
     pub fn structType(self: Context, element_types: []TypeRef, is_packed: bool) TypeRef {
         return LLVMStructTypeInContext(
             self.ref,
@@ -580,6 +590,15 @@ pub fn constI64(context: Context, value: i64) ValueRef {
 
 pub fn constDouble(context: Context, value: f64) ValueRef {
     return LLVMConstReal(context.doubleType(), value);
+}
+
+pub fn constNull(context: Context, ty: TypeRef) ValueRef {
+    _ = context;
+    return LLVMConstNull(ty);
+}
+
+pub fn constArray(element_ty: TypeRef, values: []ValueRef) ValueRef {
+    return LLVMConstArray(element_ty, values.ptr, @intCast(values.len));
 }
 
 pub fn functionType(
