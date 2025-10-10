@@ -17,8 +17,8 @@ from pathlib import Path
 
 # LLVM Configuration
 LLVM_VERSION = "19.1.7"
-GITHUB_REPO = "PawLang/llvm-build"
-RELEASE_TAG = "llvm-19.1.7"
+GITHUB_REPO = "pawlang-project/llvm-build"
+RELEASE_TAG = "19.1.7"
 
 def print_header(text, char="="):
     """Print formatted header"""

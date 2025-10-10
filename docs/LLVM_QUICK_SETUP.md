@@ -130,7 +130,7 @@ cat output.ll
 ### Q: 下载速度慢？
 
 A: 使用代理或 VPN。或者手动下载：
-1. 访问: https://github.com/PawLang/llvm-build/releases/tag/llvm-19.1.7
+1. 访问: https://github.com/pawlang-project/llvm-build/releases/tag/19.1.7
 2. 下载对应平台的文件
 3. 解压到 `llvm/install/`
 
