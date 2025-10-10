@@ -731,7 +731,7 @@ A: Python 3.6 or higher. Check with: `python --version` or `python3 --version`
 - [LLVM Documentation](https://llvm.org/docs/)
 - [PawLang Documentation](../docs/)
 - [PawLang Quick Start](../docs/QUICKSTART.md)
-- [KinLeoapple/llvm-build Releases](https://github.com/KinLeoapple/llvm-build/releases/tag/19.1.7) - Prebuilt LLVM repository
+- [PawLang/llvm-build Releases](https://github.com/PawLang/llvm-build/releases/tag/llvm-19.1.7) - Prebuilt LLVM repository
 
 ## 🎯 What Each Script Does
 
