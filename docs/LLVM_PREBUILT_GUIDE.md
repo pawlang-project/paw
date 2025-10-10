@@ -90,7 +90,7 @@ llvm/install/bin/clang output.ll -o hello
 
 ### 1. 下载预编译包
 
-访问：https://github.com/PawLang/llvm-build/releases/tag/llvm-19.1.7
+访问：https://github.com/pawlang-project/llvm-build/releases/tag/19.1.7
 
 根据你的平台下载对应的文件：
 - macOS (Intel): `clang+llvm-19.1.7-x86_64-apple-darwin23.tar.xz`
@@ -199,8 +199,8 @@ A: Linux 预编译版本基于 Ubuntu 20.04 构建，但通常兼容大多数现
 
 ## 🔗 相关资源
 
-- **预编译版本仓库**: https://github.com/PawLang/llvm-build
-- **上游项目**: https://github.com/terralang/llvm-build (via KinLeoapple/llvm-build)
+- **预编译版本仓库**: https://github.com/pawlang-project/llvm-build
+- **上游项目**: https://github.com/terralang/llvm-build
 - **LLVM 官方**: https://llvm.org/
 - **源码编译指南**: [LLVM_BUILD_GUIDE.md](LLVM_BUILD_GUIDE.md)
 
