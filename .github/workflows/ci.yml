@@ -322,18 +322,22 @@ jobs:
           tar -xzf "$GITHUB_WORKSPACE/pawlang-linux.tar.gz"
         fi
         
+        # List extracted files for debugging
+        echo "Extracted files:"
+        ls -la
+        
         # Clear any LLVM env vars
         unset LLVM_SYS_190_PREFIX
         
         # Set library paths for self-contained distribution
         if [ "$RUNNER_OS" = "macOS" ]; then
-          export DYLD_LIBRARY_PATH="$PWD/pawlang/lib:$DYLD_LIBRARY_PATH"
+          export DYLD_LIBRARY_PATH="$PWD/lib:$DYLD_LIBRARY_PATH"
         else
-          export LD_LIBRARY_PATH="$PWD/pawlang/lib:$LD_LIBRARY_PATH"
+          export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
         fi
         
         echo "Test 1: C backend WITHOUT system LLVM"
-        ./pawlang/bin/pawc "$GITHUB_WORKSPACE/examples/hello.paw" --backend=c
+        ./bin/pawc "$GITHUB_WORKSPACE/examples/hello.paw" --backend=c
         if [ -f output.c ]; then
           echo "✅ C backend works!"
           rm output.c
@@ -344,27 +348,27 @@ jobs:
         
         echo ""
         echo "Test 2: LLVM backend WITHOUT system LLVM (critical test!)"
-        ./pawlang/bin/pawc "$GITHUB_WORKSPACE/examples/hello.paw" --backend=llvm
+        ./bin/pawc "$GITHUB_WORKSPACE/examples/hello.paw" --backend=llvm
         if [ -f output.ll ]; then
           echo "✅ LLVM backend works!"
           head -n 5 output.ll
           rm output.ll
         else
           echo "❌ LLVM backend failed"
-          ls -la pawlang/lib/ || true
+          ls -la lib/ || true
           exit 1
         fi
         
         echo ""
         echo "Test 3: Check bundled libraries"
         if [ "$RUNNER_OS" = "macOS" ]; then
-          LIB_COUNT=$(ls pawlang/lib/*.dylib 2>/dev/null | wc -l || echo "0")
+          LIB_COUNT=$(ls lib/*.dylib 2>/dev/null | wc -l || echo "0")
           echo "Bundled dylibs: $LIB_COUNT"
-          ls -lh pawlang/lib/*.dylib 2>/dev/null || true
+          ls -lh lib/*.dylib 2>/dev/null || true
         else
-          LIB_COUNT=$(ls pawlang/lib/*.so* 2>/dev/null | wc -l || echo "0")
+          LIB_COUNT=$(ls lib/*.so* 2>/dev/null | wc -l || echo "0")
           echo "Bundled shared libraries: $LIB_COUNT"
-          ls -lh pawlang/lib/*.so* 2>/dev/null || true
+          ls -lh lib/*.so* 2>/dev/null || true
         fi
         
         if [ "$LIB_COUNT" -gt 0 ]; then
@@ -598,14 +602,18 @@ jobs:
           cd /tmp/pawlang-test
           tar -xzf $GITHUB_WORKSPACE/pawlang-linux.tar.gz
           
+          # List extracted files for debugging
+          echo "Extracted files:"
+          ls -la
+          
           # Clear env vars and set library path
           unset LLVM_SYS_190_PREFIX
-          export LD_LIBRARY_PATH="$PWD/pawlang/lib:$LD_LIBRARY_PATH"
+          export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
           
           # Test C backend without system LLVM
           echo ""
           echo "Test 5a: C backend without system LLVM"
-          ./pawlang/bin/pawc $GITHUB_WORKSPACE/examples/hello.paw --backend=c
+          ./bin/pawc $GITHUB_WORKSPACE/examples/hello.paw --backend=c
           if [ -f output.c ]; then
             echo "✅ Self-contained C backend works"
             rm output.c
@@ -617,24 +625,24 @@ jobs:
           # Test LLVM backend without system LLVM (critical!)
           echo ""
           echo "Test 5b: LLVM backend without system LLVM"
-          ./pawlang/bin/pawc $GITHUB_WORKSPACE/examples/hello.paw --backend=llvm
+          ./bin/pawc $GITHUB_WORKSPACE/examples/hello.paw --backend=llvm
           if [ -f output.ll ]; then
             echo "✅ Self-contained LLVM backend works"
             rm output.ll
           else
             echo "❌ Self-contained LLVM backend failed"
-            ls -la pawlang/lib/ || true
+            ls -la lib/ || true
             exit 1
           fi
           
           # Verify bundled libraries
           echo ""
           echo "Test 5c: Check bundled libraries"
-          LIB_COUNT=$(ls pawlang/lib/*.so* 2>/dev/null | wc -l || echo "0")
+          LIB_COUNT=$(ls lib/*.so* 2>/dev/null | wc -l || echo "0")
           echo "Bundled libraries: $LIB_COUNT"
           if [ "$LIB_COUNT" -gt 0 ]; then
             echo "✅ Libraries properly bundled"
-            ls -lh pawlang/lib/*.so* 2>/dev/null || true
+            ls -lh lib/*.so* 2>/dev/null || true
           else
             echo "⚠️  Warning: No libraries found"
           fi
