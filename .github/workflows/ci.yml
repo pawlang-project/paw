@@ -92,6 +92,9 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
+        # 确保LLVM DLL在PATH中
+        $env:PATH = "C:\Program Files\LLVM\bin;" + $env:PATH
+        
         echo "Running pawc.exe..."
         .\zig-out\bin\pawc.exe examples\hello.paw 2>&1 | Out-String
         echo "Exit code: $LASTEXITCODE"
@@ -120,6 +123,7 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
+        $env:PATH = "C:\Program Files\LLVM\bin;" + $env:PATH
         .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=c
         if (Test-Path output.c) {
           echo "✅ Type casting test passed"
@@ -142,6 +146,7 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
+        $env:PATH = "C:\Program Files\LLVM\bin;" + $env:PATH
         .\zig-out\bin\pawc.exe tests\integration\v0.1.8_test.paw --backend=c
         if (Test-Path output.c) {
           echo "✅ Integration test passed"
@@ -173,6 +178,7 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
+        $env:PATH = "C:\Program Files\LLVM\bin;" + $env:PATH
         .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=llvm
         if (Test-Path output.ll) {
           echo "✅ LLVM backend test passed"
