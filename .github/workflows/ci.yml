@@ -71,12 +71,13 @@ jobs:
         # 设置LLVM环境变量供Zig使用
         echo "LLVM_SYS_190_PREFIX=C:\Program Files\LLVM" >> $env:GITHUB_ENV
         
-        # 验证LLVM安装
-        echo "LLVM Version:"
-        & "C:\Program Files\LLVM\bin\llvm-config.exe" --version
+        # 验证LLVM安装 (注意: Windows的LLVM没有llvm-config.exe)
+        echo "Verifying LLVM installation:"
+        clang --version
         
-        echo "Files in LLVM bin:"
-        Get-ChildItem "C:\Program Files\LLVM\bin" | Select-Object -First 20
+        echo ""
+        echo "LLVM bin directory contents:"
+        Get-ChildItem "C:\Program Files\LLVM\bin" | Select-Object Name | Format-Table -AutoSize
         
     - name: Build PawLang compiler
       run: zig build
