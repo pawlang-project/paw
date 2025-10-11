@@ -217,6 +217,47 @@ if (build_options.llvm_native_available) {
 }
 ```
 
+## 🔧 C 后端编译器要求
+
+PawLang 的 C 后端生成标准 C 代码，需要系统 C 编译器来编译：
+
+### 编译器优先级:
+1. **GCC** (首选) - `gcc output.c -o program`
+2. **Clang** (备选) - `clang output.c -o program`
+
+### 安装 GCC:
+
+**Linux**:
+```bash
+sudo apt-get install gcc
+```
+
+**macOS**:
+```bash
+brew install gcc
+# 或使用 Xcode Clang
+xcode-select --install
+```
+
+**Windows**:
+```bash
+# MinGW (推荐)
+choco install mingw
+
+# 或使用 MSVC
+cl output.c /Fe:program.exe
+```
+
+### 为何不自包含 GCC?
+
+- **包大小**: GCC 及其依赖非常大（数百 MB）
+- **系统集成**: 大多数开发环境已安装 GCC/Clang
+- **标准 C**: 生成的代码可在任何系统上编译
+
+对于 C-only 平台（Linux x86/armv7, Windows x86），用户需要：
+- 安装系统 GCC/Clang 编译生成的 C 代码
+- 或在目标设备上从源码编译 PawLang（获得 LLVM 支持）
+
 ## 📚 相关文档
 
 - [README.md](../README.md) - 快速开始

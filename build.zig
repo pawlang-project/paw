@@ -279,42 +279,35 @@ pub fn build(b: *std.Build) void {
             b.getInstallStep().dependOn(&install_artifact.step);
         }
     } else {
-        // 🆕 v0.1.8: 无LLVM时，尝试打包 GCC 以支持 C 后端自包含
-        const gcc_package_step = switch (target.result.os.tag) {
+        // 🆕 v0.1.8: 无LLVM时的提示信息
+        const info_step = switch (target.result.os.tag) {
             .linux => blk: {
-                // Linux: 打包轻量级 TinyCC 或系统 GCC
                 const cmd = b.addSystemCommand(&[_][]const u8{
                     "sh", "-c",
-                    "mkdir -p zig-out/bin && " ++
-                    // 尝试打包 TinyCC (如果可用，非常小 ~100KB)
-                    "if command -v tcc >/dev/null 2>&1; then " ++
-                    "  cp $(which tcc) zig-out/bin/ 2>/dev/null && echo '✅ Packaged TinyCC for C compilation'; " ++
-                    "elif command -v gcc >/dev/null 2>&1; then " ++
-                    "  echo '💡 GCC available on system (not packaged due to size)'; " ++
-                    "  echo '   Users can use: gcc output.c -o program'; " ++
-                    "else " ++
-                    "  echo '⚠️  No C compiler found - users will need to install gcc/clang'; " ++
-                    "fi",
+                    "echo '💡 C backend build: Generated C code can be compiled with any C compiler'; " ++
+                    "echo '   Recommended: gcc output.c -o program'",
                 });
                 cmd.step.dependOn(&install_artifact.step);
-                std.debug.print("\n💡 Linux (C-only build): Checking for C compiler to package...\n", .{});
+                std.debug.print("\n💡 C backend only (LLVM not available)\n", .{});
+                std.debug.print("   Users can compile generated C code with: gcc output.c -o program\n", .{});
                 break :blk cmd;
             },
             .windows => blk: {
-                // Windows: 提示用户安装 MinGW 或使用 MSVC
                 const cmd = b.addSystemCommand(&[_][]const u8{
                     "powershell", "-Command",
-                    "Write-Host '💡 Windows (C-only build): C backend generates portable C code'; " ++
-                    "Write-Host '   Users can compile with: gcc output.c -o program.exe'; " ++
+                    "Write-Host '💡 C backend build: Generated C code is portable'; " ++
+                    "Write-Host '   Compile with: gcc output.c -o program.exe (MinGW)'; " ++
                     "Write-Host '   Or: cl output.c /Fe:program.exe (MSVC)'",
                 });
                 cmd.step.dependOn(&install_artifact.step);
+                std.debug.print("\n💡 C backend only (LLVM not available)\n", .{});
+                std.debug.print("   Users can compile generated C code with GCC/MSVC\n", .{});
                 break :blk cmd;
             },
             else => null,
         };
         
-        if (gcc_package_step) |step| {
+        if (info_step) |step| {
             b.getInstallStep().dependOn(&step.step);
         } else {
             b.getInstallStep().dependOn(&install_artifact.step);
