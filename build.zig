@@ -87,10 +87,10 @@ pub fn build(b: *std.Build) void {
     var llvm_link_flags: ?[]const u8 = null;
     var llvm_include_path: ?[]const u8 = null;
     
+    // Configure LLVM paths and flags
     if (llvm_config_path) |config_path| {
         if (is_windows_llvm) {
             // Windows: Use hardcoded paths since llvm-config.exe doesn't exist
-            std.debug.print("📦 Using Windows LLVM at: C:\\Program Files\\LLVM\n", .{});
             llvm_include_path = "C:\\Program Files\\LLVM\\include";
         } else {
             // Unix: Use llvm-config
@@ -108,17 +108,27 @@ pub fn build(b: *std.Build) void {
                 config_path,
                 "--includedir",
             });
-            
-            std.debug.print("📦 Using system LLVM at: {s}\n", .{config_path});
         }
     }
     
     build_options.addOption(bool, "llvm_native_available", has_llvm);
     
+    // Print build configuration
     if (has_llvm) {
-        std.debug.print("✅ LLVM native API enabled\n", .{});
-        std.debug.print("   • C backend: --backend=c (default)\n", .{});
-        std.debug.print("   • LLVM backend: --backend=llvm (native API)\n", .{});
+        // Print LLVM detection info
+        if (is_windows_llvm) {
+            std.debug.print("📦 Using LLVM: C:\\Program Files\\LLVM (Windows)\n", .{});
+            std.debug.print("   • Detection: clang.exe found\n", .{});
+            std.debug.print("   • Linking: LLVM-C library + stdc++\n", .{});
+        } else if (llvm_config_path) |config_path| {
+            std.debug.print("📦 Using LLVM: {s}\n", .{config_path});
+            std.debug.print("   • Detection: llvm-config\n", .{});
+            std.debug.print("   • Linking: shared libraries via llvm-config\n", .{});
+        }
+        
+        std.debug.print("\n✅ LLVM Backend Enabled\n", .{});
+        std.debug.print("   • C backend:    --backend=c (default)\n", .{});
+        std.debug.print("   • LLVM backend: --backend=llvm\n", .{});
         
         // Add LLVM include path
         if (llvm_include_path) |include_path| {
@@ -128,8 +138,6 @@ pub fn build(b: *std.Build) void {
         
         // Windows: Link LLVM directly without llvm-config
         if (is_windows_llvm) {
-            std.debug.print("   🔧 Using Windows LLVM libraries\n", .{});
-            
             // Add LLVM library path
             exe.addLibraryPath(.{ .cwd_relative = "C:\\Program Files\\LLVM\\lib" });
             
@@ -141,7 +149,6 @@ pub fn build(b: *std.Build) void {
         } else {
             // Unix: Use llvm-config output for all linking
             if (llvm_link_flags) |flags| {
-                std.debug.print("   🔧 Using llvm-config link flags\n", .{});
                 // Parse and add flags from llvm-config
                 var iter = std.mem.tokenizeAny(u8, flags, " \n\r\t");
                 while (iter.next()) |flag| {
@@ -164,10 +171,13 @@ pub fn build(b: *std.Build) void {
         }
     } else {
         build_options.addOption(bool, "llvm_native_available", false);
-        std.debug.print("ℹ️  LLVM not found\n", .{});
-        std.debug.print("   • C backend: --backend=c (default)\n", .{});
-        std.debug.print("   • LLVM backend: not available (install LLVM first)\n", .{});
-        std.debug.print("   💡 For setup: python scripts/setup_llvm.py && python scripts/build_llvm.py\n", .{});
+        std.debug.print("ℹ️  LLVM Not Found\n", .{});
+        std.debug.print("   • C backend:    --backend=c (default, available)\n", .{});
+        std.debug.print("   • LLVM backend: not available\n", .{});
+        std.debug.print("\n💡 To enable LLVM backend:\n", .{});
+        std.debug.print("   Windows: choco install llvm\n", .{});
+        std.debug.print("   macOS:   brew install llvm@19\n", .{});
+        std.debug.print("   Linux:   sudo apt install llvm-19-dev\n", .{});
     }
     
     // 链接标准库
