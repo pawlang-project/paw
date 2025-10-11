@@ -3,14 +3,21 @@ const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
 const TypeChecker = @import("typechecker.zig").TypeChecker;
 const CodeGen = @import("codegen.zig").CodeGen;
-const llvm_backend = @import("llvm_native_backend.zig"); // 🆕 v0.1.4
-const LLVMNativeBackend = llvm_backend.LLVMNativeBackend;
-const LLVMOptLevel = llvm_backend.OptLevel; // 🆕 v0.1.7
 const CBackend = @import("c_backend.zig").CBackend;
 const ModuleLoader = @import("module.zig").ModuleLoader;
 const ast_mod = @import("ast.zig");
 
 const builtin = @import("builtin");
+const build_options = @import("build_options");
+
+// 🆕 v0.1.4: LLVM backend (条件编译)
+const llvm_available = build_options.llvm_native_available;
+const llvm_backend = if (llvm_available) @import("llvm_native_backend.zig") else struct {
+    pub const LLVMNativeBackend = void;
+    pub const OptLevel = enum { O0, O1, O2, O3 };
+};
+const LLVMNativeBackend = llvm_backend.LLVMNativeBackend;
+const LLVMOptLevel = llvm_backend.OptLevel; // 🆕 v0.1.7
 
 const VERSION = "0.1.4-dev";
 
@@ -183,6 +190,12 @@ pub fn main() !void {
             should_compile = true;
         } else if (std.mem.eql(u8, arg, "--backend=llvm")) {
             // 🆕 v0.1.4: LLVM后端 (自动选择最佳模式)
+            if (!llvm_available) {
+                std.debug.print("❌ Error: LLVM backend not available in this build\n", .{});
+                std.debug.print("💡 Rebuild with: zig build (LLVM auto-detected)\n", .{});
+                std.debug.print("   Or use C backend: --backend=c\n", .{});
+                return;
+            }
             backend = .llvm;
         } else if (std.mem.eql(u8, arg, "--backend=c")) {
             backend = .c;
@@ -325,6 +338,11 @@ pub fn main() !void {
                 break :blk try codegen.generate(ast);
             },
             .llvm => blk: {
+                if (!llvm_available) {
+                    std.debug.print("❌ Error: LLVM backend not available in this build\n", .{});
+                    return error.LLVMNotAvailable;
+                }
+                
                 // Use LLVM native API
                 if (verbose) {
                     std.debug.print("[INFO] Using LLVM native backend\n", .{});
