@@ -29,9 +29,12 @@ jobs:
       with:
         python-version: '3.11'
     
+    - name: Install Python dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: pip install py7zr
+      
     - name: Install LLVM (All Platforms)
-      run: |
-        python scripts/install_llvm_complete.py --yes --skip-build --skip-test
+      run: python scripts/install_llvm_complete.py --yes --skip-build --skip-test
       shell: bash
         
     - name: Build PawLang compiler

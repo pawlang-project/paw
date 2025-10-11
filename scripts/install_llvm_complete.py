@@ -51,8 +51,8 @@ def detect_platform():
         ("Darwin", "arm64"): ("clang+llvm-19.1.7-aarch64-apple-darwin.tar.xz", "macOS Apple Silicon (M1/M2/M3)"),
         ("Linux", "x86_64"): ("clang+llvm-19.1.7-x86_64-linux-gnu.tar.xz", "Linux x86_64"),
         ("Linux", "aarch64"): ("clang+llvm-19.1.7-aarch64-linux-gnu.tar.xz", "Linux ARM64"),
-        ("Windows", "AMD64"): ("clang+llvm-19.1.7-x86_64-windows-msvc.tar.xz", "Windows x86_64"),
-        ("Windows", "x86_64"): ("clang+llvm-19.1.7-x86_64-windows-msvc.tar.xz", "Windows x86_64"),
+        ("Windows", "AMD64"): ("clang+llvm-19.1.7-x86_64-windows-msvc17.7z", "Windows x86_64"),
+        ("Windows", "x86_64"): ("clang+llvm-19.1.7-x86_64-windows-msvc17.7z", "Windows x86_64"),
     }
     
     key = (system, machine)
@@ -148,10 +148,30 @@ def extract_archive(archive_path, extract_to):
         if archive_str.endswith('.tar.xz') or archive_str.endswith('.tar.gz'):
             with tarfile.open(archive_str) as tar:
                 tar.extractall(path=extract_to_str)
-        # Handle .zip files (potentially Windows)
+        # Handle .zip files
         elif archive_str.endswith('.zip'):
             with zipfile.ZipFile(archive_str, 'r') as zip_ref:
                 zip_ref.extractall(extract_to_str)
+        # Handle .7z files (Windows)
+        elif archive_str.endswith('.7z'):
+            # Try py7zr first (Python library)
+            try:
+                import py7zr
+                with py7zr.SevenZipFile(archive_str, mode='r') as z:
+                    z.extractall(path=extract_to_str)
+            except ImportError:
+                # Fall back to system 7z command
+                print("⚠️  py7zr not installed, trying system 7z command...")
+                result = subprocess.run(
+                    ['7z', 'x', archive_str, f'-o{extract_to_str}', '-y'],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode != 0:
+                    print(f"❌ 7z extraction failed: {result.stderr}")
+                    print("💡 Install py7zr: pip install py7zr")
+                    print("💡 Or install 7-Zip: https://www.7-zip.org/")
+                    return False
         else:
             print(f"❌ Unsupported archive format: {archive_str}")
             return False
@@ -160,6 +180,8 @@ def extract_archive(archive_path, extract_to):
         return True
     except Exception as e:
         print(f"❌ Extraction failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def install_llvm(temp_dir, install_dir):
