@@ -61,8 +61,8 @@ jobs:
     - name: Install LLVM (Windows)
       if: runner.os == 'Windows'
       run: |
-        choco install llvm --version=19.1.7 -y
-        echo "✅ LLVM 19 installed via Chocolatey"
+        choco install llvm --version=19.1.7 --force -y
+        echo "✅ LLVM 19.1.7 installed via Chocolatey"
         
     - name: Build PawLang compiler
       run: zig build
