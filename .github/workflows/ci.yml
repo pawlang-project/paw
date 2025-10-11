@@ -324,11 +324,16 @@ jobs:
         
         # Clear any LLVM env vars
         unset LLVM_SYS_190_PREFIX
-        unset DYLD_LIBRARY_PATH
-        unset LD_LIBRARY_PATH
+        
+        # Set library paths for self-contained distribution
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          export DYLD_LIBRARY_PATH="$PWD/pawlang/lib:$DYLD_LIBRARY_PATH"
+        else
+          export LD_LIBRARY_PATH="$PWD/pawlang/lib:$LD_LIBRARY_PATH"
+        fi
         
         echo "Test 1: C backend WITHOUT system LLVM"
-        ./pawlang/scripts/pawc.sh "$GITHUB_WORKSPACE/examples/hello.paw" --backend=c
+        ./pawlang/bin/pawc "$GITHUB_WORKSPACE/examples/hello.paw" --backend=c
         if [ -f output.c ]; then
           echo "✅ C backend works!"
           rm output.c
@@ -339,7 +344,7 @@ jobs:
         
         echo ""
         echo "Test 2: LLVM backend WITHOUT system LLVM (critical test!)"
-        ./pawlang/scripts/pawc.sh "$GITHUB_WORKSPACE/examples/hello.paw" --backend=llvm
+        ./pawlang/bin/pawc "$GITHUB_WORKSPACE/examples/hello.paw" --backend=llvm
         if [ -f output.ll ]; then
           echo "✅ LLVM backend works!"
           head -n 5 output.ll
@@ -593,14 +598,14 @@ jobs:
           cd /tmp/pawlang-test
           tar -xzf $GITHUB_WORKSPACE/pawlang-linux.tar.gz
           
-          # Clear env vars
+          # Clear env vars and set library path
           unset LLVM_SYS_190_PREFIX
-          unset LD_LIBRARY_PATH
+          export LD_LIBRARY_PATH="$PWD/pawlang/lib:$LD_LIBRARY_PATH"
           
           # Test C backend without system LLVM
           echo ""
           echo "Test 5a: C backend without system LLVM"
-          ./pawlang/scripts/pawc.sh $GITHUB_WORKSPACE/examples/hello.paw --backend=c
+          ./pawlang/bin/pawc $GITHUB_WORKSPACE/examples/hello.paw --backend=c
           if [ -f output.c ]; then
             echo "✅ Self-contained C backend works"
             rm output.c
@@ -612,7 +617,7 @@ jobs:
           # Test LLVM backend without system LLVM (critical!)
           echo ""
           echo "Test 5b: LLVM backend without system LLVM"
-          ./pawlang/scripts/pawc.sh $GITHUB_WORKSPACE/examples/hello.paw --backend=llvm
+          ./pawlang/bin/pawc $GITHUB_WORKSPACE/examples/hello.paw --backend=llvm
           if [ -f output.ll ]; then
             echo "✅ Self-contained LLVM backend works"
             rm output.ll
