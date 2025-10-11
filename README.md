@@ -11,17 +11,17 @@
 [![Version](https://img.shields.io/badge/version-0.1.8-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
-[![Platforms](https://img.shields.io/badge/platforms-8-orange.svg)](#-platform-support)
+[![Platforms](https://img.shields.io/badge/platforms-7-orange.svg)](#-platform-support)
 
 ---
 
 ## 🌍 Platform Support
 
-**PawLang runs on 8 platforms with full self-contained distribution!**
+**PawLang runs on 7 platforms with full self-contained distribution!**
 
 | Platform | Architecture | C Backend | LLVM Backend | Status |
 |----------|-------------|-----------|--------------|--------|
-| **Linux** | x86_64 | ✅ | ✅ | Fully Tested |
+| **Linux** | x86_64 (Ubuntu 22.04+) | ✅ | ✅ | Fully Tested |
 | **Linux** | x86 (32-bit) | ✅ | ✅ | Cross-compile |
 | **Linux** | armv7 (ARM32) | ✅ | ✅ | Cross-compile |
 | **macOS** | x86_64 (Intel) | ✅ | ✅ | Fully Tested |
@@ -49,9 +49,9 @@
 
 **Option 1: Download Pre-built Release (Recommended)** ⭐
 
-Download the latest release for your platform from [Releases](https://github.com/KinLeoapple/PawLang/releases):
+Download the latest release for your platform from [Releases](https://github.com/pawlang-project/paw/releases):
 
-- `pawlang-linux-x86_64.tar.gz` - Linux (Ubuntu 24.04+)
+- `pawlang-linux-x86_64.tar.gz` - Linux (Ubuntu 22.04+, Debian 12+)
 - `pawlang-macos-x86_64.tar.gz` - macOS Intel
 - `pawlang-macos-arm64.tar.gz` - macOS Apple Silicon
 - `pawlang-windows-x86_64.zip` - Windows

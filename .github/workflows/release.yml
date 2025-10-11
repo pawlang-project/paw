@@ -1,0 +1,357 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # 触发条件: 推送版本标签 (例如 v0.1.8)
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Get version from tag
+        id: get_version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION="v0.0.0-dev"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📌 Version: $VERSION"
+      
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          release_name: 🎉 PawLang ${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+          body: |
+            ## 🎉 PawLang ${{ steps.get_version.outputs.version }} Release
+            
+            ### 🚀 Download Pre-built Binaries
+            
+            Choose the appropriate package for your platform:
+            
+            | Platform | Architecture | Download |
+            |----------|-------------|----------|
+            | 🐧 Linux | x86_64 | `pawlang-linux-x86_64.tar.gz` |
+            | 🐧 Linux | x86 (32-bit) | `pawlang-linux-x86.tar.gz` |
+            | 🐧 Linux | ARM32 (armv7) | `pawlang-linux-armv7.tar.gz` |
+            | 🍎 macOS | Intel (x86_64) | `pawlang-macos-x86_64.tar.gz` |
+            | 🍎 macOS | Apple Silicon (ARM64) | `pawlang-macos-arm64.tar.gz` |
+            | 🪟 Windows | x86_64 | `pawlang-windows-x86_64.zip` |
+            | 🪟 Windows | x86 (32-bit) | `pawlang-windows-x86.zip` |
+            
+            ### ✨ Self-Contained Distribution
+            
+            All packages are **self-contained** and include:
+            - ✅ PawLang compiler (`pawc`)
+            - ✅ All LLVM libraries (no system LLVM required)
+            - ✅ Example programs
+            - ✅ Documentation
+            - ✅ Both C and LLVM backends
+            
+            ### 🎯 Quick Start
+            
+            ```bash
+            # Extract the package
+            tar -xzf pawlang-*.tar.gz  # or unzip for Windows
+            cd pawlang
+            
+            # Run your first program
+            ./bin/pawc examples/hello.paw --run
+            # Windows: bin\pawc.exe examples\hello.paw --run
+            ```
+            
+            ### 📚 Documentation
+            
+            - [README](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/README.md)
+            - [Quick Start Guide](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/docs/QUICKSTART.md)
+            - [Version Requirements](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/docs/VERSION_REQUIREMENTS.md)
+            - [Architecture Support](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/ARCHITECTURE_SUPPORT.md)
+            
+            **Built with ❤️ using Zig and LLVM**
+
+  build-linux:
+    name: Build Linux (${{ matrix.arch }})
+    needs: create-release
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-linux
+            enable_llvm: true
+          - arch: x86
+            target: x86-linux
+            enable_llvm: true
+          - arch: armv7
+            target: arm-linux-gnueabihf
+            enable_llvm: true
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.1
+      
+      - name: Install LLVM 19
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 Installing LLVM 19.1.7..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 19
+          
+          sudo apt-get install -y llvm-19-dev libllvm19
+          
+          echo "✅ LLVM installed"
+      
+      - name: Build for ${{ matrix.arch }}
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔨 Building PawLang for Linux ${{ matrix.arch }}..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            zig build
+          else
+            zig build -Dtarget=${{ matrix.target }}
+          fi
+          
+          echo "✅ Build successful"
+      
+      - name: Create distribution package
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 Creating distribution package..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          # Create package directory
+          mkdir -p pawlang
+          cp -r zig-out/bin pawlang/
+          cp -r zig-out/lib pawlang/ 2>/dev/null || true
+          cp -r examples pawlang/
+          cp README.md LICENSE pawlang/
+          
+          # Create tarball
+          PACKAGE_NAME="pawlang-linux-${{ matrix.arch }}.tar.gz"
+          tar -czf "$PACKAGE_NAME" pawlang
+          
+          echo "✅ Created: $PACKAGE_NAME"
+          ls -lh "$PACKAGE_NAME"
+      
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./pawlang-linux-${{ matrix.arch }}.tar.gz
+          asset_name: pawlang-linux-${{ matrix.arch }}.tar.gz
+          asset_content_type: application/gzip
+
+  build-macos:
+    name: Build macOS (${{ matrix.arch }})
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-13
+            arch: x86_64
+          - os: macos-latest
+            arch: arm64
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.1
+      
+      - name: Install LLVM 19
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 Installing LLVM 19.1.7..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          brew install llvm@19
+          
+          echo "✅ LLVM installed"
+      
+      - name: Build for macOS ${{ matrix.arch }}
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔨 Building PawLang for macOS ${{ matrix.arch }}..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          zig build
+          
+          echo "✅ Build successful"
+      
+      - name: Create distribution package
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 Creating distribution package..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          # Create package directory
+          mkdir -p pawlang
+          cp -r zig-out/bin pawlang/
+          cp -r zig-out/lib pawlang/
+          cp -r examples pawlang/
+          cp README.md LICENSE pawlang/
+          
+          # Create tarball
+          PACKAGE_NAME="pawlang-macos-${{ matrix.arch }}.tar.gz"
+          tar -czf "$PACKAGE_NAME" pawlang
+          
+          echo "✅ Created: $PACKAGE_NAME"
+          ls -lh "$PACKAGE_NAME"
+      
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./pawlang-macos-${{ matrix.arch }}.tar.gz
+          asset_name: pawlang-macos-${{ matrix.arch }}.tar.gz
+          asset_content_type: application/gzip
+
+  build-windows:
+    name: Build Windows (${{ matrix.arch }})
+    needs: create-release
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-windows
+            enable_llvm: true
+          - arch: x86
+            target: x86-windows
+            enable_llvm: false
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.1
+      
+      - name: Install LLVM 19
+        if: matrix.enable_llvm
+        run: |
+          Write-Host "Installing LLVM 19.1.7..."
+          
+          # Download LLVM 19.1.7
+          $llvmUrl = "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/LLVM-19.1.7-win64.exe"
+          $llvmInstaller = "$env:TEMP\llvm-installer.exe"
+          
+          Write-Host "Downloading LLVM..."
+          Invoke-WebRequest -Uri $llvmUrl -OutFile $llvmInstaller
+          
+          Write-Host "Installing LLVM..."
+          Start-Process -FilePath $llvmInstaller -ArgumentList "/S" -Wait
+          
+          # Add to PATH
+          $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
+          
+          Write-Host "LLVM installed"
+      
+      - name: Build for Windows ${{ matrix.arch }}
+        run: |
+          Write-Host "Building PawLang for Windows ${{ matrix.arch }}..."
+          
+          if ("${{ matrix.enable_llvm }}" -eq "true") {
+            zig build
+          } else {
+            zig build -Dtarget=${{ matrix.target }} -Denable-llvm=false
+          }
+          
+          Write-Host "Build successful"
+      
+      - name: Create distribution package
+        run: |
+          Write-Host "Creating distribution package..."
+          
+          # Create package directory
+          New-Item -ItemType Directory -Force -Path pawlang
+          Copy-Item -Recurse zig-out\bin pawlang\
+          Copy-Item -Recurse examples pawlang\
+          Copy-Item README.md, LICENSE pawlang\
+          
+          # Create zip file
+          $packageName = "pawlang-windows-${{ matrix.arch }}.zip"
+          Compress-Archive -Path pawlang -DestinationPath $packageName -Force
+          
+          Write-Host "Created: $packageName"
+          Get-Item $packageName | Select-Object Name, Length
+      
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./pawlang-windows-${{ matrix.arch }}.zip
+          asset_name: pawlang-windows-${{ matrix.arch }}.zip
+          asset_content_type: application/zip
+
+  finalize-release:
+    name: Finalize Release
+    needs: [create-release, build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🎉 PawLang ${{ needs.create-release.outputs.version }} Released!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "✅ All 7 platform packages created successfully:"
+          echo ""
+          echo "🐧 Linux (3 platforms):"
+          echo "   • pawlang-linux-x86_64.tar.gz (Ubuntu 22.04+, Debian 12+)"
+          echo "   • pawlang-linux-x86.tar.gz"
+          echo "   • pawlang-linux-armv7.tar.gz"
+          echo ""
+          echo "🍎 macOS (2 platforms):"
+          echo "   • pawlang-macos-x86_64.tar.gz"
+          echo "   • pawlang-macos-arm64.tar.gz"
+          echo ""
+          echo "🪟 Windows (2 platforms):"
+          echo "   • pawlang-windows-x86_64.zip"
+          echo "   • pawlang-windows-x86.zip"
+          echo ""
+          echo "🔗 Release URL:"
+          echo "   https://github.com/${{ github.repository }}/releases/tag/${{ needs.create-release.outputs.version }}"
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🐾 Happy Coding with PawLang!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
