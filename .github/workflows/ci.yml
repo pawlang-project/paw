@@ -81,9 +81,9 @@ jobs:
     - name: Test - Hello World (Windows)
       if: runner.os == 'Windows'
       run: |
+        $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
         .\zig-out\bin\pawc.exe examples\hello.paw
         echo "✅ Hello World test passed"
-      shell: cmd
       
     - name: Test - Type Casting (Unix)
       if: runner.os != 'Windows'
@@ -97,12 +97,12 @@ jobs:
     - name: Test - Type Casting (Windows)
       if: runner.os == 'Windows'
       run: |
+        $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
         .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=c
-        if exist output.c (
-          echo ✅ Type casting test passed
-          del output.c
-        )
-      shell: cmd
+        if (Test-Path output.c) {
+          echo "✅ Type casting test passed"
+          Remove-Item output.c
+        }
       
     - name: Test - Integration Test (Unix)
       if: runner.os != 'Windows'
@@ -116,12 +116,12 @@ jobs:
     - name: Test - Integration Test (Windows)
       if: runner.os == 'Windows'
       run: |
+        $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
         .\zig-out\bin\pawc.exe tests\integration\v0.1.8_test.paw --backend=c
-        if exist output.c (
-          echo ✅ Integration test passed
-          del output.c
-        )
-      shell: cmd
+        if (Test-Path output.c) {
+          echo "✅ Integration test passed"
+          Remove-Item output.c
+        }
       
     - name: Test - LLVM Backend (Unix)
       if: runner.os != 'Windows'
@@ -144,12 +144,12 @@ jobs:
     - name: Test - LLVM Backend (Windows)  
       if: runner.os == 'Windows'
       run: |
+        $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
         .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=llvm
-        if exist output.ll (
-          echo ✅ LLVM backend test passed
-          del output.ll
-        )
-      shell: cmd
+        if (Test-Path output.ll) {
+          echo "✅ LLVM backend test passed"
+          Remove-Item output.ll
+        }
       
     - name: Summary
       run: |
