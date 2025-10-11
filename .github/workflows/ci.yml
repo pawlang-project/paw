@@ -55,9 +55,10 @@ jobs:
             cd /workspace
             
             echo "📦 Installing Zig 0.15.1 for arm..."
-            wget -q https://ziglang.org/download/0.15.1/zig-linux-arm-0.15.1.tar.xz
-            tar -xf zig-linux-arm-0.15.1.tar.xz
+            wget https://ziglang.org/download/0.15.1/zig-linux-arm-0.15.1.tar.xz || exit 1
+            tar -xf zig-linux-arm-0.15.1.tar.xz || exit 1
             export PATH=$PWD/zig-linux-arm-0.15.1:$PATH
+            echo "✅ Zig installed: $(zig version)"
             
             echo "📦 Attempting to install LLVM 19..."
             wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - || true
@@ -98,9 +99,10 @@ jobs:
               apt-get install -y wget curl xz-utils lsb-release software-properties-common gnupg
               
               echo "📦 Installing Zig 0.15.1 for i386..."
-              wget -q https://ziglang.org/download/0.15.1/zig-linux-x86-0.15.1.tar.xz
-              tar -xf zig-linux-x86-0.15.1.tar.xz
+              wget https://ziglang.org/download/0.15.1/zig-linux-x86-0.15.1.tar.xz || exit 1
+              tar -xf zig-linux-x86-0.15.1.tar.xz || exit 1
               export PATH=$PWD/zig-linux-x86-0.15.1:$PATH
+              echo "✅ Zig installed: $(zig version)"
               
               echo "📦 Installing LLVM 19 for i386..."
               wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
