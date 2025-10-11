@@ -49,18 +49,26 @@ jobs:
     - name: Install LLVM to local directory (Linux)
       if: runner.os == 'Linux'
       run: |
-        # Install to /tmp/llvm-system (isolated)
+        # Install LLVM via apt (fast, cached)
         sudo apt-get update
         sudo apt-get install -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev
         
         # Copy to project directory for isolation
-        mkdir -p llvm/install
-        cp -r /usr/lib/llvm-19/bin llvm/install/
-        cp -r /usr/lib/llvm-19/lib llvm/install/
-        cp -r /usr/lib/llvm-19/include llvm/install/
+        mkdir -p llvm/install/{bin,lib,include}
+        
+        # Copy binaries and headers
+        cp -r /usr/lib/llvm-19/bin/* llvm/install/bin/
+        cp -r /usr/lib/llvm-19/include/* llvm/install/include/
+        
+        # Copy libraries from both locations
+        cp -r /usr/lib/llvm-19/lib/* llvm/install/lib/
+        
+        # Copy shared libraries from system location (where libLLVM-19.so is)
+        cp -L /usr/lib/$(uname -m)-linux-gnu/libLLVM-19.so* llvm/install/lib/ 2>/dev/null || true
         
         echo "✅ LLVM installed to llvm/install (isolated from system)"
-        ls -la llvm/install/
+        echo "📋 Installed files:"
+        ls -lh llvm/install/lib/libLLVM*
       
     - name: Install LLVM to local directory (macOS)
       if: runner.os == 'macOS'
