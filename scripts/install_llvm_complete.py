@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 PawLang LLVM Complete Installation Script
 Features: Download + Extract + Install + Build + Test (One-Click)
-Supports: macOS (x86_64/arm64), Linux (x86_64/aarch64)
+Supports: macOS (x86_64/arm64), Linux (x86_64/aarch64), Windows (x86_64)
 """
 
 import os
@@ -15,6 +16,12 @@ import subprocess
 import argparse
 from pathlib import Path
 import zipfile
+
+# Fix Windows console encoding for Unicode characters
+if platform.system() == 'Windows':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 # LLVM Configuration
 LLVM_VERSION = "19.1.7"
