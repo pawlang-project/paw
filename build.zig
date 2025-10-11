@@ -7,6 +7,9 @@ pub fn build(b: *std.Build) void {
     // 🆕 Build options for conditional compilation
     const build_options = b.addOptions();
     
+    // 🆕 选项：构建不含LLVM的轻量版本
+    const enable_llvm = b.option(bool, "enable-llvm", "Enable LLVM backend support (default: true)") orelse true;
+    
     const main_mod = b.createModule(.{
         .root_source_file = .{ .cwd_relative = "src/main.zig" },
         .target = target,
@@ -47,6 +50,11 @@ pub fn build(b: *std.Build) void {
     
     // Try to find llvm-config (Unix) or check LLVM directory (Windows)
     const llvm_config_path = blk: {
+        // 如果用户禁用LLVM，跳过检测
+        if (!enable_llvm) {
+            break :blk null;
+        }
+        
         // Windows: llvm-config.exe doesn't exist in official builds, check directory directly
         if (target.result.os.tag == .windows) {
             const llvm_dir = "C:\\Program Files\\LLVM";
@@ -180,23 +188,29 @@ pub fn build(b: *std.Build) void {
             }
         }
     } else {
-        build_options.addOption(bool, "llvm_native_available", false);
         std.debug.print("┌─ LLVM Configuration ────────────────────\n", .{});
-        std.debug.print("│ ⚠️  LLVM not detected\n", .{});
+        if (!enable_llvm) {
+            std.debug.print("│ 🚫 LLVM backend disabled by user\n", .{});
+            std.debug.print("│ 💡 Tip: Remove -Denable-llvm=false to enable\n", .{});
+        } else {
+            std.debug.print("│ ⚠️  LLVM not detected\n", .{});
+        }
         std.debug.print("└─────────────────────────────────────────\n\n", .{});
         
         std.debug.print("✅ Available Backends:\n", .{});
         std.debug.print("   • C backend    (default) → --backend=c\n", .{});
         std.debug.print("   • LLVM backend (unavailable)\n\n", .{});
         
-        std.debug.print("💡 Install LLVM to enable LLVM backend:\n", .{});
-        const os_tag = target.result.os.tag;
-        if (os_tag == .windows) {
-            std.debug.print("   → choco install llvm --version=19.1.7\n", .{});
-        } else if (os_tag == .macos) {
-            std.debug.print("   → brew install llvm@19\n", .{});
-        } else if (os_tag == .linux) {
-            std.debug.print("   → sudo apt install llvm-19-dev\n", .{});
+        if (enable_llvm) {
+            std.debug.print("💡 Install LLVM to enable LLVM backend:\n", .{});
+            const os_tag = target.result.os.tag;
+            if (os_tag == .windows) {
+                std.debug.print("   → choco install llvm --version=19.1.7\n", .{});
+            } else if (os_tag == .macos) {
+                std.debug.print("   → brew install llvm@19\n", .{});
+            } else if (os_tag == .linux) {
+                std.debug.print("   → sudo apt install llvm-19-dev\n", .{});
+            }
         }
     }
     
@@ -288,4 +302,12 @@ pub fn build(b: *std.Build) void {
     });
     const clean_llvm_step = b.step("clean-llvm", "Clean LLVM build artifacts");
     clean_llvm_step.dependOn(&clean_llvm.step);
+    
+    // 🆕 便捷构建命令：显示轻量版提示
+    const lite_step = b.step("lite", "Show how to build pawc without LLVM (C backend only, zero dependencies)");
+    const lite_run = b.addSystemCommand(&[_][]const u8{
+        "echo",
+        "\n💡 To build a lightweight pawc without LLVM:\n   → zig build -Denable-llvm=false\n\nThis creates a pawc with only C backend - perfect for distribution!\n",
+    });
+    lite_step.dependOn(&lite_run.step);
 }
