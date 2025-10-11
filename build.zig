@@ -21,11 +21,8 @@ pub fn build(b: *std.Build) void {
         .root_module = main_mod,
     });
     
-    // Windows: Use system linker (MinGW ld) instead of lld-link for C++ compatibility
-    if (target.result.os.tag == .windows) {
-        exe.use_lld = false;
-        exe.use_llvm = false;
-    }
+    // Note: Let Zig use default linker (lld) for all platforms
+    // This ensures compatibility without external dependencies like MinGW
 
     // 🆕 检测系统 LLVM - 定义路径列表
     const llvm_config_paths: []const []const u8 = if (target.result.os.tag == .macos)
