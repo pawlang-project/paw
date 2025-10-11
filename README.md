@@ -60,8 +60,12 @@ Download the latest release for your platform from [Releases](https://github.com
 # Extract and use (all platforms)
 tar -xzf pawlang-*.tar.gz  # or unzip for Windows
 cd pawlang
-./pawc examples/hello.paw   # Unix
-# or: pawc.exe examples\hello.paw  # Windows
+
+# Unix (macOS/Linux)
+./bin/pawc examples/hello.paw
+
+# Windows
+bin\pawc.exe examples\hello.paw
 ```
 
 **No dependencies needed!** All LLVM libraries are included.
