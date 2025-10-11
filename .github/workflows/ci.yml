@@ -279,36 +279,45 @@ jobs:
         Write-Host ""
         Write-Host "✅ All no-LLVM tests passed!"
     
-    - name: Test - Distribution Package (Unix)
+    - name: Test - Distribution Package (Unix) - Build
       if: runner.os != 'Windows'
       run: |
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "📦 Testing distribution package..."
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        
-        # Rebuild with LLVM for packaging
-        zig build package
-        
         echo ""
-        echo "🗑️  Uninstalling system LLVM (真实测试环境)..."
+        echo "=========================================="
+        echo "Building distribution package..."
+        echo "=========================================="
+        zig build package
+        echo "Package created"
+    
+    - name: Test - Distribution Package (Unix) - Uninstall LLVM
+      if: runner.os != 'Windows'
+      run: |
+        echo ""
+        echo "Uninstalling system LLVM for testing..."
         if [ "$RUNNER_OS" = "macOS" ]; then
           brew uninstall --ignore-dependencies llvm@19 || true
           rm -rf /opt/homebrew/opt/llvm@19 || true
           rm -rf /usr/local/opt/llvm@19 || true
-          echo "✅ macOS LLVM uninstalled"
+          echo "macOS LLVM uninstalled"
         else
           sudo apt-get remove -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev || true
           sudo rm -rf /usr/lib/llvm-19 || true
-          echo "✅ Linux LLVM uninstalled"
+          echo "Linux LLVM uninstalled"
         fi
         
         # Verify LLVM is really gone
         if command -v llvm-config &> /dev/null; then
-          echo "⚠️  Warning: llvm-config still found"
+          echo "Warning: llvm-config still found"
           which llvm-config
         else
-          echo "✅ Verified: llvm-config not found"
+          echo "Verified: llvm-config not found"
         fi
+    
+    - name: Test - Distribution Package (Unix) - Test Package
+      if: runner.os != 'Windows'
+      run: |
+        echo ""
+        echo "Testing distribution package in clean environment..."
         
         # Create clean test directory
         TEST_DIR="/tmp/pawlang-dist-test-$$"
@@ -323,40 +332,39 @@ jobs:
         fi
         
         echo ""
-        echo "📂 Package contents:"
+        echo "Package contents:"
         ls -la
         
         # Clear LLVM environment variables
         echo ""
-        echo "🧹 Clearing LLVM environment variables..."
+        echo "Clearing LLVM environment variables..."
         unset LLVM_SYS_190_PREFIX
         unset DYLD_LIBRARY_PATH
         unset LD_LIBRARY_PATH
         
         # Test 1: C backend
         echo ""
-        echo "Test 1: C backend in clean environment"
+        echo "Test 1: C backend"
         ./pawc examples/hello.paw --backend=c
         if [ -f output.c ]; then
-          echo "✅ C backend works"
+          echo "PASS: C backend works"
           rm output.c
         else
-          echo "❌ C backend failed"
+          echo "FAIL: C backend failed"
           exit 1
         fi
         
-        # Test 2: LLVM backend (critical test!)
+        # Test 2: LLVM backend (critical!)
         echo ""
         echo "Test 2: LLVM backend WITHOUT system LLVM"
         ./pawc examples/hello.paw --backend=llvm
         if [ -f output.ll ]; then
-          echo "✅ LLVM backend works without system LLVM!"
-          echo "   (using bundled libraries)"
+          echo "PASS: LLVM backend works!"
+          echo "(using bundled libraries)"
           cat output.ll | head -5
           rm output.ll
         else
-          echo "❌ LLVM backend failed - distribution not self-contained!"
-          echo "Debug: Library search paths"
+          echo "FAIL: LLVM backend failed"
           if [ "$RUNNER_OS" = "macOS" ]; then
             otool -L bin/pawc
           else
@@ -365,16 +373,14 @@ jobs:
           exit 1
         fi
         
-        # Test 3: Verify launcher script set up paths correctly
+        # Test 3: Verify libraries
         echo ""
-        echo "Test 3: Check library dependencies"
+        echo "Test 3: Check bundled libraries"
         if [ "$RUNNER_OS" = "macOS" ]; then
-          echo "macOS library check:"
-          otool -L bin/pawc | grep -i llvm || echo "  (dynamic loading)"
+          echo "macOS libraries:"
           ls -lh lib/
         else
-          echo "Linux library check:"
-          ldd bin/pawc | grep -i llvm || echo "  (dynamic loading)"
+          echo "Linux libraries:"
           ls -lh lib/
         fi
         
@@ -383,7 +389,7 @@ jobs:
         rm -rf "$TEST_DIR"
         
         echo ""
-        echo "✅ Distribution package is self-contained!"
+        echo "SUCCESS: Distribution package is self-contained!"
       
     - name: Test - Distribution Package (Windows) - Build
       if: runner.os == 'Windows'
