@@ -36,49 +36,64 @@ pub const CBackend = struct {
         try self.compileWithGcc(temp_c_file, output_file);
     }
     
-           /// Compile using system C compiler (GCC -> Clang)
+           /// Compile using system C compiler (Zig CC -> GCC -> Clang)
            fn compileWithGcc(
                self: *CBackend,
                c_file: []const u8,
                output_file: []const u8,
            ) !void {
-               // Try to find available C compiler (prefer GCC)
+               // Try to find available C compiler
+               // Priority: Zig CC (if building from source) -> GCC -> Clang
                var compiler: []const u8 = "gcc";
+               var use_zig_cc = false;
                
-               // Try gcc first
+               // 1. Try Zig CC first (for users who build from source)
                if (std.process.Child.run(.{
                    .allocator = self.allocator,
-                   .argv = &[_][]const u8{ "gcc", "--version" },
-               })) |gcc_result| {
-                   self.allocator.free(gcc_result.stdout);
-                   self.allocator.free(gcc_result.stderr);
-                   compiler = "gcc";
-                   std.debug.print("🔧 Compiling with GCC...\n", .{});
+                   .argv = &[_][]const u8{ "zig", "cc", "--version" },
+               })) |zig_result| {
+                   self.allocator.free(zig_result.stdout);
+                   self.allocator.free(zig_result.stderr);
+                   compiler = "zig";
+                   use_zig_cc = true;
+                   std.debug.print("🚀 Compiling with Zig CC (Clang 20.1.2, best performance)...\n", .{});
                } else |_| {
-                   // gcc 不可用，尝试 clang
+                   // 2. Try gcc
                    if (std.process.Child.run(.{
                        .allocator = self.allocator,
-                       .argv = &[_][]const u8{ "clang", "--version" },
-                   })) |clang_result| {
-                       self.allocator.free(clang_result.stdout);
-                       self.allocator.free(clang_result.stderr);
-                       compiler = "clang";
-                       std.debug.print("🔧 Compiling with Clang (GCC not found)...\n", .{});
+                       .argv = &[_][]const u8{ "gcc", "--version" },
+                   })) |gcc_result| {
+                       self.allocator.free(gcc_result.stdout);
+                       self.allocator.free(gcc_result.stderr);
+                       compiler = "gcc";
+                       std.debug.print("🔧 Compiling with GCC...\n", .{});
                    } else |_| {
-                       std.debug.print("❌ C compiler not found (gcc/clang)\n", .{});
-                       std.debug.print("💡 Please install GCC:\n", .{});
-                       std.debug.print("   • Linux:   sudo apt-get install gcc\n", .{});
-                       std.debug.print("   • macOS:   brew install gcc or xcode-select --install\n", .{});
-                       std.debug.print("   • Windows: Install MinGW or MSVC\n", .{});
-                       return error.NoCompilerFound;
+                       // 3. Try clang as fallback
+                       if (std.process.Child.run(.{
+                           .allocator = self.allocator,
+                           .argv = &[_][]const u8{ "clang", "--version" },
+                       })) |clang_result| {
+                           self.allocator.free(clang_result.stdout);
+                           self.allocator.free(clang_result.stderr);
+                           compiler = "clang";
+                           std.debug.print("🔧 Compiling with Clang...\n", .{});
+                       } else |_| {
+                           std.debug.print("❌ No C compiler found (zig/gcc/clang)\n", .{});
+                           std.debug.print("💡 Please install a C compiler:\n", .{});
+                           std.debug.print("   • Zig (recommended): Already available if you built from source\n", .{});
+                           std.debug.print("   • Linux:   sudo apt-get install gcc\n", .{});
+                           std.debug.print("   • macOS:   brew install gcc or xcode-select --install\n", .{});
+                           std.debug.print("   • Windows: Install MinGW or MSVC\n", .{});
+                           return error.NoCompilerFound;
+                       }
                    }
                }
                
-               const argv = &[_][]const u8{
-                   compiler,
-                   "-o",
-                   output_file,
-                   c_file,
+               // Build command line arguments
+               const argv = if (use_zig_cc) &[_][]const u8{
+                   "zig", "cc", "-o", output_file, c_file,
+               } else &[_][]const u8{
+                   compiler, "-o", output_file, c_file,
                };
         
         const compile_result = try std.process.Child.run(.{
