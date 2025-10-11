@@ -56,6 +56,12 @@ pub fn build(b: *std.Build) void {
         exe.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/lib", .{local_llvm}) });
         exe.addIncludePath(.{ .cwd_relative = b.fmt("{s}/include", .{local_llvm}) });
         
+        // Set C++ library BEFORE linking LLVM libraries
+        // This prevents Zig from automatically choosing libc++
+        if (target.result.os.tag == .linux) {
+            exe.linkSystemLibrary("stdc++");
+        }
+        
         // Link comprehensive set of LLVM libraries
         const llvm_libs = [_][]const u8{
             // Core libraries
@@ -129,7 +135,9 @@ pub fn build(b: *std.Build) void {
             std.debug.print("   🔧 Using MinGW C++ runtime\n", .{});
         } else if (target.result.os.tag == .linux) {
             // Linux: Use libstdc++ (GNU C++ standard library)
+            // Note: Must use linkSystemLibrary, NOT linkLibCpp which uses libc++
             exe.linkSystemLibrary("stdc++");
+            exe.linkSystemLibrary("m");  // libm for math functions
             exe.linkSystemLibrary("pthread");
             std.debug.print("   🔧 Using libstdc++ (Linux)\n", .{});
         } else {
