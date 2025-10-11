@@ -35,9 +35,9 @@ jobs:
             apt-get install -q -y wget curl xz-utils
             
             # Install Zig 0.15.1
-            wget https://ziglang.org/download/0.15.1/zig-linux-armv7a-0.15.1.tar.xz
-            tar -xf zig-linux-armv7a-0.15.1.tar.xz
-            export PATH=$PWD/zig-linux-armv7a-0.15.1:$PATH
+            wget https://ziglang.org/download/0.15.1/zig-linux-arm-0.15.1.tar.xz
+            tar -xf zig-linux-arm-0.15.1.tar.xz
+            export PATH=$PWD/zig-linux-arm-0.15.1:$PATH
             
             # Install LLVM 19 (native ARM)
             wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
