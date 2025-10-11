@@ -28,29 +28,47 @@ pub fn build(b: *std.Build) void {
     }
 
     // 🆕 检测系统 LLVM
-    const llvm_config_name = if (target.result.os.tag == .windows) "llvm-config.exe" else "llvm-config";
+    const llvm_config_paths = if (target.result.os.tag == .macos)
+        [_][]const u8{
+            "llvm-config",
+            "/opt/homebrew/opt/llvm@19/bin/llvm-config",  // ARM64 macOS
+            "/usr/local/opt/llvm@19/bin/llvm-config",     // Intel macOS
+        }
+    else if (target.result.os.tag == .linux)
+        [_][]const u8{
+            "llvm-config",
+            "/usr/bin/llvm-config-19",
+            "/usr/lib/llvm-19/bin/llvm-config",
+        }
+    else
+        [_][]const u8{"llvm-config.exe"};
     
-    // Try to detect system LLVM using llvm-config
-    const has_llvm = blk: {
-        const result = std.process.Child.run(.{
-            .allocator = b.allocator,
-            .argv = &[_][]const u8{ llvm_config_name, "--version" },
-        }) catch {
-            break :blk false;
-        };
-        defer b.allocator.free(result.stdout);
-        defer b.allocator.free(result.stderr);
-        break :blk result.term.Exited == 0;
+    // Try to find llvm-config
+    const llvm_config_path = blk: {
+        for (llvm_config_paths) |path| {
+            const result = std.process.Child.run(.{
+                .allocator = b.allocator,
+                .argv = &[_][]const u8{ path, "--version" },
+            }) catch continue;
+            defer b.allocator.free(result.stdout);
+            defer b.allocator.free(result.stderr);
+            if (result.term.Exited == 0) {
+                break :blk path;
+            }
+        }
+        break :blk null;
     };
+    
+    const has_llvm = llvm_config_path != null;
     
     // Get LLVM configuration from llvm-config
     var llvm_link_flags: ?[]const u8 = null;
     var llvm_include_path: ?[]const u8 = null;
     
-    if (has_llvm) {
+    if (llvm_config_path) |config_path| {
         // Get link flags
         const link_result = b.run(&[_][]const u8{
-            llvm_config_name,
+            config_path,
             "--link-shared",
             "--ldflags",
             "--libs",
@@ -60,11 +78,11 @@ pub fn build(b: *std.Build) void {
         
         // Get include path
         llvm_include_path = b.run(&[_][]const u8{
-            llvm_config_name,
+            config_path,
             "--includedir",
         });
         
-        std.debug.print("📦 Using system LLVM\n", .{});
+        std.debug.print("📦 Using system LLVM at: {s}\n", .{config_path});
     }
     
     build_options.addOption(bool, "llvm_native_available", has_llvm);
