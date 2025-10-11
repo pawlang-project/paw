@@ -22,12 +22,12 @@
 | Platform | Architecture | C Backend | LLVM Backend | Status |
 |----------|-------------|-----------|--------------|--------|
 | **Linux** | x86_64 (Ubuntu 22.04+) | ✅ | ✅ | Fully Tested |
-| **Linux** | x86 (32-bit) | ✅ | ✅ | Cross-compile |
-| **Linux** | armv7 (ARM32) | ✅ | ✅ | Cross-compile |
+| **Linux** | x86 (32-bit) | ✅ | ❌ | C-only (cross-compile) |
+| **Linux** | armv7 (ARM32) | ✅ | ❌ | C-only (cross-compile) |
 | **macOS** | x86_64 (Intel) | ✅ | ✅ | Fully Tested |
 | **macOS** | ARM64 (Apple Silicon) | ✅ | ✅ | Fully Tested |
 | **Windows** | x86_64 | ✅ | ✅ | Fully Tested |
-| **Windows** | x86 (32-bit) | ✅ | ❌ | Cross-compile |
+| **Windows** | x86 (32-bit) | ✅ | ❌ | C-only (no 32-bit LLVM) |
 
 **Coverage**: 99.9%+ of users (desktop, server, embedded)
 

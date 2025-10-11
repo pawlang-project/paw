@@ -169,7 +169,7 @@ pub fn main() !void {
     var verbose = false;
     var should_run = false;      // 是否运行
     var should_compile = false;  // 是否编译为可执行文件
-    var backend = Backend.c;     // 🆕 v0.1.4: 后端选择，默认C后端
+    var backend: ?Backend = null;     // 🆕 v0.1.8: 后端选择，null = 自动检测
     var opt_level: ?OptLevel = null;  // 🆕 v0.1.7: LLVM 优化级别
 
     // 解析命令行选项
@@ -199,13 +199,37 @@ pub fn main() !void {
             backend = .llvm;
         } else if (std.mem.eql(u8, arg, "--backend=c")) {
             backend = .c;
+        } else if (std.mem.eql(u8, arg, "--backend=auto")) {
+            // 🆕 v0.1.8: 显式自动检测
+            backend = null;
         } else if (OptLevel.fromString(arg)) |level| {
             // 🆕 v0.1.7: 优化级别 (-O0, -O1, -O2, -O3)
             opt_level = level;
-            if (backend != .llvm) {
-                std.debug.print("⚠️  Warning: Optimization flags (-O0/-O1/-O2/-O3) only work with --backend=llvm\n", .{});
+            // 优化标志检查会在后端确定后进行
+        }
+    }
+    
+    // 🆕 v0.1.8: 自动检测后端 (如果用户未指定)
+    if (backend == null) {
+        if (llvm_available) {
+            backend = .llvm;
+            if (verbose) {
+                std.debug.print("🚀 Auto-selected LLVM backend (available and optimal)\n", .{});
+            }
+        } else {
+            backend = .c;
+            if (verbose) {
+                std.debug.print("📝 Auto-selected C backend (LLVM not available)\n", .{});
             }
         }
+    }
+    
+    const selected_backend = backend.?; // 现在肯定有值了
+    
+    // 🆕 v0.1.8: 检查优化标志是否适用于当前后端
+    if (opt_level != null and selected_backend != .llvm) {
+        std.debug.print("⚠️  Warning: Optimization flags (-O0/-O1/-O2/-O3) only work with LLVM backend\n", .{});
+        std.debug.print("💡 Tip: Remove optimization flag or use --backend=llvm\n", .{});
     }
 
     // 读取源文件
@@ -331,7 +355,7 @@ pub fn main() !void {
     }
 
         // 4. Code generation - 🆕 v0.1.4: 双后端架构 (C + LLVM Native)
-        const output_code = switch (backend) {
+        const output_code = switch (selected_backend) {
             .c => blk: {
                 var codegen = CodeGen.init(allocator);
                 defer codegen.deinit();
@@ -379,7 +403,7 @@ pub fn main() !void {
             break :blk true;
         };
         
-        if (has_local_clang and backend == .c) {
+        if (has_local_clang and selected_backend == .c) {
             // 使用本地 Clang 编译 C 代码
             if (verbose) {
                 std.debug.print("🔨 Using local Clang for compilation\n", .{});
@@ -445,7 +469,7 @@ pub fn main() !void {
                 std.fs.cwd().deleteFile(temp_c_file) catch {};
             }
             
-        } else if (backend == .llvm) {
+        } else if (selected_backend == .llvm) {
             // LLVM 后端: 生成 IR 然后用 Clang 编译
             std.debug.print("❌ Error: LLVM backend does not support --compile/--run yet\n", .{});
             std.debug.print("💡 Use manual workflow:\n", .{});
@@ -478,7 +502,7 @@ pub fn main() !void {
     } else {
             // Generate code (C or LLVM IR)
             const output_name = output_file orelse "output";
-            const output_ext = switch (backend) {
+            const output_ext = switch (selected_backend) {
                 .c => ".c",
                 .llvm => ".ll", // LLVM IR文件扩展名
             };
@@ -500,7 +524,7 @@ pub fn main() !void {
                 @as(f64, @floatFromInt(total_time - start_time)) / 1_000_000_000.0,
             });
             
-                switch (backend) {
+                switch (selected_backend) {
                     .c => {
                         std.debug.print("✅ C code generated: {s}\n", .{code_filename});
                         std.debug.print("💡 Hints:\n", .{});
@@ -567,8 +591,9 @@ fn printUsage() void {
     std.debug.print("  --run            Compile and run immediately (C backend only)\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Backends:\n", .{});
-    std.debug.print("  --backend=c              Use C backend (default)\n", .{});
-    std.debug.print("  --backend=llvm           Use LLVM native backend 🆕\n", .{});
+    std.debug.print("  --backend=c              Use C backend\n", .{});
+    std.debug.print("  --backend=llvm           Use LLVM native backend\n", .{});
+    std.debug.print("  --backend=auto           Auto-detect best backend (default) 🆕\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("LLVM Optimization (v0.1.7) 🆕:\n", .{});
     std.debug.print("  -O0              No optimization (fastest compile, debugging)\n", .{});
@@ -577,12 +602,13 @@ fn printUsage() void {
     std.debug.print("  -O3              Aggressive optimization (maximum performance)\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Examples:\n", .{});
-    std.debug.print("  pawc hello.paw                       Generate C code -> output.c\n", .{});
-    std.debug.print("  pawc hello.paw --compile             Compile to executable -> output\n", .{});
+    std.debug.print("  pawc hello.paw                       Auto-detect backend (LLVM if available) 🆕\n", .{});
+    std.debug.print("  pawc hello.paw --compile             Compile to executable\n", .{});
     std.debug.print("  pawc hello.paw --run                 Compile and run\n", .{});
-    std.debug.print("  pawc hello.paw --backend=llvm        Generate LLVM IR -> output.ll 🚀\n", .{});
-    std.debug.print("  pawc hello.paw --backend=llvm -O2    LLVM with optimization ⚡\n", .{});
-    std.debug.print("  pawc fibonacci.paw --backend=llvm -O3  Maximum optimization 🚀\n", .{});
+    std.debug.print("  pawc hello.paw --backend=c           Force C backend\n", .{});
+    std.debug.print("  pawc hello.paw --backend=llvm        Force LLVM backend\n", .{});
+    std.debug.print("  pawc hello.paw -O2                   Auto-detect + optimization ⚡\n", .{});
+    std.debug.print("  pawc fibonacci.paw -O3               Auto-detect + max optimization 🚀\n", .{});
     std.debug.print("  pawc check hello.paw                 Type check only\n", .{});
     std.debug.print("  pawc init my_project                 Create new project\n", .{});
     std.debug.print("\n", .{});
