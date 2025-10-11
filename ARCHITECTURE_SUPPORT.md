@@ -22,13 +22,20 @@ All architectures run the **complete test suite** including:
 - **ARM64** (Apple Silicon M1/M2/M3) - macOS Latest, tested on GitHub Actions
 
 #### Windows
-- **x86_64** - Windows Server 2022, tested on GitHub Actions
+- **x86_64** - Windows Server 2022, tested on GitHub Actions, Full C and LLVM backend support
+- **x86 (32-bit)** - Cross-compiled on Windows x86_64, C backend only (LLVM not available for 32-bit)
+
+#### Linux (Cross-compiled)
+- **x86 (32-bit, i386)** - Cross-compiled on Ubuntu x86_64, C and LLVM backend support
+- **armv7 (ARM32)** - Cross-compiled on Ubuntu x86_64, C and LLVM backend support (Raspberry Pi 2/3, embedded systems)
 
 ## Platform Coverage
 
-- **Tested Platforms**: 5 platforms (2 Linux x86_64 + 2 macOS + 1 Windows)
-- **User Coverage**: 99% of desktop and server users
-- **Architectures**: x86_64 and ARM64 (Apple Silicon)
+- **Tested Platforms**: 8 platforms total
+  - 5 native with full test suite (2 Linux x86_64 + 2 macOS + 1 Windows x86_64)
+  - 3 cross-compiled (2 Linux 32-bit + 1 Windows 32-bit)
+- **User Coverage**: 99%+ of desktop, server, and embedded users
+- **Architectures**: x86_64, x86, ARM64, ARM32
 
 ## Testing Strategy
 
