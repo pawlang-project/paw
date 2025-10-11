@@ -128,10 +128,12 @@ pub fn build(b: *std.Build) void {
             
             std.debug.print("   🔧 Using MinGW C++ runtime\n", .{});
         } else if (target.result.os.tag == .linux) {
-            // Linux: Use libc++ (install via apt: libc++-dev libc++abi-dev)
+            // Linux: LLVM needs BOTH libc++ and libstdc++
+            // LLVM libraries reference symbols from both C++ runtimes
             exe.linkLibCpp();
+            exe.linkSystemLibrary("stdc++");  // Also needed for std::__cxx11 symbols
             exe.linkSystemLibrary("pthread");
-            std.debug.print("   🔧 Using libc++ (Linux)\n", .{});
+            std.debug.print("   🔧 Using libc++ + libstdc++ (Linux)\n", .{});
         } else {
             // macOS and others: Use libc++
             exe.linkLibCpp();
