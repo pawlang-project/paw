@@ -27,21 +27,21 @@ pub fn build(b: *std.Build) void {
         exe.use_llvm = false;
     }
 
-    // 🆕 检测系统 LLVM
-    const llvm_config_paths = if (target.result.os.tag == .macos)
-        [_][]const u8{
+    // 🆕 检测系统 LLVM - 定义路径列表
+    const llvm_config_paths: []const []const u8 = if (target.result.os.tag == .macos)
+        &[_][]const u8{
             "llvm-config",
             "/opt/homebrew/opt/llvm@19/bin/llvm-config",  // ARM64 macOS
             "/usr/local/opt/llvm@19/bin/llvm-config",     // Intel macOS
         }
     else if (target.result.os.tag == .linux)
-        [_][]const u8{
+        &[_][]const u8{
             "llvm-config",
             "/usr/bin/llvm-config-19",
             "/usr/lib/llvm-19/bin/llvm-config",
         }
     else
-        [_][]const u8{"llvm-config.exe"};
+        &[_][]const u8{"llvm-config.exe"};
     
     // Try to find llvm-config
     const llvm_config_path = blk: {
