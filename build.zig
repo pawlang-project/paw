@@ -47,10 +47,19 @@ pub fn build(b: *std.Build) void {
     
     // Try to find llvm-config (Unix) or check LLVM directory (Windows)
     const llvm_config_path = blk: {
-        // Windows: Temporarily disable LLVM due to DLL linking issues in CI
-        // TODO: Re-enable once Windows LLVM linking is properly configured
+        // Windows: llvm-config.exe doesn't exist in official builds, check directory directly
         if (target.result.os.tag == .windows) {
-            break :blk null;  // Disable LLVM on Windows for now
+            const llvm_dir = "C:\\Program Files\\LLVM";
+            const llvm_bin = b.fmt("{s}\\bin", .{llvm_dir});
+            
+            // Check if LLVM directory exists by trying to access clang.exe
+            const clang_path = b.fmt("{s}\\clang.exe", .{llvm_bin});
+            std.fs.accessAbsolute(clang_path, .{}) catch {
+                break :blk null;  // LLVM not found
+            };
+            
+            // LLVM found, return a marker (we'll handle Windows specially later)
+            break :blk "windows_llvm";
         }
         
         // Unix: use llvm-config
