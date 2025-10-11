@@ -81,9 +81,23 @@ jobs:
     - name: Test - Hello World (Windows)
       if: runner.os == 'Windows'
       run: |
+        $ErrorActionPreference = 'Continue'
         $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
         .\zig-out\bin\pawc.exe examples\hello.paw
-        echo "✅ Hello World test passed"
+        echo "Compiler exit code: $LASTEXITCODE"
+        if ($LASTEXITCODE -ne 0) {
+          echo "❌ Compilation failed"
+          Get-Content output.c -ErrorAction SilentlyContinue | Select-Object -First 20
+          exit 1
+        }
+        if (Test-Path output.c) {
+          echo "✅ Hello World test passed (output.c generated)"
+          Remove-Item output.c
+          exit 0
+        } else {
+          echo "❌ No output file generated"
+          exit 1
+        }
       
     - name: Test - Type Casting (Unix)
       if: runner.os != 'Windows'
