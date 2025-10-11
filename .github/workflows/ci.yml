@@ -60,21 +60,26 @@ jobs:
     
     - name: Install LLVM (Windows)
       if: runner.os == 'Windows'
+      shell: powershell
       run: |
         choco install llvm --version=19.1.7 --force -y
         echo "✅ LLVM 19.1.7 installed via Chocolatey"
-        echo "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         
-        # Check what's in the bin directory
+        # 使用正确的PowerShell语法添加到PATH
+        Add-Content $env:GITHUB_PATH "C:\Program Files\LLVM\bin"
+        
+        # 设置LLVM环境变量供Zig使用
+        echo "LLVM_SYS_190_PREFIX=C:\Program Files\LLVM" >> $env:GITHUB_ENV
+        
+        # 验证LLVM安装
+        echo "LLVM Version:"
+        & "C:\Program Files\LLVM\bin\llvm-config.exe" --version
+        
         echo "Files in LLVM bin:"
         Get-ChildItem "C:\Program Files\LLVM\bin" | Select-Object -First 20
         
     - name: Build PawLang compiler
       run: zig build
-      
-    - name: Add LLVM to PATH (Windows)
-      if: runner.os == 'Windows'
-      run: echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
       
     - name: Test - Hello World (Unix)
       if: runner.os != 'Windows'
@@ -84,6 +89,7 @@ jobs:
       
     - name: Test - Hello World (Windows)
       if: runner.os == 'Windows'
+      shell: powershell
       run: |
         echo "Running pawc.exe..."
         .\zig-out\bin\pawc.exe examples\hello.paw 2>&1 | Out-String
@@ -111,6 +117,7 @@ jobs:
       
     - name: Test - Type Casting (Windows)
       if: runner.os == 'Windows'
+      shell: powershell
       run: |
         .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=c
         if (Test-Path output.c) {
@@ -132,6 +139,7 @@ jobs:
       
     - name: Test - Integration Test (Windows)
       if: runner.os == 'Windows'
+      shell: powershell
       run: |
         .\zig-out\bin\pawc.exe tests\integration\v0.1.8_test.paw --backend=c
         if (Test-Path output.c) {
@@ -162,6 +170,7 @@ jobs:
       
     - name: Test - LLVM Backend (Windows)  
       if: runner.os == 'Windows'
+      shell: powershell
       run: |
         .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=llvm
         if (Test-Path output.ll) {
