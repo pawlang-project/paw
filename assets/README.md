@@ -2,52 +2,57 @@
 
 ## Logo Description
 
-The PawLang logo features a stylized orange cat head with a warm, glowing effect. The design is minimalist and modern, perfect for representing a programming language.
+The PawLang logo features a friendly orange cat with a simple, clean design. The logo is minimalist and modern, perfect for representing a programming language with its warm, approachable appearance.
 
 ### Design Elements
 
 - **Color**: Warm orange (#FF6B35) - represents energy, creativity, and friendliness
-- **Shape**: Rounded cat head with pointed ears
-- **Eyes**: Closed, peaceful expression suggesting contentment
-- **Nose/Mouth**: Simple white "W" shape
-- **Effect**: Soft glow around the perimeter for a luminous appearance
-- **Gradient**: Subtle gradient from #FF6B35 to #E55A2B
-- **Whiskers**: Subtle whisker details for character
+- **Shape**: Rounded cat head with upper body and front paws
+- **Eyes**: Small, solid black circular eyes with endearing look
+- **Nose/Mouth**: Small inverted black triangle nose with gentle smile
+- **Whiskers**: Three short horizontal black lines on each side
+- **Paws**: Two front paws visible, left paw slightly raised
+- **Background**: Solid black background for strong contrast
+- **Style**: Flat, vector-graphic appearance with clean, crisp lines
 
 ## Available Formats
 
-### SVG Files (Recommended)
+### PNG Files (Current)
 
-- `logo.svg` - Main logo file (200x200)
-- `logo-favicon.svg` - Simplified version for small sizes (32x32)
-- `logo-square.svg` - Square version with rounded corners
+- `logo.png` - Main logo file (optimized for documentation display at 120x120 pixels)
+- High-quality raster format suitable for all platforms
+- Perfect for web display and documentation
 
-### Converting to PNG/JPG
+### Converting to Other Formats
 
-To create PNG or JPG versions, use ImageMagick:
+To create different sizes or formats from the existing logo.png:
 
 ```bash
-# PNG versions (different sizes)
-convert assets/logo.svg -resize 16x16 assets/logo-16x16.png
-convert assets/logo.svg -resize 32x32 assets/logo-32x32.png
-convert assets/logo.svg -resize 64x64 assets/logo-64x64.png
-convert assets/logo.svg -resize 128x128 assets/logo-128x128.png
-convert assets/logo.svg -resize 256x256 assets/logo-256x256.png
-convert assets/logo.svg -resize 512x512 assets/logo-512x512.png
-convert assets/logo.svg -resize 1024x1024 assets/logo-1024x1024.png
+# Different PNG sizes
+convert assets/logo.png -resize 16x16 assets/logo-16x16.png
+convert assets/logo.png -resize 32x32 assets/logo-32x32.png
+convert assets/logo.png -resize 64x64 assets/logo-64x64.png
+convert assets/logo.png -resize 128x128 assets/logo-128x128.png
+convert assets/logo.png -resize 256x256 assets/logo-256x256.png
+convert assets/logo.png -resize 512x512 assets/logo-512x512.png
+convert assets/logo.png -resize 1024x1024 assets/logo-1024x1024.png
 
 # JPG versions (compressed)
-convert assets/logo.svg -resize 256x256 -quality 90 assets/logo-256x256.jpg
-convert assets/logo.svg -resize 512x512 -quality 90 assets/logo-512x512.jpg
+convert assets/logo.png -resize 256x256 -quality 90 assets/logo-256x256.jpg
+convert assets/logo.png -resize 512x512 -quality 90 assets/logo-512x512.jpg
+
+# SVG conversion (if needed)
+convert assets/logo.png -resize 200x200 assets/logo.svg
 ```
 
 ### Usage Guidelines
 
-- **Web**: Use SVG for best quality and scalability
+- **Web**: Use PNG for consistent display across all browsers
 - **Print**: Use PNG for high-quality printing
 - **Social Media**: Use PNG 512x512 or larger
-- **Favicon**: Use logo-favicon.svg or convert to ICO
+- **Favicon**: Convert PNG to ICO format
 - **Mobile Apps**: Use PNG 1024x1024 for app icons
+- **Documentation**: Current 120x120 pixel size is optimized for README display
 
 ### Brand Guidelines
 
@@ -60,15 +65,14 @@ convert assets/logo.svg -resize 512x512 -quality 90 assets/logo-512x512.jpg
 
 ## Technical Details
 
-- **Format**: SVG (Scalable Vector Graphics)
-- **Dimensions**: 200x200 viewBox
+- **Format**: PNG (Portable Network Graphics)
+- **Dimensions**: Optimized for 120x120 pixel display in documentation
 - **Colors**: 
-  - Primary: #FF6B35 (orange)
-  - Secondary: #E55A2B (darker orange for details)
-  - Accent: white (for nose/mouth)
-  - Gradient: Linear gradient for depth
-- **Effects**: Gaussian blur glow filter
-- **Whiskers**: Subtle detail lines for character
+  - Primary: #FF6B35 (orange cat body)
+  - Outline: Black (#000000) for all features
+  - Background: Black (#000000) for strong contrast
+- **Style**: Flat design with clean vector-like appearance
+- **Features**: Solid color fills with crisp, defined edges
 
 ## License
 
