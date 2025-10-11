@@ -426,7 +426,9 @@ jobs:
         # Test C backend
         Write-Host ""
         Write-Host "Test 1: C backend"
-        & .\bin\pawc.exe examples\hello.paw --backend=c 2>&1 | Out-Null
+        $ErrorActionPreference = 'Continue'
+        & .\bin\pawc.exe examples\hello.paw --backend=c
+        $ErrorActionPreference = 'Stop'
         if (Test-Path output.c) {
           Write-Host "PASS: C backend works"
           Remove-Item output.c
@@ -439,7 +441,9 @@ jobs:
         # Test LLVM backend (critical!)
         Write-Host ""
         Write-Host "Test 2: LLVM backend WITHOUT system LLVM"
-        & .\bin\pawc.exe examples\hello.paw --backend=llvm 2>&1 | Out-Null
+        $ErrorActionPreference = 'Continue'
+        & .\bin\pawc.exe examples\hello.paw --backend=llvm
+        $ErrorActionPreference = 'Stop'
         if (Test-Path output.ll) {
           Write-Host "PASS: LLVM backend works!"
           Get-Content output.ll | Select-Object -First 5
