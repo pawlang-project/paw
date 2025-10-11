@@ -277,6 +277,171 @@ jobs:
         Write-Host ""
         Write-Host "✅ All no-LLVM tests passed!"
     
+    - name: Test - Distribution Package (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📦 Testing distribution package..."
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        
+        # Rebuild with LLVM for packaging
+        zig build package
+        
+        # Create clean test directory
+        TEST_DIR="/tmp/pawlang-dist-test-$$"
+        mkdir -p "$TEST_DIR"
+        cd "$TEST_DIR"
+        
+        # Extract package
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          tar -xzf "$GITHUB_WORKSPACE/pawlang-macos.tar.gz"
+        else
+          tar -xzf "$GITHUB_WORKSPACE/pawlang-linux.tar.gz"
+        fi
+        
+        echo ""
+        echo "📂 Package contents:"
+        ls -la
+        
+        # Clear LLVM environment variables to simulate user environment
+        echo ""
+        echo "🧹 Clearing LLVM environment (simulating user without LLVM)..."
+        unset LLVM_SYS_190_PREFIX
+        unset DYLD_LIBRARY_PATH
+        unset LD_LIBRARY_PATH
+        
+        # Test 1: C backend
+        echo ""
+        echo "Test 1: C backend in clean environment"
+        ./pawc examples/hello.paw --backend=c
+        if [ -f output.c ]; then
+          echo "✅ C backend works"
+          rm output.c
+        else
+          echo "❌ C backend failed"
+          exit 1
+        fi
+        
+        # Test 2: LLVM backend (critical test!)
+        echo ""
+        echo "Test 2: LLVM backend WITHOUT system LLVM"
+        ./pawc examples/hello.paw --backend=llvm
+        if [ -f output.ll ]; then
+          echo "✅ LLVM backend works without system LLVM!"
+          echo "   (using bundled libraries)"
+          cat output.ll | head -5
+          rm output.ll
+        else
+          echo "❌ LLVM backend failed - distribution not self-contained!"
+          echo "Debug: Library search paths"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            otool -L bin/pawc
+          else
+            ldd bin/pawc || true
+          fi
+          exit 1
+        fi
+        
+        # Test 3: Verify launcher script set up paths correctly
+        echo ""
+        echo "Test 3: Check library dependencies"
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          echo "macOS library check:"
+          otool -L bin/pawc | grep -i llvm || echo "  (dynamic loading)"
+          ls -lh lib/
+        else
+          echo "Linux library check:"
+          ldd bin/pawc | grep -i llvm || echo "  (dynamic loading)"
+          ls -lh lib/
+        fi
+        
+        # Cleanup
+        cd "$GITHUB_WORKSPACE"
+        rm -rf "$TEST_DIR"
+        
+        echo ""
+        echo "✅ Distribution package is self-contained!"
+      
+    - name: Test - Distribution Package (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        Write-Host ""
+        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        Write-Host "📦 Testing distribution package..."
+        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        
+        # Rebuild with LLVM for packaging
+        zig build package
+        
+        # Create clean test directory
+        $TEST_DIR = "$env:TEMP\pawlang-dist-test-$PID"
+        New-Item -ItemType Directory -Path $TEST_DIR -Force | Out-Null
+        Set-Location $TEST_DIR
+        
+        # Extract package
+        Expand-Archive -Path "$env:GITHUB_WORKSPACE\pawlang-windows.zip" -DestinationPath . -Force
+        
+        Write-Host ""
+        Write-Host "📂 Package contents:"
+        Get-ChildItem
+        
+        # Clear LLVM environment variables
+        Write-Host ""
+        Write-Host "🧹 Clearing LLVM environment (simulating user without LLVM)..."
+        $env:LLVM_SYS_190_PREFIX = ""
+        # Remove LLVM from PATH
+        $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike '*LLVM*' }) -join ';'
+        
+        # Test 1: C backend
+        Write-Host ""
+        Write-Host "Test 1: C backend in clean environment"
+        & .\pawc.bat examples\hello.paw --backend=c
+        if (Test-Path output.c) {
+          Write-Host "✅ C backend works"
+          Remove-Item output.c
+        } else {
+          Write-Host "❌ C backend failed"
+          exit 1
+        }
+        
+        # Test 2: LLVM backend (critical test!)
+        Write-Host ""
+        Write-Host "Test 2: LLVM backend WITHOUT system LLVM"
+        & .\pawc.bat examples\hello.paw --backend=llvm
+        if (Test-Path output.ll) {
+          Write-Host "✅ LLVM backend works without system LLVM!"
+          Write-Host "   (using bundled DLLs)"
+          Get-Content output.ll | Select-Object -First 5
+          Remove-Item output.ll
+        } else {
+          Write-Host "❌ LLVM backend failed - distribution not self-contained!"
+          Write-Host "Debug: DLLs in bin directory"
+          Get-ChildItem bin\*.dll | Select-Object Name, Length | Format-Table
+          exit 1
+        }
+        
+        # Test 3: Verify DLLs are present
+        Write-Host ""
+        Write-Host "Test 3: Check bundled DLLs"
+        $dllCount = (Get-ChildItem bin\*.dll | Measure-Object).Count
+        Write-Host "  Total DLLs: $dllCount"
+        
+        if ($dllCount -gt 0) {
+          Write-Host "✅ DLLs properly bundled"
+          Get-ChildItem bin\*LLVM*.dll | Select-Object Name, @{N='Size(MB)';E={[math]::Round($_.Length/1MB,2)}} | Format-Table
+        } else {
+          Write-Host "❌ No DLLs found!"
+          exit 1
+        }
+        
+        # Cleanup
+        Set-Location $env:GITHUB_WORKSPACE
+        Remove-Item -Recurse -Force $TEST_DIR
+        
+        Write-Host ""
+        Write-Host "✅ Distribution package is self-contained!"
+    
     - name: Summary
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -285,5 +450,6 @@ jobs:
         echo "   • LLVM backend ✅"
         echo "   • No-LLVM build ✅"
         echo "   • Error handling ✅"
+        echo "   • Self-contained distribution ✅"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       shell: bash
