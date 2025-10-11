@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import argparse
 from pathlib import Path
+import zipfile
 
 # LLVM Configuration
 LLVM_VERSION = "19.1.7"
@@ -50,6 +51,8 @@ def detect_platform():
         ("Darwin", "arm64"): ("clang+llvm-19.1.7-aarch64-apple-darwin.tar.xz", "macOS Apple Silicon (M1/M2/M3)"),
         ("Linux", "x86_64"): ("clang+llvm-19.1.7-x86_64-linux-gnu.tar.xz", "Linux x86_64"),
         ("Linux", "aarch64"): ("clang+llvm-19.1.7-aarch64-linux-gnu.tar.xz", "Linux ARM64"),
+        ("Windows", "AMD64"): ("clang+llvm-19.1.7-x86_64-windows-msvc.tar.xz", "Windows x86_64"),
+        ("Windows", "x86_64"): ("clang+llvm-19.1.7-x86_64-windows-msvc.tar.xz", "Windows x86_64"),
     }
     
     key = (system, machine)
@@ -61,6 +64,7 @@ def detect_platform():
         print("  - macOS arm64 (Apple Silicon M1/M2/M3)")
         print("  - Linux x86_64")
         print("  - Linux aarch64 (ARM64)")
+        print("  - Windows x86_64")
         return None, None
     
     filename, platform_name = platform_map[key]
@@ -140,8 +144,17 @@ def extract_archive(archive_path, extract_to):
     extract_to_str = str(extract_to)
     
     try:
-        with tarfile.open(archive_str) as tar:
-            tar.extractall(path=extract_to_str)
+        # Handle .tar.xz files (Unix)
+        if archive_str.endswith('.tar.xz') or archive_str.endswith('.tar.gz'):
+            with tarfile.open(archive_str) as tar:
+                tar.extractall(path=extract_to_str)
+        # Handle .zip files (potentially Windows)
+        elif archive_str.endswith('.zip'):
+            with zipfile.ZipFile(archive_str, 'r') as zip_ref:
+                zip_ref.extractall(extract_to_str)
+        else:
+            print(f"❌ Unsupported archive format: {archive_str}")
+            return False
         
         print("✅ Extraction complete")
         return True
