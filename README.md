@@ -2,7 +2,7 @@
 
 # 🐾 PawLang
 
-![PawLang Logo](assets/logo.png)
+<img src="assets/logo.svg" alt="PawLang Logo" width="120" height="120">
 
 **A modern systems programming language with Rust-level safety and cleaner syntax**
 
@@ -1049,7 +1049,7 @@ MIT License
 
 **Built with ❤️ using Zig and LLVM**
 
-![PawLang Logo](assets/logo.png)
+<img src="assets/logo.svg" alt="PawLang Logo" width="120" height="120">
 
 **🐾 Happy Coding with PawLang!**
 
