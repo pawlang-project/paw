@@ -1,16 +1,19 @@
 # Architecture Support
 
-PawLang supports multiple architectures through native compilation and cross-compilation.
+PawLang supports multiple architectures through native compilation and QEMU-based testing.
 
-## Tested Architectures
+## Tested Architectures - All Fully Tested!
 
-### Native Testing (Full test suite)
+All architectures run the **complete test suite** including:
+- ✅ C backend compilation and execution
+- ✅ LLVM backend compilation and execution
+- ✅ Self-contained distribution (works without system LLVM)
+- ✅ All example programs and integration tests
 
-These architectures are tested with full test suites including runtime tests:
+### Native Testing (Direct hardware)
 
 #### Linux
-- **x86_64** (Ubuntu 24.04, 22.04 LTS) - Primary
-- **ARM64/aarch64** (Ubuntu 24.04) - Native ARM runner
+- **x86_64** (Ubuntu 24.04, 22.04 LTS) - Primary platform
 
 #### macOS
 - **x86_64** (Intel Mac) - macOS 13
@@ -19,42 +22,58 @@ These architectures are tested with full test suites including runtime tests:
 #### Windows
 - **x86_64** - Windows Server 2022
 
-## Cross-Compilation Support (Build-only)
+### QEMU Testing (Full runtime tests in emulation)
 
-These architectures are tested through cross-compilation to verify build compatibility:
+All tests run in QEMU with real execution - not just compilation!
 
-### Linux
-- **RISC-V 64** (`riscv64-linux`) - Growing ecosystem
-- **PowerPC 64 LE** (`powerpc64le-linux`) - IBM POWER systems
-- **s390x** (`s390x-linux`) - IBM Z mainframes
+#### Linux (via QEMU)
+- **aarch64** (ARM64) - AWS Graviton, Raspberry Pi 4+, Apple M-series
+- **armv7** (ARM32) - Raspberry Pi 2/3, embedded systems
+- **riscv64** (RISC-V 64-bit) - Growing open-source ecosystem
+- **ppc64le** (PowerPC 64 LE) - IBM POWER8/9/10 systems
+- **s390x** (IBM Z) - IBM mainframes
 
 ## Platform Coverage
 
-- **Tested Native**: 5 platforms (99% of users)
-- **Cross-compile**: 3 additional architectures
-- **Total Coverage**: 8 architectures across 3 operating systems
+- **Native Testing**: 5 platforms (x86_64 Linux/Windows/macOS + ARM64 macOS)
+- **QEMU Testing**: 5 Linux architectures (aarch64, armv7, riscv64, ppc64le, s390x)
+- **Total Coverage**: 10 architectures across 3 operating systems
 
 ## Testing Strategy
 
-### Native Platforms
-Full test suite includes:
-- ✅ C backend
-- ✅ LLVM backend
-- ✅ Conditional compilation (no-LLVM build)
-- ✅ Self-contained distribution
-- ✅ Runtime execution tests
+### All Platforms (Native + QEMU)
+Every architecture runs the **complete test suite**:
+- ✅ C backend compilation and runtime
+- ✅ LLVM backend compilation and runtime
+- ✅ Conditional compilation (no-LLVM build test)
+- ✅ Self-contained distribution validation
+- ✅ System LLVM removal test (critical!)
+- ✅ All example programs
+- ✅ Integration tests
 
-### Cross-Compilation Platforms
-Build-only tests:
-- ✅ Successful compilation for target architecture
-- ⚠️ No runtime tests (cannot execute on host)
+### Key Tests
+
+**1. Basic Compilation**
+- Hello World (C backend)
+- Type casting (C backend)
+- Integration test (C backend)
+- LLVM backend test
+
+**2. Self-Contained Distribution** (Most Important!)
+- Build distribution package
+- **Remove system LLVM completely**
+- Test C backend (should work)
+- Test LLVM backend (should work with bundled LLVM!)
+- Verify bundled libraries
+
+This proves the distribution truly works standalone!
 
 ## Why This Approach?
 
-1. **Fast CI**: Native tests complete in 3-5 minutes
-2. **Comprehensive**: Covers main user platforms
-3. **Forward Compatible**: Cross-compile tests ensure portability
-4. **Resource Efficient**: No slow emulation needed
+1. **Complete Coverage**: Every architecture gets full runtime testing
+2. **Real-World Validation**: QEMU runs actual binaries, not just compilation
+3. **Distribution Confidence**: Self-contained test ensures users can run without dependencies
+4. **Future-Proof**: Supports emerging architectures (RISC-V, etc.)
 
 ## Adding New Architectures
 

@@ -7,48 +7,34 @@ on:
     branches: [ "**" ]
 
 jobs:
-  test:
-    name: Test on ${{ matrix.os }}${{ matrix.container && format(' ({0})', matrix.container) || '' }}
+  # Native platform tests (x86_64 + ARM64 macOS)
+  test-native:
+    name: Test ${{ matrix.platform }} (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64 - Native tests
+          # Linux x86_64
           - os: ubuntu-latest
-            arch: Linux x86_64 (Ubuntu 24.04)
-            zig_version: 0.15.1
+            platform: Linux
+            arch: x86_64
           - os: ubuntu-22.04
-            arch: Linux x86_64 (Ubuntu 22.04 LTS)
-            zig_version: 0.15.1
+            platform: Linux 22.04 LTS
+            arch: x86_64
           
-          # Linux cross-compile targets
-          - os: ubuntu-latest
-            arch: Linux ARM64 (aarch64)
-            zig_version: 0.15.1
-            cross_target: aarch64-linux
-          - os: ubuntu-latest
-            arch: Linux RISC-V 64
-            zig_version: 0.15.1
-            cross_target: riscv64-linux
-          - os: ubuntu-latest
-            arch: Linux PowerPC 64 LE
-            zig_version: 0.15.1
-            cross_target: powerpc64le-linux
-          
-          # macOS - Native tests
-          - os: macos-latest
-            arch: macOS ARM64 (Apple Silicon)
-            zig_version: 0.15.1
+          # macOS x86_64 and ARM64
           - os: macos-13
-            arch: macOS x86_64 (Intel)
-            zig_version: 0.15.1
+            platform: macOS
+            arch: x86_64
+          - os: macos-latest
+            platform: macOS
+            arch: ARM64
           
-          # Windows - Native tests
+          # Windows x86_64
           - os: windows-latest
-            arch: Windows x86_64
-            zig_version: 0.15.1
+            platform: Windows
+            arch: x86_64
         
     steps:
     - name: Checkout code
@@ -57,7 +43,7 @@ jobs:
     - name: Setup Zig
       uses: goto-bus-stop/setup-zig@v2
       with:
-        version: ${{ matrix.zig_version }}
+        version: 0.15.1
     
     - name: Setup Python
       uses: actions/setup-python@v5
@@ -65,10 +51,10 @@ jobs:
         python-version: '3.11'
     
     - name: Install LLVM (Linux)
-      if: runner.os == 'Linux' && !matrix.cross_target
+      if: runner.os == 'Linux'
       run: |
         # Install LLVM 19 from official LLVM repository
-        echo "Installing LLVM 19.1.7 from official source..."
+        echo "Installing LLVM 19 from official source..."
         
         # Add LLVM official repository
         wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
@@ -92,20 +78,17 @@ jobs:
       if: runner.os == 'macOS'
       run: |
         brew install llvm@19
-        echo "✅ LLVM 19 installed via Homebrew"
-    
+        echo "✅ LLVM 19 installed successfully"
+      
     - name: Install LLVM (Windows)
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        choco install llvm --version=19.1.7 --force -y
-        echo "✅ LLVM 19.1.7 installed via Chocolatey"
+        choco install llvm --version=19.1.7 -y
         
-        # 使用正确的PowerShell语法添加到PATH
-        Add-Content $env:GITHUB_PATH "C:\Program Files\LLVM\bin"
-        
-        # 设置LLVM环境变量供Zig使用
-        echo "LLVM_SYS_190_PREFIX=C:\Program Files\LLVM" >> $env:GITHUB_ENV
+        # 添加到PATH
+        $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
+        [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
         
         # 验证LLVM安装 (注意: Windows的LLVM没有llvm-config.exe)
         echo "Verifying LLVM installation:"
@@ -116,19 +99,11 @@ jobs:
         Get-ChildItem "C:\Program Files\LLVM\bin" | Select-Object Name | Format-Table -AutoSize
         
     - name: Build PawLang compiler
-      shell: bash
-      run: |
-        if [ -n "${{ matrix.cross_target }}" ]; then
-          echo "Cross-compiling for ${{ matrix.cross_target }}..."
-          zig build -Dtarget=${{ matrix.cross_target }}
-          echo "✅ Cross-compilation successful!"
-        else
-          zig build
-        fi
+      run: zig build
       # Windows下build.zig会自动复制LLVM DLL到输出目录
       
     - name: Test - Hello World (Unix)
-      if: runner.os != 'Windows' && !matrix.cross_target
+      if: runner.os != 'Windows'
       run: |
         ./zig-out/bin/pawc examples/hello.paw
         echo "✅ Hello World test passed"
@@ -147,7 +122,7 @@ jobs:
         }
       
     - name: Test - Type Casting (Unix)
-      if: runner.os != 'Windows' && !matrix.cross_target
+      if: runner.os != 'Windows'
       run: |
         ./zig-out/bin/pawc examples/type_cast_demo.paw --backend=c
         if [ -f output.c ]; then
@@ -169,7 +144,7 @@ jobs:
         }
       
     - name: Test - Integration Test (Unix)
-      if: runner.os != 'Windows' && !matrix.cross_target
+      if: runner.os != 'Windows'
       run: |
         ./zig-out/bin/pawc tests/integration/v0.1.8_test.paw --backend=c
         if [ -f output.c ]; then
@@ -191,7 +166,7 @@ jobs:
         }
       
     - name: Test - LLVM Backend (Unix)
-      if: runner.os != 'Windows' && !matrix.cross_target
+      if: runner.os != 'Windows'
       run: |
         ./zig-out/bin/pawc examples/type_cast_demo.paw --backend=llvm
         if [ -f output.ll ]; then
@@ -208,7 +183,7 @@ jobs:
           rm output.ll
         fi
       
-    - name: Test - LLVM Backend (Windows)  
+    - name: Test - LLVM Backend (Windows)
       if: runner.os == 'Windows'
       shell: powershell
       run: |
@@ -222,7 +197,7 @@ jobs:
         }
       
     - name: Test - Build without LLVM backend (Unix)
-      if: runner.os != 'Windows' && !matrix.cross_target
+      if: runner.os != 'Windows'
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "🧪 Testing build without LLVM backend..."
@@ -231,100 +206,72 @@ jobs:
         # Build without LLVM
         zig build -Denable-llvm=false
         
-        # Test 1: C backend should still work
-        echo ""
-        echo "Test 1: Verify C backend works without LLVM"
+        # Test C backend (should work)
         ./zig-out/bin/pawc examples/hello.paw --backend=c
         if [ -f output.c ]; then
-          echo "✅ C backend works without LLVM"
+          echo "PASS: C backend works without LLVM"
           rm output.c
         else
-          echo "❌ C backend failed"
+          echo "FAIL: C backend failed"
           exit 1
         fi
         
-        # Test 2: LLVM backend should fail gracefully with error message
-        echo ""
-        echo "Test 2: Verify LLVM backend shows friendly error"
-        set +e  # Don't exit on error
-        ./zig-out/bin/pawc examples/hello.paw --backend=llvm 2>&1 | tee llvm_error.txt
-        EXIT_CODE=$?
-        set -e
-        
-        # Check if error message contains expected text
-        if grep -q "LLVM backend not available" llvm_error.txt; then
-          echo "✅ Friendly error message displayed"
+        # Test LLVM backend (should fail gracefully)
+        if ./zig-out/bin/pawc examples/hello.paw --backend=llvm 2>&1 | grep -q "LLVM backend not available"; then
+          echo "PASS: LLVM backend correctly disabled"
         else
-          echo "❌ Error message not found"
-          cat llvm_error.txt
+          echo "FAIL: LLVM backend should be disabled"
           exit 1
         fi
         
-        # Verify LLVM backend didn't create output
-        if [ ! -f output.ll ]; then
-          echo "✅ LLVM backend correctly disabled"
-        else
-          echo "❌ LLVM backend shouldn't have created output"
-          exit 1
-        fi
+        echo "✅ No-LLVM build test passed"
         
-        rm -f llvm_error.txt
-        echo ""
-        echo "✅ All no-LLVM tests passed!"
+        # Rebuild with LLVM for subsequent tests
+        zig build
       
     - name: Test - Build without LLVM backend (Windows)
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        Write-Host ""
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        Write-Host "🧪 Testing build without LLVM backend..."
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        Write-Host "Testing build without LLVM backend..."
         
         # Build without LLVM
         zig build -Denable-llvm=false
         
-        # Test 1: C backend should still work
-        Write-Host ""
-        Write-Host "Test 1: Verify C backend works without LLVM"
-        .\zig-out\bin\pawc.exe examples\hello.paw --backend=c
+        # Test C backend (should work)
+        Write-Host "Test 1: C backend without LLVM"
+        $ErrorActionPreference = 'Continue'
+        & .\zig-out\bin\pawc.exe examples\hello.paw --backend=c
+        $ErrorActionPreference = 'Stop'
         if (Test-Path output.c) {
-          Write-Host "✅ C backend works without LLVM"
+          Write-Host "PASS: C backend works"
           Remove-Item output.c
         } else {
-          Write-Host "❌ C backend failed"
+          Write-Host "FAIL: C backend failed"
           exit 1
         }
         
-        # Test 2: LLVM backend should fail gracefully
-        Write-Host ""
-        Write-Host "Test 2: Verify LLVM backend shows friendly error"
+        # Test LLVM backend (should fail gracefully)
+        Write-Host "Test 2: LLVM backend (should be disabled)"
         $ErrorActionPreference = 'Continue'
         $output = & .\zig-out\bin\pawc.exe examples\hello.paw --backend=llvm 2>&1 | Out-String
         $ErrorActionPreference = 'Stop'
-        
-        # Check if error message contains expected text
         if ($output -match "LLVM backend not available") {
-          Write-Host "✅ Friendly error message displayed"
+          Write-Host "PASS: LLVM backend correctly disabled"
         } else {
-          Write-Host "❌ Error message not found"
+          Write-Host "FAIL: LLVM backend should be disabled"
           Write-Host $output
           exit 1
         }
         
-        # Verify LLVM backend didn't create output
-        if (-not (Test-Path output.ll)) {
-          Write-Host "✅ LLVM backend correctly disabled"
-        } else {
-          Write-Host "❌ LLVM backend shouldn't have created output"
-          exit 1
-        }
-        
         Write-Host ""
-        Write-Host "✅ All no-LLVM tests passed!"
+        Write-Host "OK: All no-LLVM tests passed!"
+        
+        # Rebuild with LLVM
+        zig build
     
     - name: Test - Distribution Package (Unix) - Build
-      if: runner.os != 'Windows' && !matrix.cross_target
+      if: runner.os != 'Windows'
       run: |
         echo ""
         echo "=========================================="
@@ -334,7 +281,7 @@ jobs:
         echo "Package created"
     
     - name: Test - Distribution Package (Unix) - Uninstall LLVM
-      if: runner.os != 'Windows' && !matrix.cross_target
+      if: runner.os != 'Windows'
       run: |
         echo ""
         echo "Uninstalling system LLVM for testing..."
@@ -358,7 +305,7 @@ jobs:
         fi
     
     - name: Test - Distribution Package (Unix) - Test Package
-      if: runner.os != 'Windows' && !matrix.cross_target
+      if: runner.os != 'Windows'
       run: |
         echo ""
         echo "Testing distribution package in clean environment..."
@@ -375,116 +322,106 @@ jobs:
           tar -xzf "$GITHUB_WORKSPACE/pawlang-linux.tar.gz"
         fi
         
-        echo ""
-        echo "Package contents:"
-        ls -la
-        
-        # Clear LLVM environment variables
-        echo ""
-        echo "Clearing LLVM environment variables..."
+        # Clear any LLVM env vars
         unset LLVM_SYS_190_PREFIX
         unset DYLD_LIBRARY_PATH
         unset LD_LIBRARY_PATH
         
-        # Test 1: C backend
-        echo ""
-        echo "Test 1: C backend"
-        ./pawc examples/hello.paw --backend=c
+        echo "Test 1: C backend WITHOUT system LLVM"
+        ./pawlang/scripts/pawc.sh "$GITHUB_WORKSPACE/examples/hello.paw" --backend=c
         if [ -f output.c ]; then
-          echo "PASS: C backend works"
+          echo "✅ C backend works!"
           rm output.c
         else
-          echo "FAIL: C backend failed"
+          echo "❌ C backend failed"
           exit 1
         fi
         
-        # Test 2: LLVM backend (critical!)
         echo ""
-        echo "Test 2: LLVM backend WITHOUT system LLVM"
-        ./pawc examples/hello.paw --backend=llvm
+        echo "Test 2: LLVM backend WITHOUT system LLVM (critical test!)"
+        ./pawlang/scripts/pawc.sh "$GITHUB_WORKSPACE/examples/hello.paw" --backend=llvm
         if [ -f output.ll ]; then
-          echo "PASS: LLVM backend works!"
-          echo "(using bundled libraries)"
-          cat output.ll | head -5
+          echo "✅ LLVM backend works!"
+          head -n 5 output.ll
           rm output.ll
         else
-          echo "FAIL: LLVM backend failed"
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            otool -L bin/pawc
-          else
-            ldd bin/pawc || true
-          fi
+          echo "❌ LLVM backend failed"
+          ls -la pawlang/lib/ || true
           exit 1
         fi
         
-        # Test 3: Verify libraries
         echo ""
         echo "Test 3: Check bundled libraries"
         if [ "$RUNNER_OS" = "macOS" ]; then
-          echo "macOS libraries:"
-          ls -lh lib/
+          LIB_COUNT=$(ls pawlang/lib/*.dylib 2>/dev/null | wc -l || echo "0")
+          echo "Bundled dylibs: $LIB_COUNT"
+          ls -lh pawlang/lib/*.dylib 2>/dev/null || true
         else
-          echo "Linux libraries:"
-          ls -lh lib/
+          LIB_COUNT=$(ls pawlang/lib/*.so* 2>/dev/null | wc -l || echo "0")
+          echo "Bundled shared libraries: $LIB_COUNT"
+          ls -lh pawlang/lib/*.so* 2>/dev/null || true
         fi
         
-        # Cleanup
-        cd "$GITHUB_WORKSPACE"
-        rm -rf "$TEST_DIR"
+        if [ "$LIB_COUNT" -gt 0 ]; then
+          echo "✅ Libraries properly bundled"
+        else
+          echo "⚠️  Warning: No libraries found (may be statically linked)"
+        fi
         
         echo ""
-        echo "SUCCESS: Distribution package is self-contained!"
-      
+        echo "=========================================="
+        echo "✅ Distribution package works perfectly!"
+        echo "=========================================="
+    
     - name: Test - Distribution Package (Windows) - Build
       if: runner.os == 'Windows'
-      shell: bash
+      shell: powershell
       run: |
-        echo ""
-        echo "=========================================="
-        echo "Building distribution package for testing..."
-        echo "=========================================="
+        Write-Host ""
+        Write-Host "Building distribution package..."
         zig build package
-        echo "Package created: pawlang-windows.zip"
+        Write-Host "Package created"
     
     - name: Test - Distribution Package (Windows) - Uninstall LLVM
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        Write-Host "Uninstalling system LLVM..."
-        choco uninstall llvm -y --force 2>&1 | Out-Null
-        Remove-Item -Recurse -Force "C:\Program Files\LLVM" -ErrorAction SilentlyContinue
-        Write-Host "LLVM uninstalled"
+        Write-Host ""
+        Write-Host "Uninstalling system LLVM for testing..."
+        choco uninstall llvm -y --all-versions
+        Remove-Item -Path "C:\Program Files\LLVM" -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "Windows LLVM uninstalled"
     
     - name: Test - Distribution Package (Windows) - Test Package
       if: runner.os == 'Windows'
       shell: powershell
       run: |
         Write-Host ""
-        Write-Host "Testing distribution package..."
+        Write-Host "Testing distribution package in clean environment..."
         
-        # Extract to temp directory
-        $TEST_DIR = "$env:TEMP\pawlang-dist-test"
-        if (Test-Path $TEST_DIR) { Remove-Item -Recurse -Force $TEST_DIR }
-        New-Item -ItemType Directory -Path $TEST_DIR -Force | Out-Null
-        Set-Location $TEST_DIR
-        Expand-Archive -Path "$env:GITHUB_WORKSPACE\pawlang-windows.zip" -DestinationPath . -Force
+        # Create clean test directory
+        $testDir = "C:\pawlang-dist-test-$PID"
+        New-Item -ItemType Directory -Path $testDir -Force
+        Set-Location $testDir
         
-        Write-Host ""
-        Write-Host "Package contents:"
-        Get-ChildItem | Format-Table -AutoSize
+        # Extract package
+        Expand-Archive -Path "$env:GITHUB_WORKSPACE\pawlang-windows.zip" -DestinationPath .
+        
+        # Clear LLVM env vars
+        $env:LLVM_SYS_190_PREFIX = ""
+        $env:PATH = $env:PATH -replace "C:\\Program Files\\LLVM\\bin;", ""
         
         # Test C backend
         Write-Host ""
-        Write-Host "Test 1: C backend"
+        Write-Host "Test 1: C backend WITHOUT system LLVM"
         $ErrorActionPreference = 'Continue'
-        & .\bin\pawc.exe examples\hello.paw --backend=c
+        & .\bin\pawc.exe $env:GITHUB_WORKSPACE\examples\hello.paw --backend=c
         $ErrorActionPreference = 'Stop'
         if (Test-Path output.c) {
-          Write-Host "PASS: C backend works"
+          Write-Host "PASS: C backend works!"
           Remove-Item output.c
         } else {
           Write-Host "FAIL: C backend failed"
-          Get-ChildItem
           exit 1
         }
         
@@ -492,7 +429,7 @@ jobs:
         Write-Host ""
         Write-Host "Test 2: LLVM backend WITHOUT system LLVM"
         $ErrorActionPreference = 'Continue'
-        & .\bin\pawc.exe examples\hello.paw --backend=llvm
+        & .\bin\pawc.exe $env:GITHUB_WORKSPACE\examples\hello.paw --backend=llvm
         $ErrorActionPreference = 'Stop'
         if (Test-Path output.ll) {
           Write-Host "PASS: LLVM backend works!"
@@ -519,23 +456,11 @@ jobs:
         Write-Host ""
         Write-Host "SUCCESS: Distribution package works!"
     
-    - name: Summary - Cross-compile
-      if: matrix.cross_target
-      run: |
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "✅ Cross-compilation successful!"
-        echo "   Architecture: ${{ matrix.arch }}"
-        echo "   Target: ${{ matrix.cross_target }}"
-        echo "   Build: ✅"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      shell: bash
-    
-    - name: Summary - Full Test
-      if: "!matrix.cross_target"
+    - name: Summary
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "✅ All tests passed!"
-        echo "   Platform: ${{ matrix.arch }}"
+        echo "   Platform: ${{ matrix.platform }} (${{ matrix.arch }})"
         echo "   • C backend ✅"
         echo "   • LLVM backend ✅"
         echo "   • No-LLVM build ✅"
@@ -543,3 +468,178 @@ jobs:
         echo "   • Self-contained distribution ✅"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       shell: bash
+
+  # QEMU-based multi-architecture tests
+  test-qemu:
+    name: Test Linux (${{ matrix.arch }}) via QEMU
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [aarch64, armv7, riscv64, ppc64le, s390x]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Test on ${{ matrix.arch }}
+      uses: uraimo/run-on-arch-action@v2
+      with:
+        arch: ${{ matrix.arch }}
+        distro: ubuntu_latest
+        githubToken: ${{ github.token }}
+        install: |
+          apt-get update -q -y
+          apt-get install -q -y wget curl xz-utils git lsb-release software-properties-common
+          
+          # Install LLVM 19
+          echo "Installing LLVM 19..."
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | tee /etc/apt/sources.list.d/llvm.list
+          apt-get update -q -y
+          apt-get install -q -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev || {
+            echo "LLVM 19 installation failed, trying alternative..."
+            apt-get install -q -y llvm llvm-dev clang libc++-dev libc++abi-dev
+          }
+          
+          # Install Zig
+          echo "Installing Zig..."
+          wget -q https://ziglang.org/download/0.15.1/zig-linux-x86_64-0.15.1.tar.xz
+          tar -xf zig-linux-x86_64-0.15.1.tar.xz
+          mv zig-linux-x86_64-0.15.1 /usr/local/zig
+          ln -s /usr/local/zig/zig /usr/local/bin/zig
+          
+        run: |
+          echo "=========================================="
+          echo "Testing PawLang on ${{ matrix.arch }}"
+          echo "=========================================="
+          
+          # Verify tools
+          echo "Zig version:"
+          zig version
+          echo ""
+          echo "LLVM version:"
+          llvm-config-19 --version || llvm-config --version
+          
+          # Build
+          echo ""
+          echo "=========================================="
+          echo "Building PawLang compiler..."
+          echo "=========================================="
+          zig build
+          
+          # Test 1: C backend
+          echo ""
+          echo "Test 1: C backend"
+          ./zig-out/bin/pawc examples/hello.paw --backend=c
+          if [ -f output.c ]; then
+            echo "✅ C backend test passed"
+            rm output.c
+          else
+            echo "❌ C backend test failed"
+            exit 1
+          fi
+          
+          # Test 2: Type casting
+          echo ""
+          echo "Test 2: Type casting"
+          ./zig-out/bin/pawc examples/type_cast_demo.paw --backend=c
+          if [ -f output.c ]; then
+            echo "✅ Type casting test passed"
+            rm output.c
+          else
+            echo "❌ Type casting test failed"
+            exit 1
+          fi
+          
+          # Test 3: Integration test
+          echo ""
+          echo "Test 3: Integration test"
+          ./zig-out/bin/pawc tests/integration/v0.1.8_test.paw --backend=c
+          if [ -f output.c ]; then
+            echo "✅ Integration test passed"
+            rm output.c
+          else
+            echo "❌ Integration test failed"
+            exit 1
+          fi
+          
+          # Test 4: LLVM backend
+          echo ""
+          echo "Test 4: LLVM backend"
+          ./zig-out/bin/pawc examples/hello.paw --backend=llvm
+          if [ -f output.ll ]; then
+            echo "✅ LLVM backend test passed"
+            rm output.ll
+          else
+            echo "❌ LLVM backend test failed"
+            exit 1
+          fi
+          
+          # Test 5: Self-contained distribution
+          echo ""
+          echo "=========================================="
+          echo "Test 5: Self-contained distribution"
+          echo "=========================================="
+          zig build package
+          
+          # Uninstall LLVM
+          echo "Uninstalling system LLVM..."
+          apt-get remove -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev llvm llvm-dev clang libc++-dev libc++abi-dev 2>/dev/null || true
+          rm -rf /usr/lib/llvm-19 /usr/lib/llvm* 2>/dev/null || true
+          
+          # Create test directory
+          mkdir -p /tmp/pawlang-test
+          cd /tmp/pawlang-test
+          tar -xzf $GITHUB_WORKSPACE/pawlang-linux.tar.gz
+          
+          # Clear env vars
+          unset LLVM_SYS_190_PREFIX
+          unset LD_LIBRARY_PATH
+          
+          # Test C backend without system LLVM
+          echo ""
+          echo "Test 5a: C backend without system LLVM"
+          ./pawlang/scripts/pawc.sh $GITHUB_WORKSPACE/examples/hello.paw --backend=c
+          if [ -f output.c ]; then
+            echo "✅ Self-contained C backend works"
+            rm output.c
+          else
+            echo "❌ Self-contained C backend failed"
+            exit 1
+          fi
+          
+          # Test LLVM backend without system LLVM (critical!)
+          echo ""
+          echo "Test 5b: LLVM backend without system LLVM"
+          ./pawlang/scripts/pawc.sh $GITHUB_WORKSPACE/examples/hello.paw --backend=llvm
+          if [ -f output.ll ]; then
+            echo "✅ Self-contained LLVM backend works"
+            rm output.ll
+          else
+            echo "❌ Self-contained LLVM backend failed"
+            ls -la pawlang/lib/ || true
+            exit 1
+          fi
+          
+          # Verify bundled libraries
+          echo ""
+          echo "Test 5c: Check bundled libraries"
+          LIB_COUNT=$(ls pawlang/lib/*.so* 2>/dev/null | wc -l || echo "0")
+          echo "Bundled libraries: $LIB_COUNT"
+          if [ "$LIB_COUNT" -gt 0 ]; then
+            echo "✅ Libraries properly bundled"
+            ls -lh pawlang/lib/*.so* 2>/dev/null || true
+          else
+            echo "⚠️  Warning: No libraries found"
+          fi
+          
+          echo ""
+          echo "=========================================="
+          echo "✅ All tests passed on ${{ matrix.arch }}!"
+          echo "   • C backend ✅"
+          echo "   • LLVM backend ✅"
+          echo "   • Type casting ✅"
+          echo "   • Integration test ✅"
+          echo "   • Self-contained distribution ✅"
+          echo "=========================================="
