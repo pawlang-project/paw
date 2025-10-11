@@ -35,6 +35,13 @@ jobs:
           - os: windows-latest
             platform: Windows
             arch: x86_64
+            cross_target: null
+          
+          # Windows x86 (32-bit) - Cross-compile
+          - os: windows-latest
+            platform: Windows
+            arch: x86
+            cross_target: x86-windows
         
     steps:
     - name: Checkout code
@@ -79,9 +86,9 @@ jobs:
       run: |
         brew install llvm@19
         echo "✅ LLVM 19 installed successfully"
-      
+    
     - name: Install LLVM (Windows)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       shell: powershell
       run: |
         choco install llvm --version=19.1.7 -y
@@ -99,7 +106,15 @@ jobs:
         Get-ChildItem "C:\Program Files\LLVM\bin" | Select-Object Name | Format-Table -AutoSize
         
     - name: Build PawLang compiler
-      run: zig build
+      shell: bash
+      run: |
+        if [ "${{ matrix.cross_target }}" != "null" ] && [ -n "${{ matrix.cross_target }}" ]; then
+          echo "Cross-compiling for ${{ matrix.cross_target }}..."
+          zig build -Dtarget=${{ matrix.cross_target }}
+          echo "✅ Cross-compilation successful!"
+        else
+          zig build
+        fi
       # Windows下build.zig会自动复制LLVM DLL到输出目录
       
     - name: Test - Hello World (Unix)
@@ -109,7 +124,7 @@ jobs:
         echo "✅ Hello World test passed"
       
     - name: Test - Hello World (Windows)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       shell: powershell
       run: |
         .\zig-out\bin\pawc.exe examples\hello.paw
@@ -131,7 +146,7 @@ jobs:
         fi
       
     - name: Test - Type Casting (Windows)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       shell: powershell
       run: |
         .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=c
@@ -153,7 +168,7 @@ jobs:
         fi
       
     - name: Test - Integration Test (Windows)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       shell: powershell
       run: |
         .\zig-out\bin\pawc.exe tests\integration\v0.1.8_test.paw --backend=c
@@ -183,8 +198,8 @@ jobs:
           rm output.ll
         fi
       
-    - name: Test - LLVM Backend (Windows)
-      if: runner.os == 'Windows'
+    - name: Test - LLVM Backend (Windows)  
+      if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       shell: powershell
       run: |
         .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=llvm
@@ -230,7 +245,7 @@ jobs:
         zig build
       
     - name: Test - Build without LLVM backend (Windows)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       shell: powershell
       run: |
         Write-Host "Testing build without LLVM backend..."
@@ -383,7 +398,7 @@ jobs:
         echo "=========================================="
     
     - name: Test - Distribution Package (Windows) - Build
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       shell: powershell
       run: |
         Write-Host ""
@@ -392,7 +407,7 @@ jobs:
         Write-Host "Package created"
     
     - name: Test - Distribution Package (Windows) - Uninstall LLVM
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       shell: powershell
       run: |
         Write-Host ""
@@ -402,7 +417,7 @@ jobs:
         Write-Host "Windows LLVM uninstalled"
     
     - name: Test - Distribution Package (Windows) - Test Package
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       shell: powershell
       run: |
         Write-Host ""
@@ -465,7 +480,20 @@ jobs:
         Write-Host ""
         Write-Host "SUCCESS: Distribution package works!"
     
-    - name: Summary
+    - name: Summary - Cross-compile
+      if: matrix.cross_target != null && matrix.cross_target != 'null'
+      run: |
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "✅ Cross-compilation successful!"
+        echo "   Platform: ${{ matrix.platform }} (${{ matrix.arch }})"
+        echo "   Target: ${{ matrix.cross_target }}"
+        echo "   • Build ✅"
+        echo "   • Ready for distribution"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      shell: bash
+    
+    - name: Summary - Full Test
+      if: matrix.cross_target == null || matrix.cross_target == 'null'
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "✅ All tests passed!"
