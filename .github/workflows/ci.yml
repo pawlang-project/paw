@@ -57,6 +57,12 @@ jobs:
       run: |
         brew install llvm@19
         echo "✅ LLVM 19 installed via Homebrew"
+    
+    - name: Install LLVM (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install llvm --version=19.1.7 -y
+        echo "✅ LLVM 19 installed via Chocolatey"
         
     - name: Build PawLang compiler
       run: zig build
