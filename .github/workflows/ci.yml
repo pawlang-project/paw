@@ -126,7 +126,13 @@ jobs:
       run: |
         if [ "${{ matrix.cross_target }}" != "null" ] && [ -n "${{ matrix.cross_target }}" ]; then
           echo "Cross-compiling for ${{ matrix.cross_target }}..."
-          zig build -Dtarget=${{ matrix.cross_target }}
+          # For Windows x86, disable LLVM (32-bit LLVM libs not available)
+          if [ "${{ matrix.cross_target }}" = "x86-windows" ]; then
+            echo "Note: Building without LLVM backend (32-bit Windows)"
+            zig build -Dtarget=${{ matrix.cross_target }} -Denable-llvm=false
+          else
+            zig build -Dtarget=${{ matrix.cross_target }}
+          fi
           echo "✅ Cross-compilation successful!"
         else
           zig build
