@@ -15,54 +15,33 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Ubuntu variants (native runners)
+          # Linux - Core platforms
           - os: ubuntu-latest
             arch: Ubuntu 24.04 (x86_64)
             zig_version: 0.15.1
           - os: ubuntu-22.04
             arch: Ubuntu 22.04 LTS (x86_64)
             zig_version: 0.15.1
-          - os: ubuntu-20.04
-            arch: Ubuntu 20.04 LTS (x86_64)
-            zig_version: 0.15.1
           
-          # Other Linux distros (via containers)
+          # Linux - Other distros (representative samples)
           - os: ubuntu-latest
             container: debian:bookworm
-            arch: Debian 12 Bookworm (x86_64)
-            zig_version: 0.15.1
-          - os: ubuntu-latest
-            container: debian:bullseye
-            arch: Debian 11 Bullseye (x86_64)
+            arch: Debian 12 (x86_64)
             zig_version: 0.15.1
           - os: ubuntu-latest
             container: fedora:latest
             arch: Fedora Latest (x86_64)
             zig_version: 0.15.1
-          - os: ubuntu-latest
-            container: fedora:39
-            arch: Fedora 39 (x86_64)
-            zig_version: 0.15.1
-          - os: ubuntu-latest
-            container: archlinux:latest
-            arch: Arch Linux (x86_64)
-            zig_version: 0.15.1
           
-          # macOS variants
+          # macOS - Core platforms
           - os: macos-latest
             arch: macOS Apple Silicon (M1/M2/M3)
             zig_version: 0.15.1
-          - os: macos-14
-            arch: macOS 14 Apple Silicon
-            zig_version: 0.15.1
           - os: macos-13
-            arch: macOS 13 Intel (x86_64)
-            zig_version: 0.15.1
-          - os: macos-12
-            arch: macOS 12 Intel (x86_64)
+            arch: macOS Intel (x86_64)
             zig_version: 0.15.1
           
-          # Windows variants
+          # Windows
           - os: windows-latest
             arch: Windows Server 2022 (x86_64)
             zig_version: 0.15.1
