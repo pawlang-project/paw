@@ -485,7 +485,7 @@ jobs:
         Remove-Item -Recurse -Force $TEST_DIR
         
         Write-Host ""
-        Write-Host "✅ Distribution package is self-contained!"
+        Write-Host "Distribution package is self-contained!"
     
     - name: Summary
       run: |
