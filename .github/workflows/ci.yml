@@ -487,3 +487,68 @@ jobs:
         echo "   • Self-contained distribution ✅"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       shell: bash
+  
+  test-bsd:
+    name: Test on ${{ matrix.os }}
+    runs-on: macos-13
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: FreeBSD 14.0
+            vm_os: freebsd
+            vm_version: '14.0'
+          - os: NetBSD 10.0
+            vm_os: netbsd
+            vm_version: '10.0'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Test on ${{ matrix.os }}
+      uses: vmactions/${{ matrix.vm_os }}-vm@v1
+      with:
+        release: ${{ matrix.vm_version }}
+        usesh: true
+        prepare: |
+          pkg install -y llvm19 git bash curl
+          curl -L https://ziglang.org/download/0.15.1/zig-linux-x86_64-0.15.1.tar.xz | tar -xJ
+          mv zig-linux-x86_64-0.15.1 /usr/local/zig
+          ln -sf /usr/local/zig/zig /usr/local/bin/zig
+        
+        run: |
+          echo "=========================================="
+          echo "Testing PawLang on ${{ matrix.os }}"
+          echo "=========================================="
+          
+          # Verify tools
+          zig version
+          clang --version
+          
+          # Build
+          zig build
+          
+          # Test C backend
+          ./zig-out/bin/pawc examples/hello.paw --backend=c
+          if [ -f output.c ]; then
+            echo "PASS: C backend works on ${{ matrix.os }}"
+            rm output.c
+          else
+            echo "FAIL: C backend failed"
+            exit 1
+          fi
+          
+          # Test LLVM backend
+          ./zig-out/bin/pawc examples/hello.paw --backend=llvm
+          if [ -f output.ll ]; then
+            echo "PASS: LLVM backend works on ${{ matrix.os }}"
+            cat output.ll | head -5
+            rm output.ll
+          else
+            echo "FAIL: LLVM backend failed"
+            exit 1
+          fi
+          
+          echo ""
+          echo "SUCCESS: All tests passed on ${{ matrix.os }}!"
