@@ -29,31 +29,10 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Install LLVM (Linux/macOS)
-      if: runner.os != 'Windows'
+    - name: Install LLVM (All Platforms)
       run: |
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "📥 Installing LLVM using install_llvm_complete.py"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        python3 scripts/install_llvm_complete.py --yes --skip-build --skip-test
-        echo ""
-        echo "✅ LLVM installation complete"
-      
-    - name: Install LLVM (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        echo 📥 Installing LLVM 19 via Chocolatey
-        echo ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        choco install llvm --version=19.1.6 -y
-        mkdir llvm
-        mkdir llvm\install
-        mklink /D llvm\install\bin "C:\Program Files\LLVM\bin"
-        mklink /D llvm\install\lib "C:\Program Files\LLVM\lib"
-        mklink /D llvm\install\include "C:\Program Files\LLVM\include"
-        echo.
-        echo ✅ LLVM installation complete
-      shell: cmd
+        python scripts/install_llvm_complete.py --yes --skip-build --skip-test
+      shell: bash
         
     - name: Build PawLang compiler
       run: zig build
