@@ -40,8 +40,13 @@ pub fn build(b: *std.Build) void {
             "/usr/bin/llvm-config-19",
             "/usr/lib/llvm-19/bin/llvm-config",
         }
+    else if (target.result.os.tag == .windows)
+        &[_][]const u8{
+            "llvm-config.exe",
+            "C:\\Program Files\\LLVM\\bin\\llvm-config.exe",
+        }
     else
-        &[_][]const u8{"llvm-config.exe"};
+        &[_][]const u8{"llvm-config"};
     
     // Try to find llvm-config
     const llvm_config_path = blk: {
