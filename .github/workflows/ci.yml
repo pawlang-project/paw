@@ -177,9 +177,113 @@ jobs:
           exit 1
         }
       
+    - name: Test - Build without LLVM backend (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🧪 Testing build without LLVM backend..."
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        
+        # Build without LLVM
+        zig build -Denable-llvm=false
+        
+        # Test 1: C backend should still work
+        echo ""
+        echo "Test 1: Verify C backend works without LLVM"
+        ./zig-out/bin/pawc examples/hello.paw --backend=c
+        if [ -f output.c ]; then
+          echo "✅ C backend works without LLVM"
+          rm output.c
+        else
+          echo "❌ C backend failed"
+          exit 1
+        fi
+        
+        # Test 2: LLVM backend should fail gracefully with error message
+        echo ""
+        echo "Test 2: Verify LLVM backend shows friendly error"
+        set +e  # Don't exit on error
+        ./zig-out/bin/pawc examples/hello.paw --backend=llvm 2>&1 | tee llvm_error.txt
+        EXIT_CODE=$?
+        set -e
+        
+        # Check if error message contains expected text
+        if grep -q "LLVM backend not available" llvm_error.txt; then
+          echo "✅ Friendly error message displayed"
+        else
+          echo "❌ Error message not found"
+          cat llvm_error.txt
+          exit 1
+        fi
+        
+        # Verify LLVM backend didn't create output
+        if [ ! -f output.ll ]; then
+          echo "✅ LLVM backend correctly disabled"
+        else
+          echo "❌ LLVM backend shouldn't have created output"
+          exit 1
+        fi
+        
+        rm -f llvm_error.txt
+        echo ""
+        echo "✅ All no-LLVM tests passed!"
+      
+    - name: Test - Build without LLVM backend (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        Write-Host ""
+        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        Write-Host "🧪 Testing build without LLVM backend..."
+        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        
+        # Build without LLVM
+        zig build -Denable-llvm=false
+        
+        # Test 1: C backend should still work
+        Write-Host ""
+        Write-Host "Test 1: Verify C backend works without LLVM"
+        .\zig-out\bin\pawc.exe examples\hello.paw --backend=c
+        if (Test-Path output.c) {
+          Write-Host "✅ C backend works without LLVM"
+          Remove-Item output.c
+        } else {
+          Write-Host "❌ C backend failed"
+          exit 1
+        }
+        
+        # Test 2: LLVM backend should fail gracefully
+        Write-Host ""
+        Write-Host "Test 2: Verify LLVM backend shows friendly error"
+        $output = & .\zig-out\bin\pawc.exe examples\hello.paw --backend=llvm 2>&1
+        
+        # Check if error message contains expected text
+        if ($output -match "LLVM backend not available") {
+          Write-Host "✅ Friendly error message displayed"
+        } else {
+          Write-Host "❌ Error message not found"
+          Write-Host $output
+          exit 1
+        }
+        
+        # Verify LLVM backend didn't create output
+        if (-not (Test-Path output.ll)) {
+          Write-Host "✅ LLVM backend correctly disabled"
+        } else {
+          Write-Host "❌ LLVM backend shouldn't have created output"
+          exit 1
+        }
+        
+        Write-Host ""
+        Write-Host "✅ All no-LLVM tests passed!"
+    
     - name: Summary
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "✅ All tests passed on ${{ matrix.os }}!"
+        echo "   • C backend ✅"
+        echo "   • LLVM backend ✅"
+        echo "   • No-LLVM build ✅"
+        echo "   • Error handling ✅"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       shell: bash
