@@ -3,7 +3,9 @@ const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
 const TypeChecker = @import("typechecker.zig").TypeChecker;
 const CodeGen = @import("codegen.zig").CodeGen;
-const LLVMNativeBackend = @import("llvm_native_backend.zig").LLVMNativeBackend; // 🆕 v0.1.4
+const llvm_backend = @import("llvm_native_backend.zig"); // 🆕 v0.1.4
+const LLVMNativeBackend = llvm_backend.LLVMNativeBackend;
+const LLVMOptLevel = llvm_backend.OptLevel; // 🆕 v0.1.7
 const CBackend = @import("c_backend.zig").CBackend;
 const ModuleLoader = @import("module.zig").ModuleLoader;
 const ast_mod = @import("ast.zig");
@@ -16,6 +18,22 @@ const VERSION = "0.1.4-dev";
 const Backend = enum {
     c,      // C backend (default, stable)
     llvm,   // LLVM native backend
+};
+
+// 🆕 v0.1.7: LLVM optimization levels
+const OptLevel = enum {
+    O0,  // No optimization (debugging)
+    O1,  // Basic optimization
+    O2,  // Standard optimization (recommended)
+    O3,  // Aggressive optimization
+    
+    pub fn fromString(s: []const u8) ?OptLevel {
+        if (std.mem.eql(u8, s, "-O0")) return .O0;
+        if (std.mem.eql(u8, s, "-O1")) return .O1;
+        if (std.mem.eql(u8, s, "-O2")) return .O2;
+        if (std.mem.eql(u8, s, "-O3")) return .O3;
+        return null;
+    }
 };
 
 // 🆕 check command: type checking only
@@ -145,6 +163,7 @@ pub fn main() !void {
     var should_run = false;      // 是否运行
     var should_compile = false;  // 是否编译为可执行文件
     var backend = Backend.c;     // 🆕 v0.1.4: 后端选择，默认C后端
+    var opt_level: ?OptLevel = null;  // 🆕 v0.1.7: LLVM 优化级别
 
     // 解析命令行选项
     var i: usize = 2;
@@ -162,12 +181,18 @@ pub fn main() !void {
             should_compile = true;
         } else if (std.mem.eql(u8, arg, "--compile")) {
             should_compile = true;
-            } else if (std.mem.eql(u8, arg, "--backend=llvm")) {
-                // 🆕 v0.1.4: LLVM后端 (自动选择最佳模式)
-                backend = .llvm;
-            } else if (std.mem.eql(u8, arg, "--backend=c")) {
-                backend = .c;
+        } else if (std.mem.eql(u8, arg, "--backend=llvm")) {
+            // 🆕 v0.1.4: LLVM后端 (自动选择最佳模式)
+            backend = .llvm;
+        } else if (std.mem.eql(u8, arg, "--backend=c")) {
+            backend = .c;
+        } else if (OptLevel.fromString(arg)) |level| {
+            // 🆕 v0.1.7: 优化级别 (-O0, -O1, -O2, -O3)
+            opt_level = level;
+            if (backend != .llvm) {
+                std.debug.print("⚠️  Warning: Optimization flags (-O0/-O1/-O2/-O3) only work with --backend=llvm\n", .{});
             }
+        }
     }
 
     // 读取源文件
@@ -296,7 +321,15 @@ pub fn main() !void {
                 if (verbose) {
                     std.debug.print("[INFO] Using LLVM native backend\n", .{});
                 }
-                var llvm_native = try LLVMNativeBackend.init(allocator, "pawlang_module");
+                // 🆕 v0.1.7: 传递优化级别，默认 O0
+                const llvm_opt_level: LLVMOptLevel = if (opt_level) |level| switch (level) {
+                    .O0 => .O0,
+                    .O1 => .O1,
+                    .O2 => .O2,
+                    .O3 => .O3,
+                } else .O0;
+                
+                var llvm_native = try LLVMNativeBackend.init(allocator, "pawlang_module", llvm_opt_level);
                 defer llvm_native.deinit();
                 break :blk try llvm_native.generate(ast);
             },
@@ -451,9 +484,34 @@ pub fn main() !void {
                     },
                     .llvm => {
                         std.debug.print("✅ LLVM IR generated: {s}\n", .{code_filename});
+                        
+                        // 🆕 v0.1.7: 显示优化级别信息
+                        if (opt_level) |level| {
+                            const opt_str = switch (level) {
+                                .O0 => "-O0 (no optimization)",
+                                .O1 => "-O1 (basic optimization)",
+                                .O2 => "-O2 (standard optimization) ⭐",
+                                .O3 => "-O3 (aggressive optimization)",
+                            };
+                            std.debug.print("⚡ Optimization: {s}\n", .{opt_str});
+                        }
+                        
                         std.debug.print("💡 Hints:\n", .{});
-                        std.debug.print("   • Compile: llvm/install/bin/clang {s} -o {s}\n", .{ code_filename, output_name });
-                        std.debug.print("   • Or: clang {s} -o {s} (system clang)\n", .{ code_filename, output_name });
+                        
+                        // 🆕 v0.1.7: 根据优化级别提供不同的编译建议
+                        if (opt_level) |level| {
+                            const clang_opt = switch (level) {
+                                .O0 => "-O0",
+                                .O1 => "-O1",
+                                .O2 => "-O2",
+                                .O3 => "-O3",
+                            };
+                            std.debug.print("   • Compile with optimization: clang {s} {s} -o {s}\n", .{ code_filename, clang_opt, output_name });
+                            std.debug.print("   • Local LLVM: llvm/install/bin/clang {s} {s} -o {s}\n", .{ code_filename, clang_opt, output_name });
+                        } else {
+                            std.debug.print("   • Compile: llvm/install/bin/clang {s} -o {s}\n", .{ code_filename, output_name });
+                            std.debug.print("   • Or: clang {s} -o {s} (system clang)\n", .{ code_filename, output_name });
+                        }
                         std.debug.print("   • Run: ./{s}\n", .{output_name});
                     },
                 }
@@ -478,7 +536,6 @@ fn printUsage() void {
     std.debug.print("\n", .{});
     std.debug.print("Options:\n", .{});
     std.debug.print("  -o <file>        Specify output file name\n", .{});
-    std.debug.print("  -O               Enable optimization (not implemented)\n", .{});
     std.debug.print("  -v               Verbose output\n", .{});
     std.debug.print("  --compile        Compile to executable (C backend only)\n", .{});
     std.debug.print("  --run            Compile and run immediately (C backend only)\n", .{});
@@ -487,11 +544,19 @@ fn printUsage() void {
     std.debug.print("  --backend=c              Use C backend (default)\n", .{});
     std.debug.print("  --backend=llvm           Use LLVM native backend 🆕\n", .{});
     std.debug.print("\n", .{});
+    std.debug.print("LLVM Optimization (v0.1.7) 🆕:\n", .{});
+    std.debug.print("  -O0              No optimization (fastest compile, debugging)\n", .{});
+    std.debug.print("  -O1              Basic optimization (balanced)\n", .{});
+    std.debug.print("  -O2              Standard optimization (recommended) ⭐\n", .{});
+    std.debug.print("  -O3              Aggressive optimization (maximum performance)\n", .{});
+    std.debug.print("\n", .{});
     std.debug.print("Examples:\n", .{});
     std.debug.print("  pawc hello.paw                       Generate C code -> output.c\n", .{});
     std.debug.print("  pawc hello.paw --compile             Compile to executable -> output\n", .{});
     std.debug.print("  pawc hello.paw --run                 Compile and run\n", .{});
     std.debug.print("  pawc hello.paw --backend=llvm        Generate LLVM IR -> output.ll 🚀\n", .{});
+    std.debug.print("  pawc hello.paw --backend=llvm -O2    LLVM with optimization ⚡\n", .{});
+    std.debug.print("  pawc fibonacci.paw --backend=llvm -O3  Maximum optimization 🚀\n", .{});
     std.debug.print("  pawc check hello.paw                 Type check only\n", .{});
     std.debug.print("  pawc init my_project                 Create new project\n", .{});
     std.debug.print("\n", .{});

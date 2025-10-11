@@ -2,6 +2,129 @@
 
 All notable changes to the Paw programming language will be documented in this file.
 
+## [0.1.7] - TBD
+
+### 🎯 LLVM 优化支持 + as 类型转换
+
+**Major Updates**: 
+1. 为 LLVM 后端添加优化级别支持，让用户可以控制代码优化程度
+2. 完整实现 `as` 类型转换操作符，支持所有基础类型之间的转换
+
+#### New Features
+
+**LLVM 优化级别** ⚡:
+- ✅ **-O0**: 无优化（最快编译，便于调试）
+- ✅ **-O1**: 基础优化（平衡编译速度和性能）
+- ✅ **-O2**: 标准优化（推荐，大多数项目的最佳选择）⭐
+- ✅ **-O3**: 激进优化（最大性能）
+
+**as 类型转换** 🔄:
+- ✅ **整数 ↔ 整数**: 扩展（zext/sext）、截断（trunc）、有符号/无符号互转
+- ✅ **整数 ↔ 浮点**: sitofp, uitofp, fptosi, fptoui
+- ✅ **浮点 ↔ 浮点**: f32↔f64 (fpext/fptrunc)
+- ✅ **bool/char ↔ 整数**: 特殊转换支持
+- ✅ **完整的 LLVM IR 指令**: 9种类型转换指令
+- ✅ **C Backend 支持**: 生成标准 C 类型转换
+- ✅ **TypeChecker 验证**: 编译时检查转换合法性
+
+**智能提示**:
+- ✅ 编译器根据优化级别提供对应的 clang 编译建议
+- ✅ 清晰的优化级别说明
+- ✅ 帮助信息中包含详细的使用说明
+
+#### Code Examples
+
+**基本用法**:
+```bash
+# 无优化（调试）
+pawc app.paw --backend=llvm -O0
+
+# 标准优化（推荐）
+pawc app.paw --backend=llvm -O2
+clang output.ll -O2 -o app
+```
+
+**完整示例**:
+```bash
+# 生成优化的 LLVM IR
+$ pawc fibonacci.paw --backend=llvm -O3 -v
+
+✅ LLVM IR generated: output.ll
+⚡ Optimization: -O3 (aggressive optimization)
+💡 Hints:
+   • Compile with optimization: clang output.ll -O3 -o output
+   • Run: ./output
+```
+
+**as 类型转换示例**:
+```paw
+fn main() -> i32 {
+    // 整数扩展
+    let x: i32 = 100;
+    let y: i64 = x as i64;    // sext i32 %x to i64
+    
+    // 整数到浮点
+    let a: i32 = 42;
+    let b: f64 = a as f64;    // sitofp i32 %a to double
+    
+    // 浮点到整数（截断）
+    let f: f64 = 3.14;
+    let i: i32 = f as i32;    // fptosi double %f to i32 -> 3
+    
+    // bool/char 转换
+    let flag: bool = true;
+    let num: i32 = flag as i32;  // zext i1 %flag to i32 -> 1
+    
+    return 0;
+}
+```
+
+C Backend:
+```c
+int64_t y = ((int64_t)(x));
+double b = ((double)(a));
+int32_t i = ((int32_t)(f));
+```
+
+LLVM IR:
+```llvm
+%y = sext i32 %x to i64
+%b = sitofp i32 %a to double
+%i = fptosi double %f to i32
+```
+
+#### Technical Improvements
+
+**实用优化方案**:
+- PawLang 生成高质量的 LLVM IR（SSA 形式）
+- 利用 clang/llc 的成熟优化管道
+- 避免复杂的 PassManager 集成
+- 更稳定可靠
+
+**代码修改**:
+- `src/main.zig`: 添加优化参数解析和提示
+- `src/llvm_native_backend.zig`: 添加 OptLevel 支持
+- `src/llvm_c_api.zig`: 添加优化文档说明
+
+#### Testing
+
+**新增基准测试**:
+- `tests/benchmarks/fibonacci_benchmark.paw` - 递归性能测试
+- `tests/benchmarks/loop_benchmark.paw` - 循环密集型测试
+
+**测试结果**:
+- ✅ 所有优化级别正常工作
+- ✅ clang 可以正确应用优化
+- ✅ 编译器提示准确有用
+
+#### Documentation
+
+- ✅ 创建 `docs/RELEASE_NOTES_v0.1.7.md`
+- ✅ 更新 CHANGELOG.md
+- ⏳ 更新 README.md（待完成）
+
+---
+
 ## [0.1.6] - TBD
 
 ### 🎯 完善 let mut 系统

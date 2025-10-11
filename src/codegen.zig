@@ -1057,6 +1057,14 @@ pub const CodeGen = struct {
             .try_expr => |inner| {
                 try self.generateTryExpr(inner.*);
             },
+            // 🆕 v0.1.7: as 类型转换
+            .as_expr => |as_cast| {
+                try self.output.appendSlice("((");
+                try self.output.appendSlice(self.typeToC(as_cast.target_type));
+                try self.output.appendSlice(")(");
+                _ = try self.generateExpr(as_cast.value.*);
+                try self.output.appendSlice("))");
+            },
             else => {
                 // 其他表达式暂时生成 0
                 try self.output.appendSlice("0");

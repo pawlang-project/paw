@@ -63,11 +63,16 @@ pawc hello.paw --backend=c        # Explicit C backend
 
 # LLVM Native Backend (NEW!) - Better optimization
 pawc hello.paw --backend=llvm     # Generates LLVM IR
+
+# LLVM with optimization (v0.1.7) ⚡
+pawc hello.paw --backend=llvm -O2 # Standard optimization ⭐
+pawc hello.paw --backend=llvm -O3 # Maximum performance 🚀
 ```
 
 **Features:**
 - ✅ **C Backend**: Stable, portable, works everywhere
 - ✅ **LLVM Backend**: Native API integration, control flow support
+- ✅ **Optimization Levels**: -O0, -O1, -O2, -O3 (v0.1.7) ⚡
 - ✅ **Control Flow**: if/else, loop (unified), break/continue
 - ✅ **Zero Memory Leaks**: Arena allocator, fully leak-free
 - ✅ **Local LLVM Toolchain**: No system dependencies
@@ -510,7 +515,18 @@ Check the `tests/` directory:
 
 ## 🎯 Version History
 
-### v0.1.6 (In Progress) - Current Version 🚀
+### v0.1.7 (In Progress) - Current Version 🚀
+
+**LLVM Optimization Support**
+
+- ✅ Optimization levels (-O0, -O1, -O2, -O3)
+- ✅ Smart compile hints
+- ✅ Performance benchmarks
+- ✅ Detailed documentation
+
+[Read More →](docs/RELEASE_NOTES_v0.1.7.md)
+
+### v0.1.6 (TBD)
 
 **Mutability Control System**
 
@@ -838,7 +854,8 @@ Contributions welcome! Please ensure:
 ## 📄 Documentation
 
 - [CHANGELOG.md](CHANGELOG.md) - Complete change history
-- 🆕 [RELEASE_NOTES_v0.1.6.md](docs/RELEASE_NOTES_v0.1.6.md) - v0.1.6 release notes ⭐
+- 🆕 [RELEASE_NOTES_v0.1.7.md](docs/RELEASE_NOTES_v0.1.7.md) - v0.1.7 release notes ⭐
+- [RELEASE_NOTES_v0.1.6.md](docs/RELEASE_NOTES_v0.1.6.md) - v0.1.6 release notes
 - [RELEASE_NOTES_v0.1.5.md](docs/RELEASE_NOTES_v0.1.5.md) - v0.1.5 release notes
 - [RELEASE_NOTES_v0.1.4.md](docs/RELEASE_NOTES_v0.1.4.md) - v0.1.4 release notes
 - [INSTALL_GUIDE.md](scripts/INSTALL_GUIDE.md) - One-click installation guide
@@ -852,20 +869,26 @@ Contributions welcome! Please ensure:
 
 ## 🗺️ Roadmap
 
-### v0.1.6 (In Progress) 🚧
+### v0.1.7 (In Progress) 🚧
+
+- ✅ LLVM optimization levels (-O0, -O1, -O2, -O3)
+- ✅ Smart compile hints
+- ✅ Performance benchmarks
+- ⏳ Documentation updates
+
+### v0.1.8 (Planned)
+
+- [ ] Enhanced error messages (source locations, colors)
+- [ ] String type improvements
+- [ ] Standard library expansion
+- [ ] Compile-time optimizations
+
+### v0.1.6 (Completed) ✅
 
 - ✅ let mut system
 - ✅ mut self support
 - ✅ Compile-time mutability checking
 - ✅ Backend bug fixes
-- ⏳ Documentation updates
-
-### v0.1.7 (Planned)
-
-- [ ] LLVM optimizations (-O0, -O1, -O2, -O3)
-- [ ] Enhanced error messages (source locations, colors)
-- [ ] String type improvements
-- [ ] Standard library expansion
 
 ### v0.1.5 (Released - January 10, 2025) ✅
 

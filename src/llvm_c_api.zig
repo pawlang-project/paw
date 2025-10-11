@@ -100,11 +100,20 @@ pub extern "c" fn LLVMInt1TypeInContext(C: ContextRef) TypeRef;
 /// Get i8 type
 pub extern "c" fn LLVMInt8TypeInContext(C: ContextRef) TypeRef;
 
+/// Get i16 type
+pub extern "c" fn LLVMInt16TypeInContext(C: ContextRef) TypeRef;
+
 /// Get i32 type
 pub extern "c" fn LLVMInt32TypeInContext(C: ContextRef) TypeRef;
 
 /// Get i64 type
 pub extern "c" fn LLVMInt64TypeInContext(C: ContextRef) TypeRef;
+
+/// Get i128 type
+pub extern "c" fn LLVMInt128TypeInContext(C: ContextRef) TypeRef;
+
+/// Get float type (f32)
+pub extern "c" fn LLVMFloatTypeInContext(C: ContextRef) TypeRef;
 
 /// Get double type (f64)
 pub extern "c" fn LLVMDoubleTypeInContext(C: ContextRef) TypeRef;
@@ -352,6 +361,82 @@ pub extern "c" fn LLVMBuildInBoundsGEP2(
     Name: [*:0]const u8,
 ) ValueRef;
 
+// ============================================================================
+// 🆕 v0.1.7: Type Cast Instructions
+// ============================================================================
+
+/// Build zero extension (无符号扩展)
+pub extern "c" fn LLVMBuildZExt(
+    Builder: BuilderRef,
+    Val: ValueRef,
+    DestTy: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build sign extension (符号扩展)
+pub extern "c" fn LLVMBuildSExt(
+    Builder: BuilderRef,
+    Val: ValueRef,
+    DestTy: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build truncation (截断)
+pub extern "c" fn LLVMBuildTrunc(
+    Builder: BuilderRef,
+    Val: ValueRef,
+    DestTy: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build signed integer to floating point
+pub extern "c" fn LLVMBuildSIToFP(
+    Builder: BuilderRef,
+    Val: ValueRef,
+    DestTy: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build unsigned integer to floating point
+pub extern "c" fn LLVMBuildUIToFP(
+    Builder: BuilderRef,
+    Val: ValueRef,
+    DestTy: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build floating point to signed integer
+pub extern "c" fn LLVMBuildFPToSI(
+    Builder: BuilderRef,
+    Val: ValueRef,
+    DestTy: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build floating point to unsigned integer
+pub extern "c" fn LLVMBuildFPToUI(
+    Builder: BuilderRef,
+    Val: ValueRef,
+    DestTy: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build floating point extension (f32 -> f64)
+pub extern "c" fn LLVMBuildFPExt(
+    Builder: BuilderRef,
+    Val: ValueRef,
+    DestTy: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
+/// Build floating point truncation (f64 -> f32)
+pub extern "c" fn LLVMBuildFPTrunc(
+    Builder: BuilderRef,
+    Val: ValueRef,
+    DestTy: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
 /// Build struct GEP
 pub extern "c" fn LLVMBuildStructGEP2(
     Builder: BuilderRef,
@@ -410,6 +495,15 @@ pub const Context = struct {
     pub fn i1Type(self: Context) TypeRef {
         return LLVMInt1TypeInContext(self.ref);
     }
+    
+    // 🆕 v0.1.7: 更多整数类型（用于类型转换）
+    pub fn i8Type(self: Context) TypeRef {
+        return LLVMInt8TypeInContext(self.ref);
+    }
+    
+    pub fn i16Type(self: Context) TypeRef {
+        return LLVMInt16TypeInContext(self.ref);
+    }
 
     pub fn i32Type(self: Context) TypeRef {
         return LLVMInt32TypeInContext(self.ref);
@@ -417,6 +511,14 @@ pub const Context = struct {
 
     pub fn i64Type(self: Context) TypeRef {
         return LLVMInt64TypeInContext(self.ref);
+    }
+    
+    pub fn i128Type(self: Context) TypeRef {
+        return LLVMInt128TypeInContext(self.ref);
+    }
+    
+    pub fn floatType(self: Context) TypeRef {
+        return LLVMFloatTypeInContext(self.ref);
     }
 
     pub fn doubleType(self: Context) TypeRef {
@@ -577,6 +679,43 @@ pub const Builder = struct {
     pub fn buildStructGEP(self: Builder, ty: TypeRef, ptr: ValueRef, idx: u32, name: [:0]const u8) ValueRef {
         return LLVMBuildStructGEP2(self.ref, ty, ptr, idx, name.ptr);
     }
+    
+    // 🆕 v0.1.7: Type cast wrappers
+    pub fn buildZExt(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildZExt(self.ref, value, dest_ty, name.ptr);
+    }
+    
+    pub fn buildSExt(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildSExt(self.ref, value, dest_ty, name.ptr);
+    }
+    
+    pub fn buildTrunc(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildTrunc(self.ref, value, dest_ty, name.ptr);
+    }
+    
+    pub fn buildSIToFP(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildSIToFP(self.ref, value, dest_ty, name.ptr);
+    }
+    
+    pub fn buildUIToFP(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildUIToFP(self.ref, value, dest_ty, name.ptr);
+    }
+    
+    pub fn buildFPToSI(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildFPToSI(self.ref, value, dest_ty, name.ptr);
+    }
+    
+    pub fn buildFPToUI(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildFPToUI(self.ref, value, dest_ty, name.ptr);
+    }
+    
+    pub fn buildFPExt(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildFPExt(self.ref, value, dest_ty, name.ptr);
+    }
+    
+    pub fn buildFPTrunc(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildFPTrunc(self.ref, value, dest_ty, name.ptr);
+    }
 };
 
 // Helper function to create constant int
@@ -621,4 +760,22 @@ pub fn appendBasicBlock(context: Context, func: ValueRef, name: [:0]const u8) Ba
 pub fn arrayType(element_type: TypeRef, count: u32) TypeRef {
     return LLVMArrayType(element_type, count);
 }
+
+// ============================================================================
+// 🆕 v0.1.7: Optimization Level Support
+// ============================================================================
+//
+// 注意：v0.1.7 采用实用方案
+// 优化级别参数会保存在 backend 中，提示用户在编译时使用相应的 clang 优化参数
+// 例如：
+//   pawc app.paw --backend=llvm -O2
+//   clang output.ll -O2 -o app
+//
+// 这样做的优点：
+// - 不需要链接 LLVM Transform 库（避免符号未定义问题）
+// - 利用 clang 的成熟优化管道
+// - 更稳定可靠
+//
+// PawLang 生成的 LLVM IR 已经是高质量的 SSA 形式，
+// clang 可以直接进行各种优化。
 
