@@ -478,183 +478,45 @@ jobs:
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       shell: bash
 
-  # QEMU-based multi-architecture tests
+  # QEMU-based multi-architecture tests using official Docker images
   test-qemu:
     name: Test Linux (${{ matrix.arch }}) via QEMU
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        arch: [aarch64, armv7, riscv64, ppc64le, s390x]
+        include:
+          - arch: aarch64
+            image: arm64v8/ubuntu:22.04
+          - arch: armv7
+            image: arm32v7/ubuntu:22.04
+          - arch: riscv64
+            image: riscv64/ubuntu:22.04
+          - arch: ppc64le
+            image: ppc64le/ubuntu:22.04
+          - arch: s390x
+            image: s390x/ubuntu:22.04
         
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+    
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      
+    - name: Prepare test script
+      run: chmod +x scripts/qemu_test.sh
       
     - name: Test on ${{ matrix.arch }}
-      uses: uraimo/run-on-arch-action@v2
-      with:
-        arch: ${{ matrix.arch }}
-        distro: bullseye
-        githubToken: ${{ github.token }}
-        install: |
-          # Use Debian 11 (bullseye) for better QEMU stability
-          apt-get update -q -y
-          
-          # Install minimal dependencies (avoid complex Python packages)
-          apt-get install -q -y --no-install-recommends wget curl ca-certificates xz-utils
-          
-          # Install LLVM from Debian repository (simpler, more stable)
-          echo "Installing LLVM..."
-          apt-get install -q -y --no-install-recommends llvm-13 llvm-13-dev clang-13 || {
-            echo "LLVM 13 failed, trying default LLVM..."
-            apt-get install -q -y --no-install-recommends llvm llvm-dev clang
-          }
-          
-          # Install Zig
-          echo "Installing Zig..."
-          wget -q https://ziglang.org/download/0.15.1/zig-linux-x86_64-0.15.1.tar.xz
-          tar -xf zig-linux-x86_64-0.15.1.tar.xz
-          mv zig-linux-x86_64-0.15.1 /usr/local/zig
-          ln -s /usr/local/zig/zig /usr/local/bin/zig
-          
-          echo "✅ Environment setup complete"
-          
-        run: |
+      run: |
           echo "=========================================="
           echo "Testing PawLang on ${{ matrix.arch }}"
+          echo "Using official Docker image: ${{ matrix.image }}"
           echo "=========================================="
           
-          # Verify tools
-          echo "Zig version:"
-          zig version
-          echo ""
-          echo "LLVM version:"
-          llvm-config-19 --version || llvm-config --version
-          
-          # Build
-          echo ""
-          echo "=========================================="
-          echo "Building PawLang compiler..."
-          echo "=========================================="
-          zig build
-          
-          # Test 1: C backend
-          echo ""
-          echo "Test 1: C backend"
-          ./zig-out/bin/pawc examples/hello.paw --backend=c
-          if [ -f output.c ]; then
-            echo "✅ C backend test passed"
-            rm output.c
-          else
-            echo "❌ C backend test failed"
-            exit 1
-          fi
-          
-          # Test 2: Type casting
-          echo ""
-          echo "Test 2: Type casting"
-          ./zig-out/bin/pawc examples/type_cast_demo.paw --backend=c
-          if [ -f output.c ]; then
-            echo "✅ Type casting test passed"
-            rm output.c
-          else
-            echo "❌ Type casting test failed"
-            exit 1
-          fi
-          
-          # Test 3: Integration test
-          echo ""
-          echo "Test 3: Integration test"
-          ./zig-out/bin/pawc tests/integration/v0.1.8_test.paw --backend=c
-          if [ -f output.c ]; then
-            echo "✅ Integration test passed"
-            rm output.c
-          else
-            echo "❌ Integration test failed"
-            exit 1
-          fi
-          
-          # Test 4: LLVM backend
-          echo ""
-          echo "Test 4: LLVM backend"
-          ./zig-out/bin/pawc examples/hello.paw --backend=llvm
-          if [ -f output.ll ]; then
-            echo "✅ LLVM backend test passed"
-            rm output.ll
-          else
-            echo "❌ LLVM backend test failed"
-            exit 1
-          fi
-          
-          # Test 5: Self-contained distribution
-          echo ""
-          echo "=========================================="
-          echo "Test 5: Self-contained distribution"
-          echo "=========================================="
-          zig build package
-          
-          # Uninstall LLVM
-          echo "Uninstalling system LLVM..."
-          apt-get remove -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev llvm llvm-dev clang libc++-dev libc++abi-dev 2>/dev/null || true
-          rm -rf /usr/lib/llvm-19 /usr/lib/llvm* 2>/dev/null || true
-          
-          # Create test directory
-          mkdir -p /tmp/pawlang-test
-          cd /tmp/pawlang-test
-          tar -xzf $GITHUB_WORKSPACE/pawlang-linux.tar.gz
-          
-          # List extracted files for debugging
-          echo "Extracted files:"
-          ls -la
-          
-          # Clear env vars and set library path
-          unset LLVM_SYS_190_PREFIX
-          export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
-          
-          # Test C backend without system LLVM
-          echo ""
-          echo "Test 5a: C backend without system LLVM"
-          ./bin/pawc $GITHUB_WORKSPACE/examples/hello.paw --backend=c
-          if [ -f output.c ]; then
-            echo "✅ Self-contained C backend works"
-            rm output.c
-          else
-            echo "❌ Self-contained C backend failed"
-            exit 1
-          fi
-          
-          # Test LLVM backend without system LLVM (critical!)
-          echo ""
-          echo "Test 5b: LLVM backend without system LLVM"
-          ./bin/pawc $GITHUB_WORKSPACE/examples/hello.paw --backend=llvm
-          if [ -f output.ll ]; then
-            echo "✅ Self-contained LLVM backend works"
-            rm output.ll
-          else
-            echo "❌ Self-contained LLVM backend failed"
-            ls -la lib/ || true
-            exit 1
-          fi
-          
-          # Verify bundled libraries
-          echo ""
-          echo "Test 5c: Check bundled libraries"
-          LIB_COUNT=$(ls lib/*.so* 2>/dev/null | wc -l || echo "0")
-          echo "Bundled libraries: $LIB_COUNT"
-          if [ "$LIB_COUNT" -gt 0 ]; then
-            echo "✅ Libraries properly bundled"
-            ls -lh lib/*.so* 2>/dev/null || true
-          else
-            echo "⚠️  Warning: No libraries found"
-          fi
-          
-          echo ""
-          echo "=========================================="
-          echo "✅ All tests passed on ${{ matrix.arch }}!"
-          echo "   • C backend ✅"
-          echo "   • LLVM backend ✅"
-          echo "   • Type casting ✅"
-          echo "   • Integration test ✅"
-          echo "   • Self-contained distribution ✅"
-          echo "=========================================="
+          docker run --rm \
+            -v $PWD:/workspace \
+            -w /workspace \
+            --platform linux/${{ matrix.arch }} \
+            ${{ matrix.image }} \
+            bash /workspace/scripts/qemu_test.sh
