@@ -207,7 +207,26 @@ pub fn build(b: *std.Build) void {
     // 链接标准库
     exe.linkLibC();
 
-    b.installArtifact(exe);
+    const install_artifact = b.addInstallArtifact(exe, .{});
+    
+    // Windows: 自动复制LLVM DLL到输出目录
+    if (target.result.os.tag == .windows and has_llvm) {
+        const copy_dlls = b.addSystemCommand(&[_][]const u8{
+            "powershell",
+            "-Command",
+            "Copy-Item 'C:\\Program Files\\LLVM\\bin\\*.dll' 'zig-out\\bin\\' -ErrorAction SilentlyContinue; if ($?) { Write-Host '✅ LLVM DLLs copied to zig-out\\bin\\' }",
+        });
+        // DLL复制依赖于exe安装完成
+        copy_dlls.step.dependOn(&install_artifact.step);
+        
+        // 默认安装步骤包含DLL复制
+        b.getInstallStep().dependOn(&copy_dlls.step);
+        
+        std.debug.print("\n💡 Windows: LLVM DLL将自动复制到输出目录\n", .{});
+    } else {
+        // 非Windows或无LLVM: 只添加artifact安装
+        b.getInstallStep().dependOn(&install_artifact.step);
+    }
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
