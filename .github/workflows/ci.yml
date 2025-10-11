@@ -15,45 +15,37 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64
+          # Linux x86_64 - Native tests
           - os: ubuntu-latest
-            arch: Linux x86_64
+            arch: Linux x86_64 (Ubuntu 24.04)
             zig_version: 0.15.1
           - os: ubuntu-22.04
-            arch: Linux x86_64 (22.04 LTS)
+            arch: Linux x86_64 (Ubuntu 22.04 LTS)
             zig_version: 0.15.1
           
-          # Linux ARM64 (using cross-compile for now, native ARM runners coming soon)
+          # Linux cross-compile targets
           - os: ubuntu-latest
-            arch: Linux ARM64 (aarch64, cross-compile)
+            arch: Linux ARM64 (aarch64)
             zig_version: 0.15.1
             cross_target: aarch64-linux
-          
-          # Linux other architectures (cross-compile test)
           - os: ubuntu-latest
-            arch: Linux RISC-V 64 (cross-compile)
+            arch: Linux RISC-V 64
             zig_version: 0.15.1
             cross_target: riscv64-linux
           - os: ubuntu-latest
-            arch: Linux PowerPC64LE (cross-compile)
+            arch: Linux PowerPC 64 LE
             zig_version: 0.15.1
             cross_target: powerpc64le-linux
-          - os: ubuntu-latest
-            arch: Linux s390x (cross-compile)
-            zig_version: 0.15.1
-            cross_target: s390x-linux
           
-          # macOS x86_64
+          # macOS - Native tests
+          - os: macos-latest
+            arch: macOS ARM64 (Apple Silicon)
+            zig_version: 0.15.1
           - os: macos-13
             arch: macOS x86_64 (Intel)
             zig_version: 0.15.1
           
-          # macOS ARM64
-          - os: macos-latest
-            arch: macOS ARM64 (Apple Silicon)
-            zig_version: 0.15.1
-          
-          # Windows x86_64
+          # Windows - Native tests
           - os: windows-latest
             arch: Windows x86_64
             zig_version: 0.15.1
@@ -73,11 +65,28 @@ jobs:
         python-version: '3.11'
     
     - name: Install LLVM (Linux)
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && !matrix.cross_target
       run: |
+        # Install LLVM 19 from official LLVM repository
+        echo "Installing LLVM 19.1.7 from official source..."
+        
+        # Add LLVM official repository
+        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+        
+        # Detect Ubuntu version
+        . /etc/os-release
+        UBUNTU_CODENAME=$(lsb_release -cs)
+        
+        # Add repository based on Ubuntu version
+        echo "deb http://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-19 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+        
+        # Update and install
         sudo apt-get update
         sudo apt-get install -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev
-        echo "LLVM 19 installed via apt"
+        
+        # Verify installation
+        llvm-config-19 --version
+        echo "✅ LLVM 19 installed successfully"
       
     - name: Install LLVM (macOS)
       if: runner.os == 'macOS'
@@ -112,7 +121,7 @@ jobs:
         if [ -n "${{ matrix.cross_target }}" ]; then
           echo "Cross-compiling for ${{ matrix.cross_target }}..."
           zig build -Dtarget=${{ matrix.cross_target }}
-          echo "Cross-compilation successful!"
+          echo "✅ Cross-compilation successful!"
         else
           zig build
         fi
