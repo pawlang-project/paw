@@ -13,7 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13, windows-latest]
+        # Note: Windows excluded due to Zig 0.14.0 compiler bug
+        # Error: "no encoding found for: none cmp m64 xmm0 none none"
+        # Will be re-enabled when Zig 0.14.1+ is released
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13]
         include:
           - os: ubuntu-latest
             arch: Linux x86_64
