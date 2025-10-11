@@ -100,12 +100,19 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        .\zig-out\bin\pawc.exe examples\hello.paw
+        echo "Running pawc.exe..."
+        $ErrorActionPreference = "Continue"
+        .\zig-out\bin\pawc.exe examples\hello.paw 2>&1
+        $exitCode = $LASTEXITCODE
+        echo "Exit code: $exitCode"
+        
         if (Test-Path output.c) {
           echo "✅ Hello World test passed"
           Remove-Item output.c
         } else {
           echo "❌ No output.c generated"
+          echo "Checking DLL..."
+          Get-ChildItem zig-out\bin\*.dll
           exit 1
         }
       
