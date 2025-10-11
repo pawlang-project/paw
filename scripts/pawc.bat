@@ -1,14 +1,14 @@
 @echo off
 REM PawLang Compiler Launcher Script for Windows
-REM Automatically adds DLL directory to PATH
+REM This script automatically adds the bin directory to PATH for self-contained distribution
 
-REM Get the directory where this script is located
-set "SCRIPT_DIR=%~dp0"
-set "BIN_DIR=%SCRIPT_DIR%..\bin"
+SET SCRIPT_DIR=%~dp0
+SET BIN_DIR=%SCRIPT_DIR%..\bin
+SET LIB_DIR=%SCRIPT_DIR%..\lib
 
-REM Add bin directory to PATH for DLL loading
-set "PATH=%BIN_DIR%;%PATH%"
+REM Add bin directory to PATH (DLLs are in bin directory on Windows)
+SET PATH=%BIN_DIR%;%PATH%
 
-REM Run the actual pawc compiler
+REM Execute pawc with all arguments
 "%BIN_DIR%\pawc.exe" %*
 
