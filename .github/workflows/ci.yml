@@ -82,6 +82,14 @@ jobs:
     - name: Build PawLang compiler
       run: zig build
       
+    - name: Copy LLVM DLLs (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        # 将LLVM DLL复制到pawc.exe所在目录，确保运行时能找到
+        Copy-Item "C:\Program Files\LLVM\bin\LLVM-C.dll" "zig-out\bin\" -ErrorAction SilentlyContinue
+        echo "Copied LLVM DLLs to zig-out\bin\"
+      
     - name: Test - Hello World (Unix)
       if: runner.os != 'Windows'
       run: |
@@ -92,21 +100,12 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        # 确保LLVM DLL在PATH中
-        $env:PATH = "C:\Program Files\LLVM\bin;" + $env:PATH
-        
-        echo "Running pawc.exe..."
-        .\zig-out\bin\pawc.exe examples\hello.paw 2>&1 | Out-String
-        echo "Exit code: $LASTEXITCODE"
-        echo "Checking for output.c..."
+        .\zig-out\bin\pawc.exe examples\hello.paw
         if (Test-Path output.c) {
           echo "✅ Hello World test passed"
           Remove-Item output.c
         } else {
           echo "❌ No output.c generated"
-          echo "Current directory:"
-          Get-ChildItem . -Filter *.c -ErrorAction SilentlyContinue
-          echo "pawc.exe crashed or failed silently"
           exit 1
         }
       
@@ -123,7 +122,6 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        $env:PATH = "C:\Program Files\LLVM\bin;" + $env:PATH
         .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=c
         if (Test-Path output.c) {
           echo "✅ Type casting test passed"
@@ -146,7 +144,6 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        $env:PATH = "C:\Program Files\LLVM\bin;" + $env:PATH
         .\zig-out\bin\pawc.exe tests\integration\v0.1.8_test.paw --backend=c
         if (Test-Path output.c) {
           echo "✅ Integration test passed"
@@ -178,7 +175,6 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        $env:PATH = "C:\Program Files\LLVM\bin;" + $env:PATH
         .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=llvm
         if (Test-Path output.ll) {
           echo "✅ LLVM backend test passed"
