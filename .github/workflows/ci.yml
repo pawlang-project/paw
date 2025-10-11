@@ -17,20 +17,19 @@ jobs:
         include:
           - os: ubuntu-latest
             arch: Linux x86_64
-            zig_version: 0.14.0
+            zig_version: 0.15.1
           - os: ubuntu-24.04-arm
             arch: Linux ARM64
-            zig_version: 0.14.0
+            zig_version: 0.15.1
           - os: macos-latest
             arch: Apple Silicon (M1/M2/M3)
-            zig_version: 0.14.0
+            zig_version: 0.15.1
           - os: macos-13
             arch: Intel (x86_64)
-            zig_version: 0.14.0
+            zig_version: 0.15.1
           - os: windows-latest
             arch: Windows x86_64
-            zig_version: 0.14.0
-            skip_llvm: true
+            zig_version: 0.15.1
         
     steps:
     - name: Checkout code
