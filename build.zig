@@ -119,34 +119,34 @@ pub fn build(b: *std.Build) void {
     build_options.addOption(bool, "llvm_native_available", has_llvm);
     
     // Print build configuration header
-    std.debug.print("\n╭─────────────────────────────────────────╮\n", .{});
-    std.debug.print("│   🐾 PawLang Compiler Build System     │\n", .{});
-    std.debug.print("╰─────────────────────────────────────────╯\n\n", .{});
+    std.debug.print("\n===========================================\n", .{});
+    std.debug.print("   PawLang Compiler Build System\n", .{});
+    std.debug.print("===========================================\n\n", .{});
     
     // Build target info
-    std.debug.print("🎯 Target: {s}-{s}\n", .{
+    std.debug.print("Target: {s}-{s}\n", .{
         @tagName(target.result.cpu.arch),
         @tagName(target.result.os.tag),
     });
-    std.debug.print("⚡ Optimize: {s}\n\n", .{@tagName(optimize)});
+    std.debug.print("Optimize: {s}\n\n", .{@tagName(optimize)});
     
     // Print LLVM configuration
     if (has_llvm) {
-        std.debug.print("┌─ LLVM Configuration ────────────────────\n", .{});
+        std.debug.print("--- LLVM Configuration ---\n", .{});
         if (is_windows_llvm) {
-            std.debug.print("│ 📦 Location: C:\\Program Files\\LLVM\n", .{});
-            std.debug.print("│ 🔍 Detection: clang.exe found\n", .{});
-            std.debug.print("│ 🔗 Linking: LLVM-C + libc++\n", .{});
+            std.debug.print("Location: C:\\Program Files\\LLVM\n", .{});
+            std.debug.print("Detection: clang.exe found\n", .{});
+            std.debug.print("Linking: LLVM-C + libc++\n", .{});
         } else if (llvm_config_path) |config_path| {
-            std.debug.print("│ 📦 Config: {s}\n", .{config_path});
-            std.debug.print("│ 🔍 Detection: llvm-config\n", .{});
-            std.debug.print("│ 🔗 Linking: shared libraries\n", .{});
+            std.debug.print("Config: {s}\n", .{config_path});
+            std.debug.print("Detection: llvm-config\n", .{});
+            std.debug.print("Linking: shared libraries\n", .{});
         }
-        std.debug.print("└─────────────────────────────────────────\n\n", .{});
+        std.debug.print("\n", .{});
         
-        std.debug.print("✅ Available Backends:\n", .{});
-        std.debug.print("   • C backend    (default) → --backend=c\n", .{});
-        std.debug.print("   • LLVM backend (enabled) → --backend=llvm\n", .{});
+        std.debug.print("Available Backends:\n", .{});
+        std.debug.print("  - C backend    (default) -> --backend=c\n", .{});
+        std.debug.print("  - LLVM backend (enabled) -> --backend=llvm\n", .{});
         
         // Add LLVM include path
         if (llvm_include_path) |include_path| {
