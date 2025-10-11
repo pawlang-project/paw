@@ -401,22 +401,22 @@ jobs:
         Write-Host "Uninstalling system LLVM..."
         try {
           choco uninstall llvm -y --force | Out-Null
-          Write-Host "[OK] Chocolatey LLVM uninstalled"
+          Write-Host "OK: Chocolatey LLVM uninstalled"
         } catch {
-          Write-Host "[WARN] Chocolatey uninstall error (may not be installed)"
+          Write-Host "WARN: Chocolatey uninstall error (may not be installed)"
         }
         
         # Force remove LLVM directory
         if (Test-Path "C:\Program Files\LLVM") {
           Remove-Item -Recurse -Force "C:\Program Files\LLVM" -ErrorAction SilentlyContinue
-          Write-Host "[OK] Removed LLVM directory"
+          Write-Host "OK: Removed LLVM directory"
         }
         
         # Verify LLVM is really gone
         if (Test-Path "C:\Program Files\LLVM\bin\clang.exe") {
-          Write-Host "[WARN] Warning: clang.exe still found"
+          Write-Host "WARN: clang.exe still found"
         } else {
-          Write-Host "[OK] Verified: LLVM not found"
+          Write-Host "OK: LLVM not found"
         }
         
         # Create clean test directory
@@ -443,10 +443,10 @@ jobs:
         Write-Host "Test 1: C backend in clean environment"
         & .\pawc.bat examples\hello.paw --backend=c
         if (Test-Path output.c) {
-          Write-Host "[OK] C backend works"
+          Write-Host "PASS: C backend works"
           Remove-Item output.c
         } else {
-          Write-Host "[FAIL] C backend failed"
+          Write-Host "FAIL: C backend failed"
           exit 1
         }
         
@@ -455,12 +455,12 @@ jobs:
         Write-Host "Test 2: LLVM backend WITHOUT system LLVM"
         & .\pawc.bat examples\hello.paw --backend=llvm
         if (Test-Path output.ll) {
-          Write-Host "[OK] LLVM backend works without system LLVM!"
+          Write-Host "PASS: LLVM backend works without system LLVM!"
           Write-Host "   (using bundled DLLs)"
           Get-Content output.ll | Select-Object -First 5
           Remove-Item output.ll
         } else {
-          Write-Host "[FAIL] LLVM backend failed - distribution not self-contained!"
+          Write-Host "FAIL: LLVM backend failed - distribution not self-contained!"
           Write-Host "Debug: DLLs in bin directory"
           Get-ChildItem bin\*.dll | Select-Object Name, Length | Format-Table
           exit 1
@@ -473,10 +473,10 @@ jobs:
         Write-Host "  Total DLLs: $dllCount"
         
         if ($dllCount -gt 0) {
-          Write-Host "[OK] DLLs properly bundled"
+          Write-Host "PASS: DLLs properly bundled"
           Get-ChildItem bin\*LLVM*.dll | Select-Object Name, @{N='Size(MB)';E={[math]::Round($_.Length/1MB,2)}} | Format-Table
         } else {
-          Write-Host "[FAIL] No DLLs found!"
+          Write-Host "FAIL: No DLLs found!"
           exit 1
         }
         
