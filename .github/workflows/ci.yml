@@ -255,7 +255,9 @@ jobs:
         # Test 2: LLVM backend should fail gracefully
         Write-Host ""
         Write-Host "Test 2: Verify LLVM backend shows friendly error"
-        $output = & .\zig-out\bin\pawc.exe examples\hello.paw --backend=llvm 2>&1
+        $ErrorActionPreference = 'Continue'
+        $output = & .\zig-out\bin\pawc.exe examples\hello.paw --backend=llvm 2>&1 | Out-String
+        $ErrorActionPreference = 'Stop'
         
         # Check if error message contains expected text
         if ($output -match "LLVM backend not available") {
