@@ -287,6 +287,27 @@ jobs:
         # Rebuild with LLVM for packaging
         zig build package
         
+        echo ""
+        echo "🗑️  Uninstalling system LLVM (真实测试环境)..."
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          brew uninstall --ignore-dependencies llvm@19 || true
+          rm -rf /opt/homebrew/opt/llvm@19 || true
+          rm -rf /usr/local/opt/llvm@19 || true
+          echo "✅ macOS LLVM uninstalled"
+        else
+          sudo apt-get remove -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev || true
+          sudo rm -rf /usr/lib/llvm-19 || true
+          echo "✅ Linux LLVM uninstalled"
+        fi
+        
+        # Verify LLVM is really gone
+        if command -v llvm-config &> /dev/null; then
+          echo "⚠️  Warning: llvm-config still found"
+          which llvm-config
+        else
+          echo "✅ Verified: llvm-config not found"
+        fi
+        
         # Create clean test directory
         TEST_DIR="/tmp/pawlang-dist-test-$$"
         mkdir -p "$TEST_DIR"
@@ -303,9 +324,9 @@ jobs:
         echo "📂 Package contents:"
         ls -la
         
-        # Clear LLVM environment variables to simulate user environment
+        # Clear LLVM environment variables
         echo ""
-        echo "🧹 Clearing LLVM environment (simulating user without LLVM)..."
+        echo "🧹 Clearing LLVM environment variables..."
         unset LLVM_SYS_190_PREFIX
         unset DYLD_LIBRARY_PATH
         unset LD_LIBRARY_PATH
@@ -374,6 +395,28 @@ jobs:
         # Rebuild with LLVM for packaging
         zig build package
         
+        Write-Host ""
+        Write-Host "🗑️  Uninstalling system LLVM (真实测试环境)..."
+        try {
+          choco uninstall llvm -y --force | Out-Null
+          Write-Host "✅ Chocolatey LLVM uninstalled"
+        } catch {
+          Write-Host "⚠️  Chocolatey uninstall error (may not be installed)"
+        }
+        
+        # Force remove LLVM directory
+        if (Test-Path "C:\Program Files\LLVM") {
+          Remove-Item -Recurse -Force "C:\Program Files\LLVM" -ErrorAction SilentlyContinue
+          Write-Host "✅ Removed LLVM directory"
+        }
+        
+        # Verify LLVM is really gone
+        if (Test-Path "C:\Program Files\LLVM\bin\clang.exe") {
+          Write-Host "⚠️  Warning: clang.exe still found"
+        } else {
+          Write-Host "✅ Verified: LLVM not found"
+        }
+        
         # Create clean test directory
         $TEST_DIR = "$env:TEMP\pawlang-dist-test-$PID"
         New-Item -ItemType Directory -Path $TEST_DIR -Force | Out-Null
@@ -388,7 +431,7 @@ jobs:
         
         # Clear LLVM environment variables
         Write-Host ""
-        Write-Host "🧹 Clearing LLVM environment (simulating user without LLVM)..."
+        Write-Host "🧹 Clearing LLVM environment variables..."
         $env:LLVM_SYS_190_PREFIX = ""
         # Remove LLVM from PATH
         $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike '*LLVM*' }) -join ';'
