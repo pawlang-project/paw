@@ -7,13 +7,8 @@ pub fn build(b: *std.Build) void {
     // 🆕 Build options for conditional compilation
     const build_options = b.addOptions();
     
-    // 🆕 LLVM后端是必须的，但可以选择不检测系统LLVM（用于测试）
-    const enable_llvm = b.option(bool, "enable-llvm", "Enable LLVM backend support (required: true)") orelse true;
-    
-    if (!enable_llvm) {
-        std.debug.print("❌ Error: LLVM backend is required for PawLang\n", .{});
-        std.debug.print("💡 Remove -Denable-llvm=false flag\n", .{});
-    }
+    // 🆕 LLVM后端支持（可选，用于测试纯C后端）
+    const enable_llvm = b.option(bool, "enable-llvm", "Enable LLVM backend support (default: true)") orelse true;
     
     const main_mod = b.createModule(.{
         .root_source_file = .{ .cwd_relative = "src/main.zig" },
