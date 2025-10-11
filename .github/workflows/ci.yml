@@ -19,17 +19,33 @@ jobs:
           - os: ubuntu-latest
             platform: Linux
             arch: x86_64
+            cross_target: null
           - os: ubuntu-22.04
             platform: Linux 22.04 LTS
             arch: x86_64
+            cross_target: null
+          
+          # Linux x86 (32-bit) - Cross-compile
+          - os: ubuntu-latest
+            platform: Linux
+            arch: x86
+            cross_target: x86-linux
+          
+          # Linux ARM32 - Cross-compile
+          - os: ubuntu-latest
+            platform: Linux
+            arch: armv7
+            cross_target: arm-linux-gnueabihf
           
           # macOS x86_64 and ARM64
           - os: macos-13
             platform: macOS
             arch: x86_64
+            cross_target: null
           - os: macos-latest
             platform: macOS
             arch: ARM64
+            cross_target: null
           
           # Windows x86_64
           - os: windows-latest
@@ -58,7 +74,7 @@ jobs:
         python-version: '3.11'
     
     - name: Install LLVM (Linux)
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && (matrix.cross_target == null || matrix.cross_target == 'null')
       run: |
         # Install LLVM 19 from official LLVM repository
         echo "Installing LLVM 19 from official source..."
@@ -118,7 +134,7 @@ jobs:
       # Windows下build.zig会自动复制LLVM DLL到输出目录
       
     - name: Test - Hello World (Unix)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       run: |
         ./zig-out/bin/pawc examples/hello.paw
         echo "✅ Hello World test passed"
@@ -137,7 +153,7 @@ jobs:
         }
       
     - name: Test - Type Casting (Unix)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       run: |
         ./zig-out/bin/pawc examples/type_cast_demo.paw --backend=c
         if [ -f output.c ]; then
@@ -159,7 +175,7 @@ jobs:
         }
       
     - name: Test - Integration Test (Unix)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       run: |
         ./zig-out/bin/pawc tests/integration/v0.1.8_test.paw --backend=c
         if [ -f output.c ]; then
@@ -181,7 +197,7 @@ jobs:
         }
       
     - name: Test - LLVM Backend (Unix)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       run: |
         ./zig-out/bin/pawc examples/type_cast_demo.paw --backend=llvm
         if [ -f output.ll ]; then
@@ -212,7 +228,7 @@ jobs:
         }
       
     - name: Test - Build without LLVM backend (Unix)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "🧪 Testing build without LLVM backend..."
@@ -286,7 +302,7 @@ jobs:
         zig build
     
     - name: Test - Distribution Package (Unix) - Build
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       run: |
         echo ""
         echo "=========================================="
@@ -296,7 +312,7 @@ jobs:
         echo "Package created"
     
     - name: Test - Distribution Package (Unix) - Uninstall LLVM
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       run: |
         echo ""
         echo "Uninstalling system LLVM for testing..."
@@ -320,7 +336,7 @@ jobs:
         fi
     
     - name: Test - Distribution Package (Unix) - Test Package
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       run: |
         echo ""
         echo "Testing distribution package in clean environment..."
