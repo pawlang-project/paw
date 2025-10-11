@@ -45,17 +45,15 @@ pub fn build(b: *std.Build) void {
     // Get LLVM link flags using llvm-config (Linux only)
     var llvm_link_flags: ?[]const u8 = null;
     if (has_local_llvm and target.result.os.tag == .linux) {
-        const llvm_config_result = b.runAllowFail(&[_][]const u8{
+        const llvm_config_result = b.run(&[_][]const u8{
             llvm_config_path,
             "--ldflags",
             "--libs",
             "--system-libs",
-        }, .{ .allocator = b.allocator }) catch null;
+        });
         
-        if (llvm_config_result) |output| {
-            llvm_link_flags = output;
-            std.debug.print("llvm-config output: {s}\n", .{output});
-        }
+        llvm_link_flags = llvm_config_result;
+        std.debug.print("llvm-config output: {s}\n", .{llvm_config_result});
     }
     
     // LLVM native backend is now available on all platforms
