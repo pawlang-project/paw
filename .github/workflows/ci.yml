@@ -86,7 +86,7 @@ jobs:
           docker run --rm --platform linux/386 \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            ubuntu:22.04 \
+            i386/debian:12 \
             bash -c '
               set -e
               
@@ -104,9 +104,9 @@ jobs:
               
               echo "📦 Installing LLVM 19 for i386..."
               wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-              echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" | tee /etc/apt/sources.list.d/llvm.list
+              echo "deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-19 main" | tee /etc/apt/sources.list.d/llvm.list
               apt-get update
-              apt-get install -y llvm-19 llvm-19-dev clang-19 || echo "LLVM install attempted"
+              apt-get install -y llvm-19 llvm-19-dev clang-19 || echo "⚠️ LLVM not available for i386"
               
               echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
               echo "🔨 Building PawLang for i386 with LLVM..."
