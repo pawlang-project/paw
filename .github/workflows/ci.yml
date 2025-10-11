@@ -407,64 +407,63 @@ jobs:
     
     - name: Test - Distribution Package (Windows) - Test Package
       if: runner.os == 'Windows'
-      shell: bash
+      shell: powershell
       run: |
-        echo ""
-        echo "Testing distribution package in clean environment..."
+        Write-Host ""
+        Write-Host "Testing distribution package..."
         
         # Extract to temp directory
-        TEST_DIR="/c/temp/pawlang-dist-test"
-        mkdir -p "$TEST_DIR"
-        cd "$TEST_DIR"
-        unzip -q "$GITHUB_WORKSPACE/pawlang-windows.zip"
+        $TEST_DIR = "$env:TEMP\pawlang-dist-test"
+        if (Test-Path $TEST_DIR) { Remove-Item -Recurse -Force $TEST_DIR }
+        New-Item -ItemType Directory -Path $TEST_DIR -Force | Out-Null
+        Set-Location $TEST_DIR
+        Expand-Archive -Path "$env:GITHUB_WORKSPACE\pawlang-windows.zip" -DestinationPath . -Force
         
-        echo ""
-        echo "Package contents:"
-        ls -la
+        Write-Host ""
+        Write-Host "Package contents:"
+        Get-ChildItem | Format-Table -AutoSize
         
         # Test C backend
-        echo ""
-        echo "Test 1: C backend"
-        cmd //c "pawc.bat examples\\hello.paw --backend=c"
-        if [ -f output.c ]; then
-          echo "PASS: C backend works"
-          rm output.c
-        else
-          echo "FAIL: C backend failed"
-          ls -la
+        Write-Host ""
+        Write-Host "Test 1: C backend"
+        & .\bin\pawc.exe examples\hello.paw --backend=c 2>&1 | Out-Null
+        if (Test-Path output.c) {
+          Write-Host "PASS: C backend works"
+          Remove-Item output.c
+        } else {
+          Write-Host "FAIL: C backend failed"
+          Get-ChildItem
           exit 1
-        fi
+        }
         
         # Test LLVM backend (critical!)
-        echo ""
-        echo "Test 2: LLVM backend WITHOUT system LLVM"
-        cmd //c "pawc.bat examples\\hello.paw --backend=llvm"
-        if [ -f output.ll ]; then
-          echo "PASS: LLVM backend works!"
-          echo "(using bundled DLLs)"
-          head -5 output.ll
-          rm output.ll
-        else
-          echo "FAIL: LLVM backend failed"
-          ls -lh bin/*.dll | head -10
+        Write-Host ""
+        Write-Host "Test 2: LLVM backend WITHOUT system LLVM"
+        & .\bin\pawc.exe examples\hello.paw --backend=llvm 2>&1 | Out-Null
+        if (Test-Path output.ll) {
+          Write-Host "PASS: LLVM backend works!"
+          Get-Content output.ll | Select-Object -First 5
+          Remove-Item output.ll
+        } else {
+          Write-Host "FAIL: LLVM backend failed"
+          Get-ChildItem bin\*.dll | Select-Object Name | Format-Table
           exit 1
-        fi
+        }
         
         # Verify DLLs
-        echo ""
-        echo "Test 3: Check bundled DLLs"
-        DLL_COUNT=$(ls bin/*.dll 2>/dev/null | wc -l)
-        echo "Total DLLs: $DLL_COUNT"
-        if [ "$DLL_COUNT" -gt 0 ]; then
-          echo "PASS: DLLs properly bundled"
-          ls -lh bin/*LLVM*.dll | head -5
-        else
-          echo "FAIL: No DLLs found"
+        Write-Host ""
+        Write-Host "Test 3: Check bundled DLLs"
+        $dllCount = (Get-ChildItem bin\*.dll | Measure-Object).Count
+        Write-Host "Total DLLs: $dllCount"
+        if ($dllCount -gt 0) {
+          Write-Host "PASS: DLLs properly bundled"
+        } else {
+          Write-Host "FAIL: No DLLs found"
           exit 1
-        fi
+        }
         
-        echo ""
-        echo "SUCCESS: Distribution package is self-contained!"
+        Write-Host ""
+        Write-Host "SUCCESS: Distribution package works!"
     
     - name: Summary
       run: |
