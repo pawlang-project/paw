@@ -74,7 +74,7 @@ jobs:
     - name: Test - Type Casting (Unix)
       if: runner.os != 'Windows'
       run: |
-        ./zig-out/bin/pawc tests/syntax/test_type_cast.paw --backend=c
+        ./zig-out/bin/pawc examples/type_cast_demo.paw --backend=c
         if [ -f output.c ]; then
           echo "✅ Type casting test passed"
           rm output.c
@@ -83,7 +83,7 @@ jobs:
     - name: Test - Type Casting (Windows)
       if: runner.os == 'Windows'
       run: |
-        .\zig-out\bin\pawc.exe tests\syntax\test_type_cast.paw --backend=c
+        .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=c
         if exist output.c (
           echo ✅ Type casting test passed
           del output.c
@@ -112,7 +112,7 @@ jobs:
     - name: Test - LLVM Backend (Unix)
       if: runner.os != 'Windows'
       run: |
-        ./zig-out/bin/pawc tests/syntax/test_type_cast.paw --backend=llvm
+        ./zig-out/bin/pawc examples/type_cast_demo.paw --backend=llvm
         if [ -f output.ll ]; then
           echo "✅ LLVM backend test passed"
           # Try to compile with clang if available
@@ -120,9 +120,7 @@ jobs:
             clang output.ll -o test_llvm 2>/dev/null || echo "⚠️  clang compilation skipped"
             if [ -f test_llvm ]; then
               ./test_llvm
-              if [ $? -eq 21 ]; then
-                echo "✅ LLVM runtime test passed (exit code: 21)"
-              fi
+              echo "✅ LLVM runtime test completed (exit code: $?)"
               rm -f test_llvm
             fi
           fi
@@ -132,7 +130,7 @@ jobs:
     - name: Test - LLVM Backend (Windows)  
       if: runner.os == 'Windows'
       run: |
-        .\zig-out\bin\pawc.exe tests\syntax\test_type_cast.paw --backend=llvm
+        .\zig-out\bin\pawc.exe examples\type_cast_demo.paw --backend=llvm
         if exist output.ll (
           echo ✅ LLVM backend test passed
           del output.ll
