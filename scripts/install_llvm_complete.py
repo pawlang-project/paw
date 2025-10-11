@@ -220,13 +220,26 @@ def verify_installation(install_dir):
     """Verify LLVM installation"""
     print("LLVM Version:")
     
-    # Find clang
-    clang_path = install_dir / "bin" / "clang"
-    if not clang_path.exists():
-        clang_path = install_dir / "bin" / "clang-19"
+    # Find clang (check multiple possible names)
+    clang_candidates = [
+        install_dir / "bin" / "clang.exe",  # Windows
+        install_dir / "bin" / "clang",      # Unix
+        install_dir / "bin" / "clang-19",   # Versioned Unix
+    ]
     
-    if not clang_path.exists():
+    clang_path = None
+    for candidate in clang_candidates:
+        if candidate.exists():
+            clang_path = candidate
+            break
+    
+    if not clang_path:
         print("❌ clang not found")
+        print(f"  Checked: {[str(c) for c in clang_candidates]}")
+        # List actual files in bin directory for debugging
+        bin_dir = install_dir / "bin"
+        if bin_dir.exists():
+            print(f"  Files in bin/: {[f.name for f in bin_dir.iterdir()][:10]}")
         return False
     
     try:
@@ -234,8 +247,8 @@ def verify_installation(install_dir):
                               capture_output=True, text=True)
         for line in result.stdout.split('\n')[0:3]:
             print(f"  {line}")
-    except:
-        print("⚠️  Cannot get version info")
+    except Exception as e:
+        print(f"⚠️  Cannot get version info: {e}")
     
     print()
     

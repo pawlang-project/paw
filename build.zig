@@ -128,11 +128,10 @@ pub fn build(b: *std.Build) void {
             
             std.debug.print("   🔧 Using MinGW C++ runtime\n", .{});
         } else if (target.result.os.tag == .linux) {
-            // Linux: Use libstdc++
-            exe.linkSystemLibrary("stdc++");
-            exe.linkSystemLibrary("gcc_s");
+            // Linux: Use libc++ (same as macOS for consistency)
+            exe.linkLibCpp();
             exe.linkSystemLibrary("pthread");
-            std.debug.print("   🔧 Using libstdc++ (Linux)\n", .{});
+            std.debug.print("   🔧 Using libc++ (Linux)\n", .{});
         } else {
             // macOS and others: Use libc++
             exe.linkLibCpp();
