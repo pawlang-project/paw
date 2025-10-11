@@ -2,7 +2,7 @@
 
 # 🐾 PawLang
 
-![PawLang Logo](assets/logo.svg)
+![PawLang Logo](assets/logo.png)
 
 **A modern systems programming language with Rust-level safety and cleaner syntax**
 
@@ -859,7 +859,7 @@ zig build run-llvm
 
 ### Dependencies
 
-- **Zig** 0.15.1 (recommended) or 0.14.0+ (minimum)
+- **Zig** 0.15.1 (required, exact version)
 - **LLVM** 19.1.7 (required for LLVM backend)
 - **GCC** or **Clang** (optional, for C backend compilation)
 
@@ -1049,7 +1049,7 @@ MIT License
 
 **Built with ❤️ using Zig and LLVM**
 
-![PawLang Logo](assets/logo.svg)
+![PawLang Logo](assets/logo.png)
 
 **🐾 Happy Coding with PawLang!**
 
