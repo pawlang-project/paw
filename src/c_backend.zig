@@ -36,50 +36,50 @@ pub const CBackend = struct {
         try self.compileWithGcc(temp_c_file, output_file);
     }
     
-    /// Compile using GCC (or clang as fallback)
-    fn compileWithGcc(
-        self: *CBackend,
-        c_file: []const u8,
-        output_file: []const u8,
-    ) !void {
-        // Try to find available C compiler (prefer GCC)
-        var compiler: []const u8 = "gcc";
-        
-        // Try gcc first
-        if (std.process.Child.run(.{
-            .allocator = self.allocator,
-            .argv = &[_][]const u8{ "gcc", "--version" },
-        })) |gcc_result| {
-            self.allocator.free(gcc_result.stdout);
-            self.allocator.free(gcc_result.stderr);
-            compiler = "gcc";
-            std.debug.print("🔧 Compiling with GCC...\n", .{});
-        } else |_| {
-            // gcc 不可用，尝试 clang
-            if (std.process.Child.run(.{
-                .allocator = self.allocator,
-                .argv = &[_][]const u8{ "clang", "--version" },
-            })) |clang_result| {
-                self.allocator.free(clang_result.stdout);
-                self.allocator.free(clang_result.stderr);
-                compiler = "clang";
-                std.debug.print("🔧 Compiling with Clang (GCC not found)...\n", .{});
-            } else |_| {
-                std.debug.print("❌ C compiler not found (gcc/clang)\n", .{});
-                std.debug.print("💡 Please install GCC:\n", .{});
-                std.debug.print("   • Linux:   sudo apt-get install gcc\n", .{});
-                std.debug.print("   • macOS:   brew install gcc or xcode-select --install\n", .{});
-                std.debug.print("   • Windows: Install MinGW or MSVC\n", .{});
-                return error.NoCompilerFound;
-            }
-        }
-        
-        const argv = &[_][]const u8{
-            compiler,
-            "-o",
-            output_file,
-            c_file,
-        };
+           /// Compile using system C compiler (GCC -> Clang)
+           fn compileWithGcc(
+               self: *CBackend,
+               c_file: []const u8,
+               output_file: []const u8,
+           ) !void {
+               // Try to find available C compiler (prefer GCC)
+               var compiler: []const u8 = "gcc";
+               
+               // Try gcc first
+               if (std.process.Child.run(.{
+                   .allocator = self.allocator,
+                   .argv = &[_][]const u8{ "gcc", "--version" },
+               })) |gcc_result| {
+                   self.allocator.free(gcc_result.stdout);
+                   self.allocator.free(gcc_result.stderr);
+                   compiler = "gcc";
+                   std.debug.print("🔧 Compiling with GCC...\n", .{});
+               } else |_| {
+                   // gcc 不可用，尝试 clang
+                   if (std.process.Child.run(.{
+                       .allocator = self.allocator,
+                       .argv = &[_][]const u8{ "clang", "--version" },
+                   })) |clang_result| {
+                       self.allocator.free(clang_result.stdout);
+                       self.allocator.free(clang_result.stderr);
+                       compiler = "clang";
+                       std.debug.print("🔧 Compiling with Clang (GCC not found)...\n", .{});
+                   } else |_| {
+                       std.debug.print("❌ C compiler not found (gcc/clang)\n", .{});
+                       std.debug.print("💡 Please install GCC:\n", .{});
+                       std.debug.print("   • Linux:   sudo apt-get install gcc\n", .{});
+                       std.debug.print("   • macOS:   brew install gcc or xcode-select --install\n", .{});
+                       std.debug.print("   • Windows: Install MinGW or MSVC\n", .{});
+                       return error.NoCompilerFound;
+                   }
+               }
+               
+               const argv = &[_][]const u8{
+                   compiler,
+                   "-o",
+                   output_file,
+                   c_file,
+               };
         
         const compile_result = try std.process.Child.run(.{
             .allocator = self.allocator,
