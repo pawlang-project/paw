@@ -1,6 +1,10 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 const generics = @import("generics.zig");
+const diagnostic = @import("diagnostic.zig");  // 🆕 v0.1.8
+const Diagnostic = diagnostic.Diagnostic;
+const DiagnosticLevel = diagnostic.DiagnosticLevel;
+const Span = diagnostic.Span;
 
 // Trait 定义结构
 pub const TraitDef = struct {
@@ -19,10 +23,13 @@ pub const TypeMethods = struct {
     }
 };
 
+const Token = @import("token.zig").Token;  // 🆕 v0.1.8
+
 pub const TypeChecker = struct {
     allocator: std.mem.Allocator,
     arena: std.heap.ArenaAllocator,  // 🆕 Arena allocator for temporary types
-    errors: std.ArrayList([]const u8),
+    errors: std.ArrayList([]const u8),  // 保留旧的错误列表用于兼容
+    diagnostics: std.ArrayList(Diagnostic),  // 🆕 v0.1.8: 新的诊断系统
     symbol_table: std.StringHashMap(ast.Type),
     function_table: std.StringHashMap(ast.FunctionDecl),
     type_table: std.StringHashMap(ast.TypeDecl),  // 存储 type 声明
@@ -31,12 +38,16 @@ pub const TypeChecker = struct {
     current_function_is_async: bool,  // 追踪当前函数是否异步
     generic_context: generics.GenericContext,  // 🆕 泛型上下文
     mutable_vars: std.StringHashMap(bool),  // 🆕 v0.1.6: 跟踪可变变量 (变量名 -> 是否可变)
+    source_file: []const u8,  // 🆕 v0.1.8: 当前处理的源文件名
+    tokens: []Token,  // 🆕 v0.1.8: Token 数组用于位置查找
+    identifier_tokens: std.StringHashMap(Token),  // 🆕 v0.1.8: 标识符名 -> Token 映射
 
-    pub fn init(allocator: std.mem.Allocator) TypeChecker {
+    pub fn init(allocator: std.mem.Allocator, source_file: []const u8, tokens: []Token) TypeChecker {
         return TypeChecker{
             .allocator = allocator,
             .arena = std.heap.ArenaAllocator.init(allocator),
             .errors = std.ArrayList([]const u8).init(allocator),
+            .diagnostics = std.ArrayList(Diagnostic).init(allocator),  // 🆕 v0.1.8
             .symbol_table = std.StringHashMap(ast.Type).init(allocator),
             .function_table = std.StringHashMap(ast.FunctionDecl).init(allocator),
             .type_table = std.StringHashMap(ast.TypeDecl).init(allocator),
@@ -45,6 +56,9 @@ pub const TypeChecker = struct {
             .current_function_is_async = false,
             .generic_context = generics.GenericContext.init(allocator),  // 🆕 初始化泛型上下文
             .mutable_vars = std.StringHashMap(bool).init(allocator),  // 🆕 v0.1.6: 初始化可变变量表
+            .source_file = source_file,  // 🆕 v0.1.8
+            .tokens = tokens,  // 🆕 v0.1.8
+            .identifier_tokens = std.StringHashMap(Token).init(allocator),  // 🆕 v0.1.8
         };
     }
 
@@ -54,6 +68,22 @@ pub const TypeChecker = struct {
             self.allocator.free(error_msg);
         }
         self.errors.deinit();
+        
+        // 🆕 v0.1.8: 释放诊断消息内存
+        for (self.diagnostics.items) |diag| {
+            self.allocator.free(diag.message);
+            if (diag.notes.len > 0) {
+                for (diag.notes) |note| {
+                    self.allocator.free(note);
+                }
+                self.allocator.free(diag.notes);
+            }
+            if (diag.help) |help| {
+                self.allocator.free(help);
+            }
+        }
+        self.diagnostics.deinit();
+        self.identifier_tokens.deinit();
         
         self.symbol_table.deinit();
         self.function_table.deinit();
@@ -79,6 +109,13 @@ pub const TypeChecker = struct {
     }
 
     pub fn check(self: *TypeChecker, program: ast.Program) !void {
+        // 🆕 v0.1.8: 构建标识符 token 映射
+        for (self.tokens) |token| {
+            if (token.type == .identifier) {
+                try self.identifier_tokens.put(token.lexeme, token);
+            }
+        }
+        
         // 第一遍：收集所有类型、函数和 trait 声明
         for (program.declarations) |decl| {
             switch (decl) {
@@ -140,6 +177,15 @@ pub const TypeChecker = struct {
             try self.errors.append("Error: missing main function");
         }
 
+        // 🆕 v0.1.8: 打印增强的诊断消息
+        if (self.diagnostics.items.len > 0) {
+            for (self.diagnostics.items) |diag| {
+                try diag.print(self.allocator);
+            }
+            return error.TypeCheckFailed;
+        }
+        
+        // 兼容：打印旧的简单错误
         if (self.errors.items.len > 0) {
             for (self.errors.items) |err| {
                 std.debug.print("{s}\n", .{err});
@@ -539,7 +585,37 @@ pub const TypeChecker = struct {
                 } else if (self.symbol_table.get(name)) |sym_type| {
                     break :blk sym_type;
                 } else {
-                    try self.errors.append("Error: undefined identifier");
+                    // 🆕 v0.1.8: Enhanced error message for undefined identifier
+                    if (self.identifier_tokens.get(name)) |token| {
+                        const error_msg = try std.fmt.allocPrint(
+                            self.allocator,
+                            "undefined variable '{s}'",
+                            .{name}
+                        );
+                        const span = Span.fromPosition(token.filename, token.line, token.column);
+                        const note_msg = try std.fmt.allocPrint(
+                            self.allocator,
+                            "variable '{s}' is not declared in this scope",
+                            .{name}
+                        );
+                        const notes = try self.allocator.alloc([]const u8, 1);
+                        notes[0] = note_msg;
+                        
+                        // 🆕 v0.1.8: Smart suggestion - find similar variable
+                        var help: ?[]const u8 = null;
+                        if (self.findSimilarVariable(name, scope)) |similar| {
+                            help = try std.fmt.allocPrint(
+                                self.allocator,
+                                "did you mean '{s}'?",
+                                .{similar}
+                            );
+                        }
+                        
+                        const diag = Diagnostic.init(.Error, error_msg, span, notes, help);
+                        try self.diagnostics.append(diag);
+                    } else {
+                        try self.errors.append("Error: undefined identifier");
+                    }
                     break :blk ast.Type.void;
                 }
             },
@@ -550,7 +626,21 @@ pub const TypeChecker = struct {
                 switch (bin.op) {
                     .add, .sub, .mul, .div, .mod => {
                         if (!left_type.eql(right_type)) {
-                            try self.errors.append("Type error: binary operator types must match");
+                            // 🆕 v0.1.8: Enhanced error for type mismatch
+                            const error_msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "type mismatch: expected '{s}', found '{s}'",
+                                .{self.typeToString(left_type), self.typeToString(right_type)}
+                            );
+                            const note_msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "binary operator requires both operands to have the same type",
+                                .{}
+                            );
+                            const notes = try self.allocator.alloc([]const u8, 1);
+                            notes[0] = note_msg;
+                            const diag = Diagnostic.init(.Error, error_msg, null, notes, null);
+                            try self.diagnostics.append(diag);
                         }
                         break :blk left_type;
                     },
@@ -1196,5 +1286,133 @@ pub const TypeChecker = struct {
                 }
             }
         }
+    }
+    
+    // ============================================================================
+    // 🆕 v0.1.8: Enhanced Diagnostic Helpers
+    // ============================================================================
+    
+    /// 将类型转换为字符串（用于错误消息）
+    fn typeToString(_: *TypeChecker, t: ast.Type) []const u8 {
+        return switch (t) {
+            .i8 => "i8",
+            .i16 => "i16",
+            .i32 => "i32",
+            .i64 => "i64",
+            .i128 => "i128",
+            .u8 => "u8",
+            .u16 => "u16",
+            .u32 => "u32",
+            .u64 => "u64",
+            .u128 => "u128",
+            .f32 => "f32",
+            .f64 => "f64",
+            .bool => "bool",
+            .char => "char",
+            .string => "string",
+            .void => "void",
+            .generic => |name| name,
+            .named => |name| name,
+            else => "unknown",
+        };
+    }
+    
+    /// 🆕 v0.1.8: 计算 Levenshtein 距离（用于相似变量名建议）
+    fn levenshteinDistance(_: *TypeChecker, s1: []const u8, s2: []const u8) usize {
+        if (s1.len == 0) return s2.len;
+        if (s2.len == 0) return s1.len;
+        
+        var matrix: [100][100]usize = undefined;
+        
+        // 初始化第一行和第一列
+        for (0..s1.len + 1) |i| {
+            matrix[i][0] = i;
+        }
+        for (0..s2.len + 1) |j| {
+            matrix[0][j] = j;
+        }
+        
+        // 计算距离
+        for (1..s1.len + 1) |i| {
+            for (1..s2.len + 1) |j| {
+                const cost: usize = if (s1[i - 1] == s2[j - 1]) 0 else 1;
+                const deletion = matrix[i - 1][j] + 1;
+                const insertion = matrix[i][j - 1] + 1;
+                const substitution = matrix[i - 1][j - 1] + cost;
+                
+                matrix[i][j] = @min(@min(deletion, insertion), substitution);
+            }
+        }
+        
+        return matrix[s1.len][s2.len];
+    }
+    
+    /// 🆕 v0.1.8: 查找相似的变量名建议
+    fn findSimilarVariable(self: *TypeChecker, name: []const u8, scope: *std.StringHashMap(ast.Type)) ?[]const u8 {
+        var best_match: ?[]const u8 = null;
+        var best_distance: usize = 999;
+        
+        // 在局部作用域中查找
+        var scope_iter = scope.iterator();
+        while (scope_iter.next()) |entry| {
+            const candidate = entry.key_ptr.*;
+            const distance = self.levenshteinDistance(name, candidate);
+            if (distance < best_distance and distance <= 2) {  // 最多 2 个字符差异
+                best_distance = distance;
+                best_match = candidate;
+            }
+        }
+        
+        // 在全局符号表中查找
+        var symbol_iter = self.symbol_table.iterator();
+        while (symbol_iter.next()) |entry| {
+            const candidate = entry.key_ptr.*;
+            const distance = self.levenshteinDistance(name, candidate);
+            if (distance < best_distance and distance <= 2) {
+                best_distance = distance;
+                best_match = candidate;
+            }
+        }
+        
+        return best_match;
+    }
+    
+    /// 报告一个简单错误（使用新的诊断系统）
+    fn reportError(
+        self: *TypeChecker,
+        message: []const u8,
+        line: usize,
+        col: usize,
+    ) !void {
+        const span = Span.init(self.source_file, line, col, line, col);
+        const diag = Diagnostic.init(.Error, message, span, &[_][]const u8{}, null);
+        try self.diagnostics.append(diag);
+    }
+    
+    /// 报告错误并附带帮助信息
+    fn reportErrorWithHelp(
+        self: *TypeChecker,
+        message: []const u8,
+        line: usize,
+        col: usize,
+        help: []const u8,
+    ) !void {
+        const span = Span.init(self.source_file, line, col, line, col);
+        const diag = Diagnostic.init(.Error, message, span, &[_][]const u8{}, help);
+        try self.diagnostics.append(diag);
+    }
+    
+    /// 报告错误并附带注释和帮助
+    fn reportErrorFull(
+        self: *TypeChecker,
+        message: []const u8,
+        line: usize,
+        col: usize,
+        notes: []const []const u8,
+        help: ?[]const u8,
+    ) !void {
+        const span = Span.init(self.source_file, line, col, line, col);
+        const diag = Diagnostic.init(.Error, message, span, notes, help);
+        try self.diagnostics.append(diag);
     }
 };

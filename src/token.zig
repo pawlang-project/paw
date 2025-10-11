@@ -108,13 +108,15 @@ pub const Token = struct {
     lexeme: []const u8,
     line: usize,
     column: usize,
+    filename: []const u8,  // 🆕 v0.1.8: 文件名
 
-    pub fn init(token_type: TokenType, lexeme: []const u8, line: usize, column: usize) Token {
+    pub fn init(token_type: TokenType, lexeme: []const u8, line: usize, column: usize, filename: []const u8) Token {
         return Token{
             .type = token_type,
             .lexeme = lexeme,
             .line = line,
             .column = column,
+            .filename = filename,
         };
     }
 };

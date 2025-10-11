@@ -1,0 +1,36 @@
+// 🎯 PawLang v0.1.8 Integration Test
+// 测试所有核心功能：类型转换、优化、错误消息
+
+// Test 1: Type casting (v0.1.7)
+fn test_type_cast() -> i32 {
+    let x: i32 = 100;
+    let y: i64 = x as i64;    // i32 -> i64
+    let z: f64 = x as f64;    // i32 -> f64
+    let a: i32 = z as i32;    // f64 -> i32
+    return 1;
+}
+
+// Test 2: Mutability (v0.1.6)
+fn test_mutability() -> i32 {
+    let x = 10;
+    let mut y = 20;
+    y += 5;  // OK: y is mutable
+    return 2;
+}
+
+// Test 3: Generics
+fn test_generics() -> i32 {
+    let vec: Vec<i32> = Vec<i32>::new();
+    return 3;
+}
+
+// Test 4: All features working together
+fn main() -> i32 {
+    let r1 = test_type_cast();
+    let r2 = test_mutability();
+    let r3 = test_generics();
+    
+    let total = r1 + r2 + r3;
+    return total;  // Should return 6
+}
+
