@@ -65,16 +65,25 @@ jobs:
     - name: Install LLVM to local directory (macOS)
       if: runner.os == 'macOS'
       run: |
-        # Install via Homebrew (fast, cached)
-        brew install llvm@19
+        # Try Homebrew first (fast if available)
+        if command -v brew &> /dev/null; then
+          echo "📦 Using Homebrew to install LLVM (fast, cached)"
+          brew install llvm@19
+          
+          # Copy to project directory for isolation
+          mkdir -p llvm/install
+          cp -r $(brew --prefix llvm@19)/bin llvm/install/
+          cp -r $(brew --prefix llvm@19)/lib llvm/install/
+          cp -r $(brew --prefix llvm@19)/include llvm/install/
+          
+          echo "✅ LLVM installed via Homebrew to llvm/install"
+        else
+          # Fallback: Download prebuilt package
+          echo "📥 Homebrew not found, downloading LLVM prebuilt package"
+          python3 scripts/install_llvm_complete.py --yes --skip-build --skip-test
+          echo "✅ LLVM installed via download to llvm/install"
+        fi
         
-        # Copy to project directory for isolation
-        mkdir -p llvm/install
-        cp -r $(brew --prefix llvm@19)/bin llvm/install/
-        cp -r $(brew --prefix llvm@19)/lib llvm/install/
-        cp -r $(brew --prefix llvm@19)/include llvm/install/
-        
-        echo "✅ LLVM installed to llvm/install (isolated from system)"
         ls -la llvm/install/
       
     - name: Install Python dependencies (Windows)
