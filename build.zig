@@ -137,11 +137,9 @@ pub fn build(b: *std.Build) void {
     pawc_to_ir.addArg("-o");
     pawc_to_ir.addArg("output_zig");
     
-    // Step 2: 使用本地 Clang 编译 LLVM IR 到可执行文件
-    const clang_path = b.fmt("{s}/bin/clang", .{local_llvm});
-    
+    // Step 2: 使用系统 Clang 编译 LLVM IR 到可执行文件
     const compile_ir = b.addSystemCommand(&[_][]const u8{
-        clang_path,
+        "clang",
         "output_zig.ll",
         "-o",
         "output_zig_exec",
