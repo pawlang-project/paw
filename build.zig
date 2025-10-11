@@ -157,8 +157,8 @@ pub fn build(b: *std.Build) void {
             // Link main LLVM library
             exe.linkSystemLibrary("LLVM-C");
             
-            // Windows C++ runtime
-            exe.linkSystemLibrary("stdc++");
+            // Windows C++ runtime (use linkLibCpp for proper MSVC linking)
+            exe.linkLibCpp();
         } else {
             // Unix: Use llvm-config output for all linking
             if (llvm_link_flags) |flags| {
