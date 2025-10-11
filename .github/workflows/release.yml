@@ -112,7 +112,6 @@ jobs:
           version: 0.15.1
       
       - name: Install LLVM 19
-        if: matrix.cross_compile == false
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📦 Installing LLVM 19.1.7..."
@@ -122,7 +121,23 @@ jobs:
           chmod +x llvm.sh
           sudo ./llvm.sh 19
           
-          sudo apt-get install -y llvm-19-dev libllvm19
+          if [ "${{ matrix.cross_compile }}" = "true" ]; then
+            # Cross-compilation: install target architecture LLVM libraries
+            if [ "${{ matrix.arch }}" = "armv7" ]; then
+              echo "Installing ARM LLVM libraries..."
+              sudo dpkg --add-architecture armhf
+              sudo apt-get update
+              sudo apt-get install -y llvm-19-dev:armhf libllvm19:armhf || echo "ARM LLVM not available, will use C backend"
+            elif [ "${{ matrix.arch }}" = "x86" ]; then
+              echo "Installing i386 LLVM libraries..."
+              sudo dpkg --add-architecture i386
+              sudo apt-get update
+              sudo apt-get install -y llvm-19-dev:i386 libllvm19:i386 || echo "i386 LLVM not available, will use C backend"
+            fi
+          else
+            # Native build
+            sudo apt-get install -y llvm-19-dev libllvm19
+          fi
           
           echo "✅ LLVM installed"
       
