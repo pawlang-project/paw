@@ -66,12 +66,6 @@ jobs:
           - os: windows-latest
             arch: Windows Server 2022 (x86_64)
             zig_version: 0.15.1
-          - os: windows-2022
-            arch: Windows Server 2022 (x86_64)
-            zig_version: 0.15.1
-          - os: windows-2019
-            arch: Windows Server 2019 (x86_64)
-            zig_version: 0.15.1
         
     steps:
     - name: Checkout code
