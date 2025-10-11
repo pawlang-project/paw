@@ -242,7 +242,7 @@ pub fn build(b: *std.Build) void {
                 break :blk cmd;
             },
             .macos => blk: {
-                // macOS: Copy LLVM dylib files
+                // macOS: Copy LLVM dylib files and fix paths for portability
                 const llvm_lib_path = if (target.result.cpu.arch == .aarch64)
                     "/opt/homebrew/opt/llvm@19/lib"
                 else
@@ -250,10 +250,19 @@ pub fn build(b: *std.Build) void {
                 
                 const cmd = b.addSystemCommand(&[_][]const u8{
                     "sh", "-c",
-                    b.fmt("mkdir -p zig-out/lib && cp -f {s}/libLLVM-C.dylib zig-out/lib/ 2>/dev/null && echo '✅ Copied LLVM libraries' || true", .{llvm_lib_path}),
+                    b.fmt("mkdir -p zig-out/lib && " ++
+                          // Copy libraries
+                          "cp -f {s}/libLLVM-C.dylib zig-out/lib/ 2>/dev/null && " ++
+                          "cp -f {s}/libLLVM.dylib zig-out/lib/ 2>/dev/null && " ++
+                          // Fix install names for portability
+                          "install_name_tool -add_rpath @executable_path/../lib zig-out/bin/pawc 2>/dev/null || true && " ++
+                          "install_name_tool -change {s}/libLLVM.dylib @rpath/libLLVM.dylib zig-out/bin/pawc 2>/dev/null || true && " ++
+                          "echo '✅ Copied LLVM libraries and fixed paths' || true", 
+                          .{llvm_lib_path, llvm_lib_path, llvm_lib_path}),
                 });
                 cmd.step.dependOn(&install_artifact.step);
                 std.debug.print("\n💡 macOS: LLVM libraries will be auto-copied to zig-out/lib/\n", .{});
+                std.debug.print("💡 macOS: Binary paths will be fixed for portability\n", .{});
                 break :blk cmd;
             },
             .linux => blk: {
