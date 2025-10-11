@@ -188,35 +188,35 @@ pub fn build(b: *std.Build) void {
             }
         }
     } else {
-        std.debug.print("┌─ LLVM Configuration ────────────────────\n", .{});
+        std.debug.print("--- LLVM Configuration ---\n", .{});
         if (!enable_llvm) {
-            std.debug.print("│ 🚫 LLVM backend disabled by user\n", .{});
-            std.debug.print("│ 💡 Tip: Remove -Denable-llvm=false to enable\n", .{});
+            std.debug.print("Status: LLVM backend disabled by user\n", .{});
+            std.debug.print("Tip: Remove -Denable-llvm=false to enable\n", .{});
         } else {
-            std.debug.print("│ ⚠️  LLVM not detected\n", .{});
+            std.debug.print("Status: LLVM not detected\n", .{});
         }
-        std.debug.print("└─────────────────────────────────────────\n\n", .{});
+        std.debug.print("\n", .{});
         
-        std.debug.print("✅ Available Backends:\n", .{});
-        std.debug.print("   • C backend    (default) → --backend=c\n", .{});
-        std.debug.print("   • LLVM backend (unavailable)\n\n", .{});
+        std.debug.print("Available Backends:\n", .{});
+        std.debug.print("  - C backend    (default) -> --backend=c\n", .{});
+        std.debug.print("  - LLVM backend (unavailable)\n\n", .{});
         
         if (enable_llvm) {
-            std.debug.print("💡 Install LLVM to enable LLVM backend:\n", .{});
+            std.debug.print("Install LLVM to enable LLVM backend:\n", .{});
             const os_tag = target.result.os.tag;
             if (os_tag == .windows) {
-                std.debug.print("   → choco install llvm --version=19.1.7\n", .{});
+                std.debug.print("  -> choco install llvm --version=19.1.7\n", .{});
             } else if (os_tag == .macos) {
-                std.debug.print("   → brew install llvm@19\n", .{});
+                std.debug.print("  -> brew install llvm@19\n", .{});
             } else if (os_tag == .linux) {
-                std.debug.print("   → sudo apt install llvm-19-dev\n", .{});
+                std.debug.print("  -> sudo apt install llvm-19-dev\n", .{});
             }
         }
     }
     
-    std.debug.print("\n╭─────────────────────────────────────────╮\n", .{});
-    std.debug.print("│   🚀 Building pawc compiler...          │\n", .{});
-    std.debug.print("╰─────────────────────────────────────────╯\n", .{});
+    std.debug.print("\n===========================================\n", .{});
+    std.debug.print("   Building pawc compiler...\n", .{});
+    std.debug.print("===========================================\n", .{});
     
     // 链接标准库
     exe.linkLibC();
@@ -233,7 +233,7 @@ pub fn build(b: *std.Build) void {
                     "Copy-Item 'C:\\Program Files\\LLVM\\bin\\*.dll' 'zig-out\\bin\\' -ErrorAction SilentlyContinue; if ($?) { Write-Host '✅ Copied LLVM DLLs' }",
                 });
                 cmd.step.dependOn(&install_artifact.step);
-                std.debug.print("\n💡 Windows: LLVM DLLs will be auto-copied to output directory\n", .{});
+                std.debug.print("\n[Windows] LLVM DLLs will be auto-copied to output directory\n", .{});
                 break :blk cmd;
             },
             .macos => blk: {
