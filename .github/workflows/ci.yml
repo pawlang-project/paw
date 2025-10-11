@@ -14,22 +14,48 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-22.04, macos-latest, macos-13, windows-latest]
         include:
+          # Linux x86_64
           - os: ubuntu-latest
-            arch: Ubuntu 24.04 (x86_64)
+            arch: Linux x86_64
             zig_version: 0.15.1
           - os: ubuntu-22.04
-            arch: Ubuntu 22.04 LTS (x86_64)
+            arch: Linux x86_64 (22.04 LTS)
             zig_version: 0.15.1
-          - os: macos-latest
-            arch: macOS Apple Silicon (M1/M2/M3)
+          
+          # Linux ARM64 (using cross-compile for now, native ARM runners coming soon)
+          - os: ubuntu-latest
+            arch: Linux ARM64 (aarch64, cross-compile)
             zig_version: 0.15.1
+            cross_target: aarch64-linux
+          
+          # Linux other architectures (cross-compile test)
+          - os: ubuntu-latest
+            arch: Linux RISC-V 64 (cross-compile)
+            zig_version: 0.15.1
+            cross_target: riscv64-linux
+          - os: ubuntu-latest
+            arch: Linux PowerPC64LE (cross-compile)
+            zig_version: 0.15.1
+            cross_target: powerpc64le-linux
+          - os: ubuntu-latest
+            arch: Linux s390x (cross-compile)
+            zig_version: 0.15.1
+            cross_target: s390x-linux
+          
+          # macOS x86_64
           - os: macos-13
-            arch: macOS Intel (x86_64)
+            arch: macOS x86_64 (Intel)
             zig_version: 0.15.1
+          
+          # macOS ARM64
+          - os: macos-latest
+            arch: macOS ARM64 (Apple Silicon)
+            zig_version: 0.15.1
+          
+          # Windows x86_64
           - os: windows-latest
-            arch: Windows Server 2022 (x86_64)
+            arch: Windows x86_64
             zig_version: 0.15.1
         
     steps:
@@ -81,11 +107,19 @@ jobs:
         Get-ChildItem "C:\Program Files\LLVM\bin" | Select-Object Name | Format-Table -AutoSize
         
     - name: Build PawLang compiler
-      run: zig build
+      shell: bash
+      run: |
+        if [ -n "${{ matrix.cross_target }}" ]; then
+          echo "Cross-compiling for ${{ matrix.cross_target }}..."
+          zig build -Dtarget=${{ matrix.cross_target }}
+          echo "Cross-compilation successful!"
+        else
+          zig build
+        fi
       # Windows下build.zig会自动复制LLVM DLL到输出目录
       
     - name: Test - Hello World (Unix)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && !matrix.cross_target
       run: |
         ./zig-out/bin/pawc examples/hello.paw
         echo "✅ Hello World test passed"
@@ -104,7 +138,7 @@ jobs:
         }
       
     - name: Test - Type Casting (Unix)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && !matrix.cross_target
       run: |
         ./zig-out/bin/pawc examples/type_cast_demo.paw --backend=c
         if [ -f output.c ]; then
@@ -126,7 +160,7 @@ jobs:
         }
       
     - name: Test - Integration Test (Unix)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && !matrix.cross_target
       run: |
         ./zig-out/bin/pawc tests/integration/v0.1.8_test.paw --backend=c
         if [ -f output.c ]; then
@@ -148,7 +182,7 @@ jobs:
         }
       
     - name: Test - LLVM Backend (Unix)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && !matrix.cross_target
       run: |
         ./zig-out/bin/pawc examples/type_cast_demo.paw --backend=llvm
         if [ -f output.ll ]; then
@@ -179,7 +213,7 @@ jobs:
         }
       
     - name: Test - Build without LLVM backend (Unix)
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && !matrix.cross_target
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "🧪 Testing build without LLVM backend..."
@@ -281,7 +315,7 @@ jobs:
         Write-Host "✅ All no-LLVM tests passed!"
     
     - name: Test - Distribution Package (Unix) - Build
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && !matrix.cross_target
       run: |
         echo ""
         echo "=========================================="
@@ -291,7 +325,7 @@ jobs:
         echo "Package created"
     
     - name: Test - Distribution Package (Unix) - Uninstall LLVM
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && !matrix.cross_target
       run: |
         echo ""
         echo "Uninstalling system LLVM for testing..."
@@ -315,7 +349,7 @@ jobs:
         fi
     
     - name: Test - Distribution Package (Unix) - Test Package
-      if: runner.os != 'Windows'
+      if: runner.os != 'Windows' && !matrix.cross_target
       run: |
         echo ""
         echo "Testing distribution package in clean environment..."
@@ -476,10 +510,23 @@ jobs:
         Write-Host ""
         Write-Host "SUCCESS: Distribution package works!"
     
-    - name: Summary
+    - name: Summary - Cross-compile
+      if: matrix.cross_target
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "✅ All tests passed on ${{ matrix.os }}!"
+        echo "✅ Cross-compilation successful!"
+        echo "   Architecture: ${{ matrix.arch }}"
+        echo "   Target: ${{ matrix.cross_target }}"
+        echo "   Build: ✅"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      shell: bash
+    
+    - name: Summary - Full Test
+      if: "!matrix.cross_target"
+      run: |
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "✅ All tests passed!"
+        echo "   Platform: ${{ matrix.arch }}"
         echo "   • C backend ✅"
         echo "   • LLVM backend ✅"
         echo "   • No-LLVM build ✅"
