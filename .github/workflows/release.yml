@@ -6,12 +6,14 @@ on:
       - 'v*.*.*'  # 触发条件: 推送版本标签 (例如 v0.1.8)
   workflow_dispatch:  # 允许手动触发
 
+permissions:
+  contents: write
+
 jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
     steps:
       - name: Checkout code
@@ -30,12 +32,10 @@ jobs:
       
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
-          release_name: 🎉 PawLang ${{ steps.get_version.outputs.version }}
+          name: 🎉 PawLang ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
           body: |
@@ -160,14 +160,10 @@ jobs:
           ls -lh "$PACKAGE_NAME"
       
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./pawlang-linux-${{ matrix.arch }}.tar.gz
-          asset_name: pawlang-linux-${{ matrix.arch }}.tar.gz
-          asset_content_type: application/gzip
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: pawlang-linux-${{ matrix.arch }}.tar.gz
 
   build-macos:
     name: Build macOS (${{ matrix.arch }})
@@ -231,14 +227,10 @@ jobs:
           ls -lh "$PACKAGE_NAME"
       
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./pawlang-macos-${{ matrix.arch }}.tar.gz
-          asset_name: pawlang-macos-${{ matrix.arch }}.tar.gz
-          asset_content_type: application/gzip
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: pawlang-macos-${{ matrix.arch }}.tar.gz
 
   build-windows:
     name: Build Windows (${{ matrix.arch }})
@@ -313,14 +305,10 @@ jobs:
           Get-Item $packageName | Select-Object Name, Length
       
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./pawlang-windows-${{ matrix.arch }}.zip
-          asset_name: pawlang-windows-${{ matrix.arch }}.zip
-          asset_content_type: application/zip
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: pawlang-windows-${{ matrix.arch }}.zip
 
   finalize-release:
     name: Finalize Release
