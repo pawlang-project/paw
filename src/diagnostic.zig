@@ -122,10 +122,8 @@ pub const Diagnostic = struct {
     
     /// Print diagnostic to stderr with colors and source code snippet
     pub fn print(self: Diagnostic, allocator: std.mem.Allocator) !void {
-        const stderr = std.io.getStdErr().writer();
-        
         // Print main error message with color
-        try stderr.print("{s}{s}\x1b[0m: {s}\n", .{
+        std.debug.print("{s}{s}\x1b[0m: {s}\n", .{
             self.level.color(),
             self.level.toString(),
             self.message,
@@ -133,7 +131,7 @@ pub const Diagnostic = struct {
         
         // Print source location if available
         if (self.span) |span| {
-            try stderr.print("   {s}--> {s}:{d}:{d}\x1b[0m\n", .{
+            std.debug.print("   {s}--> {s}:{d}:{d}\x1b[0m\n", .{
                 "\x1b[1;36m",  // Cyan
                 span.filename,
                 span.start_line,
@@ -141,12 +139,12 @@ pub const Diagnostic = struct {
             });
             
             // Print source code snippet
-            try printSourceSnippet(allocator, span, stderr);
+            try printSourceSnippet(allocator, span);
         }
         
         // Print notes
         for (self.notes) |note| {
-            try stderr.print("   {s}= note\x1b[0m: {s}\n", .{
+            std.debug.print("   {s}= note\x1b[0m: {s}\n", .{
                 "\x1b[1;36m",  // Cyan
                 note,
             });
@@ -154,13 +152,13 @@ pub const Diagnostic = struct {
         
         // Print help
         if (self.help) |help| {
-            try stderr.print("   {s}= help\x1b[0m: {s}\n", .{
+            std.debug.print("   {s}= help\x1b[0m: {s}\n", .{
                 "\x1b[1;32m",  // Green
                 help,
             });
         }
         
-        try stderr.print("\n", .{});
+        std.debug.print("\n", .{});
     }
 };
 
@@ -169,7 +167,7 @@ pub const Diagnostic = struct {
 // ============================================================================
 
 /// Print source code snippet with error marker
-fn printSourceSnippet(allocator: std.mem.Allocator, span: Span, writer: anytype) !void {
+fn printSourceSnippet(allocator: std.mem.Allocator, span: Span) !void {
     // Read source file
     const source = std.fs.cwd().readFileAlloc(
         allocator,
@@ -189,36 +187,36 @@ fn printSourceSnippet(allocator: std.mem.Allocator, span: Span, writer: anytype)
     while (lines.next()) |line| {
         if (current_line == span.start_line) {
             // Print line number gutter
-            try writer.print("   {s}|\x1b[0m\n", .{"\x1b[1;36m"});  // Cyan
+            std.debug.print("   {s}|\x1b[0m\n", .{"\x1b[1;36m"});  // Cyan
             
             // Print line number and code
-            try writer.print(" {s}{d:>3} |\x1b[0m {s}\n", .{
+            std.debug.print(" {s}{d:>3} |\x1b[0m {s}\n", .{
                 "\x1b[1;36m",  // Cyan
                 current_line,
                 line,
             });
             
             // Print error marker
-            try writer.print("   {s}|", .{"\x1b[1;36m"});  // Cyan
+            std.debug.print("   {s}|", .{"\x1b[1;36m"});  // Cyan
             
             // Calculate spaces before ^
             var i: usize = 0;
             while (i < span.start_col) : (i += 1) {
-                try writer.print(" ", .{});
+                std.debug.print(" ", .{});
             }
             
             // Print ^ markers
-            try writer.print("\x1b[1;31m", .{});  // Red
+            std.debug.print("\x1b[1;31m", .{});  // Red
             const marker_len = if (span.end_col > span.start_col) 
                 span.end_col - span.start_col + 1 
             else 
                 1;
             i = 0;
             while (i < marker_len) : (i += 1) {
-                try writer.print("^", .{});
+                std.debug.print("^", .{});
             }
             
-            try writer.print("\x1b[0m\n", .{});
+            std.debug.print("\x1b[0m\n", .{});
             break;
         }
         current_line += 1;

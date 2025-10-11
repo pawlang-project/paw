@@ -85,12 +85,12 @@ pub const LLVMNativeBackend = struct {
     /// 创建函数类型的辅助函数
     fn createFunctionType(self: *LLVMNativeBackend, param_count: usize) llvm.TypeRef {
         const i32_type = self.context.i32Type();
-        var param_types = std.ArrayList(llvm.TypeRef).init(self.allocator);
-        defer param_types.deinit();
+        var param_types = std.ArrayList(llvm.TypeRef){};
+        defer param_types.deinit(self.allocator);
         
         var i: usize = 0;
         while (i < param_count) : (i += 1) {
-            param_types.append(i32_type) catch unreachable;
+            param_types.append(self.allocator, i32_type) catch unreachable;
         }
         
         return llvm.functionType(i32_type, param_types.items, false);
@@ -151,12 +151,12 @@ pub const LLVMNativeBackend = struct {
         const return_type = try self.toLLVMType(func.return_type);
         
         // Get parameter types
-        var param_types = std.ArrayList(llvm.TypeRef).init(self.allocator);
-        defer param_types.deinit();
+        var param_types = std.ArrayList(llvm.TypeRef){};
+        defer param_types.deinit(self.allocator);
         
         for (func.params) |param| {
             const param_type = try self.toLLVMType(param.type);
-            try param_types.append(param_type);
+            try param_types.append(self.allocator, param_type);
         }
         
         // Create function type
@@ -666,39 +666,39 @@ pub const LLVMNativeBackend = struct {
                         // TODO: 需要类型系统支持才能正确查找类型
                         
                         // 生成修饰后的方法名（简化版）
-                        var method_name = std.ArrayList(u8).init(self.allocator);
-                        defer method_name.deinit();
+                        var method_name = std.ArrayList(u8){};
+                        defer method_name.deinit(self.allocator);
                         
                         // 假设类型名就是变量名的首字母大写形式
-                        try method_name.appendSlice(var_name);
-                        try method_name.appendSlice("_");
-                        try method_name.appendSlice(field.field);
+                        try method_name.appendSlice(self.allocator, var_name);
+                        try method_name.appendSlice(self.allocator, "_");
+                        try method_name.appendSlice(self.allocator, field.field);
                         
-                        const mangled_method_name = try method_name.toOwnedSlice();
+                        const mangled_method_name = try method_name.toOwnedSlice(self.allocator);
                         defer self.allocator.free(mangled_method_name);
                         
                         // 查找方法
                         if (self.functions.get(mangled_method_name)) |func| {
                             // 生成参数：第一个参数是 self
-                            var args = std.ArrayList(llvm.ValueRef).init(self.allocator);
-                            defer args.deinit();
+                            var args = std.ArrayList(llvm.ValueRef){};
+                            defer args.deinit(self.allocator);
                             
                             // 添加 self 参数（对象本身）
                             const obj_value = try self.generateExpr(field.object.*);
-                            try args.append(obj_value);
+                            try args.append(self.allocator, obj_value);
                             
                             // 添加其他参数
                             for (call_expr.args) |arg| {
                                 const arg_value = try self.generateExpr(arg);
-                                try args.append(arg_value);
+                                try args.append(self.allocator, arg_value);
                             }
                             
                             // 获取函数类型
                             const i32_type = self.context.i32Type();
-                            var param_types = std.ArrayList(llvm.TypeRef).init(self.allocator);
-                            defer param_types.deinit();
+                            var param_types = std.ArrayList(llvm.TypeRef){};
+                            defer param_types.deinit(self.allocator);
                             for (args.items) |_| {
-                                try param_types.append(i32_type);
+                                try param_types.append(self.allocator, i32_type);
                             }
                             const func_type = llvm.functionType(i32_type, param_types.items, false);
                             
@@ -725,20 +725,20 @@ pub const LLVMNativeBackend = struct {
                 };
                 
                 // Generate arguments
-                var args = std.ArrayList(llvm.ValueRef).init(self.allocator);
-                defer args.deinit();
+                var args = std.ArrayList(llvm.ValueRef){};
+                defer args.deinit(self.allocator);
                 
                 for (call_expr.args) |arg| {
                     const arg_value = try self.generateExpr(arg);
-                    try args.append(arg_value);
+                    try args.append(self.allocator, arg_value);
                 }
                 
                 // Get function type
                 const i32_type = self.context.i32Type();
-                var param_types = std.ArrayList(llvm.TypeRef).init(self.allocator);
-                defer param_types.deinit();
+                var param_types = std.ArrayList(llvm.TypeRef){};
+                defer param_types.deinit(self.allocator);
                 for (args.items) |_| {
-                    try param_types.append(i32_type);
+                    try param_types.append(self.allocator, i32_type);
                 }
                 const func_type = llvm.functionType(i32_type, param_types.items, false);
                 
@@ -752,27 +752,27 @@ pub const LLVMNativeBackend = struct {
             .static_method_call => |smc| blk: {
                 // 🆕 静态方法调用：Type<T>::method()
                 // 生成修饰后的函数名：Type_T_method
-                var func_name = std.ArrayList(u8).init(self.allocator);
-                defer func_name.deinit();
+                var func_name = std.ArrayList(u8){};
+                defer func_name.deinit(self.allocator);
                 
                 // 添加类型名
-                try func_name.appendSlice(smc.type_name);
+                try func_name.appendSlice(self.allocator, smc.type_name);
                 
                 // 添加类型参数
                 for (smc.type_args) |type_arg| {
-                    try func_name.appendSlice("_");
+                    try func_name.appendSlice(self.allocator, "_");
                     const type_name = try self.getSimpleTypeName(type_arg);
                     // 只有 generic_instance 返回的是需要释放的内存
                     const needs_free = type_arg == .generic_instance;
                     defer if (needs_free) self.allocator.free(type_name);
-                    try func_name.appendSlice(type_name);
+                    try func_name.appendSlice(self.allocator, type_name);
                 }
                 
                 // 添加方法名
-                try func_name.appendSlice("_");
-                try func_name.appendSlice(smc.method_name);
+                try func_name.appendSlice(self.allocator, "_");
+                try func_name.appendSlice(self.allocator, smc.method_name);
                 
-                const mangled_name = try func_name.toOwnedSlice();
+                const mangled_name = try func_name.toOwnedSlice(self.allocator);
                 defer self.allocator.free(mangled_name);
                 
                 // 查找函数
@@ -782,20 +782,20 @@ pub const LLVMNativeBackend = struct {
                 };
                 
                 // 生成参数
-                var args = std.ArrayList(llvm.ValueRef).init(self.allocator);
-                defer args.deinit();
+                var args = std.ArrayList(llvm.ValueRef){};
+                defer args.deinit(self.allocator);
                 
                 for (smc.args) |arg| {
                     const arg_value = try self.generateExpr(arg);
-                    try args.append(arg_value);
+                    try args.append(self.allocator, arg_value);
                 }
                 
                 // 获取函数类型
                 const i32_type = self.context.i32Type();
-                var param_types = std.ArrayList(llvm.TypeRef).init(self.allocator);
-                defer param_types.deinit();
+                var param_types = std.ArrayList(llvm.TypeRef){};
+                defer param_types.deinit(self.allocator);
                 for (args.items) |_| {
-                    try param_types.append(i32_type);
+                    try param_types.append(self.allocator, i32_type);
                 }
                 const func_type = llvm.functionType(i32_type, param_types.items, false);
                 
@@ -895,19 +895,19 @@ pub const LLVMNativeBackend = struct {
             .generic_instance => |gi| blk: {
                 // 🆕 处理泛型实例：Vec<i32> -> Vec_i32
                 // 注意：这会分配新内存，调用者需要释放
-                var buf = std.ArrayList(u8).init(self.allocator);
-                errdefer buf.deinit();
+                var buf = std.ArrayList(u8){};
+                errdefer buf.deinit(self.allocator);
                 
-                try buf.appendSlice(gi.name);
+                try buf.appendSlice(self.allocator, gi.name);
                 for (gi.type_args) |arg| {
-                    try buf.appendSlice("_");
+                    try buf.appendSlice(self.allocator, "_");
                     const type_name = try self.getSimpleTypeName(arg);
                     // 只有 generic_instance 返回的是需要释放的内存
                     const needs_free = arg == .generic_instance;
                     defer if (needs_free) self.allocator.free(type_name);
-                    try buf.appendSlice(type_name);
+                    try buf.appendSlice(self.allocator, type_name);
                 }
-                break :blk try buf.toOwnedSlice();
+                break :blk try buf.toOwnedSlice(self.allocator);
             },
             else => "unknown",
         };

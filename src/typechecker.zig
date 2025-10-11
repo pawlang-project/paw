@@ -46,8 +46,8 @@ pub const TypeChecker = struct {
         return TypeChecker{
             .allocator = allocator,
             .arena = std.heap.ArenaAllocator.init(allocator),
-            .errors = std.ArrayList([]const u8).init(allocator),
-            .diagnostics = std.ArrayList(Diagnostic).init(allocator),  // 🆕 v0.1.8
+            .errors = std.ArrayList([]const u8){},
+            .diagnostics = std.ArrayList(Diagnostic){},  // 🆕 v0.1.8
             .symbol_table = std.StringHashMap(ast.Type).init(allocator),
             .function_table = std.StringHashMap(ast.FunctionDecl).init(allocator),
             .type_table = std.StringHashMap(ast.TypeDecl).init(allocator),
@@ -67,7 +67,7 @@ pub const TypeChecker = struct {
         for (self.errors.items) |error_msg| {
             self.allocator.free(error_msg);
         }
-        self.errors.deinit();
+        self.errors.deinit(self.allocator);
         
         // 🆕 v0.1.8: 释放诊断消息内存
         for (self.diagnostics.items) |diag| {
@@ -82,7 +82,7 @@ pub const TypeChecker = struct {
                 self.allocator.free(help);
             }
         }
-        self.diagnostics.deinit();
+        self.diagnostics.deinit(self.allocator);
         self.identifier_tokens.deinit();
         
         self.symbol_table.deinit();
@@ -174,7 +174,7 @@ pub const TypeChecker = struct {
         }
 
         if (!self.function_table.contains("main")) {
-            try self.errors.append("Error: missing main function");
+            try self.errors.append(self.allocator, "Error: missing main function");
         }
 
         // 🆕 v0.1.8: 打印增强的诊断消息
@@ -298,7 +298,7 @@ pub const TypeChecker = struct {
                             "Error: Cannot assign to immutable variable '{s}'. Use 'let mut {s}' to make it mutable.",
                             .{name, name}
                         );
-                        try self.errors.append(error_msg);
+                        try self.errors.append(self.allocator, error_msg);
                     }
                 } else {
                     // 变量不存在（这应该在其他地方被捕获）
@@ -307,7 +307,7 @@ pub const TypeChecker = struct {
                         "Error: Variable '{s}' not found.",
                         .{name}
                     );
-                    try self.errors.append(error_msg);
+                    try self.errors.append(self.allocator, error_msg);
                 }
             },
             .field_access => {
@@ -317,7 +317,7 @@ pub const TypeChecker = struct {
                 // 数组索引：暂时允许（将来可以添加数组可变性检查）
             },
             else => {
-                try self.errors.append("Error: Invalid assignment target.");
+                try self.errors.append(self.allocator, "Error: Invalid assignment target.");
             },
         }
     }
@@ -349,7 +349,7 @@ pub const TypeChecker = struct {
                 const target_type = try self.checkExpr(assign.target, scope);
                 const value_type = try self.checkExpr(assign.value, scope);
                 if (!target_type.eql(value_type)) {
-                    try self.errors.append("Type error: assignment type mismatch");
+                    try self.errors.append(self.allocator, "Type error: assignment type mismatch");
                 }
             },
             // 🆕 复合赋值语句
@@ -361,7 +361,7 @@ pub const TypeChecker = struct {
                 const value_type = try self.checkExpr(ca.value, scope);
                 // 复合赋值要求类型匹配且支持相应运算
                 if (!target_type.eql(value_type)) {
-                    try self.errors.append("Type error: compound assignment type mismatch");
+                    try self.errors.append(self.allocator, "Type error: compound assignment type mismatch");
                 }
             },
             .let_decl => |let| {
@@ -374,7 +374,7 @@ pub const TypeChecker = struct {
                     if (let.type) |declared_type| {
                         // 🆕 改进类型兼容性检查
                         if (!self.isTypeCompatible(init_type, declared_type)) {
-                            try self.errors.append("Type error: variable type mismatch");
+                            try self.errors.append(self.allocator, "Type error: variable type mismatch");
                         }
                         try scope.put(let.name, declared_type);
                     } else {
@@ -395,7 +395,7 @@ pub const TypeChecker = struct {
                 if (loop.condition) |cond| {
                     const cond_type = try self.checkExpr(cond, scope);
                     if (!cond_type.eql(ast.Type.bool)) {
-                        try self.errors.append("Type error: loop condition must be Bool");
+                        try self.errors.append(self.allocator, "Type error: loop condition must be Bool");
                     }
                 }
                 
@@ -426,7 +426,7 @@ pub const TypeChecker = struct {
             .while_loop => |loop| {
                 const cond_type = try self.checkExpr(loop.condition, scope);
                 if (!cond_type.eql(ast.Type.bool)) {
-                    try self.errors.append("Type error: while condition must be Bool");
+                    try self.errors.append(self.allocator, "Type error: while condition must be Bool");
                 }
                 
                 for (loop.body) |body_stmt| {
@@ -441,7 +441,7 @@ pub const TypeChecker = struct {
                 if (loop.condition) |cond| {
                     const cond_type = try self.checkExpr(cond, scope);
                     if (!cond_type.eql(ast.Type.bool)) {
-                        try self.errors.append("Type error: for condition must be Bool");
+                        try self.errors.append(self.allocator, "Type error: for condition must be Bool");
                     }
                 }
                 
@@ -512,7 +512,7 @@ pub const TypeChecker = struct {
                             "Error: Type parameter '{s}' cannot be both {s} and {s}",
                             .{type_param_name, @tagName(existing), @tagName(arg_type)}
                         );
-                        try self.errors.append(err_msg);
+                        try self.errors.append(self.allocator, err_msg);
                     }
                 } else {
                     // 第一次推导此类型参数
@@ -522,17 +522,17 @@ pub const TypeChecker = struct {
         }
         
         // 按顺序收集推导的类型
-        var inferred_types = std.ArrayList(ast.Type).init(self.allocator);
+        var inferred_types = std.ArrayList(ast.Type){};
         for (func.type_params) |param_name| {
             if (type_map.get(param_name)) |inferred| {
-                try inferred_types.append(inferred);
+                try inferred_types.append(self.allocator, inferred);
             } else {
                 // 无法推导此类型参数，使用i32作为默认
-                try inferred_types.append(ast.Type.i32);
+                try inferred_types.append(self.allocator, ast.Type.i32);
             }
         }
         
-        return inferred_types.toOwnedSlice();
+        return inferred_types.toOwnedSlice(self.allocator);
     }
     
     /// 🆕 将泛型类型参数替换为具体类型
@@ -612,9 +612,9 @@ pub const TypeChecker = struct {
                         }
                         
                         const diag = Diagnostic.init(.Error, error_msg, span, notes, help);
-                        try self.diagnostics.append(diag);
+                        try self.diagnostics.append(self.allocator, diag);
                     } else {
-                        try self.errors.append("Error: undefined identifier");
+                        try self.errors.append(self.allocator, "Error: undefined identifier");
                     }
                     break :blk ast.Type.void;
                 }
@@ -640,19 +640,19 @@ pub const TypeChecker = struct {
                             const notes = try self.allocator.alloc([]const u8, 1);
                             notes[0] = note_msg;
                             const diag = Diagnostic.init(.Error, error_msg, null, notes, null);
-                            try self.diagnostics.append(diag);
+                            try self.diagnostics.append(self.allocator, diag);
                         }
                         break :blk left_type;
                     },
                     .eq, .ne, .lt, .le, .gt, .ge => {
                         if (!left_type.eql(right_type)) {
-                            try self.errors.append("Type error: comparison types must match");
+                            try self.errors.append(self.allocator, "Type error: comparison types must match");
                         }
                         break :blk ast.Type.bool;
                     },
                     .and_op, .or_op => {
                         if (!left_type.eql(ast.Type.bool) or !right_type.eql(ast.Type.bool)) {
-                            try self.errors.append("Type error: logical ops require Bool");
+                            try self.errors.append(self.allocator, "Type error: logical ops require Bool");
                         }
                         break :blk ast.Type.bool;
                     },
@@ -664,7 +664,7 @@ pub const TypeChecker = struct {
                     .neg => break :blk operand_type,
                     .not => {
                         if (!operand_type.eql(ast.Type.bool)) {
-                            try self.errors.append("Type error: ! requires Bool");
+                            try self.errors.append(self.allocator, "Type error: ! requires Bool");
                         }
                         break :blk ast.Type.bool;
                     },
@@ -698,7 +698,7 @@ pub const TypeChecker = struct {
                                 "Error: Function '{s}' expects {d} arguments, but got {d}",
                                 .{func_name, func.params.len, call.args.len}
                             );
-                            try self.errors.append(err_msg);
+                            try self.errors.append(self.allocator, err_msg);
                             break :blk ast.Type.void;
                         }
                         
@@ -726,7 +726,7 @@ pub const TypeChecker = struct {
                                         "Error: Argument {d} type mismatch in '{s}'",
                                         .{i + 1, func_name}
                                     );
-                                    try self.errors.append(err_msg);
+                                    try self.errors.append(self.allocator, err_msg);
                                 }
                             }
                             
@@ -757,7 +757,7 @@ pub const TypeChecker = struct {
             .if_expr => |if_expr| blk: {
                 const cond_type = try self.checkExpr(if_expr.condition.*, scope);
                 if (!cond_type.eql(ast.Type.bool)) {
-                    try self.errors.append("Type error: if condition must be Bool");
+                    try self.errors.append(self.allocator, "Type error: if condition must be Bool");
                 }
                 
                 const then_type = try self.checkExpr(if_expr.then_branch.*, scope);
@@ -765,7 +765,7 @@ pub const TypeChecker = struct {
                 if (if_expr.else_branch) |else_branch| {
                     const else_type = try self.checkExpr(else_branch.*, scope);
                     if (!then_type.eql(else_type)) {
-                        try self.errors.append("Type error: if-else branches must match");
+                        try self.errors.append(self.allocator, "Type error: if-else branches must match");
                     }
                 }
                 
@@ -808,7 +808,7 @@ pub const TypeChecker = struct {
                     if (arm.guard) |guard| {
                         const guard_type = try self.checkExpr(guard, &arm_scope);
                         if (!guard_type.eql(ast.Type.bool)) {
-                            try self.errors.append("Type error: is guard must be Bool");
+                            try self.errors.append(self.allocator, "Type error: is guard must be Bool");
                         }
                     }
                     
@@ -818,7 +818,7 @@ pub const TypeChecker = struct {
                     if (result_type) |rt| {
                         if (!self.isTypeCompatible(arm_type, rt) and !self.isTypeCompatible(rt, arm_type)) {
                             // 使用更宽松的类型兼容性检查
-                            // try self.errors.append("Type error: is arms must have same type");
+                            // try self.errors.append(self.allocator, "Type error: is arms must have same type");
                         }
                     } else {
                         result_type = arm_type;
@@ -835,7 +835,7 @@ pub const TypeChecker = struct {
                 
                 if (!has_wildcard and is_match.arms.len < 2) {
                     // 警告：可能未覆盖所有情况
-                    // try self.errors.append("Warning: is expression may not be exhaustive");
+                    // try self.errors.append(self.allocator, "Warning: is expression may not be exhaustive");
                 }
                 
                 break :blk result_type orelse ast.Type.void;
@@ -863,7 +863,7 @@ pub const TypeChecker = struct {
                 if (!is_numeric_from or !is_numeric_to) {
                     // 只允许数值类型（包括 bool/char）之间转换
                     if (!from_type.eql(to_type)) {
-                        try self.errors.append("Type error: invalid type conversion");
+                        try self.errors.append(self.allocator, "Type error: invalid type conversion");
                     }
                 }
                 
@@ -873,7 +873,7 @@ pub const TypeChecker = struct {
             .await_expr => |await_expr| blk: {
                 // 验证 await 只能在 async 函数中使用
                 if (!self.current_function_is_async) {
-                    try self.errors.append("Type error: await can only be used in async functions");
+                    try self.errors.append(self.allocator, "Type error: await can only be used in async functions");
                 }
                 
                 const expr_type = try self.checkExpr(await_expr.*, scope);
@@ -896,7 +896,7 @@ pub const TypeChecker = struct {
                 for (elements[1..]) |elem| {
                     const elem_type = try self.checkExpr(elem, scope);
                     if (!elem_type.eql(first_type)) {
-                        try self.errors.append("Type error: array elements must have same type");
+                        try self.errors.append(self.allocator, "Type error: array elements must have same type");
                     }
                 }
                 
@@ -922,14 +922,14 @@ pub const TypeChecker = struct {
                               index_type == .u32 or index_type == .u64;
                 
                 if (!is_int) {
-                    try self.errors.append("Type error: array index must be integer");
+                    try self.errors.append(self.allocator, "Type error: array index must be integer");
                 }
                 
                 // 返回数组元素类型
                 if (array_type == .array) {
                     break :blk array_type.array.element.*;
                 } else {
-                    try self.errors.append("Type error: index on non-array type");
+                    try self.errors.append(self.allocator, "Type error: index on non-array type");
                     break :blk ast.Type.void;
                 }
             },
@@ -949,7 +949,7 @@ pub const TypeChecker = struct {
                                   end_type == .u32 or end_type == .u64;
                 
                 if (!start_is_int or !end_is_int) {
-                    try self.errors.append("Type error: range bounds must be integers");
+                    try self.errors.append(self.allocator, "Type error: range bounds must be integers");
                 }
                 
                 // 范围表达式的类型暂定为 void（实际上是迭代器）
@@ -985,7 +985,7 @@ pub const TypeChecker = struct {
                     const arm_type = try self.checkExpr(arm.body, scope);
                     if (result_type) |rt| {
                         if (!rt.eql(arm_type)) {
-                            try self.errors.append("Type error: match arms must have same type");
+                            try self.errors.append(self.allocator, "Type error: match arms must have same type");
                         }
                     } else {
                         result_type = arm_type;
@@ -1014,7 +1014,7 @@ pub const TypeChecker = struct {
                     "Error: trait '{s}' not found for constraint",
                     .{constraint}
                 );
-                try self.errors.append(err_msg);
+                try self.errors.append(self.allocator, err_msg);
                 continue;
             }
             
@@ -1030,7 +1030,7 @@ pub const TypeChecker = struct {
                             "Error: type '{s}' does not implement trait method '{s}' from '{s}'",
                             .{type_name, trait_method.name, constraint}
                         );
-                        try self.errors.append(err_msg);
+                        try self.errors.append(self.allocator, err_msg);
                     }
                 }
             }
@@ -1051,7 +1051,7 @@ pub const TypeChecker = struct {
                 "Error: trait '{s}' not found",
                 .{trait_name}
             );
-            try self.errors.append(err_msg);
+            try self.errors.append(self.allocator, err_msg);
             return false;
         };
         
@@ -1061,7 +1061,7 @@ pub const TypeChecker = struct {
                 "Error: type '{s}' has no methods",
                 .{type_name}
             );
-            try self.errors.append(err_msg);
+            try self.errors.append(self.allocator, err_msg);
             return false;
         };
         
@@ -1077,7 +1077,7 @@ pub const TypeChecker = struct {
                         "Error: method '{s}' signature mismatch in type '{s}' (trait: '{s}')",
                         .{trait_method.name, type_name, trait_name}
                     );
-                    try self.errors.append(err_msg);
+                    try self.errors.append(self.allocator, err_msg);
                     all_implemented = false;
                 }
             } else {
@@ -1086,7 +1086,7 @@ pub const TypeChecker = struct {
                     "Error: missing trait method '{s}' in type '{s}' (required by trait '{s}')",
                     .{trait_method.name, type_name, trait_name}
                 );
-                try self.errors.append(err_msg);
+                try self.errors.append(self.allocator, err_msg);
                 all_implemented = false;
             }
         }
@@ -1134,7 +1134,7 @@ pub const TypeChecker = struct {
         const type_name = switch (receiver_type) {
             .named => |name| name,
             else => {
-                try self.errors.append("Error: cannot call method on non-named type");
+                try self.errors.append(self.allocator, "Error: cannot call method on non-named type");
                 return ast.Type.void;
             },
         };
@@ -1150,7 +1150,7 @@ pub const TypeChecker = struct {
                         "Error: method '{s}' expects {d} arguments, got {d}",
                         .{method_name, expected_args, args.len}
                     );
-                    try self.errors.append(err_msg);
+                    try self.errors.append(self.allocator, err_msg);
                 }
                 
                 // 检查参数类型
@@ -1170,7 +1170,7 @@ pub const TypeChecker = struct {
                                 "Error: argument {d} type mismatch in method '{s}'",
                                 .{arg_idx + 1, method_name}
                             );
-                            try self.errors.append(err_msg);
+                            try self.errors.append(self.allocator, err_msg);
                         }
                         arg_idx += 1;
                     }
@@ -1185,7 +1185,7 @@ pub const TypeChecker = struct {
             "Error: method '{s}' not found on type '{s}'",
             .{method_name, type_name}
         );
-        try self.errors.append(err_msg);
+        try self.errors.append(self.allocator, err_msg);
         return ast.Type.void;
     }
     
@@ -1198,7 +1198,7 @@ pub const TypeChecker = struct {
         const type_name = switch (receiver_type) {
             .named => |name| name,
             else => {
-                try self.errors.append("Error: cannot access field on non-named type");
+                try self.errors.append(self.allocator, "Error: cannot access field on non-named type");
                 return ast.Type.void;
             },
         };
@@ -1217,11 +1217,11 @@ pub const TypeChecker = struct {
                 },
                 .enum_type => {
                     // 枚举不能直接访问字段
-                    try self.errors.append("Error: cannot access fields on enum type");
+                    try self.errors.append(self.allocator, "Error: cannot access fields on enum type");
                     return ast.Type.void;
                 },
                 .trait_type => {
-                    try self.errors.append("Error: cannot access fields on trait type");
+                    try self.errors.append(self.allocator, "Error: cannot access fields on trait type");
                     return ast.Type.void;
                 },
             }
@@ -1232,7 +1232,7 @@ pub const TypeChecker = struct {
             "Error: field '{s}' not found on type '{s}'",
             .{field_name, type_name}
         );
-        try self.errors.append(err_msg);
+        try self.errors.append(self.allocator, err_msg);
         return ast.Type.void;
     }
     
@@ -1279,7 +1279,7 @@ pub const TypeChecker = struct {
                                     "Warning: is expression not exhaustive, missing pattern for '{s}'",
                                     .{variant.name}
                                 );
-                                try self.errors.append(err_msg);
+                                try self.errors.append(self.allocator, err_msg);
                             }
                         }
                     }
@@ -1386,7 +1386,7 @@ pub const TypeChecker = struct {
     ) !void {
         const span = Span.init(self.source_file, line, col, line, col);
         const diag = Diagnostic.init(.Error, message, span, &[_][]const u8{}, null);
-        try self.diagnostics.append(diag);
+        try self.diagnostics.append(self.allocator, diag);
     }
     
     /// 报告错误并附带帮助信息
@@ -1399,7 +1399,7 @@ pub const TypeChecker = struct {
     ) !void {
         const span = Span.init(self.source_file, line, col, line, col);
         const diag = Diagnostic.init(.Error, message, span, &[_][]const u8{}, help);
-        try self.diagnostics.append(diag);
+        try self.diagnostics.append(self.allocator, diag);
     }
     
     /// 报告错误并附带注释和帮助
@@ -1413,6 +1413,6 @@ pub const TypeChecker = struct {
     ) !void {
         const span = Span.init(self.source_file, line, col, line, col);
         const diag = Diagnostic.init(.Error, message, span, notes, help);
-        try self.diagnostics.append(diag);
+        try self.diagnostics.append(self.allocator, diag);
     }
 };

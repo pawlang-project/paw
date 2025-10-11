@@ -14,10 +14,10 @@ pub const Lexer = struct {
     line_offset: usize,  // 🆕 v0.1.8: 行号偏移（用于处理 prelude）
 
     pub fn init(allocator: std.mem.Allocator, source: []const u8, filename: []const u8) Lexer {
-        var tokens = std.ArrayList(Token).init(allocator);
+        var tokens: std.ArrayList(Token) = .{};
         // 🚀 Performance: Pre-allocate token array (estimate ~1 token per 10 chars)
         const estimated_tokens = source.len / 10 + 100;
-        tokens.ensureTotalCapacity(estimated_tokens) catch {};
+        tokens.ensureTotalCapacity(allocator, estimated_tokens) catch {};
         
         return Lexer{
             .allocator = allocator,
@@ -38,7 +38,7 @@ pub const Lexer = struct {
     }
 
     pub fn deinit(self: *Lexer) void {
-        self.tokens.deinit();
+        self.tokens.deinit(self.allocator);
     }
 
     pub fn tokenize(self: *Lexer) ![]Token {
@@ -50,7 +50,7 @@ pub const Lexer = struct {
             try self.scanToken();
         }
 
-        try self.tokens.append(Token.init(.eof, "", self.line, self.column, self.filename));
+        try self.tokens.append(self.allocator, Token.init(.eof, "", self.line, self.column, self.filename));
         return self.tokens.items;
     }
 
@@ -378,7 +378,7 @@ pub const Lexer = struct {
         else 
             self.line;
         const token = Token.init(token_type, text, adjusted_line, self.column, self.filename);
-        try self.tokens.append(token);
+        try self.tokens.append(self.allocator, token);
     }
 };
 
