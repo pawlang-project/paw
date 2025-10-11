@@ -5,13 +5,15 @@ const TokenType = @import("token.zig").TokenType;
 pub const Lexer = struct {
     allocator: std.mem.Allocator,
     source: []const u8,
+    filename: []const u8,  // 🆕 v0.1.8: 文件名
     tokens: std.ArrayList(Token),
     start: usize,
     current: usize,
     line: usize,
     column: usize,
+    line_offset: usize,  // 🆕 v0.1.8: 行号偏移（用于处理 prelude）
 
-    pub fn init(allocator: std.mem.Allocator, source: []const u8) Lexer {
+    pub fn init(allocator: std.mem.Allocator, source: []const u8, filename: []const u8) Lexer {
         var tokens = std.ArrayList(Token).init(allocator);
         // 🚀 Performance: Pre-allocate token array (estimate ~1 token per 10 chars)
         const estimated_tokens = source.len / 10 + 100;
@@ -20,12 +22,19 @@ pub const Lexer = struct {
         return Lexer{
             .allocator = allocator,
             .source = source,
+            .filename = filename,  // 🆕 v0.1.8
             .tokens = tokens,
             .start = 0,
             .current = 0,
             .line = 1,
             .column = 1,
+            .line_offset = 0,  // 🆕 v0.1.8: 默认无偏移
         };
+    }
+    
+    /// 🆕 v0.1.8: 设置行号偏移（用于处理 prelude）
+    pub fn setLineOffset(self: *Lexer, offset: usize) void {
+        self.line_offset = offset;
     }
 
     pub fn deinit(self: *Lexer) void {
@@ -41,7 +50,7 @@ pub const Lexer = struct {
             try self.scanToken();
         }
 
-        try self.tokens.append(Token.init(.eof, "", self.line, self.column));
+        try self.tokens.append(Token.init(.eof, "", self.line, self.column, self.filename));
         return self.tokens.items;
     }
 
@@ -363,7 +372,12 @@ pub const Lexer = struct {
 
     fn addToken(self: *Lexer, token_type: TokenType) !void {
         const text = self.source[self.start..self.current];
-        const token = Token.init(token_type, text, self.line, self.column);
+        // 🆕 v0.1.8: 调整行号（减去 prelude 偏移）
+        const adjusted_line = if (self.line > self.line_offset) 
+            self.line - self.line_offset 
+        else 
+            self.line;
+        const token = Token.init(token_type, text, adjusted_line, self.column, self.filename);
         try self.tokens.append(token);
     }
 };

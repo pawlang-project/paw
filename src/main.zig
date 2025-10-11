@@ -52,7 +52,7 @@ fn checkFile(allocator: std.mem.Allocator, source_file: []const u8) !void {
     defer allocator.free(combined_source);
     
     // Lexical analysis
-    var lexer = Lexer.init(allocator, combined_source);
+    var lexer = Lexer.init(allocator, combined_source, source_file);
     defer lexer.deinit();
     const tokens = try lexer.tokenize();
     
@@ -62,7 +62,7 @@ fn checkFile(allocator: std.mem.Allocator, source_file: []const u8) !void {
     const ast = try parser.parse();
     
     // Type checking
-    var type_checker = TypeChecker.init(allocator);
+    var type_checker = TypeChecker.init(allocator, source_file, tokens);
     defer type_checker.deinit();
     try type_checker.check(ast);
     
@@ -209,12 +209,20 @@ pub fn main() !void {
     // 🆕 0. 自动加载标准库 prelude（嵌入到可执行文件中）
     const prelude_source = @embedFile("std/prelude.paw");
     
+    // 🆕 v0.1.8: 计算 prelude 行数用于行号偏移
+    var prelude_lines: usize = 0;
+    for (prelude_source) |c| {
+        if (c == '\n') prelude_lines += 1;
+    }
+    prelude_lines += 2;  // 加上分隔的两个换行符
+    
     // 合并 prelude 和用户代码
     const combined_source = try std.fmt.allocPrint(allocator, "{s}\n\n{s}", .{prelude_source, source});
     defer allocator.free(combined_source);
     
     // 1. Lexical analysis
-    var lexer = Lexer.init(allocator, combined_source);
+    var lexer = Lexer.init(allocator, combined_source, source_file);
+    lexer.setLineOffset(prelude_lines);  // 🆕 v0.1.8: 设置行号偏移
     defer lexer.deinit();
     
     const tokens = try lexer.tokenize();
@@ -300,7 +308,7 @@ pub fn main() !void {
     }
 
     // 3. Type checking
-    var type_checker = TypeChecker.init(allocator);
+    var type_checker = TypeChecker.init(allocator, source_file, tokens);
     defer type_checker.deinit();
     
     try type_checker.check(ast);

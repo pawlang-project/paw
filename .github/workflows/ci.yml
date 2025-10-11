@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Zig
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: 0.14.0
+        
+    - name: Build PawLang compiler
+      run: zig build
+      
+    - name: Test - Hello World (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        ./zig-out/bin/pawc examples/hello.paw
+        echo "✅ Hello World test passed"
+      
+    - name: Test - Hello World (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        .\zig-out\bin\pawc.exe examples\hello.paw
+        echo "✅ Hello World test passed"
+      shell: cmd
+      
+    - name: Test - Type Casting (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        ./zig-out/bin/pawc tests/syntax/test_type_cast.paw --backend=c
+        if [ -f output.c ]; then
+          echo "✅ Type casting test passed"
+          rm output.c
+        fi
+      
+    - name: Test - Type Casting (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        .\zig-out\bin\pawc.exe tests\syntax\test_type_cast.paw --backend=c
+        if exist output.c (
+          echo ✅ Type casting test passed
+          del output.c
+        )
+      shell: cmd
+      
+    - name: Test - Integration Test (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        ./zig-out/bin/pawc tests/integration/v0.1.8_test.paw --backend=c
+        if [ -f output.c ]; then
+          echo "✅ Integration test passed"
+          rm output.c
+        fi
+      
+    - name: Test - Integration Test (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        .\zig-out\bin\pawc.exe tests\integration\v0.1.8_test.paw --backend=c
+        if exist output.c (
+          echo ✅ Integration test passed
+          del output.c
+        )
+      shell: cmd
+      
+    - name: Summary
+      run: |
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "✅ All tests passed on ${{ matrix.os }}!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      shell: bash

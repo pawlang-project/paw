@@ -101,7 +101,8 @@ pub const ModuleLoader = struct {
         );
         
         // 解析模块
-        var lexer = Lexer.init(self.allocator, source);
+        var lexer = Lexer.init(self.allocator, source, source_file);
+        defer lexer.deinit();  // 🆕 v0.1.8: 确保清理
         const tokens = try lexer.tokenize();
         
         var parser = Parser.init(self.allocator, tokens);
