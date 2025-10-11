@@ -425,19 +425,20 @@ jobs:
         # Test C backend
         echo ""
         echo "Test 1: C backend"
-        ./pawc.bat examples/hello.paw --backend=c
+        cmd //c "pawc.bat examples\\hello.paw --backend=c"
         if [ -f output.c ]; then
           echo "PASS: C backend works"
           rm output.c
         else
           echo "FAIL: C backend failed"
+          ls -la
           exit 1
         fi
         
         # Test LLVM backend (critical!)
         echo ""
         echo "Test 2: LLVM backend WITHOUT system LLVM"
-        ./pawc.bat examples/hello.paw --backend=llvm
+        cmd //c "pawc.bat examples\\hello.paw --backend=llvm"
         if [ -f output.ll ]; then
           echo "PASS: LLVM backend works!"
           echo "(using bundled DLLs)"
