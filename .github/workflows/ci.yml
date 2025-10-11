@@ -65,9 +65,8 @@ jobs:
         echo "✅ LLVM 19.1.7 installed via Chocolatey"
         echo "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         
-        # Verify installation
-        $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
-        llvm-config.exe --version
+        # Verify installation (use full path as PATH won't be updated in same step)
+        & "C:\Program Files\LLVM\bin\llvm-config.exe" --version
         echo "✅ llvm-config.exe is accessible"
         
     - name: Build PawLang compiler
