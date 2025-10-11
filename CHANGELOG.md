@@ -2,51 +2,51 @@
 
 All notable changes to the Paw programming language will be documented in this file.
 
-## [0.1.7] - TBD
+## [0.1.7] - 2025-01-11
 
-### 🎯 LLVM 优化支持 + as 类型转换
+### 🎯 LLVM Optimization + Type Casting
 
 **Major Updates**: 
-1. 为 LLVM 后端添加优化级别支持，让用户可以控制代码优化程度
-2. 完整实现 `as` 类型转换操作符，支持所有基础类型之间的转换
+1. Added LLVM optimization level support, giving users full control over code optimization
+2. Complete implementation of `as` type casting operator for all primitive types
 
 #### New Features
 
-**LLVM 优化级别** ⚡:
-- ✅ **-O0**: 无优化（最快编译，便于调试）
-- ✅ **-O1**: 基础优化（平衡编译速度和性能）
-- ✅ **-O2**: 标准优化（推荐，大多数项目的最佳选择）⭐
-- ✅ **-O3**: 激进优化（最大性能）
+**LLVM Optimization Levels** ⚡:
+- ✅ **-O0**: No optimization (fastest compilation, for debugging)
+- ✅ **-O1**: Basic optimization (balanced compilation speed and performance)
+- ✅ **-O2**: Standard optimization (recommended for most projects) ⭐
+- ✅ **-O3**: Aggressive optimization (maximum performance)
 
-**as 类型转换** 🔄:
-- ✅ **整数 ↔ 整数**: 扩展（zext/sext）、截断（trunc）、有符号/无符号互转
-- ✅ **整数 ↔ 浮点**: sitofp, uitofp, fptosi, fptoui
-- ✅ **浮点 ↔ 浮点**: f32↔f64 (fpext/fptrunc)
-- ✅ **bool/char ↔ 整数**: 特殊转换支持
-- ✅ **完整的 LLVM IR 指令**: 9种类型转换指令
-- ✅ **C Backend 支持**: 生成标准 C 类型转换
-- ✅ **TypeChecker 验证**: 编译时检查转换合法性
+**Type Casting with `as`** 🔄:
+- ✅ **Integer ↔ Integer**: Extension (zext/sext), truncation (trunc), signed/unsigned conversion
+- ✅ **Integer ↔ Float**: sitofp, uitofp, fptosi, fptoui
+- ✅ **Float ↔ Float**: f32↔f64 (fpext/fptrunc)
+- ✅ **bool/char ↔ Integer**: Special conversion support
+- ✅ **Complete LLVM IR Instructions**: 9 type casting instructions
+- ✅ **C Backend Support**: Standard C type casting generation
+- ✅ **TypeChecker Validation**: Compile-time casting validation
 
-**智能提示**:
-- ✅ 编译器根据优化级别提供对应的 clang 编译建议
-- ✅ 清晰的优化级别说明
-- ✅ 帮助信息中包含详细的使用说明
+**Smart Hints**:
+- ✅ Compiler provides corresponding clang compilation suggestions based on optimization level
+- ✅ Clear optimization level descriptions
+- ✅ Detailed usage information in help message
 
 #### Code Examples
 
-**基本用法**:
+**Basic Usage**:
 ```bash
-# 无优化（调试）
+# No optimization (debug)
 pawc app.paw --backend=llvm -O0
 
-# 标准优化（推荐）
+# Standard optimization (recommended)
 pawc app.paw --backend=llvm -O2
 clang output.ll -O2 -o app
 ```
 
-**完整示例**:
+**Complete Example**:
 ```bash
-# 生成优化的 LLVM IR
+# Generate optimized LLVM IR
 $ pawc fibonacci.paw --backend=llvm -O3 -v
 
 ✅ LLVM IR generated: output.ll
@@ -56,22 +56,22 @@ $ pawc fibonacci.paw --backend=llvm -O3 -v
    • Run: ./output
 ```
 
-**as 类型转换示例**:
+**Type Casting Examples**:
 ```paw
 fn main() -> i32 {
-    // 整数扩展
+    // Integer extension
     let x: i32 = 100;
     let y: i64 = x as i64;    // sext i32 %x to i64
     
-    // 整数到浮点
+    // Integer to float
     let a: i32 = 42;
     let b: f64 = a as f64;    // sitofp i32 %a to double
     
-    // 浮点到整数（截断）
+    // Float to integer (truncation)
     let f: f64 = 3.14;
     let i: i32 = f as i32;    // fptosi double %f to i32 -> 3
     
-    // bool/char 转换
+    // bool/char conversion
     let flag: bool = true;
     let num: i32 = flag as i32;  // zext i1 %flag to i32 -> 1
     
@@ -95,33 +95,44 @@ LLVM IR:
 
 #### Technical Improvements
 
-**实用优化方案**:
-- PawLang 生成高质量的 LLVM IR（SSA 形式）
-- 利用 clang/llc 的成熟优化管道
-- 避免复杂的 PassManager 集成
-- 更稳定可靠
+**Practical Optimization Approach**:
+- PawLang generates high-quality LLVM IR (SSA form)
+- Leverages clang/llc's mature optimization pipeline
+- Avoids complex PassManager integration
+- More stable and reliable
 
-**代码修改**:
-- `src/main.zig`: 添加优化参数解析和提示
-- `src/llvm_native_backend.zig`: 添加 OptLevel 支持
-- `src/llvm_c_api.zig`: 添加优化文档说明
+**Code Changes**:
+- `src/main.zig`: Added optimization parameter parsing and hints
+- `src/llvm_native_backend.zig`: Added OptLevel support and complete type casting
+- `src/llvm_c_api.zig`: Added optimization documentation and 9 casting instructions
+- `src/typechecker.zig`: Enhanced type casting validation for bool/char
+- `src/codegen.zig`: Added C backend type casting generation
 
 #### Testing
 
-**新增基准测试**:
-- `tests/benchmarks/fibonacci_benchmark.paw` - 递归性能测试
-- `tests/benchmarks/loop_benchmark.paw` - 循环密集型测试
+**New Benchmarks**:
+- `tests/benchmarks/fibonacci_benchmark.paw` - Recursive performance test
+- `tests/benchmarks/loop_benchmark.paw` - Loop-intensive test
+- `tests/syntax/test_type_cast.paw` - Complete type casting test suite
 
-**测试结果**:
-- ✅ 所有优化级别正常工作
-- ✅ clang 可以正确应用优化
-- ✅ 编译器提示准确有用
+**Test Results**:
+- ✅ All optimization levels work correctly
+- ✅ clang applies optimizations properly
+- ✅ Compiler hints are accurate and helpful
+- ✅ C Backend: Exit code 21 (type casting tests pass)
+- ✅ LLVM Backend: Exit code 21 (type casting tests pass)
+
+**Performance Benchmarks** (loop_benchmark.paw):
+- -O0: ~10.15s (baseline)
+- -O1: ~5.03s (2x speedup) ⚡
+- -O2: ~1.03s (10x speedup) 🚀
+- -O3: ~0.68s (15x speedup) 💨
 
 #### Documentation
 
-- ✅ 创建 `docs/RELEASE_NOTES_v0.1.7.md`
-- ✅ 更新 CHANGELOG.md
-- ⏳ 更新 README.md（待完成）
+- ✅ Created `docs/RELEASE_NOTES_v0.1.7.md`
+- ✅ Updated CHANGELOG.md (English)
+- ✅ Updated README.md
 
 ---
 
