@@ -27,152 +27,82 @@ pub fn build(b: *std.Build) void {
         exe.use_llvm = false;
     }
 
-    // 🆕 集成 LLVM（自动检测并启用）
-    // Using direct C API bindings instead of llvm-zig
-    const local_llvm = "llvm/install";
-    
-    // 自动检测本地 LLVM（Windows needs .exe extension）
+    // 🆕 检测系统 LLVM
     const llvm_config_name = if (target.result.os.tag == .windows) "llvm-config.exe" else "llvm-config";
-    const llvm_config_path = b.fmt("{s}/bin/{s}", .{local_llvm, llvm_config_name});
     
-    const has_local_llvm = blk: {
-        std.fs.cwd().access(llvm_config_path, .{}) catch {
+    // Try to detect system LLVM using llvm-config
+    const has_llvm = blk: {
+        const result = std.process.Child.run(.{
+            .allocator = b.allocator,
+            .argv = &[_][]const u8{ llvm_config_name, "--version" },
+        }) catch {
             break :blk false;
         };
-        break :blk true;
+        defer b.allocator.free(result.stdout);
+        defer b.allocator.free(result.stderr);
+        break :blk result.term.Exited == 0;
     };
     
-    // Get LLVM link flags using llvm-config (Linux only)
-    // This uses the downloaded LLVM from install_llvm_complete.py
+    // Get LLVM configuration from llvm-config
     var llvm_link_flags: ?[]const u8 = null;
-    if (has_local_llvm and target.result.os.tag == .linux) {
-        const llvm_config_result = b.run(&[_][]const u8{
-            llvm_config_path,
-            "--link-shared",  // Force shared library linking on Linux
+    var llvm_include_path: ?[]const u8 = null;
+    
+    if (has_llvm) {
+        // Get link flags
+        const link_result = b.run(&[_][]const u8{
+            llvm_config_name,
+            "--link-shared",
             "--ldflags",
             "--libs",
             "--system-libs",
         });
+        llvm_link_flags = link_result;
         
-        llvm_link_flags = llvm_config_result;
-        std.debug.print("📦 Using downloaded LLVM (isolated from system)\n", .{});
-        std.debug.print("llvm-config output: {s}\n", .{llvm_config_result});
+        // Get include path
+        llvm_include_path = b.run(&[_][]const u8{
+            llvm_config_name,
+            "--includedir",
+        });
+        
+        std.debug.print("📦 Using system LLVM\n", .{});
     }
     
-    // LLVM native backend is now available on all platforms
-    const enable_llvm_native = has_local_llvm;
-    build_options.addOption(bool, "llvm_native_available", enable_llvm_native);
+    build_options.addOption(bool, "llvm_native_available", has_llvm);
     
-    if (has_local_llvm) {
-        std.debug.print("✓ Local LLVM detected at {s}\n", .{local_llvm});
+    if (has_llvm) {
         std.debug.print("✅ LLVM native API enabled\n", .{});
         std.debug.print("   • C backend: --backend=c (default)\n", .{});
         std.debug.print("   • LLVM backend: --backend=llvm (native API)\n", .{});
         
-        // Add LLVM library paths and includes
-        exe.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/lib", .{local_llvm}) });
-        exe.addIncludePath(.{ .cwd_relative = b.fmt("{s}/include", .{local_llvm}) });
+        // Add LLVM include path
+        if (llvm_include_path) |include_path| {
+            const trimmed = std.mem.trim(u8, include_path, " \n\r\t");
+            exe.addIncludePath(.{ .cwd_relative = trimmed });
+        }
         
-        // Link comprehensive set of LLVM libraries
-        const llvm_libs = [_][]const u8{
-            // Core libraries
-            "LLVMCore",
-            "LLVMSupport",
-            "LLVMDemangle",
-            
-            // Analysis and optimization
-            "LLVMAnalysis",
-            "LLVMTransformUtils",
-            "LLVMScalarOpts",
-            "LLVMInstCombine",
-            "LLVMAggressiveInstCombine",
-            "LLVMipo",
-            "LLVMVectorize",
-            
-            // Target support
-            "LLVMTarget",
-            "LLVMTargetParser",
-            "LLVMMC",
-            "LLVMMCParser",
-            "LLVMBitReader",
-            "LLVMBitWriter",
-            "LLVMAsmParser",
-            "LLVMAsmPrinter",
-            
-            // Code generation for x86
-            "LLVMX86CodeGen",
-            "LLVMX86AsmParser",
-            "LLVMX86Desc",
-            "LLVMX86Info",
-            "LLVMX86Disassembler",
-            
-            // Utilities
-            "LLVMBinaryFormat",
-            "LLVMRemarks",
-            "LLVMBitstreamReader",
-            "LLVMTextAPI",
-            "LLVMProfileData",
-            "LLVMDebugInfoDWARF",
-            "LLVMDebugInfoCodeView",
-            "LLVMDebugInfoMSF",
-            "LLVMGlobalISel",
-            "LLVMSelectionDAG",
-            "LLVMCodeGen",
-            "LLVMObjCARCOpts",
-            "LLVMCoroutines",
-            "LLVMCFGuard",
-        };
-        
-        // On Linux with llvm-config, skip static libs (use shared lib instead)
-        const use_llvm_static = !( target.result.os.tag == .linux and llvm_link_flags != null);
-        
-        if (use_llvm_static) {
-            for (llvm_libs) |lib| {
-                exe.linkSystemLibrary(lib);
+        // Use llvm-config output for all linking
+        if (llvm_link_flags) |flags| {
+            std.debug.print("   🔧 Using llvm-config link flags\n", .{});
+            // Parse and add flags from llvm-config
+            var iter = std.mem.tokenizeAny(u8, flags, " \n\r\t");
+            while (iter.next()) |flag| {
+                if (std.mem.startsWith(u8, flag, "-l")) {
+                    const lib_name = flag[2..];
+                    exe.linkSystemLibrary(lib_name);
+                } else if (std.mem.startsWith(u8, flag, "-L")) {
+                    const lib_path = flag[2..];
+                    exe.addLibraryPath(.{ .cwd_relative = lib_path });
+                }
             }
         }
         
-        // Platform-specific C++ runtime libraries (AFTER LLVM libraries)
-        if (target.result.os.tag == .windows) {
-            // Use MinGW's libstdc++ (must be before other system libs)
-            exe.linkSystemLibrary("stdc++");
-            exe.linkSystemLibrary("gcc_s");
-            exe.linkSystemLibrary("gcc");
-            exe.linkSystemLibrary("pthread");
-            
-            // Windows system libraries needed by LLVM
-            exe.linkSystemLibrary("ole32");
-            exe.linkSystemLibrary("uuid");
-            exe.linkSystemLibrary("version");
-            exe.linkSystemLibrary("psapi");
-            exe.linkSystemLibrary("shell32");
-            exe.linkSystemLibrary("advapi32");
-            
-            std.debug.print("   🔧 Using MinGW C++ runtime\n", .{});
-        } else if (target.result.os.tag == .linux) {
-            // Linux: Use llvm-config to get proper link flags
-            if (llvm_link_flags) |flags| {
-                std.debug.print("   🔧 Using llvm-config link flags\n", .{});
-                // Parse and add flags from llvm-config
-                var iter = std.mem.tokenizeAny(u8, flags, " \n\r\t");
-                while (iter.next()) |flag| {
-                    if (std.mem.startsWith(u8, flag, "-l")) {
-                        const lib_name = flag[2..];
-                        exe.linkSystemLibrary(lib_name);
-                    } else if (std.mem.startsWith(u8, flag, "-L")) {
-                        const lib_path = flag[2..];
-                        exe.addLibraryPath(.{ .cwd_relative = lib_path });
-                    }
-                }
-            }
-            
-            // Always add C++ and system libraries (llvm-config doesn't include them all)
-            exe.linkSystemLibrary("stdc++");
-            exe.linkSystemLibrary("pthread");
-        } else {
-            // macOS and others: Use libc++
+        // Platform-specific C++ runtime
+        if (target.result.os.tag == .linux) {
             exe.linkLibCpp();
-            std.debug.print("   🔧 Using libc++ (macOS)\n", .{});
+        } else if (target.result.os.tag == .macos) {
+            exe.linkLibCpp();
+        } else if (target.result.os.tag == .windows) {
+            exe.linkSystemLibrary("stdc++");
         }
     } else {
         build_options.addOption(bool, "llvm_native_available", false);
