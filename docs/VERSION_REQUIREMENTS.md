@@ -8,11 +8,11 @@ This document specifies the exact versions of dependencies required for building
 
 ### Zig Compiler
 
-**Version**: `0.14.0` or `0.15.0+`
+**Version**: `0.15.1` (required)
 
-- **Recommended**: `0.15.1` (latest stable)
-- **Minimum**: `0.14.0`
-- **Status**: ✅ Tested on 0.14.0, 0.15.0, 0.15.1
+- **Required**: `0.15.1` (exact version)
+- **Status**: ✅ Fully tested and validated
+- **Note**: This project requires Zig 0.15.1 features and APIs
 
 **Download**: https://ziglang.org/download/
 
@@ -164,9 +164,9 @@ zig build
 
 | Component | Version | Status | Notes |
 |-----------|---------|--------|-------|
-| **Zig** | 0.15.1 | ✅ Recommended | Latest stable |
-| **Zig** | 0.15.0 | ✅ Supported | Tested |
-| **Zig** | 0.14.0 | ✅ Minimum | Works but 0.15.x recommended |
+| **Zig** | 0.15.1 | ✅ Required | Only supported version |
+| **Zig** | 0.15.0 | ❌ Not Supported | Use 0.15.1 instead |
+| **Zig** | 0.14.x | ❌ Not Supported | API incompatible |
 | **Zig** | 0.13.x | ❌ Not Supported | API incompatible |
 | **LLVM** | 19.1.7 | ✅ Required | Only supported version |
 | **LLVM** | 19.1.x | ⚠️ May Work | Not officially tested |
@@ -277,7 +277,7 @@ If you have issues with versions:
 ## Summary
 
 **Quick Reference**:
-- ✅ **Zig**: 0.15.1 (recommended) or 0.14.0+ (minimum)
+- ✅ **Zig**: 0.15.1 (required, exact version)
 - ✅ **LLVM**: 19.1.7 (required, exact version)
 - ✅ **Automated Setup**: Use `scripts/install_llvm_complete.py`
 - ✅ **Verification**: Run `zig version` and `llvm-config --version`
