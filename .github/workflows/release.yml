@@ -132,13 +132,10 @@ jobs:
           echo "🔨 Building PawLang for Linux ${{ matrix.arch }}..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          if [ "${{ matrix.cross_compile }}" = "true" ]; then
-            # Cross-compilation: disable LLVM backend (incompatible architectures)
-            echo "Note: Cross-compiling without LLVM backend"
-            zig build -Dtarget=${{ matrix.target }} -Denable-llvm=false
-          else
-            # Native build: with LLVM backend
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
             zig build
+          else
+            zig build -Dtarget=${{ matrix.target }}
           fi
           
           echo "✅ Build successful"
