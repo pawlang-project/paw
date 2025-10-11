@@ -7,6 +7,14 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const llvm = @import("llvm_c_api.zig");
 
+// 🆕 v0.1.7: LLVM 优化级别
+pub const OptLevel = enum {
+    O0,  // No optimization
+    O1,  // Basic optimization
+    O2,  // Standard optimization
+    O3,  // Aggressive optimization
+};
+
 pub const LLVMNativeBackend = struct {
     allocator: std.mem.Allocator,
     context: llvm.Context,
@@ -25,9 +33,13 @@ pub const LLVMNativeBackend = struct {
     current_loop_exit: ?llvm.BasicBlockRef,
     current_loop_continue: ?llvm.BasicBlockRef,
     
+    // 🆕 v0.1.7: Optimization level
+    opt_level: OptLevel,
+    
     /// 初始化 LLVM 后端
     /// 创建 LLVM 上下文、模块和构建器
-    pub fn init(allocator: std.mem.Allocator, module_name: []const u8) !LLVMNativeBackend {
+    /// 🆕 v0.1.7: 添加优化级别参数
+    pub fn init(allocator: std.mem.Allocator, module_name: []const u8, opt_level: OptLevel) !LLVMNativeBackend {
         const context = llvm.Context.create();
         
         const module_name_z = try allocator.dupeZ(u8, module_name);
@@ -47,6 +59,7 @@ pub const LLVMNativeBackend = struct {
             .current_function = null,
             .current_loop_exit = null,
             .current_loop_continue = null,
+            .opt_level = opt_level,  // 🆕 v0.1.7: 保存优化级别
         };
     }
     
@@ -815,12 +828,31 @@ pub const LLVMNativeBackend = struct {
                 const first_field_value = try self.generateExpr(si.fields[0].value);
                 break :blk first_field_value;
             },
+            // 🆕 v0.1.7: as 类型转换
+            .as_expr => |as_cast| blk: {
+                const value = try self.generateExpr(as_cast.value.*);
+                const target_llvm_type = try self.toLLVMType(as_cast.target_type);
+                
+                // 生成类型转换指令
+                break :blk try self.generateCast(value, as_cast.value, as_cast.target_type, target_llvm_type);
+            },
             else => llvm.constI32(self.context, 0),
         };
     }
     
     fn toLLVMType(self: *LLVMNativeBackend, paw_type: ast.Type) !llvm.TypeRef {
         return switch (paw_type) {
+            // 🆕 v0.1.7: 完整的类型映射（支持 as 转换）
+            .i8, .u8, .bool, .char => self.context.i8Type(),
+            .i16, .u16 => self.context.i16Type(),
+            .i32, .u32 => self.context.i32Type(),
+            .i64, .u64 => self.context.i64Type(),
+            .i128, .u128 => self.context.i128Type(),
+            .f32 => self.context.floatType(),
+            .f64 => self.context.doubleType(),
+            .void => self.context.voidType(),
+            .string => self.context.pointerType(0),
+            
             .named => |name| blk: {
                 if (std.mem.eql(u8, name, "i32") or std.mem.eql(u8, name, "int")) {
                     break :blk self.context.i32Type();
@@ -834,7 +866,6 @@ pub const LLVMNativeBackend = struct {
                     break :blk self.context.i32Type(); // Default
                 }
             },
-            .void => self.context.voidType(),
             else => self.context.i32Type(), // Default
         };
     }
@@ -879,6 +910,166 @@ pub const LLVMNativeBackend = struct {
                 break :blk try buf.toOwnedSlice();
             },
             else => "unknown",
+        };
+    }
+    
+    // ============================================================================
+    // 🆕 v0.1.7: Optimization Support
+    // ============================================================================
+    
+    /// 获取优化级别对应的 clang 参数提示
+    pub fn getOptLevelString(self: *LLVMNativeBackend) []const u8 {
+        return switch (self.opt_level) {
+            .O0 => "-O0",
+            .O1 => "-O1",
+            .O2 => "-O2",
+            .O3 => "-O3",
+        };
+    }
+    
+    // ============================================================================
+    // 🆕 v0.1.7: Type Cast Support
+    // ============================================================================
+    
+    /// 生成类型转换指令
+    fn generateCast(
+        self: *LLVMNativeBackend,
+        value: llvm.ValueRef,
+        source_expr: *ast.Expr,
+        target_type: ast.Type,
+        target_llvm_type: llvm.TypeRef,
+    ) !llvm.ValueRef {
+        // 获取源类型（简化：从表达式推断）
+        const source_type = try self.inferExprType(source_expr.*);
+        
+        const cast_name_z = try self.allocator.dupeZ(u8, "cast");
+        defer self.allocator.free(cast_name_z);
+        
+        // 判断源类型和目标类型的类别
+        const is_source_int = self.isIntType(source_type);
+        const is_source_float = self.isFloatType(source_type);
+        const is_target_int = self.isIntType(target_type);
+        const is_target_float = self.isFloatType(target_type);
+        
+        // 根据源类型和目标类型选择转换指令
+        if (is_source_int and is_target_int) {
+            // 整数 -> 整数
+            const source_bits = self.getTypeBits(source_type);
+            const target_bits = self.getTypeBits(target_type);
+            
+            if (source_bits < target_bits) {
+                // 扩展
+                const is_signed = self.isSignedIntType(source_type);
+                if (is_signed) {
+                    return self.builder.buildSExt(value, target_llvm_type, cast_name_z); // 符号扩展
+                } else {
+                    return self.builder.buildZExt(value, target_llvm_type, cast_name_z); // 零扩展
+                }
+            } else if (source_bits > target_bits) {
+                // 截断
+                return self.builder.buildTrunc(value, target_llvm_type, cast_name_z);
+            } else {
+                // 同样大小，可能有符号变无符号（bitcast）
+                return value;
+            }
+        } else if (is_source_int and is_target_float) {
+            // 整数 -> 浮点
+            const is_signed = self.isSignedIntType(source_type);
+            if (is_signed) {
+                return self.builder.buildSIToFP(value, target_llvm_type, cast_name_z);
+            } else {
+                return self.builder.buildUIToFP(value, target_llvm_type, cast_name_z);
+            }
+        } else if (is_source_float and is_target_int) {
+            // 浮点 -> 整数
+            const is_signed = self.isSignedIntType(target_type);
+            if (is_signed) {
+                return self.builder.buildFPToSI(value, target_llvm_type, cast_name_z);
+            } else {
+                return self.builder.buildFPToUI(value, target_llvm_type, cast_name_z);
+            }
+        } else if (is_source_float and is_target_float) {
+            // 浮点 -> 浮点
+            const source_bits = self.getTypeBits(source_type);
+            const target_bits = self.getTypeBits(target_type);
+            
+            if (source_bits < target_bits) {
+                // f32 -> f64
+                return self.builder.buildFPExt(value, target_llvm_type, cast_name_z);
+            } else if (source_bits > target_bits) {
+                // f64 -> f32
+                return self.builder.buildFPTrunc(value, target_llvm_type, cast_name_z);
+            } else {
+                return value;
+            }
+        } else if (source_type == .bool and is_target_int) {
+            // bool -> 整数
+            return self.builder.buildZExt(value, target_llvm_type, cast_name_z);
+        } else if (source_type == .char and is_target_int) {
+            // char -> 整数
+            const is_signed = self.isSignedIntType(target_type);
+            if (is_signed) {
+                return self.builder.buildSExt(value, target_llvm_type, cast_name_z);
+            } else {
+                return self.builder.buildZExt(value, target_llvm_type, cast_name_z);
+            }
+        } else if (is_source_int and target_type == .char) {
+            // 整数 -> char
+            return self.builder.buildTrunc(value, target_llvm_type, cast_name_z);
+        } else {
+            // 未知转换，返回原值
+            return value;
+        }
+    }
+    
+    /// 推断表达式的类型（简化版）
+    fn inferExprType(self: *LLVMNativeBackend, expr: ast.Expr) !ast.Type {
+        _ = self;
+        return switch (expr) {
+            .int_literal => ast.Type.i32,
+            .float_literal => ast.Type.f64,
+            .bool_literal => ast.Type.bool,
+            .char_literal => ast.Type.char,
+            .string_literal => ast.Type.string,
+            .identifier => ast.Type.i32,  // 简化
+            else => ast.Type.i32,
+        };
+    }
+    
+    /// 检查是否是整数类型
+    fn isIntType(_: *LLVMNativeBackend, t: ast.Type) bool {
+        return switch (t) {
+            .i8, .i16, .i32, .i64, .i128,
+            .u8, .u16, .u32, .u64, .u128 => true,
+            else => false,
+        };
+    }
+    
+    /// 检查是否是浮点类型
+    fn isFloatType(_: *LLVMNativeBackend, t: ast.Type) bool {
+        return switch (t) {
+            .f32, .f64 => true,
+            else => false,
+        };
+    }
+    
+    /// 检查是否是有符号整数类型
+    fn isSignedIntType(_: *LLVMNativeBackend, t: ast.Type) bool {
+        return switch (t) {
+            .i8, .i16, .i32, .i64, .i128 => true,
+            else => false,
+        };
+    }
+    
+    /// 获取类型的位数
+    fn getTypeBits(_: *LLVMNativeBackend, t: ast.Type) u32 {
+        return switch (t) {
+            .i8, .u8, .bool, .char => 8,
+            .i16, .u16 => 16,
+            .i32, .u32, .f32 => 32,
+            .i64, .u64, .f64 => 64,
+            .i128, .u128 => 128,
+            else => 32,  // 默认
         };
     }
 };

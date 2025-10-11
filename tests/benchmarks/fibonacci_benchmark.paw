@@ -1,0 +1,43 @@
+// 🆕 v0.1.7: Fibonacci 性能基准测试
+// 用于测试不同优化级别的性能差异
+
+// 递归 Fibonacci（未优化会很慢）
+fn fibonacci(n: i32) -> i32 {
+    return if n <= 1 {
+        n
+    } else {
+        fibonacci(n - 1) + fibonacci(n - 2)
+    };
+}
+
+// 迭代 Fibonacci（对比）
+fn fibonacci_iterative(n: i32) -> i32 {
+    if n <= 1 {
+        return n;
+    }
+    
+    let mut a = 0;
+    let mut b = 1;
+    let mut i = 2;
+    
+    loop i <= n {
+        let tmp = a + b;
+        a = b;
+        b = tmp;
+        i = i + 1;
+    }
+    
+    return b;
+}
+
+fn main() -> i32 {
+    // 计算 fibonacci(35) - 这会产生很多递归调用
+    // 优化级别会显著影响性能
+    let result = fibonacci(35);
+    
+    // 验证结果正确性
+    let expected = 9227465;  // fibonacci(35) = 9227465
+    
+    return if result == expected { 0 } else { 1 };
+}
+

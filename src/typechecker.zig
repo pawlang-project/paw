@@ -755,23 +755,23 @@ pub const TypeChecker = struct {
                 const from_type = try self.checkExpr(as_cast.value.*, scope);
                 const to_type = as_cast.target_type;
                 
-                // 验证类型转换的合法性
+                // 🆕 v0.1.7: 改进的类型转换验证
                 const is_numeric_from = switch (from_type) {
                     .i8, .i16, .i32, .i64, .i128,
                     .u8, .u16, .u32, .u64, .u128,
-                    .f32, .f64 => true,
+                    .f32, .f64, .bool, .char => true,  // 🆕 包含 bool 和 char
                     else => false,
                 };
                 
                 const is_numeric_to = switch (to_type) {
                     .i8, .i16, .i32, .i64, .i128,
                     .u8, .u16, .u32, .u64, .u128,
-                    .f32, .f64 => true,
+                    .f32, .f64, .bool, .char => true,  // 🆕 包含 bool 和 char
                     else => false,
                 };
                 
                 if (!is_numeric_from or !is_numeric_to) {
-                    // 只允许数值类型之间转换（简化版）
+                    // 只允许数值类型（包括 bool/char）之间转换
                     if (!from_type.eql(to_type)) {
                         try self.errors.append("Type error: invalid type conversion");
                     }
