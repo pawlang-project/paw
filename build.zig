@@ -128,16 +128,17 @@ pub fn build(b: *std.Build) void {
             
             std.debug.print("   🔧 Using MinGW C++ runtime\n", .{});
         } else if (target.result.os.tag == .linux) {
-            // Linux: LLVM needs BOTH libc++ and libstdc++
-            // LLVM libraries reference symbols from both C++ runtimes
-            exe.linkLibCpp();
-            exe.linkSystemLibrary("stdc++");  // std::__cxx11 symbols
-            exe.linkSystemLibrary("gcc_s");   // GCC support library
-            exe.linkSystemLibrary("m");       // Math library
+            // Linux: Link both C++ standard libraries explicitly
+            // NOTE: Must use linkSystemLibrary for both, NOT linkLibCpp()
+            // linkLibCpp() prevents linkSystemLibrary("stdc++") from working
+            exe.linkSystemLibrary("c++");     // libc++ for std::_V2:: symbols
+            exe.linkSystemLibrary("stdc++");  // libstdc++ for std::__cxx11:: symbols
+            exe.linkSystemLibrary("gcc_s");
+            exe.linkSystemLibrary("m");
             exe.linkSystemLibrary("pthread");
-            exe.linkSystemLibrary("dl");      // Dynamic linking
-            exe.linkSystemLibrary("rt");      // Real-time extensions
-            std.debug.print("   🔧 Using libc++ + libstdc++ + system libs (Linux)\n", .{});
+            exe.linkSystemLibrary("dl");
+            exe.linkSystemLibrary("rt");
+            std.debug.print("   🔧 Using c++ + stdc++ + system libs (Linux)\n", .{});
         } else {
             // macOS and others: Use libc++
             exe.linkLibCpp();
