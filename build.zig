@@ -130,6 +130,7 @@ pub fn build(b: *std.Build) void {
         } else if (target.result.os.tag == .linux) {
             // Linux: Use libstdc++
             exe.linkSystemLibrary("stdc++");
+            exe.linkSystemLibrary("gcc_s");
             exe.linkSystemLibrary("pthread");
             std.debug.print("   🔧 Using libstdc++ (Linux)\n", .{});
         } else {
