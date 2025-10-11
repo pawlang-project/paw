@@ -156,17 +156,11 @@ pub fn build(b: *std.Build) void {
                         exe.addLibraryPath(.{ .cwd_relative = lib_path });
                     }
                 }
-            } else {
-                // Fallback: manual linking
-                exe.linkSystemLibrary("c++");
-                exe.linkSystemLibrary("stdc++");
-                exe.linkSystemLibrary("gcc_s");
-                exe.linkSystemLibrary("m");
-                exe.linkSystemLibrary("pthread");
-                exe.linkSystemLibrary("dl");
-                exe.linkSystemLibrary("rt");
-                std.debug.print("   🔧 Using fallback C++ libs (Linux)\n", .{});
             }
+            
+            // Always add C++ and system libraries (llvm-config doesn't include them all)
+            exe.linkSystemLibrary("stdc++");
+            exe.linkSystemLibrary("pthread");
         } else {
             // macOS and others: Use libc++
             exe.linkLibCpp();
