@@ -113,22 +113,35 @@ pub fn build(b: *std.Build) void {
     
     build_options.addOption(bool, "llvm_native_available", has_llvm);
     
-    // Print build configuration
+    // Print build configuration header
+    std.debug.print("\n╭─────────────────────────────────────────╮\n", .{});
+    std.debug.print("│   🐾 PawLang Compiler Build System     │\n", .{});
+    std.debug.print("╰─────────────────────────────────────────╯\n\n", .{});
+    
+    // Build target info
+    std.debug.print("🎯 Target: {s}-{s}\n", .{
+        @tagName(target.result.cpu.arch),
+        @tagName(target.result.os.tag),
+    });
+    std.debug.print("⚡ Optimize: {s}\n\n", .{@tagName(optimize)});
+    
+    // Print LLVM configuration
     if (has_llvm) {
-        // Print LLVM detection info
+        std.debug.print("┌─ LLVM Configuration ────────────────────\n", .{});
         if (is_windows_llvm) {
-            std.debug.print("📦 Using LLVM: C:\\Program Files\\LLVM (Windows)\n", .{});
-            std.debug.print("   • Detection: clang.exe found\n", .{});
-            std.debug.print("   • Linking: LLVM-C library + stdc++\n", .{});
+            std.debug.print("│ 📦 Location: C:\\Program Files\\LLVM\n", .{});
+            std.debug.print("│ 🔍 Detection: clang.exe found\n", .{});
+            std.debug.print("│ 🔗 Linking: LLVM-C + stdc++\n", .{});
         } else if (llvm_config_path) |config_path| {
-            std.debug.print("📦 Using LLVM: {s}\n", .{config_path});
-            std.debug.print("   • Detection: llvm-config\n", .{});
-            std.debug.print("   • Linking: shared libraries via llvm-config\n", .{});
+            std.debug.print("│ 📦 Config: {s}\n", .{config_path});
+            std.debug.print("│ 🔍 Detection: llvm-config\n", .{});
+            std.debug.print("│ 🔗 Linking: shared libraries\n", .{});
         }
+        std.debug.print("└─────────────────────────────────────────\n\n", .{});
         
-        std.debug.print("\n✅ LLVM Backend Enabled\n", .{});
-        std.debug.print("   • C backend:    --backend=c (default)\n", .{});
-        std.debug.print("   • LLVM backend: --backend=llvm\n", .{});
+        std.debug.print("✅ Available Backends:\n", .{});
+        std.debug.print("   • C backend    (default) → --backend=c\n", .{});
+        std.debug.print("   • LLVM backend (enabled) → --backend=llvm\n", .{});
         
         // Add LLVM include path
         if (llvm_include_path) |include_path| {
@@ -171,14 +184,28 @@ pub fn build(b: *std.Build) void {
         }
     } else {
         build_options.addOption(bool, "llvm_native_available", false);
-        std.debug.print("ℹ️  LLVM Not Found\n", .{});
-        std.debug.print("   • C backend:    --backend=c (default, available)\n", .{});
-        std.debug.print("   • LLVM backend: not available\n", .{});
-        std.debug.print("\n💡 To enable LLVM backend:\n", .{});
-        std.debug.print("   Windows: choco install llvm\n", .{});
-        std.debug.print("   macOS:   brew install llvm@19\n", .{});
-        std.debug.print("   Linux:   sudo apt install llvm-19-dev\n", .{});
+        std.debug.print("┌─ LLVM Configuration ────────────────────\n", .{});
+        std.debug.print("│ ⚠️  LLVM not detected\n", .{});
+        std.debug.print("└─────────────────────────────────────────\n\n", .{});
+        
+        std.debug.print("✅ Available Backends:\n", .{});
+        std.debug.print("   • C backend    (default) → --backend=c\n", .{});
+        std.debug.print("   • LLVM backend (unavailable)\n\n", .{});
+        
+        std.debug.print("💡 Install LLVM to enable LLVM backend:\n", .{});
+        const os_tag = target.result.os.tag;
+        if (os_tag == .windows) {
+            std.debug.print("   → choco install llvm --version=19.1.7\n", .{});
+        } else if (os_tag == .macos) {
+            std.debug.print("   → brew install llvm@19\n", .{});
+        } else if (os_tag == .linux) {
+            std.debug.print("   → sudo apt install llvm-19-dev\n", .{});
+        }
     }
+    
+    std.debug.print("\n╭─────────────────────────────────────────╮\n", .{});
+    std.debug.print("│   🚀 Building pawc compiler...          │\n", .{});
+    std.debug.print("╰─────────────────────────────────────────╯\n", .{});
     
     // 链接标准库
     exe.linkLibC();
