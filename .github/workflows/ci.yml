@@ -46,61 +46,18 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Install LLVM to local directory (Linux)
+    - name: Install LLVM (Linux)
       if: runner.os == 'Linux'
       run: |
-        # Install LLVM via apt (fast, cached)
         sudo apt-get update
         sudo apt-get install -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev
-        
-        # Copy to project directory for isolation
-        mkdir -p llvm/install/{bin,lib,include}
-        
-        # Copy binaries and headers
-        cp -r /usr/lib/llvm-19/bin/* llvm/install/bin/
-        cp -r /usr/lib/llvm-19/include/* llvm/install/include/
-        
-        # Copy libraries from both locations
-        cp -r /usr/lib/llvm-19/lib/* llvm/install/lib/
-        
-        # Copy shared libraries from system location (where libLLVM-19.so is)
-        cp -L /usr/lib/$(uname -m)-linux-gnu/libLLVM-19.so* llvm/install/lib/ 2>/dev/null || true
-        
-        echo "✅ LLVM installed to llvm/install (isolated from system)"
-        echo "📋 Installed files:"
-        ls -lh llvm/install/lib/libLLVM*
+        echo "✅ LLVM 19 installed via apt"
       
-    - name: Install LLVM to local directory (macOS)
+    - name: Install LLVM (macOS)
       if: runner.os == 'macOS'
       run: |
-        # Try Homebrew first (fast if available)
-        if command -v brew &> /dev/null; then
-          echo "📦 Using Homebrew to install LLVM (fast, cached)"
-          brew install llvm@19
-          
-          # Copy to project directory for isolation
-          mkdir -p llvm/install
-          cp -r $(brew --prefix llvm@19)/bin llvm/install/
-          cp -r $(brew --prefix llvm@19)/lib llvm/install/
-          cp -r $(brew --prefix llvm@19)/include llvm/install/
-          
-          echo "✅ LLVM installed via Homebrew to llvm/install"
-        else
-          # Fallback: Download prebuilt package
-          echo "📥 Homebrew not found, downloading LLVM prebuilt package"
-          python3 scripts/install_llvm_complete.py --yes --skip-build --skip-test
-          echo "✅ LLVM installed via download to llvm/install"
-        fi
-        
-        ls -la llvm/install/
-      
-    - name: Install Python dependencies (Windows)
-      if: runner.os == 'Windows'
-      run: pip install py7zr
-    
-    - name: Skip LLVM on Windows (test C backend only)
-      if: runner.os == 'Windows'
-      run: echo "Skipping LLVM installation on Windows - testing C backend only"
+        brew install llvm@19
+        echo "✅ LLVM 19 installed via Homebrew"
         
     - name: Build PawLang compiler
       run: zig build
