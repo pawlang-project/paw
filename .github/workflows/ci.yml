@@ -495,23 +495,20 @@ jobs:
       uses: uraimo/run-on-arch-action@v2
       with:
         arch: ${{ matrix.arch }}
-        distro: ubuntu22.04
+        distro: bullseye
         githubToken: ${{ github.token }}
         install: |
+          # Use Debian 11 (bullseye) for better QEMU stability
           apt-get update -q -y
-          apt-get install -q -y wget curl xz-utils git lsb-release software-properties-common
           
-          # Install LLVM 19 (Ubuntu 22.04 - jammy)
-          echo "Installing LLVM 19..."
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" | tee /etc/apt/sources.list.d/llvm.list
-          apt-get update -q -y
-          apt-get install -q -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev || {
-            echo "LLVM 19 installation failed, trying LLVM 18..."
-            apt-get install -q -y llvm-18 llvm-18-dev clang-18 libc++-18-dev libc++abi-18-dev || {
-              echo "LLVM 18 installation failed, trying default LLVM..."
-              apt-get install -q -y llvm llvm-dev clang libc++-dev libc++abi-dev
-            }
+          # Install minimal dependencies (avoid complex Python packages)
+          apt-get install -q -y --no-install-recommends wget curl ca-certificates xz-utils
+          
+          # Install LLVM from Debian repository (simpler, more stable)
+          echo "Installing LLVM..."
+          apt-get install -q -y --no-install-recommends llvm-13 llvm-13-dev clang-13 || {
+            echo "LLVM 13 failed, trying default LLVM..."
+            apt-get install -q -y --no-install-recommends llvm llvm-dev clang
           }
           
           # Install Zig
@@ -520,6 +517,8 @@ jobs:
           tar -xf zig-linux-x86_64-0.15.1.tar.xz
           mv zig-linux-x86_64-0.15.1 /usr/local/zig
           ln -s /usr/local/zig/zig /usr/local/bin/zig
+          
+          echo "✅ Environment setup complete"
           
         run: |
           echo "=========================================="
