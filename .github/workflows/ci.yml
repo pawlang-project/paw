@@ -86,9 +86,12 @@ jobs:
       if: runner.os == 'Windows'
       shell: powershell
       run: |
-        # 将LLVM DLL复制到pawc.exe所在目录，确保运行时能找到
-        Copy-Item "C:\Program Files\LLVM\bin\LLVM-C.dll" "zig-out\bin\" -ErrorAction SilentlyContinue
-        echo "Copied LLVM DLLs to zig-out\bin\"
+        # 将所有LLVM DLL复制到pawc.exe所在目录
+        # LLVM-C.dll依赖其他DLL（如libc++.dll等）
+        Copy-Item "C:\Program Files\LLVM\bin\*.dll" "zig-out\bin\" -ErrorAction SilentlyContinue
+        echo "Copied all LLVM DLLs to zig-out\bin\"
+        echo "DLL list:"
+        Get-ChildItem "zig-out\bin\*.dll" | Select-Object Name, Length | Format-Table
       
     - name: Test - Hello World (Unix)
       if: runner.os != 'Windows'
