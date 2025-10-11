@@ -48,8 +48,24 @@ pub fn build(b: *std.Build) void {
     else
         &[_][]const u8{"llvm-config"};
     
-    // Try to find llvm-config
+    // Try to find llvm-config (Unix) or check LLVM directory (Windows)
     const llvm_config_path = blk: {
+        // Windows: llvm-config.exe doesn't exist in official builds, check directory directly
+        if (target.result.os.tag == .windows) {
+            const llvm_dir = "C:\\Program Files\\LLVM";
+            const llvm_bin = b.fmt("{s}\\bin", .{llvm_dir});
+            
+            // Check if LLVM directory exists by trying to access clang.exe
+            const clang_path = b.fmt("{s}\\clang.exe", .{llvm_bin});
+            std.fs.accessAbsolute(clang_path, .{}) catch {
+                break :blk null;  // LLVM not found
+            };
+            
+            // LLVM found, return a marker (we'll handle Windows specially later)
+            break :blk "windows_llvm";
+        }
+        
+        // Unix: use llvm-config
         for (llvm_config_paths) |path| {
             const result = std.process.Child.run(.{
                 .allocator = b.allocator,
@@ -65,29 +81,36 @@ pub fn build(b: *std.Build) void {
     };
     
     const has_llvm = llvm_config_path != null;
+    const is_windows_llvm = if (llvm_config_path) |path| std.mem.eql(u8, path, "windows_llvm") else false;
     
     // Get LLVM configuration from llvm-config
     var llvm_link_flags: ?[]const u8 = null;
     var llvm_include_path: ?[]const u8 = null;
     
     if (llvm_config_path) |config_path| {
-        // Get link flags
-        const link_result = b.run(&[_][]const u8{
-            config_path,
-            "--link-shared",
-            "--ldflags",
-            "--libs",
-            "--system-libs",
-        });
-        llvm_link_flags = link_result;
-        
-        // Get include path
-        llvm_include_path = b.run(&[_][]const u8{
-            config_path,
-            "--includedir",
-        });
-        
-        std.debug.print("📦 Using system LLVM at: {s}\n", .{config_path});
+        if (is_windows_llvm) {
+            // Windows: Use hardcoded paths since llvm-config.exe doesn't exist
+            std.debug.print("📦 Using Windows LLVM at: C:\\Program Files\\LLVM\n", .{});
+            llvm_include_path = "C:\\Program Files\\LLVM\\include";
+        } else {
+            // Unix: Use llvm-config
+            const link_result = b.run(&[_][]const u8{
+                config_path,
+                "--link-shared",
+                "--ldflags",
+                "--libs",
+                "--system-libs",
+            });
+            llvm_link_flags = link_result;
+            
+            // Get include path
+            llvm_include_path = b.run(&[_][]const u8{
+                config_path,
+                "--includedir",
+            });
+            
+            std.debug.print("📦 Using system LLVM at: {s}\n", .{config_path});
+        }
     }
     
     build_options.addOption(bool, "llvm_native_available", has_llvm);
@@ -103,29 +126,41 @@ pub fn build(b: *std.Build) void {
             exe.addIncludePath(.{ .cwd_relative = trimmed });
         }
         
-        // Use llvm-config output for all linking
-        if (llvm_link_flags) |flags| {
-            std.debug.print("   🔧 Using llvm-config link flags\n", .{});
-            // Parse and add flags from llvm-config
-            var iter = std.mem.tokenizeAny(u8, flags, " \n\r\t");
-            while (iter.next()) |flag| {
-                if (std.mem.startsWith(u8, flag, "-l")) {
-                    const lib_name = flag[2..];
-                    exe.linkSystemLibrary(lib_name);
-                } else if (std.mem.startsWith(u8, flag, "-L")) {
-                    const lib_path = flag[2..];
-                    exe.addLibraryPath(.{ .cwd_relative = lib_path });
+        // Windows: Link LLVM directly without llvm-config
+        if (is_windows_llvm) {
+            std.debug.print("   🔧 Using Windows LLVM libraries\n", .{});
+            
+            // Add LLVM library path
+            exe.addLibraryPath(.{ .cwd_relative = "C:\\Program Files\\LLVM\\lib" });
+            
+            // Link main LLVM library
+            exe.linkSystemLibrary("LLVM-C");
+            
+            // Windows C++ runtime
+            exe.linkSystemLibrary("stdc++");
+        } else {
+            // Unix: Use llvm-config output for all linking
+            if (llvm_link_flags) |flags| {
+                std.debug.print("   🔧 Using llvm-config link flags\n", .{});
+                // Parse and add flags from llvm-config
+                var iter = std.mem.tokenizeAny(u8, flags, " \n\r\t");
+                while (iter.next()) |flag| {
+                    if (std.mem.startsWith(u8, flag, "-l")) {
+                        const lib_name = flag[2..];
+                        exe.linkSystemLibrary(lib_name);
+                    } else if (std.mem.startsWith(u8, flag, "-L")) {
+                        const lib_path = flag[2..];
+                        exe.addLibraryPath(.{ .cwd_relative = lib_path });
+                    }
                 }
             }
-        }
-        
-        // Platform-specific C++ runtime
-        if (target.result.os.tag == .linux) {
-            exe.linkLibCpp();
-        } else if (target.result.os.tag == .macos) {
-            exe.linkLibCpp();
-        } else if (target.result.os.tag == .windows) {
-            exe.linkSystemLibrary("stdc++");
+            
+            // Platform-specific C++ runtime
+            if (target.result.os.tag == .linux) {
+                exe.linkLibCpp();
+            } else if (target.result.os.tag == .macos) {
+                exe.linkLibCpp();
+            }
         }
     } else {
         build_options.addOption(bool, "llvm_native_available", false);
