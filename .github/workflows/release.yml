@@ -94,13 +94,13 @@ jobs:
         include:
           - arch: x86_64
             target: x86_64-linux
-            enable_llvm: true
+            cross_compile: false
           - arch: x86
             target: x86-linux
-            enable_llvm: true
+            cross_compile: true
           - arch: armv7
             target: arm-linux-gnueabihf
-            enable_llvm: true
+            cross_compile: true
     
     steps:
       - name: Checkout code
@@ -112,6 +112,7 @@ jobs:
           version: 0.15.1
       
       - name: Install LLVM 19
+        if: matrix.cross_compile == false
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📦 Installing LLVM 19.1.7..."
@@ -131,10 +132,13 @@ jobs:
           echo "🔨 Building PawLang for Linux ${{ matrix.arch }}..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            zig build
+          if [ "${{ matrix.cross_compile }}" = "true" ]; then
+            # Cross-compilation: disable LLVM backend (incompatible architectures)
+            echo "Note: Cross-compiling without LLVM backend"
+            zig build -Dtarget=${{ matrix.target }} -Denable-llvm=false
           else
-            zig build -Dtarget=${{ matrix.target }}
+            # Native build: with LLVM backend
+            zig build
           fi
           
           echo "✅ Build successful"
