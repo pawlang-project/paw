@@ -43,16 +43,19 @@ pub fn build(b: *std.Build) void {
     };
     
     // Get LLVM link flags using llvm-config (Linux only)
+    // This uses the downloaded LLVM from install_llvm_complete.py
     var llvm_link_flags: ?[]const u8 = null;
     if (has_local_llvm and target.result.os.tag == .linux) {
         const llvm_config_result = b.run(&[_][]const u8{
             llvm_config_path,
+            "--link-shared",  // Force shared library linking on Linux
             "--ldflags",
             "--libs",
             "--system-libs",
         });
         
         llvm_link_flags = llvm_config_result;
+        std.debug.print("📦 Using downloaded LLVM (isolated from system)\n", .{});
         std.debug.print("llvm-config output: {s}\n", .{llvm_config_result});
     }
     

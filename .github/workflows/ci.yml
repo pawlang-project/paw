@@ -50,19 +50,14 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev
-        # Create symlink for PawLang's expected LLVM location
-        mkdir -p llvm/install
-        sudo ln -sf /usr/lib/llvm-19/bin llvm/install/bin
-        sudo ln -sf /usr/lib/llvm-19/lib llvm/install/lib
-        sudo ln -sf /usr/lib/llvm-19/include llvm/install/include
+        sudo apt-get install -y libc++-dev libc++abi-dev
       
     - name: Install Python dependencies (Windows)
       if: runner.os == 'Windows'
       run: pip install py7zr
       
-    - name: Install LLVM (macOS)
-      if: runner.os == 'macOS'
+    - name: Install LLVM (Linux and macOS)
+      if: runner.os != 'Windows'
       run: python scripts/install_llvm_complete.py --yes --skip-build --skip-test
       shell: bash
     
