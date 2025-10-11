@@ -15,9 +15,22 @@ pub const CBackend = struct {
         };
     }
     
-    /// Detect if TCC (TinyCC) is installed on the system
+    /// Detect if TCC (TinyCC) is installed on the system or packaged with pawc
     pub fn detectTcc(self: *CBackend) !bool {
-        // Try to run tcc --version
+        // 🆕 v0.1.8: Check for packaged TCC first (in bin/ directory)
+        const bundled_tcc_paths = [_][]const u8{
+            "bin/tcc",           // Relative to current directory
+            "../bin/tcc",        // If running from zig-out/bin
+            "./tcc",             // Same directory
+        };
+        
+        for (bundled_tcc_paths) |path| {
+            std.fs.cwd().access(path, .{}) catch continue;
+            self.tcc_path = path;
+            return true;
+        }
+        
+        // Fall back to system TCC
         const result = std.process.Child.run(.{
             .allocator = self.allocator,
             .argv = &[_][]const u8{ "tcc", "--version" },
