@@ -42,6 +42,22 @@ pub fn build(b: *std.Build) void {
         break :blk true;
     };
     
+    // Get LLVM link flags using llvm-config (Linux only)
+    var llvm_link_flags: ?[]const u8 = null;
+    if (has_local_llvm and target.result.os.tag == .linux) {
+        const llvm_config_result = b.runAllowFail(&[_][]const u8{
+            llvm_config_path,
+            "--ldflags",
+            "--libs",
+            "--system-libs",
+        }, .{ .allocator = b.allocator }) catch null;
+        
+        if (llvm_config_result) |output| {
+            llvm_link_flags = output;
+            std.debug.print("llvm-config output: {s}\n", .{output});
+        }
+    }
+    
     // LLVM native backend is now available on all platforms
     const enable_llvm_native = has_local_llvm;
     build_options.addOption(bool, "llvm_native_available", enable_llvm_native);
@@ -128,17 +144,31 @@ pub fn build(b: *std.Build) void {
             
             std.debug.print("   🔧 Using MinGW C++ runtime\n", .{});
         } else if (target.result.os.tag == .linux) {
-            // Linux: Link both C++ standard libraries explicitly
-            // NOTE: Must use linkSystemLibrary for both, NOT linkLibCpp()
-            // linkLibCpp() prevents linkSystemLibrary("stdc++") from working
-            exe.linkSystemLibrary("c++");     // libc++ for std::_V2:: symbols
-            exe.linkSystemLibrary("stdc++");  // libstdc++ for std::__cxx11:: symbols
-            exe.linkSystemLibrary("gcc_s");
-            exe.linkSystemLibrary("m");
-            exe.linkSystemLibrary("pthread");
-            exe.linkSystemLibrary("dl");
-            exe.linkSystemLibrary("rt");
-            std.debug.print("   🔧 Using c++ + stdc++ + system libs (Linux)\n", .{});
+            // Linux: Use llvm-config to get proper link flags
+            if (llvm_link_flags) |flags| {
+                std.debug.print("   🔧 Using llvm-config link flags\n", .{});
+                // Parse and add flags from llvm-config
+                var iter = std.mem.tokenizeAny(u8, flags, " \n\r\t");
+                while (iter.next()) |flag| {
+                    if (std.mem.startsWith(u8, flag, "-l")) {
+                        const lib_name = flag[2..];
+                        exe.linkSystemLibrary(lib_name);
+                    } else if (std.mem.startsWith(u8, flag, "-L")) {
+                        const lib_path = flag[2..];
+                        exe.addLibraryPath(.{ .cwd_relative = lib_path });
+                    }
+                }
+            } else {
+                // Fallback: manual linking
+                exe.linkSystemLibrary("c++");
+                exe.linkSystemLibrary("stdc++");
+                exe.linkSystemLibrary("gcc_s");
+                exe.linkSystemLibrary("m");
+                exe.linkSystemLibrary("pthread");
+                exe.linkSystemLibrary("dl");
+                exe.linkSystemLibrary("rt");
+                std.debug.print("   🔧 Using fallback C++ libs (Linux)\n", .{});
+            }
         } else {
             // macOS and others: Use libc++
             exe.linkLibCpp();
