@@ -261,7 +261,7 @@ pub const TypeInference = struct {
                 var new_args = try std.ArrayList(ast.Type).initCapacity(self.allocator, gi.type_args.len);
                 for (gi.type_args) |arg| {
                     const new_arg = try self.applySubstitution(arg, subst);
-                    try new_args.append(new_arg);
+                    try new_args.append(self.allocator, new_arg);
                 }
                 break :blk ast.Type{
                     .generic_instance = .{
@@ -294,11 +294,11 @@ pub const Monomorphizer = struct {
     pub fn init(allocator: std.mem.Allocator) Monomorphizer {
         return Monomorphizer{
             .allocator = allocator,
-            .instances = std.ArrayList(GenericInstance).init(allocator),
+            .instances = std.ArrayList(GenericInstance){},
             .seen = std.StringHashMap(void).init(allocator),
-            .struct_instances = std.ArrayList(GenericStructInstance).init(allocator),
+            .struct_instances = std.ArrayList(GenericStructInstance){},
             .struct_seen = std.StringHashMap(void).init(allocator),
-            .method_instances = std.ArrayList(GenericMethodInstance).init(allocator),
+            .method_instances = std.ArrayList(GenericMethodInstance){},
             .method_seen = std.StringHashMap(void).init(allocator),
         };
     }
@@ -315,11 +315,11 @@ pub const Monomorphizer = struct {
             instance.deinit(self.allocator);
         }
         
-        self.instances.deinit();
+        self.instances.deinit(self.allocator);
         self.seen.deinit();
-        self.struct_instances.deinit();
+        self.struct_instances.deinit(self.allocator);
         self.struct_seen.deinit();
-        self.method_instances.deinit();
+        self.method_instances.deinit(self.allocator);
         self.method_seen.deinit();
     }
 
@@ -347,7 +347,7 @@ pub const Monomorphizer = struct {
         }
 
         try self.seen.put(mangled, {});
-        try self.instances.append(GenericInstance{
+        try self.instances.append(self.allocator, GenericInstance{
             .generic_name = generic_name,
             .type_args = type_args,
             .mangled_name = mangled,
@@ -382,7 +382,7 @@ pub const Monomorphizer = struct {
         }
 
         try self.struct_seen.put(mangled, {});
-        try self.struct_instances.append(GenericStructInstance{
+        try self.struct_instances.append(self.allocator, GenericStructInstance{
             .generic_name = struct_name,
             .type_args = type_args,
             .mangled_name = mangled,
@@ -402,11 +402,11 @@ pub const Monomorphizer = struct {
         const struct_mangled = try self.mangleName(struct_name, type_args);
         defer self.allocator.free(struct_mangled);
         
-        var mangled = std.ArrayList(u8).init(self.allocator);
-        try mangled.appendSlice(struct_mangled);
-        try mangled.append('_');
-        try mangled.appendSlice(method_name);
-        const mangled_name = try mangled.toOwnedSlice();
+        var mangled = std.ArrayList(u8){};
+        try mangled.appendSlice(self.allocator, struct_mangled);
+        try mangled.append(self.allocator, '_');
+        try mangled.appendSlice(self.allocator, method_name);
+        const mangled_name = try mangled.toOwnedSlice(self.allocator);
         
         // 检查是否已经实例化过
         if (self.method_seen.contains(mangled_name)) {
@@ -424,7 +424,7 @@ pub const Monomorphizer = struct {
         }
 
         try self.method_seen.put(mangled_name, {});
-        try self.method_instances.append(GenericMethodInstance{
+        try self.method_instances.append(self.allocator, GenericMethodInstance{
             .struct_name = struct_name,
             .method_name = method_name,
             .type_args = type_args,
@@ -445,54 +445,54 @@ pub const Monomorphizer = struct {
         // 预估大小以减少重新分配
         const estimated_size = base_name.len + type_args.len * 8;
         var result = try std.ArrayList(u8).initCapacity(self.allocator, estimated_size);
-        errdefer result.deinit();
+        errdefer result.deinit(self.allocator);
         
-        try result.appendSlice(base_name);
+        try result.appendSlice(self.allocator, base_name);
 
         for (type_args) |ty| {
-            try result.append('_');
+            try result.append(self.allocator, '_');
             try self.appendTypeName(&result, ty);
         }
 
-        return try result.toOwnedSlice();
+        return try result.toOwnedSlice(self.allocator);
     }
 
     fn appendTypeName(self: *Monomorphizer, buf: *std.ArrayList(u8), ty: ast.Type) !void {
         switch (ty) {
-            .i8 => try buf.appendSlice("i8"),
-            .i16 => try buf.appendSlice("i16"),
-            .i32 => try buf.appendSlice("i32"),
-            .i64 => try buf.appendSlice("i64"),
-            .i128 => try buf.appendSlice("i128"),
-            .u8 => try buf.appendSlice("u8"),
-            .u16 => try buf.appendSlice("u16"),
-            .u32 => try buf.appendSlice("u32"),
-            .u64 => try buf.appendSlice("u64"),
-            .u128 => try buf.appendSlice("u128"),
-            .f32 => try buf.appendSlice("f32"),
-            .f64 => try buf.appendSlice("f64"),
-            .bool => try buf.appendSlice("bool"),
-            .char => try buf.appendSlice("char"),
-            .string => try buf.appendSlice("string"),
-            .void => try buf.appendSlice("void"),
-            .named => |name| try buf.appendSlice(name),
-            .generic => |name| try buf.appendSlice(name),
+            .i8 => try buf.appendSlice(self.allocator, "i8"),
+            .i16 => try buf.appendSlice(self.allocator, "i16"),
+            .i32 => try buf.appendSlice(self.allocator, "i32"),
+            .i64 => try buf.appendSlice(self.allocator, "i64"),
+            .i128 => try buf.appendSlice(self.allocator, "i128"),
+            .u8 => try buf.appendSlice(self.allocator, "u8"),
+            .u16 => try buf.appendSlice(self.allocator, "u16"),
+            .u32 => try buf.appendSlice(self.allocator, "u32"),
+            .u64 => try buf.appendSlice(self.allocator, "u64"),
+            .u128 => try buf.appendSlice(self.allocator, "u128"),
+            .f32 => try buf.appendSlice(self.allocator, "f32"),
+            .f64 => try buf.appendSlice(self.allocator, "f64"),
+            .bool => try buf.appendSlice(self.allocator, "bool"),
+            .char => try buf.appendSlice(self.allocator, "char"),
+            .string => try buf.appendSlice(self.allocator, "string"),
+            .void => try buf.appendSlice(self.allocator, "void"),
+            .named => |name| try buf.appendSlice(self.allocator, name),
+            .generic => |name| try buf.appendSlice(self.allocator, name),
             .pointer => |ptr| {
-                try buf.appendSlice("ptr_");
+                try buf.appendSlice(self.allocator, "ptr_");
                 try self.appendTypeName(buf, ptr.*);
             },
             .array => |arr| {
-                try buf.appendSlice("arr_");
+                try buf.appendSlice(self.allocator, "arr_");
                 try self.appendTypeName(buf, arr.element.*);
             },
             .generic_instance => |gi| {
-                try buf.appendSlice(gi.name);
+                try buf.appendSlice(self.allocator, gi.name);
                 for (gi.type_args) |arg| {
-                    try buf.append('_');
+                    try buf.append(self.allocator, '_');
                     try self.appendTypeName(buf, arg);
                 }
             },
-            else => try buf.appendSlice("unknown"),
+            else => try buf.appendSlice(self.allocator, "unknown"),
         }
     }
 
@@ -512,25 +512,25 @@ pub const Monomorphizer = struct {
         var new_params = try std.ArrayList(ast.Param).initCapacity(self.allocator, func.params.len);
         for (func.params) |param| {
             const new_type = try inference.applySubstitution(param.type, subst);
-            try new_params.append(ast.Param{
+            try new_params.append(self.allocator, ast.Param{
                 .name = param.name,
                 .type = new_type,
             });
         }
 
         // 替换函数体（递归处理表达式和语句）
-        var new_body = std.ArrayList(ast.Stmt).init(self.allocator);
+        var new_body = std.ArrayList(ast.Stmt){};
         for (func.body) |stmt| {
             const new_stmt = try self.instantiateStmt(stmt, subst);
-            try new_body.append(new_stmt);
+            try new_body.append(self.allocator, new_stmt);
         }
 
         // 生成修饰后的名称
-        var type_args = std.ArrayList(ast.Type).init(self.allocator);
+        var type_args = std.ArrayList(ast.Type){};
         defer type_args.deinit();
         for (func.type_params) |tp| {
             if (subst.get(tp)) |ty| {
-                try type_args.append(ty);
+                try type_args.append(self.allocator, ty);
             }
         }
         const mangled_name = try self.mangleName(func.name, try type_args.toOwnedSlice());
@@ -597,18 +597,18 @@ pub const GenericContext = struct {
         defer subst.deinit();
 
         // 2. 收集类型参数
-        var type_args = std.ArrayList(ast.Type).init(self.allocator);
+        var type_args = std.ArrayList(ast.Type){};
         defer type_args.deinit();
         for (type_params) |tp| {
             if (subst.get(tp)) |ty| {
-                try type_args.append(ty);
+                try type_args.append(self.allocator, ty);
             }
         }
 
         // 3. 记录实例化
         const mangled_name = try self.monomorphizer.recordInstance(
             func_name,
-            try type_args.toOwnedSlice(),
+            try type_args.toOwnedSlice(self.allocator),
         );
 
         return mangled_name;
@@ -720,16 +720,16 @@ pub const GenericContext = struct {
                     if (self.function_table.get(func_name)) |func| {
                         if (func.type_params.len > 0) {
                             // 这是泛型函数！收集参数类型
-                            var arg_types = std.ArrayList(ast.Type).init(self.allocator);
-                            defer arg_types.deinit();
+                            var arg_types = std.ArrayList(ast.Type){};
+                            defer arg_types.deinit(self.allocator);
                             
                             // 🆕 从参数表达式推导类型
                             for (call.args) |arg| {
                                 const arg_type = inferTypeFromExpr(arg);
-                                try arg_types.append(arg_type);
+                                try arg_types.append(self.allocator, arg_type);
                             }
 
-                            _ = try self.inferGenericInstance(func_name, try arg_types.toOwnedSlice());
+                            _ = try self.inferGenericInstance(func_name, try arg_types.toOwnedSlice(self.allocator));
                         }
                     }
                 }
@@ -745,26 +745,26 @@ pub const GenericContext = struct {
                 
                 // 如果有类型参数，记录这个方法实例
                 if (smc.type_args.len > 0) {
-                    var type_args = std.ArrayList(ast.Type).init(self.allocator);
+                    var type_args = std.ArrayList(ast.Type){};
                     for (smc.type_args) |type_arg| {
-                        try type_args.append(type_arg);
+                        try type_args.append(self.allocator, type_arg);
                     }
                     
                     _ = try self.monomorphizer.recordMethodInstance(
                         smc.type_name,
                         smc.method_name,
-                        try type_args.toOwnedSlice(),
+                        try type_args.toOwnedSlice(self.allocator),
                     );
                     
                     // 同时记录结构体实例（如果还没有）
-                    var struct_type_args = std.ArrayList(ast.Type).init(self.allocator);
+                    var struct_type_args = std.ArrayList(ast.Type){};
                     for (smc.type_args) |type_arg| {
-                        try struct_type_args.append(type_arg);
+                        try struct_type_args.append(self.allocator, type_arg);
                     }
                     
                     _ = try self.monomorphizer.recordStructInstance(
                         smc.type_name,
-                        try struct_type_args.toOwnedSlice(),
+                        try struct_type_args.toOwnedSlice(self.allocator),
                     );
                 }
             },

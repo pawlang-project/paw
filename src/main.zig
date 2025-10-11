@@ -248,8 +248,8 @@ pub fn main() !void {
     var module_loader = ModuleLoader.init(allocator);
     defer module_loader.deinit();
     
-    var resolved_declarations = std.ArrayList(ast_mod.TopLevelDecl).init(allocator);
-    defer resolved_declarations.deinit();
+    var resolved_declarations = std.ArrayList(ast_mod.TopLevelDecl){};
+    defer resolved_declarations.deinit(allocator);
     
     for (ast_result.declarations) |decl| {
         if (decl == .import_decl) {
@@ -267,7 +267,7 @@ pub fn main() !void {
                             .{import_decl.module_path, item_name, err});
                         continue;
                     };
-                    try resolved_declarations.append(imported_item);
+                    try resolved_declarations.append(allocator, imported_item);
                 },
                 .multiple => |item_names| {
                     // 多项导入：import math.{add, sub, Vec2};
@@ -280,7 +280,7 @@ pub fn main() !void {
                                 .{import_decl.module_path, item_name, err});
                             continue;
                         };
-                        try resolved_declarations.append(imported_item);
+                        try resolved_declarations.append(allocator, imported_item);
                     }
                 },
             }
@@ -288,13 +288,13 @@ pub fn main() !void {
             // 注意：module_path会在ast_result.deinit()中释放，这里不释放
         } else {
             // 非import声明，直接添加
-            try resolved_declarations.append(decl);
+            try resolved_declarations.append(allocator, decl);
         }
     }
     
     // 创建新的AST（包含导入的声明）
     const ast = ast_mod.Program{
-        .declarations = try resolved_declarations.toOwnedSlice(),
+        .declarations = try resolved_declarations.toOwnedSlice(allocator),
     };
     defer {
         // 只释放declarations数组，不递归释放内容
@@ -377,19 +377,19 @@ pub fn main() !void {
             
             // 使用本地 Clang 编译
             // 需要指定 SDK 路径 (macOS)
-            var clang_args = std.ArrayList([]const u8).init(allocator);
-            defer clang_args.deinit();
+            var clang_args = std.ArrayList([]const u8){};
+            defer clang_args.deinit(allocator);
             
-            try clang_args.append(local_clang_path);
-            try clang_args.append(temp_c_file);
-            try clang_args.append("-o");
-            try clang_args.append(output_name);
-            try clang_args.append("-O2");
+            try clang_args.append(allocator, local_clang_path);
+            try clang_args.append(allocator, temp_c_file);
+            try clang_args.append(allocator, "-o");
+            try clang_args.append(allocator, output_name);
+            try clang_args.append(allocator, "-O2");
             
             // macOS: 添加 SDK 路径
             if (builtin.os.tag == .macos) {
-                try clang_args.append("-isysroot");
-                try clang_args.append("/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk");
+                try clang_args.append(allocator, "-isysroot");
+                try clang_args.append(allocator, "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk");
             }
             
             var child = std.process.Child.init(clang_args.items, allocator);

@@ -49,9 +49,9 @@ pub const CodeGen = struct {
     },
 
     pub fn init(allocator: std.mem.Allocator) CodeGen {
-        var output = std.ArrayList(u8).init(allocator);
+        var output = std.ArrayList(u8){};
         // 🚀 Performance: Pre-allocate 64KB buffer to reduce reallocations
-        output.ensureTotalCapacity(64 * 1024) catch {};
+        output.ensureTotalCapacity(allocator, 64 * 1024) catch {};
         
         return CodeGen{
             .allocator = allocator,
@@ -67,7 +67,7 @@ pub const CodeGen = struct {
     }
 
     pub fn deinit(self: *CodeGen) void {
-        self.output.deinit();
+        self.output.deinit(self.allocator);
         self.var_types.deinit();
         self.type_decls.deinit();
         self.enum_variants.deinit();
@@ -103,13 +103,13 @@ pub const CodeGen = struct {
         try self.collectGenericStructInstances(program);
         
         // 生成 C 代码头部
-        try self.output.appendSlice("#include <stdio.h>\n");
-        try self.output.appendSlice("#include <stdlib.h>\n");
-        try self.output.appendSlice("#include <stdint.h>\n");
-        try self.output.appendSlice("#include <stdbool.h>\n");
-        try self.output.appendSlice("#include <string.h>\n");  // For string interpolation
-        try self.output.appendSlice("\n");
-        try self.output.appendSlice("// Generic function forward declarations\n");
+        try self.output.appendSlice(self.allocator, "#include <stdio.h>\n");
+        try self.output.appendSlice(self.allocator, "#include <stdlib.h>\n");
+        try self.output.appendSlice(self.allocator, "#include <stdint.h>\n");
+        try self.output.appendSlice(self.allocator, "#include <stdbool.h>\n");
+        try self.output.appendSlice(self.allocator, "#include <string.h>\n");  // For string interpolation
+        try self.output.appendSlice(self.allocator, "\n");
+        try self.output.appendSlice(self.allocator, "// Generic function forward declarations\n");
         
         // 🆕 第三遍：生成单态化函数的前向声明和泛型结构体定义
         try self.generateMonomorphizedDeclarations();
@@ -117,7 +117,7 @@ pub const CodeGen = struct {
         // 第四遍：生成所有声明
         for (program.declarations) |decl| {
             try self.generateDecl(decl);
-            try self.output.appendSlice("\n");
+            try self.output.appendSlice(self.allocator, "\n");
         }
         
         // 🆕 第五遍：生成泛型实例化的函数实现
@@ -155,109 +155,109 @@ pub const CodeGen = struct {
     // 🆕 生成enum构造器函数
     fn generateEnumConstructor(self: *CodeGen, enum_name: []const u8, variant: ast.EnumVariant) !void {
         // 函数签名：EnumName EnumName_VariantName(args...)
-        try self.output.appendSlice(enum_name);
-        try self.output.appendSlice(" ");
-        try self.output.appendSlice(enum_name);
-        try self.output.appendSlice("_");
-        try self.output.appendSlice(variant.name);
-        try self.output.appendSlice("(");
+        try self.output.appendSlice(self.allocator, enum_name);
+        try self.output.appendSlice(self.allocator, " ");
+        try self.output.appendSlice(self.allocator, enum_name);
+        try self.output.appendSlice(self.allocator, "_");
+        try self.output.appendSlice(self.allocator, variant.name);
+        try self.output.appendSlice(self.allocator, "(");
         
         // 参数
         for (variant.fields, 0..) |vtype, i| {
-            if (i > 0) try self.output.appendSlice(", ");
-            try self.output.appendSlice(self.typeToC(vtype));
-            try self.output.appendSlice(" arg");
-            try self.output.writer().print("{d}", .{i});
+            if (i > 0) try self.output.appendSlice(self.allocator, ", ");
+            try self.output.appendSlice(self.allocator, self.typeToC(vtype));
+            try self.output.appendSlice(self.allocator, " arg");
+            try self.output.writer(self.allocator).print("{d}", .{i});
         }
         
-        try self.output.appendSlice(") {\n");
-        try self.output.appendSlice("    ");
-        try self.output.appendSlice(enum_name);
-        try self.output.appendSlice(" result;\n");
-        try self.output.appendSlice("    result.tag = ");
-        try self.output.appendSlice(enum_name);
-        try self.output.appendSlice("_TAG_");
-        try self.output.appendSlice(variant.name);
-        try self.output.appendSlice(";\n");
+        try self.output.appendSlice(self.allocator, ") {\n");
+        try self.output.appendSlice(self.allocator, "    ");
+        try self.output.appendSlice(self.allocator, enum_name);
+        try self.output.appendSlice(self.allocator, " result;\n");
+        try self.output.appendSlice(self.allocator, "    result.tag = ");
+        try self.output.appendSlice(self.allocator, enum_name);
+        try self.output.appendSlice(self.allocator, "_TAG_");
+        try self.output.appendSlice(self.allocator, variant.name);
+        try self.output.appendSlice(self.allocator, ";\n");
         
         // 设置数据
         if (variant.fields.len > 0) {
             if (variant.fields.len == 1) {
-                try self.output.appendSlice("    result.data.");
-                try self.output.appendSlice(variant.name);
-                try self.output.appendSlice("_value = arg0;\n");
+                try self.output.appendSlice(self.allocator, "    result.data.");
+                try self.output.appendSlice(self.allocator, variant.name);
+                try self.output.appendSlice(self.allocator, "_value = arg0;\n");
             } else {
                 for (0..variant.fields.len) |i| {
-                    try self.output.appendSlice("    result.data.");
-                    try self.output.appendSlice(variant.name);
-                    try self.output.writer().print("_value.field{d} = arg{d};\n", .{i, i});
+                    try self.output.appendSlice(self.allocator, "    result.data.");
+                    try self.output.appendSlice(self.allocator, variant.name);
+                    try self.output.writer(self.allocator).print("_value.field{d} = arg{d};\n", .{i, i});
                 }
             }
         }
         
-        try self.output.appendSlice("    return result;\n");
-        try self.output.appendSlice("}\n\n");
+        try self.output.appendSlice(self.allocator, "    return result;\n");
+        try self.output.appendSlice(self.allocator, "}\n\n");
     }
     
     // 🆕 生成方法声明
     fn generateMethodDecl(self: *CodeGen, type_name: []const u8, method: ast.FunctionDecl) !void {
         // 返回类型
-        try self.output.appendSlice(self.typeToC(method.return_type));
-        try self.output.appendSlice(" ");
+        try self.output.appendSlice(self.allocator, self.typeToC(method.return_type));
+        try self.output.appendSlice(self.allocator, " ");
         
         // 方法名：TypeName_methodName
-        try self.output.appendSlice(type_name);
-        try self.output.appendSlice("_");
-        try self.output.appendSlice(method.name);
-        try self.output.appendSlice("(");
+        try self.output.appendSlice(self.allocator, type_name);
+        try self.output.appendSlice(self.allocator, "_");
+        try self.output.appendSlice(self.allocator, method.name);
+        try self.output.appendSlice(self.allocator, "(");
         
         // 参数：第一个参数是 self，转换为 TypeName* self
         for (method.params, 0..) |param, i| {
-            if (i > 0) try self.output.appendSlice(", ");
+            if (i > 0) try self.output.appendSlice(self.allocator, ", ");
             
             if (std.mem.eql(u8, param.name, "self")) {
                 // self 参数转换为指针
-                try self.output.appendSlice(type_name);
-                try self.output.appendSlice("* ");
-                try self.output.appendSlice(param.name);
+                try self.output.appendSlice(self.allocator, type_name);
+                try self.output.appendSlice(self.allocator, "* ");
+                try self.output.appendSlice(self.allocator, param.name);
             } else {
-                try self.output.appendSlice(self.typeToC(param.type));
-                try self.output.appendSlice(" ");
-                try self.output.appendSlice(param.name);
+                try self.output.appendSlice(self.allocator, self.typeToC(param.type));
+                try self.output.appendSlice(self.allocator, " ");
+                try self.output.appendSlice(self.allocator, param.name);
             }
         }
         
-        try self.output.appendSlice(");\n");
+        try self.output.appendSlice(self.allocator, ");\n");
     }
     
     // 🆕 生成方法实现
     fn generateMethodImpl(self: *CodeGen, type_name: []const u8, method: ast.FunctionDecl) !void {
         // 返回类型
-        try self.output.appendSlice(self.typeToC(method.return_type));
-        try self.output.appendSlice(" ");
+        try self.output.appendSlice(self.allocator, self.typeToC(method.return_type));
+        try self.output.appendSlice(self.allocator, " ");
         
         // 方法名：TypeName_methodName
-        try self.output.appendSlice(type_name);
-        try self.output.appendSlice("_");
-        try self.output.appendSlice(method.name);
-        try self.output.appendSlice("(");
+        try self.output.appendSlice(self.allocator, type_name);
+        try self.output.appendSlice(self.allocator, "_");
+        try self.output.appendSlice(self.allocator, method.name);
+        try self.output.appendSlice(self.allocator, "(");
         
         // 参数
         for (method.params, 0..) |param, i| {
-            if (i > 0) try self.output.appendSlice(", ");
+            if (i > 0) try self.output.appendSlice(self.allocator, ", ");
             
             if (std.mem.eql(u8, param.name, "self")) {
-                try self.output.appendSlice(type_name);
-                try self.output.appendSlice("* ");
-                try self.output.appendSlice(param.name);
+                try self.output.appendSlice(self.allocator, type_name);
+                try self.output.appendSlice(self.allocator, "* ");
+                try self.output.appendSlice(self.allocator, param.name);
             } else {
-                try self.output.appendSlice(self.typeToC(param.type));
-                try self.output.appendSlice(" ");
-                try self.output.appendSlice(param.name);
+                try self.output.appendSlice(self.allocator, self.typeToC(param.type));
+                try self.output.appendSlice(self.allocator, " ");
+                try self.output.appendSlice(self.allocator, param.name);
             }
         }
         
-        try self.output.appendSlice(") {\n");
+        try self.output.appendSlice(self.allocator, ") {\n");
         
         // 生成方法体
         // 🆕 v0.1.6: 特殊处理最后一个表达式语句 - 应该生成 return
@@ -267,15 +267,15 @@ pub const CodeGen = struct {
             
             // 如果是最后一个语句，且是表达式语句，且方法返回非void，生成return
             if (is_last and stmt == .expr and is_non_void) {
-                try self.output.appendSlice("return ");
+                try self.output.appendSlice(self.allocator, "return ");
                 _ = try self.generateExpr(stmt.expr);
-                try self.output.appendSlice(";\n");
+                try self.output.appendSlice(self.allocator, ";\n");
             } else {
                 try self.generateStmt(stmt);
             }
         }
         
-        try self.output.appendSlice("}\n\n");
+        try self.output.appendSlice(self.allocator, "}\n\n");
     }
 
     fn generateFunction(self: *CodeGen, func: ast.FunctionDecl) !void {
@@ -286,20 +286,20 @@ pub const CodeGen = struct {
         }
         
         // 生成函数签名
-        try self.output.appendSlice(self.typeToC(func.return_type));
-        try self.output.appendSlice(" ");
-        try self.output.appendSlice(func.name);
-        try self.output.appendSlice("(");
+        try self.output.appendSlice(self.allocator, self.typeToC(func.return_type));
+        try self.output.appendSlice(self.allocator, " ");
+        try self.output.appendSlice(self.allocator, func.name);
+        try self.output.appendSlice(self.allocator, "(");
         
         // 生成参数
         for (func.params, 0..) |param, i| {
-            if (i > 0) try self.output.appendSlice(", ");
-            try self.output.appendSlice(self.typeToC(param.type));
-            try self.output.appendSlice(" ");
-            try self.output.appendSlice(param.name);
+            if (i > 0) try self.output.appendSlice(self.allocator, ", ");
+            try self.output.appendSlice(self.allocator, self.typeToC(param.type));
+            try self.output.appendSlice(self.allocator, " ");
+            try self.output.appendSlice(self.allocator, param.name);
         }
         
-        try self.output.appendSlice(") {\n");
+        try self.output.appendSlice(self.allocator, ") {\n");
         
         // 生成函数体
         // 🆕 v0.1.6: 特殊处理最后一个表达式语句 - 应该生成 return
@@ -309,15 +309,15 @@ pub const CodeGen = struct {
             
             // 如果是最后一个语句，且是表达式语句，且函数返回非void，生成return
             if (is_last and stmt == .expr and is_non_void) {
-                try self.output.appendSlice("return ");
+                try self.output.appendSlice(self.allocator, "return ");
                 _ = try self.generateExpr(stmt.expr);
-                try self.output.appendSlice(";\n");
+                try self.output.appendSlice(self.allocator, ";\n");
             } else {
                 try self.generateStmt(stmt);
             }
         }
 
-        try self.output.appendSlice("}\n");
+        try self.output.appendSlice(self.allocator, "}\n");
     }
     
     fn generateTypeDecl(self: *CodeGen, type_decl: ast.TypeDecl) !void {
@@ -329,11 +329,11 @@ pub const CodeGen = struct {
                 }
                 
                 // 🆕 先声明 struct 类型
-                try self.output.appendSlice("typedef struct ");
-                try self.output.appendSlice(type_decl.name);
-                try self.output.appendSlice(" ");
-                try self.output.appendSlice(type_decl.name);
-                try self.output.appendSlice(";\n\n");
+                try self.output.appendSlice(self.allocator, "typedef struct ");
+                try self.output.appendSlice(self.allocator, type_decl.name);
+                try self.output.appendSlice(self.allocator, " ");
+                try self.output.appendSlice(self.allocator, type_decl.name);
+                try self.output.appendSlice(self.allocator, ";\n\n");
                 
                 // 生成方法声明（在 struct 定义之前）
                 for (st.methods) |method| {
@@ -341,17 +341,17 @@ pub const CodeGen = struct {
                 }
                 
                 // 生成 struct 定义
-                try self.output.appendSlice("struct ");
-                try self.output.appendSlice(type_decl.name);
-                try self.output.appendSlice(" {\n");
+                try self.output.appendSlice(self.allocator, "struct ");
+                try self.output.appendSlice(self.allocator, type_decl.name);
+                try self.output.appendSlice(self.allocator, " {\n");
                 for (st.fields) |field| {
-                    try self.output.appendSlice("    ");
-                    try self.output.appendSlice(self.typeToC(field.type));
-                    try self.output.appendSlice(" ");
-                    try self.output.appendSlice(field.name);
-                    try self.output.appendSlice(";\n");
+                    try self.output.appendSlice(self.allocator, "    ");
+                    try self.output.appendSlice(self.allocator, self.typeToC(field.type));
+                    try self.output.appendSlice(self.allocator, " ");
+                    try self.output.appendSlice(self.allocator, field.name);
+                    try self.output.appendSlice(self.allocator, ";\n");
                 }
-                try self.output.appendSlice("};\n\n");
+                try self.output.appendSlice(self.allocator, "};\n\n");
                 
                 // 生成方法实现
                 for (st.methods) |method| {
@@ -362,17 +362,17 @@ pub const CodeGen = struct {
                 // 🆕 Rust风格的enum需要用tagged union实现
                 
                 // 1. 生成Tag枚举（使用_TAG后缀避免冲突）
-                try self.output.appendSlice("typedef enum {\n");
+                try self.output.appendSlice(self.allocator, "typedef enum {\n");
                 for (et.variants) |variant| {
-                    try self.output.appendSlice("    ");
-                    try self.output.appendSlice(type_decl.name);
-                    try self.output.appendSlice("_TAG_");
-                    try self.output.appendSlice(variant.name);
-                    try self.output.appendSlice(",\n");
+                    try self.output.appendSlice(self.allocator, "    ");
+                    try self.output.appendSlice(self.allocator, type_decl.name);
+                    try self.output.appendSlice(self.allocator, "_TAG_");
+                    try self.output.appendSlice(self.allocator, variant.name);
+                    try self.output.appendSlice(self.allocator, ",\n");
                 }
-                try self.output.appendSlice("} ");
-                try self.output.appendSlice(type_decl.name);
-                try self.output.appendSlice("_Tag;\n\n");
+                try self.output.appendSlice(self.allocator, "} ");
+                try self.output.appendSlice(self.allocator, type_decl.name);
+                try self.output.appendSlice(self.allocator, "_Tag;\n\n");
                 
                 // 2. 如果有variant带参数，生成union
                 var has_data = false;
@@ -385,41 +385,41 @@ pub const CodeGen = struct {
                 
                 if (has_data) {
                     // 生成包含tag和data的struct
-                    try self.output.appendSlice("typedef struct {\n");
-                    try self.output.appendSlice("    ");
-                    try self.output.appendSlice(type_decl.name);
-                    try self.output.appendSlice("_Tag tag;\n");
-                    try self.output.appendSlice("    union {\n");
+                    try self.output.appendSlice(self.allocator, "typedef struct {\n");
+                    try self.output.appendSlice(self.allocator, "    ");
+                    try self.output.appendSlice(self.allocator, type_decl.name);
+                    try self.output.appendSlice(self.allocator, "_Tag tag;\n");
+                    try self.output.appendSlice(self.allocator, "    union {\n");
                     
                     for (et.variants) |variant| {
                         if (variant.fields.len > 0) {
-                            try self.output.appendSlice("        ");
+                            try self.output.appendSlice(self.allocator, "        ");
                             if (variant.fields.len == 1) {
                                 // 单个参数
-                                try self.output.appendSlice(self.typeToC(variant.fields[0]));
-                                try self.output.appendSlice(" ");
-                                try self.output.appendSlice(variant.name);
-                                try self.output.appendSlice("_value;\n");
+                                try self.output.appendSlice(self.allocator, self.typeToC(variant.fields[0]));
+                                try self.output.appendSlice(self.allocator, " ");
+                                try self.output.appendSlice(self.allocator, variant.name);
+                                try self.output.appendSlice(self.allocator, "_value;\n");
                             } else {
                                 // 多个参数，用struct
-                                try self.output.appendSlice("struct { ");
+                                try self.output.appendSlice(self.allocator, "struct { ");
                                 for (variant.fields, 0..) |vtype, j| {
-                                    if (j > 0) try self.output.appendSlice("; ");
-                                    try self.output.appendSlice(self.typeToC(vtype));
-                                    try self.output.appendSlice(" field");
-                                    try self.output.writer().print("{d}", .{j});
+                                    if (j > 0) try self.output.appendSlice(self.allocator, "; ");
+                                    try self.output.appendSlice(self.allocator, self.typeToC(vtype));
+                                    try self.output.appendSlice(self.allocator, " field");
+                                    try self.output.writer(self.allocator).print("{d}", .{j});
                                 }
-                                try self.output.appendSlice("; } ");
-                                try self.output.appendSlice(variant.name);
-                                try self.output.appendSlice("_value;\n");
+                                try self.output.appendSlice(self.allocator, "; } ");
+                                try self.output.appendSlice(self.allocator, variant.name);
+                                try self.output.appendSlice(self.allocator, "_value;\n");
                             }
                         }
                     }
                     
-                    try self.output.appendSlice("    } data;\n");
-                    try self.output.appendSlice("} ");
-                    try self.output.appendSlice(type_decl.name);
-                    try self.output.appendSlice(";\n\n");
+                    try self.output.appendSlice(self.allocator, "    } data;\n");
+                    try self.output.appendSlice(self.allocator, "} ");
+                    try self.output.appendSlice(self.allocator, type_decl.name);
+                    try self.output.appendSlice(self.allocator, ";\n\n");
                     
                     // 3. 生成构造器函数
                     for (et.variants) |variant| {
@@ -427,11 +427,11 @@ pub const CodeGen = struct {
                     }
                 } else {
                     // 简单enum（无数据），用typedef即可
-                    try self.output.appendSlice("typedef ");
-                    try self.output.appendSlice(type_decl.name);
-                    try self.output.appendSlice("_Tag ");
-                    try self.output.appendSlice(type_decl.name);
-                    try self.output.appendSlice(";\n");
+                    try self.output.appendSlice(self.allocator, "typedef ");
+                    try self.output.appendSlice(self.allocator, type_decl.name);
+                    try self.output.appendSlice(self.allocator, "_Tag ");
+                    try self.output.appendSlice(self.allocator, type_decl.name);
+                    try self.output.appendSlice(self.allocator, ";\n");
                 }
             },
             .trait_type => {
@@ -441,30 +441,30 @@ pub const CodeGen = struct {
     }
     
     fn generateStructDecl(self: *CodeGen, struct_decl: ast.StructDecl) !void {
-        try self.output.appendSlice("typedef struct {\n");
+        try self.output.appendSlice(self.allocator, "typedef struct {\n");
         for (struct_decl.fields) |field| {
-            try self.output.appendSlice("    ");
-            try self.output.appendSlice(self.typeToC(field.type));
-            try self.output.appendSlice(" ");
-            try self.output.appendSlice(field.name);
-            try self.output.appendSlice(";\n");
+            try self.output.appendSlice(self.allocator, "    ");
+            try self.output.appendSlice(self.allocator, self.typeToC(field.type));
+            try self.output.appendSlice(self.allocator, " ");
+            try self.output.appendSlice(self.allocator, field.name);
+            try self.output.appendSlice(self.allocator, ";\n");
         }
-        try self.output.appendSlice("} ");
-        try self.output.appendSlice(struct_decl.name);
-        try self.output.appendSlice(";\n");
+        try self.output.appendSlice(self.allocator, "} ");
+        try self.output.appendSlice(self.allocator, struct_decl.name);
+        try self.output.appendSlice(self.allocator, ";\n");
     }
     
     fn generateEnumDecl(self: *CodeGen, enum_decl: ast.EnumDecl) !void {
-        try self.output.appendSlice("typedef enum {\n");
+        try self.output.appendSlice(self.allocator, "typedef enum {\n");
         for (enum_decl.variants, 0..) |variant, i| {
-            try self.output.appendSlice("    ");
-            try self.output.appendSlice(variant.name);
-            if (i < enum_decl.variants.len - 1) try self.output.appendSlice(",");
-            try self.output.appendSlice("\n");
+            try self.output.appendSlice(self.allocator, "    ");
+            try self.output.appendSlice(self.allocator, variant.name);
+            if (i < enum_decl.variants.len - 1) try self.output.appendSlice(self.allocator, ",");
+            try self.output.appendSlice(self.allocator, "\n");
         }
-        try self.output.appendSlice("} ");
-        try self.output.appendSlice(enum_decl.name);
-        try self.output.appendSlice(";\n");
+        try self.output.appendSlice(self.allocator, "} ");
+        try self.output.appendSlice(self.allocator, enum_decl.name);
+        try self.output.appendSlice(self.allocator, ";\n");
     }
     
     // ============================================================================
@@ -475,30 +475,30 @@ pub const CodeGen = struct {
         switch (stmt) {
             .expr => |expr| {
                 _ = try self.generateExpr(expr);
-                try self.output.appendSlice(";\n");
+                try self.output.appendSlice(self.allocator, ";\n");
             },
             // 🆕 赋值语句
             .assign => |assign| {
                 _ = try self.generateExpr(assign.target);
-                try self.output.appendSlice(" = ");
+                try self.output.appendSlice(self.allocator, " = ");
                 _ = try self.generateExpr(assign.value);
-                try self.output.appendSlice(";\n");
+                try self.output.appendSlice(self.allocator, ";\n");
             },
             // 🆕 复合赋值语句
             .compound_assign => |ca| {
                 _ = try self.generateExpr(ca.target);
-                try self.output.appendSlice(" ");
-                try self.output.appendSlice(self.compoundAssignOpToC(ca.op));
-                try self.output.appendSlice(" ");
+                try self.output.appendSlice(self.allocator, " ");
+                try self.output.appendSlice(self.allocator, self.compoundAssignOpToC(ca.op));
+                try self.output.appendSlice(self.allocator, " ");
                 _ = try self.generateExpr(ca.value);
-                try self.output.appendSlice(";\n");
+                try self.output.appendSlice(self.allocator, ";\n");
             },
             .return_stmt => |ret_expr| {
-                try self.output.appendSlice("return ");
+                try self.output.appendSlice(self.allocator, "return ");
                 if (ret_expr) |expr| {
                     _ = try self.generateExpr(expr);
                 }
-                try self.output.appendSlice(";\n");
+                try self.output.appendSlice(self.allocator, ";\n");
             },
             .let_decl => |let| {
                 var type_name: ?[]const u8 = null;
@@ -511,22 +511,22 @@ pub const CodeGen = struct {
                         is_array = true;
                         array_size = type_.array.size;
                         // 生成数组元素类型
-                        try self.output.appendSlice(self.typeToC(type_.array.element.*));
+                        try self.output.appendSlice(self.allocator, self.typeToC(type_.array.element.*));
                 } else {
-                        try self.output.appendSlice(self.typeToC(type_));
+                        try self.output.appendSlice(self.allocator, self.typeToC(type_));
                         // 🆕 记录变量类型（包括generic_instance）
                         if (type_ == .named) {
                             type_name = type_.named;
                         } else if (type_ == .generic_instance) {
                             // Vec<i32> -> Vec_i32
                             const gi = type_.generic_instance;
-                            var buf = std.ArrayList(u8).init(self.arena.allocator());
-                            try buf.appendSlice(gi.name);
+                            var buf = std.ArrayList(u8){};
+                            try buf.appendSlice(self.allocator, gi.name);
                             for (gi.type_args) |arg| {
-                                try buf.appendSlice("_");
-                                try buf.appendSlice(self.getSimpleTypeName(arg));
+                                try buf.appendSlice(self.allocator, "_");
+                                try buf.appendSlice(self.arena.allocator(), self.getSimpleTypeName(arg));
                             }
-                            type_name = try buf.toOwnedSlice();
+                            type_name = try buf.toOwnedSlice(self.allocator);
                         }
                     }
                 } else if (let.init) |init_expr| {
@@ -534,7 +534,7 @@ pub const CodeGen = struct {
                     if (init_expr == .array_literal and init_expr.array_literal.len > 0) {
                         is_array = true;
                         array_size = init_expr.array_literal.len;
-                        try self.output.appendSlice("int32_t");
+                        try self.output.appendSlice(self.allocator, "int32_t");
                     } else if (init_expr == .struct_init) {
                         // 🆕 检查是否是泛型结构体实例化
                         const si = init_expr.struct_init;
@@ -542,19 +542,19 @@ pub const CodeGen = struct {
                             if (self.type_decls.get(si.type_name)) |type_decl| {
                                 if (type_decl.type_params.len > 0) {
                                     // 是泛型结构体，需要推导类型参数
-                                    var type_args = std.ArrayList(ast.Type).init(self.allocator);
-                                    defer type_args.deinit();
+                                    var type_args = std.ArrayList(ast.Type){};
+                                    defer type_args.deinit(self.allocator);
                                     
                                     // 🆕 从所有字段值推导类型（支持多类型参数）
                                     for (si.fields) |field| {
                                         const arg_type = self.inferExprType(field.value);
-                                        try type_args.append(arg_type);
+                                        try type_args.append(self.allocator, arg_type);
                                     }
                                     
                                     // 获取修饰后的名称
                                     const mangled = try self.generic_context.monomorphizer.recordStructInstance(
                                         si.type_name,
-                                        try type_args.toOwnedSlice(),
+                                        try type_args.toOwnedSlice(self.allocator),
                                     );
                                     break :blk mangled;
                                 }
@@ -562,30 +562,30 @@ pub const CodeGen = struct {
                             break :blk si.type_name;
                         };
                         
-                        try self.output.appendSlice(actual_name);
+                        try self.output.appendSlice(self.allocator, actual_name);
                         type_name = actual_name;
                     } else if (init_expr == .string_literal) {
                         // 🆕 字符串字面量返回 char*
-                        try self.output.appendSlice("char*");
+                        try self.output.appendSlice(self.allocator, "char*");
                     } else if (init_expr == .string_interp) {
                         // 🆕 字符串插值返回 char*
-                        try self.output.appendSlice("char*");
+                        try self.output.appendSlice(self.allocator, "char*");
                     } else if (init_expr == .static_method_call) {
                         // 🆕 静态方法调用：Vec<i32>::new() → Vec_i32
                         const smc = init_expr.static_method_call;
                         if (smc.type_args.len > 0) {
                             // 构建mangled name
-                            var buf = std.ArrayList(u8).init(self.arena.allocator());
-                            try buf.appendSlice(smc.type_name);
+                            var buf = std.ArrayList(u8){};
+                            try buf.appendSlice(self.allocator, smc.type_name);
                             for (smc.type_args) |arg| {
-                                try buf.appendSlice("_");
-                                try buf.appendSlice(self.getSimpleTypeName(arg));
+                                try buf.appendSlice(self.allocator, "_");
+                                try buf.appendSlice(self.arena.allocator(), self.getSimpleTypeName(arg));
                             }
-                            const mangled = try buf.toOwnedSlice();
-                            try self.output.appendSlice(mangled);
+                            const mangled = try buf.toOwnedSlice(self.allocator);
+                            try self.output.appendSlice(self.allocator, mangled);
                             type_name = mangled;
                         } else {
-                            try self.output.appendSlice(smc.type_name);
+                            try self.output.appendSlice(self.allocator, smc.type_name);
                             type_name = smc.type_name;
                         }
                     } else if (init_expr == .call and init_expr.call.callee.* == .identifier) {
@@ -593,21 +593,21 @@ pub const CodeGen = struct {
                         const callee_name = init_expr.call.callee.identifier;
                         if (self.enum_variants.get(callee_name)) |enum_name| {
                             // 是enum构造器，使用enum类型
-                            try self.output.appendSlice(enum_name);
+                            try self.output.appendSlice(self.allocator, enum_name);
                             type_name = enum_name;
                         } else {
                             // 普通函数调用，默认int32_t
-                            try self.output.appendSlice("int32_t");
+                            try self.output.appendSlice(self.allocator, "int32_t");
                         }
                     } else {
-                        try self.output.appendSlice("int32_t");
+                        try self.output.appendSlice(self.allocator, "int32_t");
                     }
                 } else {
-                    try self.output.appendSlice("int32_t");
+                    try self.output.appendSlice(self.allocator, "int32_t");
                 }
                 
-                try self.output.appendSlice(" ");
-                try self.output.appendSlice(let.name);
+                try self.output.appendSlice(self.allocator, " ");
+                try self.output.appendSlice(self.allocator, let.name);
                 
                 // 🆕 数组需要添加大小
                 if (is_array) {
@@ -620,15 +620,15 @@ pub const CodeGen = struct {
                     }
                     
                     if (actual_size) |size| {
-                        try self.output.writer().print("[{d}]", .{size});
+                        try self.output.writer(self.allocator).print("[{d}]", .{size});
                     } else {
                         // 动态大小数组，使用指针
-                        try self.output.appendSlice("*");
+                        try self.output.appendSlice(self.allocator, "*");
                     }
                 }
                 
                 if (let.init) |init_expr| {
-                    try self.output.appendSlice(" = ");
+                    try self.output.appendSlice(self.allocator, " = ");
                     _ = try self.generateExpr(init_expr);
                     
                     // 记录struct类型
@@ -636,7 +636,7 @@ pub const CodeGen = struct {
                         type_name = init_expr.struct_init.type_name;
                     }
                 }
-                try self.output.appendSlice(";\n");
+                try self.output.appendSlice(self.allocator, ";\n");
                 
                 // 存储变量类型信息
                 if (type_name) |tn| {
@@ -649,55 +649,55 @@ pub const CodeGen = struct {
                     try self.generateLoopIterator(iter, loop.body);
                 } else if (loop.condition) |condition| {
                     // loop condition { }
-                    try self.output.appendSlice("while (");
+                    try self.output.appendSlice(self.allocator, "while (");
                     try self.generateExpr(condition);
-                    try self.output.appendSlice(") {\n");
+                    try self.output.appendSlice(self.allocator, ") {\n");
                     for (loop.body) |body_stmt| {
                         try self.generateStmt(body_stmt);
                     }
-                    try self.output.appendSlice("}\n");
+                    try self.output.appendSlice(self.allocator, "}\n");
                 } else {
                     // loop { }
-                    try self.output.appendSlice("for (;;) {\n");
+                    try self.output.appendSlice(self.allocator, "for (;;) {\n");
                     for (loop.body) |body_stmt| {
                         try self.generateStmt(body_stmt);
                     }
-                    try self.output.appendSlice("}\n");
+                    try self.output.appendSlice(self.allocator, "}\n");
                 }
             },
             .break_stmt => {
-                try self.output.appendSlice("break;\n");
+                try self.output.appendSlice(self.allocator, "break;\n");
             },
             .continue_stmt => {
-                try self.output.appendSlice("continue;\n");
+                try self.output.appendSlice(self.allocator, "continue;\n");
             },
             .while_loop => |while_loop| {
-                try self.output.appendSlice("while (");
+                try self.output.appendSlice(self.allocator, "while (");
                 _ = try self.generateExpr(while_loop.condition);
-                try self.output.appendSlice(") {\n");
+                try self.output.appendSlice(self.allocator, ") {\n");
                 for (while_loop.body) |body_stmt| {
                     try self.generateStmt(body_stmt);
                 }
-                try self.output.appendSlice("}\n");
+                try self.output.appendSlice(self.allocator, "}\n");
             },
             .for_loop => |for_loop| {
-                try self.output.appendSlice("for (");
+                try self.output.appendSlice(self.allocator, "for (");
                 if (for_loop.init) |init_stmt| {
                     try self.generateStmt(init_stmt.*);
                 }
-                try self.output.appendSlice("; ");
+                try self.output.appendSlice(self.allocator, "; ");
                 if (for_loop.condition) |condition| {
                     _ = try self.generateExpr(condition);
                 }
-                try self.output.appendSlice("; ");
+                try self.output.appendSlice(self.allocator, "; ");
                 if (for_loop.step) |step| {
                     _ = try self.generateExpr(step);
                 }
-                try self.output.appendSlice(") {\n");
+                try self.output.appendSlice(self.allocator, ") {\n");
                 for (for_loop.body) |body_stmt| {
                     try self.generateStmt(body_stmt);
                 }
-                try self.output.appendSlice("}\n");
+                try self.output.appendSlice(self.allocator, "}\n");
             },
         }
     }
@@ -707,39 +707,39 @@ pub const CodeGen = struct {
             .int_literal => |i| {
                 const str = try std.fmt.allocPrint(self.allocator, "{d}", .{i});
                 defer self.allocator.free(str);
-                try self.output.appendSlice(str);
+                try self.output.appendSlice(self.allocator, str);
             },
             .float_literal => |f| {
                 const str = try std.fmt.allocPrint(self.allocator, "{d}", .{f});
                 defer self.allocator.free(str);
-                try self.output.appendSlice(str);
+                try self.output.appendSlice(self.allocator, str);
             },
             .string_literal => |s| {
-                try self.output.appendSlice("\"");
-                try self.output.appendSlice(s);
-                try self.output.appendSlice("\"");
+                try self.output.appendSlice(self.allocator, "\"");
+                try self.output.appendSlice(self.allocator, s);
+                try self.output.appendSlice(self.allocator, "\"");
             },
             .char_literal => |c| {
                 const str = try std.fmt.allocPrint(self.allocator, "'{c}'", .{@as(u8, @intCast(c))});
                 defer self.allocator.free(str);
-                try self.output.appendSlice(str);
+                try self.output.appendSlice(self.allocator, str);
             },
-            .bool_literal => |b| try self.output.appendSlice(if (b) "true" else "false"),
-            .identifier => |id| try self.output.appendSlice(id),
+            .bool_literal => |b| try self.output.appendSlice(self.allocator, if (b) "true" else "false"),
+            .identifier => |id| try self.output.appendSlice(self.allocator, id),
             .binary => |bin| {
-                try self.output.appendSlice("(");
+                try self.output.appendSlice(self.allocator, "(");
                 _ = try self.generateExpr(bin.left.*);
-                try self.output.appendSlice(" ");
-                try self.output.appendSlice(self.binaryOpToC(bin.op));
-                try self.output.appendSlice(" ");
+                try self.output.appendSlice(self.allocator, " ");
+                try self.output.appendSlice(self.allocator, self.binaryOpToC(bin.op));
+                try self.output.appendSlice(self.allocator, " ");
                 _ = try self.generateExpr(bin.right.*);
-                try self.output.appendSlice(")");
+                try self.output.appendSlice(self.allocator, ")");
             },
             .unary => |un| {
-                try self.output.appendSlice("(");
-                try self.output.appendSlice(self.unaryOpToC(un.op));
+                try self.output.appendSlice(self.allocator, "(");
+                try self.output.appendSlice(self.allocator, self.unaryOpToC(un.op));
                 _ = try self.generateExpr(un.operand.*);
-                try self.output.appendSlice(")");
+                try self.output.appendSlice(self.allocator, ")");
             },
             .call => |call| {
                 // 🆕 检查是否是方法调用 (obj.method 形式)
@@ -751,30 +751,30 @@ pub const CodeGen = struct {
                         const var_name = field.object.identifier;
                         if (self.var_types.get(var_name)) |type_name| {
                             // 找到类型，生成 TypeName_method(&obj, args...)
-                            try self.output.appendSlice(type_name);
-                            try self.output.appendSlice("_");
-                            try self.output.appendSlice(field.field);
-                            try self.output.appendSlice("(&");
-                            try self.output.appendSlice(var_name);
+                            try self.output.appendSlice(self.allocator, type_name);
+                            try self.output.appendSlice(self.allocator, "_");
+                            try self.output.appendSlice(self.allocator, field.field);
+                            try self.output.appendSlice(self.allocator, "(&");
+                            try self.output.appendSlice(self.allocator, var_name);
                             for (call.args) |arg| {
-                                try self.output.appendSlice(", ");
+                                try self.output.appendSlice(self.allocator, ", ");
                                 _ = try self.generateExpr(arg);
                             }
-                            try self.output.appendSlice(")");
+                            try self.output.appendSlice(self.allocator, ")");
                             return;
                         }
                     }
                     
                     // 如果找不到类型，降级为普通调用
                     _ = try self.generateExpr(field.object.*);
-                    try self.output.appendSlice(".");
-                    try self.output.appendSlice(field.field);
-                    try self.output.appendSlice("(");
+                    try self.output.appendSlice(self.allocator, ".");
+                    try self.output.appendSlice(self.allocator, field.field);
+                    try self.output.appendSlice(self.allocator, "(");
                     for (call.args, 0..) |arg, i| {
-                        if (i > 0) try self.output.appendSlice(", ");
+                        if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                         _ = try self.generateExpr(arg);
                     }
-                    try self.output.appendSlice(")");
+                    try self.output.appendSlice(self.allocator, ")");
                 } else if (call.callee.* == .identifier) {
                     // 🆕 检查是否是enum构造器
                     const func_name = call.callee.identifier;
@@ -782,51 +782,51 @@ pub const CodeGen = struct {
                     // 从enum_variants表中查找
                     if (self.enum_variants.get(func_name)) |enum_name| {
                         // 是enum构造器，生成 EnumName_VariantName(args...)
-                        try self.output.appendSlice(enum_name);
-                        try self.output.appendSlice("_");
-                        try self.output.appendSlice(func_name);
-                        try self.output.appendSlice("(");
+                        try self.output.appendSlice(self.allocator, enum_name);
+                        try self.output.appendSlice(self.allocator, "_");
+                        try self.output.appendSlice(self.allocator, func_name);
+                        try self.output.appendSlice(self.allocator, "(");
                         for (call.args, 0..) |arg, i| {
-                            if (i > 0) try self.output.appendSlice(", ");
+                            if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                             _ = try self.generateExpr(arg);
                         }
-                        try self.output.appendSlice(")");
+                        try self.output.appendSlice(self.allocator, ")");
                     } else if (std.mem.eql(u8, func_name, "println")) {
                         // 🆕 内置函数 println
-                        try self.output.appendSlice("printf(\"%s\\n\", ");
+                        try self.output.appendSlice(self.allocator, "printf(\"%s\\n\", ");
                         if (call.args.len > 0) {
                             _ = try self.generateExpr(call.args[0]);
                         } else {
-                            try self.output.appendSlice("\"\"");
+                            try self.output.appendSlice(self.allocator, "\"\"");
                         }
-                        try self.output.appendSlice(")");
+                        try self.output.appendSlice(self.allocator, ")");
                     } else if (std.mem.eql(u8, func_name, "print")) {
                         // 🆕 内置函数 print
-                        try self.output.appendSlice("printf(\"%s\", ");
+                        try self.output.appendSlice(self.allocator, "printf(\"%s\", ");
                         if (call.args.len > 0) {
                             _ = try self.generateExpr(call.args[0]);
                         } else {
-                            try self.output.appendSlice("\"\"");
+                            try self.output.appendSlice(self.allocator, "\"\"");
                         }
-                        try self.output.appendSlice(")");
+                        try self.output.appendSlice(self.allocator, ")");
                     } else if (std.mem.eql(u8, func_name, "eprintln")) {
                         // 🆕 内置函数 eprintln
-                        try self.output.appendSlice("fprintf(stderr, \"%s\\n\", ");
+                        try self.output.appendSlice(self.allocator, "fprintf(stderr, \"%s\\n\", ");
                         if (call.args.len > 0) {
                             _ = try self.generateExpr(call.args[0]);
                         } else {
-                            try self.output.appendSlice("\"\"");
+                            try self.output.appendSlice(self.allocator, "\"\"");
                         }
-                        try self.output.appendSlice(")");
+                        try self.output.appendSlice(self.allocator, ")");
                     } else if (std.mem.eql(u8, func_name, "eprint")) {
                         // 🆕 内置函数 eprint
-                        try self.output.appendSlice("fprintf(stderr, \"%s\", ");
+                        try self.output.appendSlice(self.allocator, "fprintf(stderr, \"%s\", ");
                         if (call.args.len > 0) {
                             _ = try self.generateExpr(call.args[0]);
                         } else {
-                            try self.output.appendSlice("\"\"");
+                            try self.output.appendSlice(self.allocator, "\"\"");
                         }
-                        try self.output.appendSlice(")");
+                        try self.output.appendSlice(self.allocator, ")");
                     } else {
                         // 普通函数调用（可能是泛型）
                         // 🆕 检查是否是泛型函数
@@ -834,18 +834,18 @@ pub const CodeGen = struct {
                             if (self.function_table.get(func_name)) |func| {
                                 if (func.type_params.len > 0) {
                                     // 泛型函数：收集参数类型并获取修饰后的名称
-                                    var arg_types = std.ArrayList(ast.Type).init(self.allocator);
-                                    defer arg_types.deinit();
+                                    var arg_types = std.ArrayList(ast.Type){};
+                                    defer arg_types.deinit(self.allocator);
                                     
                                     // 🆕 从实际参数推导类型
                                     for (call.args) |arg| {
                                         const arg_type = self.inferExprType(arg);
-                                        try arg_types.append(arg_type);
+                                        try arg_types.append(self.allocator, arg_type);
                                     }
                                     
                                     const mangled = self.generic_context.inferGenericInstance(
                                         func_name,
-                                        try arg_types.toOwnedSlice(),
+                                        try arg_types.toOwnedSlice(self.allocator),
                                     ) catch func_name;
                                     
                                     break :blk mangled;
@@ -854,42 +854,42 @@ pub const CodeGen = struct {
                             break :blk func_name;
                         };
                         
-                        try self.output.appendSlice(actual_func_name);
-                        try self.output.appendSlice("(");
+                        try self.output.appendSlice(self.allocator, actual_func_name);
+                        try self.output.appendSlice(self.allocator, "(");
                         for (call.args, 0..) |arg, i| {
-                            if (i > 0) try self.output.appendSlice(", ");
+                            if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                             _ = try self.generateExpr(arg);
                         }
-                        try self.output.appendSlice(")");
+                        try self.output.appendSlice(self.allocator, ")");
                     }
                 } else {
                     // 其他形式的调用
                     _ = try self.generateExpr(call.callee.*);
-                    try self.output.appendSlice("(");
+                    try self.output.appendSlice(self.allocator, "(");
                     for (call.args, 0..) |arg, i| {
-                        if (i > 0) try self.output.appendSlice(", ");
+                        if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                         _ = try self.generateExpr(arg);
                     }
-                    try self.output.appendSlice(")");
+                    try self.output.appendSlice(self.allocator, ")");
                 }
             },
             .static_method_call => |smc| {
                 // 🆕 静态方法调用：Type<T>::method()
                 // 生成修饰后的函数名：Type_T_method
-                try self.output.appendSlice(smc.type_name);
+                try self.output.appendSlice(self.allocator, smc.type_name);
                 for (smc.type_args) |type_arg| {
-                    try self.output.appendSlice("_");
+                    try self.output.appendSlice(self.allocator, "_");
                     // 🆕 使用简化名保持与mangling一致
-                    try self.output.appendSlice(self.getSimpleTypeName(type_arg));
+                    try self.output.appendSlice(self.allocator, self.getSimpleTypeName(type_arg));
                 }
-                try self.output.appendSlice("_");
-                try self.output.appendSlice(smc.method_name);
-                try self.output.appendSlice("(");
+                try self.output.appendSlice(self.allocator, "_");
+                try self.output.appendSlice(self.allocator, smc.method_name);
+                try self.output.appendSlice(self.allocator, "(");
                 for (smc.args, 0..) |arg, i| {
-                    if (i > 0) try self.output.appendSlice(", ");
+                    if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                     _ = try self.generateExpr(arg);
                 }
-                try self.output.appendSlice(")");
+                try self.output.appendSlice(self.allocator, ")");
             },
             .field_access => |field| {
                 // 🆕 检查对象是否是 self（需要用 -> 而不是 .）
@@ -899,24 +899,24 @@ pub const CodeGen = struct {
                 _ = try self.generateExpr(field.object.*);
                 
                 if (is_self) {
-                    try self.output.appendSlice("->");  // self 是指针
+                    try self.output.appendSlice(self.allocator, "->");  // self 是指针
                 } else {
-                    try self.output.appendSlice(".");
+                    try self.output.appendSlice(self.allocator, ".");
                 }
-                try self.output.appendSlice(field.field);
+                try self.output.appendSlice(self.allocator, field.field);
             },
             .if_expr => |if_expr| {
-                try self.output.appendSlice("(");
+                try self.output.appendSlice(self.allocator, "(");
                 _ = try self.generateExpr(if_expr.condition.*);
-                try self.output.appendSlice(" ? ");
+                try self.output.appendSlice(self.allocator, " ? ");
                 _ = try self.generateExpr(if_expr.then_branch.*);
-                try self.output.appendSlice(" : ");
+                try self.output.appendSlice(self.allocator, " : ");
                 if (if_expr.else_branch) |else_branch| {
                     _ = try self.generateExpr(else_branch.*);
                 } else {
-                    try self.output.appendSlice("0");
+                    try self.output.appendSlice(self.allocator, "0");
                 }
-                try self.output.appendSlice(")");
+                try self.output.appendSlice(self.allocator, ")");
             },
             .struct_init => |si| {
                 // 🆕 生成 struct 初始化
@@ -927,13 +927,13 @@ pub const CodeGen = struct {
                         if (std.mem.eql(u8, si.type_name, ctx.struct_name)) {
                             // 在方法体中初始化当前struct，使用mangled名字
                             // 直接构建：struct_name + type_args
-                            var buf = std.ArrayList(u8).init(self.arena.allocator());
-                            buf.appendSlice(ctx.struct_name) catch break :blk si.type_name;
+                            var buf = std.ArrayList(u8){};
+                            buf.appendSlice(self.arena.allocator(), ctx.struct_name) catch break :blk si.type_name;
                             for (ctx.type_args) |arg| {
-                                buf.appendSlice("_") catch break :blk si.type_name;
-                                buf.appendSlice(self.getSimpleTypeName(arg)) catch break :blk si.type_name;
+                                buf.appendSlice(self.arena.allocator(), "_") catch break :blk si.type_name;
+                                buf.appendSlice(self.arena.allocator(), self.getSimpleTypeName(arg)) catch break :blk si.type_name;
                             }
-                            break :blk buf.toOwnedSlice() catch si.type_name;
+                            break :blk buf.toOwnedSlice(self.arena.allocator()) catch si.type_name;
                         }
                     }
                     
@@ -941,8 +941,8 @@ pub const CodeGen = struct {
                     if (self.type_decls.get(si.type_name)) |type_decl| {
                         if (type_decl.type_params.len > 0) {
                             // 是泛型结构体，需要推导类型参数
-                            var type_args = std.ArrayList(ast.Type).init(self.allocator);
-                            defer type_args.deinit();
+                            var type_args = std.ArrayList(ast.Type){};
+                            defer type_args.deinit(self.allocator);
                             
                             // 🆕 只从泛型类型参数对应的字段推导类型
                             for (type_decl.kind.struct_type.fields, 0..) |struct_field, idx| {
@@ -965,7 +965,7 @@ pub const CodeGen = struct {
                                     // 这是一个泛型字段，从对应的初始化值推导类型
                                     if (idx < si.fields.len) {
                                         const arg_type = self.inferExprType(si.fields[idx].value);
-                                        try type_args.append(arg_type);
+                                        try type_args.append(self.allocator, arg_type);
                                     }
                                 }
                             }
@@ -973,7 +973,7 @@ pub const CodeGen = struct {
                             // 记录泛型结构体实例化
                             const mangled = try self.generic_context.monomorphizer.recordStructInstance(
                                 si.type_name,
-                                try type_args.toOwnedSlice(),
+                                try type_args.toOwnedSlice(self.allocator),
                             );
                             break :blk mangled;
                         }
@@ -981,45 +981,45 @@ pub const CodeGen = struct {
                     break :blk si.type_name;
                 };
                 
-                try self.output.appendSlice("(");
-                try self.output.appendSlice(actual_name);
-                try self.output.appendSlice("){");
+                try self.output.appendSlice(self.allocator, "(");
+                try self.output.appendSlice(self.allocator, actual_name);
+                try self.output.appendSlice(self.allocator, "){");
                 for (si.fields, 0..) |field, i| {
-                    if (i > 0) try self.output.appendSlice(", ");
-                    try self.output.appendSlice(".");
-                    try self.output.appendSlice(field.name);
-                    try self.output.appendSlice(" = ");
+                    if (i > 0) try self.output.appendSlice(self.allocator, ", ");
+                    try self.output.appendSlice(self.allocator, ".");
+                    try self.output.appendSlice(self.allocator, field.name);
+                    try self.output.appendSlice(self.allocator, " = ");
                     _ = try self.generateExpr(field.value);
                 }
-                try self.output.appendSlice("}");
+                try self.output.appendSlice(self.allocator, "}");
             },
             .enum_variant => |ev| {
                 // 🆕 生成 enum 构造器
-                try self.output.appendSlice(ev.variant);
+                try self.output.appendSlice(self.allocator, ev.variant);
                 if (ev.args.len > 0) {
-                    try self.output.appendSlice("(");
+                    try self.output.appendSlice(self.allocator, "(");
                     for (ev.args, 0..) |arg, i| {
-                        if (i > 0) try self.output.appendSlice(", ");
+                        if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                         _ = try self.generateExpr(arg);
                     }
-                    try self.output.appendSlice(")");
+                    try self.output.appendSlice(self.allocator, ")");
                 }
             },
             .array_literal => |elements| {
                 // 🆕 生成数组字面量
-                try self.output.appendSlice("{");
+                try self.output.appendSlice(self.allocator, "{");
                 for (elements, 0..) |elem, i| {
-                    if (i > 0) try self.output.appendSlice(", ");
+                    if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                     _ = try self.generateExpr(elem);
                 }
-                try self.output.appendSlice("}");
+                try self.output.appendSlice(self.allocator, "}");
             },
             .array_index => |ai| {
                 // 🆕 生成数组索引
                 _ = try self.generateExpr(ai.array.*);
-                try self.output.appendSlice("[");
+                try self.output.appendSlice(self.allocator, "[");
                 _ = try self.generateExpr(ai.index.*);
-                try self.output.appendSlice("]");
+                try self.output.appendSlice(self.allocator, "]");
             },
             .block => |stmts| {
                 // 🆕 实现 block 表达式
@@ -1032,10 +1032,10 @@ pub const CodeGen = struct {
                         try self.generateExpr(last_stmt.expr);
                     } else {
                         // 如果最后不是表达式，返回 0
-                        try self.output.appendSlice("0");
+                        try self.output.appendSlice(self.allocator, "0");
                     }
                 } else {
-                    try self.output.appendSlice("0");
+                    try self.output.appendSlice(self.allocator, "0");
                 }
             },
             // 🆕 is 表达式（模式匹配）
@@ -1047,7 +1047,7 @@ pub const CodeGen = struct {
                 // 范围不能作为普通表达式使用
                 // 只在 loop i in range 中有效
                 _ = r;
-                try self.output.appendSlice("/* range expression */");
+                try self.output.appendSlice(self.allocator, "/* range expression */");
             },
             // 🆕 字符串插值
             .string_interp => |si| {
@@ -1059,15 +1059,15 @@ pub const CodeGen = struct {
             },
             // 🆕 v0.1.7: as 类型转换
             .as_expr => |as_cast| {
-                try self.output.appendSlice("((");
-                try self.output.appendSlice(self.typeToC(as_cast.target_type));
-                try self.output.appendSlice(")(");
+                try self.output.appendSlice(self.allocator, "((");
+                try self.output.appendSlice(self.allocator, self.typeToC(as_cast.target_type));
+                try self.output.appendSlice(self.allocator, ")(");
                 _ = try self.generateExpr(as_cast.value.*);
-                try self.output.appendSlice("))");
+                try self.output.appendSlice(self.allocator, "))");
             },
             else => {
                 // 其他表达式暂时生成 0
-                try self.output.appendSlice("0");
+                try self.output.appendSlice(self.allocator, "0");
             },
         }
     }
@@ -1078,56 +1078,56 @@ pub const CodeGen = struct {
         // 简化实现：假设 Result 类型是 enum
         // Result<T, E> 有两个 variant：Ok(T) 和 Err(E)
         
-        try self.output.appendSlice("({\n");
+        try self.output.appendSlice(self.allocator, "({\n");
         
         // 评估内部表达式并存储到临时变量（暂时硬编码为 Result）
-        try self.output.appendSlice("    Result __try_result__ = ");
+        try self.output.appendSlice(self.allocator, "    Result __try_result__ = ");
         try self.generateExpr(inner);
-        try self.output.appendSlice(";\n");
+        try self.output.appendSlice(self.allocator, ";\n");
         
         // 检查是否是 Err，如果是则提前返回
-        try self.output.appendSlice("    if (__try_result__.tag == Result_TAG_Err) {\n");
-        try self.output.appendSlice("        return __try_result__;\n");
-        try self.output.appendSlice("    }\n");
+        try self.output.appendSlice(self.allocator, "    if (__try_result__.tag == Result_TAG_Err) {\n");
+        try self.output.appendSlice(self.allocator, "        return __try_result__;\n");
+        try self.output.appendSlice(self.allocator, "    }\n");
         
         // 返回 Ok 中的值
-        try self.output.appendSlice("    __try_result__.data.Ok_value;\n");
-        try self.output.appendSlice("})");
+        try self.output.appendSlice(self.allocator, "    __try_result__.data.Ok_value;\n");
+        try self.output.appendSlice(self.allocator, "})");
     }
     
     // 🆕 生成字符串插值代码
     // 策略：使用 sprintf 拼接字符串
     fn generateStringInterpolation(self: *CodeGen, parts: []ast.StringInterpPart) (std.mem.Allocator.Error)!void {
         // 简化实现：生成立即执行的代码块，返回拼接后的字符串
-        try self.output.appendSlice("({\n");
-        try self.output.appendSlice("    static char __str_buf__[1024];\n");
-        try self.output.appendSlice("    __str_buf__[0] = '\\0';\n");
+        try self.output.appendSlice(self.allocator, "({\n");
+        try self.output.appendSlice(self.allocator, "    static char __str_buf__[1024];\n");
+        try self.output.appendSlice(self.allocator, "    __str_buf__[0] = '\\0';\n");
         
         // 逐个拼接每个部分
         for (parts) |part| {
             switch (part) {
                 .literal => |lit| {
                     if (lit.len > 0) {
-                        try self.output.appendSlice("    strcat(__str_buf__, \"");
-                        try self.output.appendSlice(lit);
-                        try self.output.appendSlice("\");\n");
+                        try self.output.appendSlice(self.allocator, "    strcat(__str_buf__, \"");
+                        try self.output.appendSlice(self.allocator, lit);
+                        try self.output.appendSlice(self.allocator, "\");\n");
                     }
                 },
                 .expr => |expr| {
                     // 将表达式转换为字符串并拼接
-                    try self.output.appendSlice("    {\n");
-                    try self.output.appendSlice("        char __tmp__[64];\n");
-                    try self.output.appendSlice("        sprintf(__tmp__, \"%d\", ");
+                    try self.output.appendSlice(self.allocator, "    {\n");
+                    try self.output.appendSlice(self.allocator, "        char __tmp__[64];\n");
+                    try self.output.appendSlice(self.allocator, "        sprintf(__tmp__, \"%d\", ");
                     try self.generateExpr(expr);
-                    try self.output.appendSlice(");\n");
-                    try self.output.appendSlice("        strcat(__str_buf__, __tmp__);\n");
-                    try self.output.appendSlice("    }\n");
+                    try self.output.appendSlice(self.allocator, ");\n");
+                    try self.output.appendSlice(self.allocator, "        strcat(__str_buf__, __tmp__);\n");
+                    try self.output.appendSlice(self.allocator, "    }\n");
                 },
             }
         }
         
-        try self.output.appendSlice("    __str_buf__;\n");
-        try self.output.appendSlice("})");
+        try self.output.appendSlice(self.allocator, "    __str_buf__;\n");
+        try self.output.appendSlice(self.allocator, "})");
     }
     
     // 🆕 生成 loop iterator (loop i in collection)
@@ -1137,31 +1137,31 @@ pub const CodeGen = struct {
             const range = iter.iterable.range;
             
             // 生成 C 风格 for 循环
-            try self.output.appendSlice("for (int32_t ");
-            try self.output.appendSlice(iter.binding);
-            try self.output.appendSlice(" = ");
+            try self.output.appendSlice(self.allocator, "for (int32_t ");
+            try self.output.appendSlice(self.allocator, iter.binding);
+            try self.output.appendSlice(self.allocator, " = ");
             try self.generateExpr(range.start.*);
-            try self.output.appendSlice("; ");
-            try self.output.appendSlice(iter.binding);
+            try self.output.appendSlice(self.allocator, "; ");
+            try self.output.appendSlice(self.allocator, iter.binding);
             
             if (range.inclusive) {
                 // ..= (包含结束)
-                try self.output.appendSlice(" <= ");
+                try self.output.appendSlice(self.allocator, " <= ");
                 } else {
                 // .. (不包含结束)
-                try self.output.appendSlice(" < ");
+                try self.output.appendSlice(self.allocator, " < ");
             }
             
             try self.generateExpr(range.end.*);
-            try self.output.appendSlice("; ");
-            try self.output.appendSlice(iter.binding);
-            try self.output.appendSlice("++) {\n");
+            try self.output.appendSlice(self.allocator, "; ");
+            try self.output.appendSlice(self.allocator, iter.binding);
+            try self.output.appendSlice(self.allocator, "++) {\n");
             
             for (body) |stmt| {
                     try self.generateStmt(stmt);
                 }
                 
-            try self.output.appendSlice("}\n");
+            try self.output.appendSlice(self.allocator, "}\n");
         } else if (iter.iterable == .array_literal) {
             // 🆕 数组字面量遍历：loop item in [1, 2, 3] { }
             // 策略：先声明临时数组，再遍历
@@ -1169,94 +1169,94 @@ pub const CodeGen = struct {
             const idx_var = "__loop_idx__";
             const arr_var = "__loop_arr__";
             
-            try self.output.appendSlice("{\n");
+            try self.output.appendSlice(self.allocator, "{\n");
             
             // 声明临时数组
-            try self.output.appendSlice("    int32_t ");
-            try self.output.appendSlice(arr_var);
+            try self.output.appendSlice(self.allocator, "    int32_t ");
+            try self.output.appendSlice(self.allocator, arr_var);
             const arr_size = try std.fmt.allocPrint(self.allocator, "[{d}]", .{array_lit.len});
             defer self.allocator.free(arr_size);
-            try self.output.appendSlice(arr_size);
-            try self.output.appendSlice(" = ");
+            try self.output.appendSlice(self.allocator, arr_size);
+            try self.output.appendSlice(self.allocator, " = ");
             try self.generateExpr(iter.iterable);
-            try self.output.appendSlice(";\n");
+            try self.output.appendSlice(self.allocator, ";\n");
             
             // 生成 for 循环
-            try self.output.appendSlice("    for (int32_t ");
-            try self.output.appendSlice(idx_var);
+            try self.output.appendSlice(self.allocator, "    for (int32_t ");
+            try self.output.appendSlice(self.allocator, idx_var);
             const loop_cond = try std.fmt.allocPrint(
             self.allocator,
                 " = 0; {s} < {d}; {s}++) {{\n", 
                 .{idx_var, array_lit.len, idx_var}
             );
             defer self.allocator.free(loop_cond);
-            try self.output.appendSlice(loop_cond);
+            try self.output.appendSlice(self.allocator, loop_cond);
             
             // 声明迭代变量
-            try self.output.appendSlice("        int32_t ");
-            try self.output.appendSlice(iter.binding);
-            try self.output.appendSlice(" = ");
-            try self.output.appendSlice(arr_var);
-            try self.output.appendSlice("[");
-            try self.output.appendSlice(idx_var);
-            try self.output.appendSlice("];\n");
+            try self.output.appendSlice(self.allocator, "        int32_t ");
+            try self.output.appendSlice(self.allocator, iter.binding);
+            try self.output.appendSlice(self.allocator, " = ");
+            try self.output.appendSlice(self.allocator, arr_var);
+            try self.output.appendSlice(self.allocator, "[");
+            try self.output.appendSlice(self.allocator, idx_var);
+            try self.output.appendSlice(self.allocator, "];\n");
             
             // 生成循环体
             for (body) |stmt| {
-                try self.output.appendSlice("        ");
+                try self.output.appendSlice(self.allocator, "        ");
                 try self.generateStmt(stmt);
             }
             
-            try self.output.appendSlice("    }\n");
-            try self.output.appendSlice("}\n");
+            try self.output.appendSlice(self.allocator, "    }\n");
+            try self.output.appendSlice(self.allocator, "}\n");
         } else if (iter.iterable == .identifier) {
             // 🆕 数组变量遍历：loop item in arr { }
             const idx_var = "__loop_idx__";
             const len_var = "__loop_len__";
             
-            try self.output.appendSlice("{\n");
+            try self.output.appendSlice(self.allocator, "{\n");
             
             // 计算数组长度
-            try self.output.appendSlice("    int32_t ");
-            try self.output.appendSlice(len_var);
-            try self.output.appendSlice(" = sizeof(");
+            try self.output.appendSlice(self.allocator, "    int32_t ");
+            try self.output.appendSlice(self.allocator, len_var);
+            try self.output.appendSlice(self.allocator, " = sizeof(");
             try self.generateExpr(iter.iterable);
-            try self.output.appendSlice(") / sizeof((");
+            try self.output.appendSlice(self.allocator, ") / sizeof((");
             try self.generateExpr(iter.iterable);
-            try self.output.appendSlice(")[0]);\n");
+            try self.output.appendSlice(self.allocator, ")[0]);\n");
             
             // 生成 for 循环
-            try self.output.appendSlice("    for (int32_t ");
-            try self.output.appendSlice(idx_var);
-            try self.output.appendSlice(" = 0; ");
-            try self.output.appendSlice(idx_var);
-            try self.output.appendSlice(" < ");
-            try self.output.appendSlice(len_var);
-            try self.output.appendSlice("; ");
-            try self.output.appendSlice(idx_var);
-            try self.output.appendSlice("++) {\n");
+            try self.output.appendSlice(self.allocator, "    for (int32_t ");
+            try self.output.appendSlice(self.allocator, idx_var);
+            try self.output.appendSlice(self.allocator, " = 0; ");
+            try self.output.appendSlice(self.allocator, idx_var);
+            try self.output.appendSlice(self.allocator, " < ");
+            try self.output.appendSlice(self.allocator, len_var);
+            try self.output.appendSlice(self.allocator, "; ");
+            try self.output.appendSlice(self.allocator, idx_var);
+            try self.output.appendSlice(self.allocator, "++) {\n");
             
             // 声明迭代变量
-            try self.output.appendSlice("        int32_t ");
-            try self.output.appendSlice(iter.binding);
-            try self.output.appendSlice(" = ");
+            try self.output.appendSlice(self.allocator, "        int32_t ");
+            try self.output.appendSlice(self.allocator, iter.binding);
+            try self.output.appendSlice(self.allocator, " = ");
             try self.generateExpr(iter.iterable);
-            try self.output.appendSlice("[");
-            try self.output.appendSlice(idx_var);
-            try self.output.appendSlice("];\n");
+            try self.output.appendSlice(self.allocator, "[");
+            try self.output.appendSlice(self.allocator, idx_var);
+            try self.output.appendSlice(self.allocator, "];\n");
             
             // 生成循环体
             for (body) |stmt| {
-                try self.output.appendSlice("        ");
+                try self.output.appendSlice(self.allocator, "        ");
                 try self.generateStmt(stmt);
             }
             
-            try self.output.appendSlice("    }\n");
-            try self.output.appendSlice("}\n");
+            try self.output.appendSlice(self.allocator, "    }\n");
+            try self.output.appendSlice(self.allocator, "}\n");
                 } else {
             // 其他类型的集合（TODO）
-            try self.output.appendSlice("// TODO: unsupported iterator type\n");
-            try self.output.appendSlice("for (;;) { break; }\n");
+            try self.output.appendSlice(self.allocator, "// TODO: unsupported iterator type\n");
+            try self.output.appendSlice(self.allocator, "for (;;) { break; }\n");
         }
     }
     
@@ -1265,17 +1265,17 @@ pub const CodeGen = struct {
     // ({ int result; switch(...) { ... }; result; })
     fn generateIsExpr(self: *CodeGen, is_match: anytype) (std.mem.Allocator.Error)!void {
         // 开始一个立即执行的代码块（返回值）
-        try self.output.appendSlice("({\n");
+        try self.output.appendSlice(self.allocator, "({\n");
         
         // 生成临时变量来存储匹配的值
-        try self.output.appendSlice("    typeof(");
+        try self.output.appendSlice(self.allocator, "    typeof(");
         try self.generateExpr(is_match.value.*);
-        try self.output.appendSlice(") __match_value__ = ");
+        try self.output.appendSlice(self.allocator, ") __match_value__ = ");
         try self.generateExpr(is_match.value.*);
-        try self.output.appendSlice(";\n");
+        try self.output.appendSlice(self.allocator, ";\n");
         
         // 🆕 生成结果变量（简化：使用 int32_t 避免递归推断）
-        try self.output.appendSlice("    int32_t __match_result__;\n");
+        try self.output.appendSlice(self.allocator, "    int32_t __match_result__;\n");
         
         // 检查是否需要生成 switch（enum 模式）还是 if-else（其他模式）
         const use_switch = self.shouldUseSwitch(is_match);
@@ -1287,8 +1287,8 @@ pub const CodeGen = struct {
         }
         
         // 返回结果
-        try self.output.appendSlice("    __match_result__;\n");
-        try self.output.appendSlice("})");
+        try self.output.appendSlice(self.allocator, "    __match_result__;\n");
+        try self.output.appendSlice(self.allocator, "})");
     }
     
     // 判断是否应该使用 switch（enum 模式匹配）
@@ -1303,7 +1303,7 @@ pub const CodeGen = struct {
     
     // 使用 switch 生成 is 表达式（enum 模式匹配）
     fn generateIsExprSwitch(self: *CodeGen, is_match: anytype) (std.mem.Allocator.Error)!void {
-        try self.output.appendSlice("    switch (__match_value__.tag) {\n");
+        try self.output.appendSlice(self.allocator, "    switch (__match_value__.tag) {\n");
         
         for (is_match.arms) |arm| {
             if (arm.pattern == .variant) {
@@ -1313,65 +1313,65 @@ pub const CodeGen = struct {
                 const enum_name = self.enum_variants.get(variant.name) orelse "Unknown";
                 
                 // case EnumName_TAG_VariantName:
-                try self.output.appendSlice("        case ");
-                try self.output.appendSlice(enum_name);
-                try self.output.appendSlice("_TAG_");
-                try self.output.appendSlice(variant.name);
-                try self.output.appendSlice(": {\n");
+                try self.output.appendSlice(self.allocator, "        case ");
+                try self.output.appendSlice(self.allocator, enum_name);
+                try self.output.appendSlice(self.allocator, "_TAG_");
+                try self.output.appendSlice(self.allocator, variant.name);
+                try self.output.appendSlice(self.allocator, ": {\n");
                 
                 // 🆕 绑定变量（如果有）
                 if (variant.bindings.len > 0) {
                     // 单个参数: Type binding = __match_value__.data.VariantName_value;
                     if (variant.bindings.len == 1) {
-                        try self.output.appendSlice("            int32_t ");
-                        try self.output.appendSlice(variant.bindings[0]);
-                        try self.output.appendSlice(" = __match_value__.data.");
-                        try self.output.appendSlice(variant.name);
-                        try self.output.appendSlice("_value;\n");
+                        try self.output.appendSlice(self.allocator, "            int32_t ");
+                        try self.output.appendSlice(self.allocator, variant.bindings[0]);
+                        try self.output.appendSlice(self.allocator, " = __match_value__.data.");
+                        try self.output.appendSlice(self.allocator, variant.name);
+                        try self.output.appendSlice(self.allocator, "_value;\n");
                     } else {
                         // 多个参数: 从 struct 中提取
                         for (variant.bindings, 0..) |binding, i| {
-                            try self.output.appendSlice("            int32_t ");
-                            try self.output.appendSlice(binding);
-                            try self.output.appendSlice(" = __match_value__.data.");
-                            try self.output.appendSlice(variant.name);
+                            try self.output.appendSlice(self.allocator, "            int32_t ");
+                            try self.output.appendSlice(self.allocator, binding);
+                            try self.output.appendSlice(self.allocator, " = __match_value__.data.");
+                            try self.output.appendSlice(self.allocator, variant.name);
                             const field_ref = try std.fmt.allocPrint(self.allocator, "_value.field{d};\n", .{i});
                             defer self.allocator.free(field_ref);
-                            try self.output.appendSlice(field_ref);
+                            try self.output.appendSlice(self.allocator, field_ref);
                         }
                     }
                 }
                 
                 // 生成 guard（如果有）
                 if (arm.guard) |guard| {
-                    try self.output.appendSlice("            if (");
+                    try self.output.appendSlice(self.allocator, "            if (");
                     try self.generateExpr(guard);
-                    try self.output.appendSlice(") {\n");
-                    try self.output.appendSlice("                __match_result__ = ");
+                    try self.output.appendSlice(self.allocator, ") {\n");
+                    try self.output.appendSlice(self.allocator, "                __match_result__ = ");
                     try self.generateExpr(arm.body);
-                    try self.output.appendSlice(";\n");
-                    try self.output.appendSlice("            }\n");
+                    try self.output.appendSlice(self.allocator, ";\n");
+                    try self.output.appendSlice(self.allocator, "            }\n");
                 } else {
                     // 没有 guard，直接赋值
-                    try self.output.appendSlice("            __match_result__ = ");
+                    try self.output.appendSlice(self.allocator, "            __match_result__ = ");
                     try self.generateExpr(arm.body);
-                    try self.output.appendSlice(";\n");
+                    try self.output.appendSlice(self.allocator, ";\n");
                 }
                 
-                try self.output.appendSlice("            break;\n");
-                try self.output.appendSlice("        }\n");
+                try self.output.appendSlice(self.allocator, "            break;\n");
+                try self.output.appendSlice(self.allocator, "        }\n");
             } else if (arm.pattern == .wildcard) {
                 // default case
-                try self.output.appendSlice("        default: {\n");
-                try self.output.appendSlice("            __match_result__ = ");
+                try self.output.appendSlice(self.allocator, "        default: {\n");
+                try self.output.appendSlice(self.allocator, "            __match_result__ = ");
                 try self.generateExpr(arm.body);
-                try self.output.appendSlice(";\n");
-                try self.output.appendSlice("            break;\n");
-                try self.output.appendSlice("        }\n");
+                try self.output.appendSlice(self.allocator, ";\n");
+                try self.output.appendSlice(self.allocator, "            break;\n");
+                try self.output.appendSlice(self.allocator, "        }\n");
             }
         }
         
-        try self.output.appendSlice("    }\n");
+        try self.output.appendSlice(self.allocator, "    }\n");
     }
     
     // 使用 if-else 生成 is 表达式（常量/标识符模式）
@@ -1383,65 +1383,65 @@ pub const CodeGen = struct {
             if (arm.pattern == .wildcard) {
                 // _ 通配符：总是匹配（作为最后的 else）
                 if (needs_else) {
-                    try self.output.appendSlice("    else {\n");
+                    try self.output.appendSlice(self.allocator, "    else {\n");
                 } else {
-                    try self.output.appendSlice("    {\n");
+                    try self.output.appendSlice(self.allocator, "    {\n");
                 }
                 // 生成 body
-                try self.output.appendSlice("        __match_result__ = ");
+                try self.output.appendSlice(self.allocator, "        __match_result__ = ");
                 try self.generateExpr(arm.body);
-                try self.output.appendSlice(";\n");
-                try self.output.appendSlice("    }\n");
+                try self.output.appendSlice(self.allocator, ";\n");
+                try self.output.appendSlice(self.allocator, "    }\n");
             } else if (arm.pattern == .literal) {
                 // 字面量模式：比较值
                 if (needs_else) {
-                    try self.output.appendSlice("    else if (__match_value__ == ");
+                    try self.output.appendSlice(self.allocator, "    else if (__match_value__ == ");
                 } else {
-                    try self.output.appendSlice("    if (__match_value__ == ");
+                    try self.output.appendSlice(self.allocator, "    if (__match_value__ == ");
                 }
                 try self.generateExpr(arm.pattern.literal);
-                try self.output.appendSlice(")");
+                try self.output.appendSlice(self.allocator, ")");
                 
                 // guard
                 if (arm.guard) |guard| {
-                    try self.output.appendSlice(" && (");
+                    try self.output.appendSlice(self.allocator, " && (");
                     try self.generateExpr(guard);
-                    try self.output.appendSlice(")");
+                    try self.output.appendSlice(self.allocator, ")");
                 }
                 
-                try self.output.appendSlice(" {\n");
+                try self.output.appendSlice(self.allocator, " {\n");
                 // 生成 body
-                try self.output.appendSlice("        __match_result__ = ");
+                try self.output.appendSlice(self.allocator, "        __match_result__ = ");
                 try self.generateExpr(arm.body);
-                try self.output.appendSlice(";\n");
-                try self.output.appendSlice("    }\n");
+                try self.output.appendSlice(self.allocator, ";\n");
+                try self.output.appendSlice(self.allocator, "    }\n");
             } else if (arm.pattern == .identifier) {
                 // 标识符模式：绑定并总是匹配
                 if (needs_else) {
-                    try self.output.appendSlice("    else {\n");
+                    try self.output.appendSlice(self.allocator, "    else {\n");
                 } else {
-                    try self.output.appendSlice("    {\n");
+                    try self.output.appendSlice(self.allocator, "    {\n");
                 }
-                try self.output.appendSlice("        int32_t ");
-                try self.output.appendSlice(arm.pattern.identifier);
-                try self.output.appendSlice(" = __match_value__;\n");
+                try self.output.appendSlice(self.allocator, "        int32_t ");
+                try self.output.appendSlice(self.allocator, arm.pattern.identifier);
+                try self.output.appendSlice(self.allocator, " = __match_value__;\n");
                 
                 // guard
                 if (arm.guard) |guard| {
-                    try self.output.appendSlice("        if (");
+                    try self.output.appendSlice(self.allocator, "        if (");
                     try self.generateExpr(guard);
-                    try self.output.appendSlice(") {\n");
-                    try self.output.appendSlice("            __match_result__ = ");
+                    try self.output.appendSlice(self.allocator, ") {\n");
+                    try self.output.appendSlice(self.allocator, "            __match_result__ = ");
                     try self.generateExpr(arm.body);
-                    try self.output.appendSlice(";\n");
-                    try self.output.appendSlice("        }\n");
+                    try self.output.appendSlice(self.allocator, ";\n");
+                    try self.output.appendSlice(self.allocator, "        }\n");
                 } else {
                     // 没有 guard，直接赋值
-                    try self.output.appendSlice("        __match_result__ = ");
+                    try self.output.appendSlice(self.allocator, "        __match_result__ = ");
                     try self.generateExpr(arm.body);
-                    try self.output.appendSlice(";\n");
+                    try self.output.appendSlice(self.allocator, ";\n");
                 }
-                try self.output.appendSlice("    }\n");
+                try self.output.appendSlice(self.allocator, "    }\n");
             }
         }
     }
@@ -1524,13 +1524,13 @@ pub const CodeGen = struct {
             .generic_instance => |gi| {
                 // 🆕 处理泛型实例：Vec<i32> -> Vec_i32
                 // 使用arena allocator，generate结束时自动释放
-                var buf = std.ArrayList(u8).init(self.arena.allocator());
-                buf.appendSlice(gi.name) catch return "void*";
+                var buf = std.ArrayList(u8){};
+                buf.appendSlice(self.arena.allocator(), gi.name) catch return "void*";
                 for (gi.type_args) |arg| {
-                    buf.appendSlice("_") catch return "void*";
-                    buf.appendSlice(self.getSimpleTypeName(arg)) catch return "void*";
+                    buf.appendSlice(self.arena.allocator(), "_") catch return "void*";
+                    buf.appendSlice(self.arena.allocator(), self.getSimpleTypeName(arg)) catch return "void*";
                 }
-                return buf.toOwnedSlice() catch "void*";
+                return buf.toOwnedSlice(self.arena.allocator()) catch "void*";
             },
         };
     }
@@ -1622,34 +1622,34 @@ pub const CodeGen = struct {
                         if (method.params.len > 0 and 
                             std.mem.eql(u8, method.params[0].name, "self")) {
                             // 这是实例方法
-                            var method_type_args = std.ArrayList(ast.Type).init(self.allocator);
+                            var method_type_args = std.ArrayList(ast.Type){};
                             for (instance.type_args) |arg| {
-                                try method_type_args.append(arg);
+                                try method_type_args.append(self.allocator, arg);
                             }
                             
                             _ = try self.generic_context.monomorphizer.recordMethodInstance(
                                 instance.generic_name,
                                 method.name,
-                                try method_type_args.toOwnedSlice(),
+                                try method_type_args.toOwnedSlice(self.allocator),
                             );
                         }
                     }
                     
                     // 生成 typedef struct
-                    try self.output.appendSlice("typedef struct ");
-                    try self.output.appendSlice(instance.mangled_name);
-                    try self.output.appendSlice(" ");
-                    try self.output.appendSlice(instance.mangled_name);
-                    try self.output.appendSlice(";\n\n");
+                    try self.output.appendSlice(self.allocator, "typedef struct ");
+                    try self.output.appendSlice(self.allocator, instance.mangled_name);
+                    try self.output.appendSlice(self.allocator, " ");
+                    try self.output.appendSlice(self.allocator, instance.mangled_name);
+                    try self.output.appendSlice(self.allocator, ";\n\n");
                     
                     // 生成 struct 定义
-                    try self.output.appendSlice("struct ");
-                    try self.output.appendSlice(instance.mangled_name);
-                    try self.output.appendSlice(" {\n");
+                    try self.output.appendSlice(self.allocator, "struct ");
+                    try self.output.appendSlice(self.allocator, instance.mangled_name);
+                    try self.output.appendSlice(self.allocator, " {\n");
                     
                     // 生成字段（用具体类型替换泛型类型参数）
                     for (st.fields) |field| {
-                        try self.output.appendSlice("    ");
+                        try self.output.appendSlice(self.allocator, "    ");
                         
                         // 🆕 替换泛型类型参数
                         // 检查字段类型是否是泛型参数（T, U, A, B, etc）
@@ -1672,13 +1672,13 @@ pub const CodeGen = struct {
                             break :blk field.type;
                         };
                         
-                        try self.output.appendSlice(self.typeToC(field_type_to_use));
-                        try self.output.appendSlice(" ");
-                        try self.output.appendSlice(field.name);
-                        try self.output.appendSlice(";\n");
+                        try self.output.appendSlice(self.allocator, self.typeToC(field_type_to_use));
+                        try self.output.appendSlice(self.allocator, " ");
+                        try self.output.appendSlice(self.allocator, field.name);
+                        try self.output.appendSlice(self.allocator, ";\n");
                     }
                     
-                    try self.output.appendSlice("};\n\n");
+                    try self.output.appendSlice(self.allocator, "};\n\n");
                 }
             }
         }
@@ -1693,14 +1693,14 @@ pub const CodeGen = struct {
                     const return_type = instance.type_args[0];
                     
                     // 生成前向声明
-                    try self.output.appendSlice(self.typeToC(return_type));
-                    try self.output.appendSlice(" ");
-                    try self.output.appendSlice(instance.mangled_name);
-                    try self.output.appendSlice("(");
+                    try self.output.appendSlice(self.allocator, self.typeToC(return_type));
+                    try self.output.appendSlice(self.allocator, " ");
+                    try self.output.appendSlice(self.allocator, instance.mangled_name);
+                    try self.output.appendSlice(self.allocator, "(");
                     
                     // 🆕 参数类型：使用对应的类型参数
                     for (generic_func.params, 0..) |param, i| {
-                        if (i > 0) try self.output.appendSlice(", ");
+                        if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                         
                         // 如果有足够的类型参数，使用对应的类型
                         const param_type = if (i < instance.type_args.len)
@@ -1708,16 +1708,16 @@ pub const CodeGen = struct {
                         else
                             instance.type_args[0];  // 降级：重复使用第一个
                         
-                        try self.output.appendSlice(self.typeToC(param_type));
-                        try self.output.appendSlice(" ");
-                        try self.output.appendSlice(param.name);
+                        try self.output.appendSlice(self.allocator, self.typeToC(param_type));
+                        try self.output.appendSlice(self.allocator, " ");
+                        try self.output.appendSlice(self.allocator, param.name);
                     }
                     
-                    try self.output.appendSlice(");\n");
+                    try self.output.appendSlice(self.allocator, ");\n");
                 }
             }
         }
-        try self.output.appendSlice("\n");
+        try self.output.appendSlice(self.allocator, "\n");
         
         // 🆕 3. 生成泛型方法前向声明
         const method_instances = self.generic_context.monomorphizer.method_instances.items;
@@ -1737,16 +1737,16 @@ pub const CodeGen = struct {
                                 type_decl.type_params,
                                 method_instance.type_args,
                             );
-                            try self.output.appendSlice(self.typeToC(return_type));
-                            try self.output.appendSlice(" ");
+                            try self.output.appendSlice(self.allocator, self.typeToC(return_type));
+                            try self.output.appendSlice(self.allocator, " ");
                             
                             // 生成方法名（mangled）
-                            try self.output.appendSlice(method_instance.mangled_name);
-                            try self.output.appendSlice("(");
+                            try self.output.appendSlice(self.allocator, method_instance.mangled_name);
+                            try self.output.appendSlice(self.allocator, "(");
                             
                             // 生成参数（替换泛型参数）
                             for (method.params, 0..) |param, i| {
-                                if (i > 0) try self.output.appendSlice(", ");
+                                if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                                 
                                 const param_type = try self.substituteGenericType(
                                     param.type,
@@ -1756,27 +1756,27 @@ pub const CodeGen = struct {
                                 
                                 // 如果参数名是 self，转换为指针
                                 if (std.mem.eql(u8, param.name, "self")) {
-                                    try self.output.appendSlice(method_instance.struct_name);
+                                    try self.output.appendSlice(self.allocator, method_instance.struct_name);
                                     for (method_instance.type_args) |arg| {
-                                        try self.output.appendSlice("_");
-                                        try self.output.appendSlice(self.getSimpleTypeName(arg));
+                                        try self.output.appendSlice(self.allocator, "_");
+                                        try self.output.appendSlice(self.allocator, self.getSimpleTypeName(arg));
                                     }
-                                    try self.output.appendSlice("* self");
+                                    try self.output.appendSlice(self.allocator, "* self");
                                 } else {
-                                    try self.output.appendSlice(self.typeToC(param_type));
-                                    try self.output.appendSlice(" ");
-                                    try self.output.appendSlice(param.name);
+                                    try self.output.appendSlice(self.allocator, self.typeToC(param_type));
+                                    try self.output.appendSlice(self.allocator, " ");
+                                    try self.output.appendSlice(self.allocator, param.name);
                                 }
                             }
                             
-                            try self.output.appendSlice(");\n");
+                            try self.output.appendSlice(self.allocator, ");\n");
                             break;
                         }
                     }
                 }
             }
         }
-        try self.output.appendSlice("\n");
+        try self.output.appendSlice(self.allocator, "\n");
     }
 
     /// 替换类型中的泛型参数
@@ -1809,15 +1809,15 @@ pub const CodeGen = struct {
                 // 🆕 处理泛型实例类型（Vec<T>）
                 // 需要替换类型参数，生成具体的泛型实例
                 // 使用arena allocator，generate结束时自动释放
-                var new_type_args = std.ArrayList(ast.Type).init(self.arena.allocator());
+                var new_type_args = std.ArrayList(ast.Type){};
                 for (gi.type_args) |arg| {
                     const substituted = try self.substituteGenericType(arg, type_params, type_args);
-                    try new_type_args.append(substituted);
+                    try new_type_args.append(self.allocator, substituted);
                 }
                 return ast.Type{
                     .generic_instance = .{
                         .name = gi.name,
-                        .type_args = try new_type_args.toOwnedSlice(),
+                        .type_args = try new_type_args.toOwnedSlice(self.arena.allocator()),
                     },
                 };
             },
@@ -1837,14 +1837,14 @@ pub const CodeGen = struct {
                     const return_type = instance.type_args[0];
                     
                     // 生成函数签名
-                    try self.output.appendSlice(self.typeToC(return_type));
-                    try self.output.appendSlice(" ");
-                    try self.output.appendSlice(instance.mangled_name);
-                    try self.output.appendSlice("(");
+                    try self.output.appendSlice(self.allocator, self.typeToC(return_type));
+                    try self.output.appendSlice(self.allocator, " ");
+                    try self.output.appendSlice(self.allocator, instance.mangled_name);
+                    try self.output.appendSlice(self.allocator, "(");
                     
                     // 🆕 生成参数：使用对应的类型参数
                     for (generic_func.params, 0..) |param, i| {
-                        if (i > 0) try self.output.appendSlice(", ");
+                        if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                         
                         // 如果有足够的类型参数，使用对应的类型
                         const param_type = if (i < instance.type_args.len)
@@ -1852,19 +1852,19 @@ pub const CodeGen = struct {
                         else
                             instance.type_args[0];  // 降级：重复使用第一个
                         
-                        try self.output.appendSlice(self.typeToC(param_type));
-                        try self.output.appendSlice(" ");
-                        try self.output.appendSlice(param.name);
+                        try self.output.appendSlice(self.allocator, self.typeToC(param_type));
+                        try self.output.appendSlice(self.allocator, " ");
+                        try self.output.appendSlice(self.allocator, param.name);
                     }
                     
-                    try self.output.appendSlice(") {\n");
+                    try self.output.appendSlice(self.allocator, ") {\n");
                     
                     // 生成函数体
                     for (generic_func.body) |stmt| {
                         try self.generateStmt(stmt);
                     }
                     
-                    try self.output.appendSlice("}\n\n");
+                    try self.output.appendSlice(self.allocator, "}\n\n");
                 }
             }
         }
@@ -1887,16 +1887,16 @@ pub const CodeGen = struct {
                                 type_decl.type_params,
                                 method_instance.type_args,
                             );
-                            try self.output.appendSlice(self.typeToC(return_type));
-                            try self.output.appendSlice(" ");
+                            try self.output.appendSlice(self.allocator, self.typeToC(return_type));
+                            try self.output.appendSlice(self.allocator, " ");
                             
                             // 生成方法名（mangled）
-                            try self.output.appendSlice(method_instance.mangled_name);
-                            try self.output.appendSlice("(");
+                            try self.output.appendSlice(self.allocator, method_instance.mangled_name);
+                            try self.output.appendSlice(self.allocator, "(");
                             
                             // 生成参数（替换泛型参数）
                             for (method.params, 0..) |param, i| {
-                                if (i > 0) try self.output.appendSlice(", ");
+                                if (i > 0) try self.output.appendSlice(self.allocator, ", ");
                                 
                                 const param_type = try self.substituteGenericType(
                                     param.type,
@@ -1906,20 +1906,20 @@ pub const CodeGen = struct {
                                 
                                 // 如果参数名是 self，转换为指针
                                 if (std.mem.eql(u8, param.name, "self")) {
-                                    try self.output.appendSlice(method_instance.struct_name);
+                                    try self.output.appendSlice(self.allocator, method_instance.struct_name);
                                     for (method_instance.type_args) |arg| {
-                                        try self.output.appendSlice("_");
-                                        try self.output.appendSlice(self.getSimpleTypeName(arg));
+                                        try self.output.appendSlice(self.allocator, "_");
+                                        try self.output.appendSlice(self.allocator, self.getSimpleTypeName(arg));
                                     }
-                                    try self.output.appendSlice("* self");
+                                    try self.output.appendSlice(self.allocator, "* self");
                                 } else {
-                                    try self.output.appendSlice(self.typeToC(param_type));
-                                    try self.output.appendSlice(" ");
-                                    try self.output.appendSlice(param.name);
+                                    try self.output.appendSlice(self.allocator, self.typeToC(param_type));
+                                    try self.output.appendSlice(self.allocator, " ");
+                                    try self.output.appendSlice(self.allocator, param.name);
                                 }
                             }
                             
-                            try self.output.appendSlice(") {\n");
+                            try self.output.appendSlice(self.allocator, ") {\n");
                             
                             // 🆕 设置方法上下文，用于方法体生成时的类型替换
                             self.current_method_context = .{
@@ -1937,7 +1937,7 @@ pub const CodeGen = struct {
                             // 清除方法上下文
                             self.current_method_context = null;
                             
-                            try self.output.appendSlice("}\n\n");
+                            try self.output.appendSlice(self.allocator, "}\n\n");
                             break;
                         }
                     }
@@ -2007,8 +2007,8 @@ pub const CodeGen = struct {
                 if (self.type_decls.get(si.type_name)) |type_decl| {
                     if (type_decl.type_params.len > 0) {
                         // 是泛型结构体，需要推导类型参数
-                        var type_args = std.ArrayList(ast.Type).init(self.allocator);
-                        defer type_args.deinit();
+                        var type_args = std.ArrayList(ast.Type){};
+                        defer type_args.deinit(self.allocator);
                         
                         // 🆕 只从泛型类型参数对应的字段推导类型
                         // 需要匹配 struct 定义中的字段类型
@@ -2032,21 +2032,21 @@ pub const CodeGen = struct {
                                 // 这是一个泛型字段，从对应的初始化值推导类型
                                 if (idx < si.fields.len) {
                                     const arg_type = self.inferExprType(si.fields[idx].value);
-                                    try type_args.append(arg_type);
+                                    try type_args.append(self.allocator, arg_type);
                                 }
                             }
                         }
                         
                         // 🆕 先保存type_args的副本（因为recordStructInstance会接管所有权）
-                        var saved_type_args = std.ArrayList(ast.Type).init(self.allocator);
+                        var saved_type_args = std.ArrayList(ast.Type){};
                         for (type_args.items) |arg| {
-                            try saved_type_args.append(arg);
+                            try saved_type_args.append(self.allocator, arg);
                         }
                         
                         // 记录泛型结构体实例化
                         _ = try self.generic_context.monomorphizer.recordStructInstance(
                             si.type_name,
-                            try type_args.toOwnedSlice(),
+                            try type_args.toOwnedSlice(self.allocator),
                         );
                         
                         // 🆕 同时记录该struct的所有实例方法
@@ -2057,15 +2057,15 @@ pub const CodeGen = struct {
                                 if (method.params.len > 0 and 
                                     std.mem.eql(u8, method.params[0].name, "self")) {
                                     // 这是实例方法，记录它（使用相同的type_args）
-                                    var method_type_args = std.ArrayList(ast.Type).init(self.allocator);
+                                    var method_type_args = std.ArrayList(ast.Type){};
                                     for (saved_type_args.items) |arg| {
-                                        try method_type_args.append(arg);
+                                        try method_type_args.append(self.allocator, arg);
                                     }
                                     
                                     _ = try self.generic_context.monomorphizer.recordMethodInstance(
                                         si.type_name,
                                         method.name,
-                                        try method_type_args.toOwnedSlice(),
+                                        try method_type_args.toOwnedSlice(self.allocator),
                                     );
                                 }
                             }

@@ -138,10 +138,10 @@ pub const ModuleLoader = struct {
     /// 查找模块文件
     fn findModuleFile(self: *ModuleLoader, module_path: []const u8) ![]const u8 {
         // 尝试1: module_path.paw
-        var buf = std.ArrayList(u8).init(self.allocator);
-        try buf.appendSlice(module_path);
-        try buf.appendSlice(".paw");
-        const file1 = try buf.toOwnedSlice();
+        var buf = std.ArrayList(u8){};
+        try buf.appendSlice(self.allocator, module_path);
+        try buf.appendSlice(self.allocator, ".paw");
+        const file1 = try buf.toOwnedSlice(self.allocator);
         
         if (std.fs.cwd().access(file1, .{})) {
             return file1;
@@ -150,10 +150,10 @@ pub const ModuleLoader = struct {
         }
         
         // 尝试2: module_path/mod.paw
-        buf = std.ArrayList(u8).init(self.allocator);
-        try buf.appendSlice(module_path);
-        try buf.appendSlice("/mod.paw");
-        const file2 = try buf.toOwnedSlice();
+        buf = std.ArrayList(u8){};
+        try buf.appendSlice(self.allocator, module_path);
+        try buf.appendSlice(self.allocator, "/mod.paw");
+        const file2 = try buf.toOwnedSlice(self.allocator);
         
         if (std.fs.cwd().access(file2, .{})) {
             return file2;

@@ -119,15 +119,14 @@ pub const Parser = struct {
         
         // 第二遍：完整解析（现在 known_types 已经有所有类型了）
         // 🔧 使用 arena allocator - 所有 AST 内存会自动释放
-        const arena_alloc = self.arenaAllocator();
-        var declarations = std.ArrayList(ast.TopLevelDecl).init(arena_alloc);
+        var declarations: std.ArrayList(ast.TopLevelDecl) = .{};
         
         while (!self.isAtEnd()) {
             const decl = try self.parseTopLevelDecl();
-            try declarations.append(decl);
+            try declarations.append(self.arenaAllocator(), decl);
         }
         
-        const decls_slice = try declarations.toOwnedSlice();
+        const decls_slice = try declarations.toOwnedSlice(self.arenaAllocator());
         return ast.Program{
             .declarations = decls_slice,
         };
@@ -162,11 +161,11 @@ pub const Parser = struct {
         const name = try self.consume(.identifier);
         
         // 解析泛型参数
-        var type_params = std.ArrayList([]const u8).init(self.arenaAllocator());
+        var type_params = std.ArrayList([]const u8){};
         if (self.match(.lt)) {
             while (!self.check(.gt)) {
                 const type_param = try self.consume(.identifier);
-                try type_params.append(type_param.lexeme);
+                try type_params.append(self.arenaAllocator(), type_param.lexeme);
                 if (!self.match(.comma)) break;
             }
             _ = try self.consume(.gt);
@@ -174,7 +173,7 @@ pub const Parser = struct {
 
         // 解析参数
         _ = try self.consume(.lparen);
-        var params = std.ArrayList(ast.Param).init(self.arenaAllocator());
+        var params = std.ArrayList(ast.Param){};
         
         while (!self.check(.rparen) and !self.isAtEnd()) {
             // 🆕 支持 self 和 mut self 参数
@@ -191,11 +190,11 @@ pub const Parser = struct {
                     if (struct_context) |ctx| {
                         if (ctx.type_params.len > 0) {
                             // 泛型struct: Vec<T>
-                            var type_args = std.ArrayList(ast.Type).init(self.arenaAllocator());
+                            var type_args = std.ArrayList(ast.Type){};
                             for (ctx.type_params) |tp| {
-                                try type_args.append(ast.Type{ .generic = tp });
+                                try type_args.append(self.arenaAllocator(), ast.Type{ .generic = tp });
                             }
-                            const type_args_slice = try type_args.toOwnedSlice();
+                            const type_args_slice = try type_args.toOwnedSlice(self.arenaAllocator());
                             param_type = ast.Type{
                                 .generic_instance = .{
                                     .name = ctx.name,
@@ -222,14 +221,14 @@ pub const Parser = struct {
                 if (struct_context) |ctx| {
                     if (ctx.type_params.len > 0) {
                         // 泛型struct: Vec<T>
-                        var type_args = std.ArrayList(ast.Type).init(self.arenaAllocator());
+                        var type_args = std.ArrayList(ast.Type){};
                         for (ctx.type_params) |tp| {
-                            try type_args.append(ast.Type{ .generic = tp });
+                            try type_args.append(self.arenaAllocator(), ast.Type{ .generic = tp });
                         }
                         param_type = ast.Type{
                             .generic_instance = .{
                                 .name = ctx.name,
-                                .type_args = try type_args.toOwnedSlice(),
+                                .type_args = try type_args.toOwnedSlice(self.arenaAllocator()),
                             },
                         };
                     } else {
@@ -247,7 +246,7 @@ pub const Parser = struct {
                 param_type = try self.parseType();
             }
             
-            try params.append(ast.Param{
+            try params.append(self.arenaAllocator(), ast.Param{
                 .name = param_name,
                 .type = param_type,
                 .is_mut = param_is_mut,  // 🆕 v0.1.6: 记录可变性
@@ -269,8 +268,8 @@ pub const Parser = struct {
 
         return ast.FunctionDecl{
             .name = name.lexeme,
-            .type_params = try type_params.toOwnedSlice(),
-            .params = try params.toOwnedSlice(),
+            .type_params = try type_params.toOwnedSlice(self.arenaAllocator()),
+            .params = try params.toOwnedSlice(self.arenaAllocator()),
             .return_type = return_type,
             .body = body,
             .is_public = is_public,
@@ -283,11 +282,11 @@ pub const Parser = struct {
         const name = try self.consume(.identifier);
         
         // 解析泛型参数
-        var type_params = std.ArrayList([]const u8).init(self.arenaAllocator());
+        var type_params = std.ArrayList([]const u8){};
         if (self.match(.lt)) {
             while (!self.check(.gt)) {
                 const type_param = try self.consume(.identifier);
-                try type_params.append(type_param.lexeme);
+                try type_params.append(self.arenaAllocator(), type_param.lexeme);
                 if (!self.match(.comma)) break;
             }
             _ = try self.consume(.gt);
@@ -304,8 +303,8 @@ pub const Parser = struct {
         if (std.mem.eql(u8, type_kind, "struct")) {
             _ = try self.consume(.lbrace);
             
-            var fields = std.ArrayList(ast.StructField).init(self.arenaAllocator());
-            var methods = std.ArrayList(ast.FunctionDecl).init(self.arenaAllocator());
+            var fields = std.ArrayList(ast.StructField){};
+            var methods = std.ArrayList(ast.FunctionDecl){};
             
             while (!self.check(.rbrace) and !self.isAtEnd()) {
                 const field_is_pub = self.match(.keyword_pub);
@@ -318,14 +317,14 @@ pub const Parser = struct {
                         .name = name.lexeme,
                         .type_params = type_params.items,
                     });
-                    try methods.append(method);
+                    try methods.append(self.arenaAllocator(), method);
                 } else {
                     // 字段定义
                     const field_name = try self.consume(.identifier);
                     _ = try self.consume(.colon);
                     const field_type = try self.parseType();
                     
-                    try fields.append(ast.StructField{
+                    try fields.append(self.arenaAllocator(), ast.StructField{
                         .name = field_name.lexeme,
                         .type = field_type,
                         .is_public = field_is_pub,
@@ -339,14 +338,14 @@ pub const Parser = struct {
             _ = try self.consume(.rbrace);
             
             kind = ast.TypeDeclKind{ .struct_type = .{
-                .fields = try fields.toOwnedSlice(),
-                .methods = try methods.toOwnedSlice(),
+                .fields = try fields.toOwnedSlice(self.arenaAllocator()),
+                .methods = try methods.toOwnedSlice(self.arenaAllocator()),
             }};
         } else if (std.mem.eql(u8, type_kind, "enum")) {
             _ = try self.consume(.lbrace);
             
-            var variants = std.ArrayList(ast.EnumVariant).init(self.arenaAllocator());
-            var methods = std.ArrayList(ast.FunctionDecl).init(self.arenaAllocator());
+            var variants = std.ArrayList(ast.EnumVariant){};
+            var methods = std.ArrayList(ast.FunctionDecl){};
             
             while (!self.check(.rbrace) and !self.isAtEnd()) {
                 const variant_is_pub = self.match(.keyword_pub);
@@ -358,23 +357,23 @@ pub const Parser = struct {
                         .name = name.lexeme,
                         .type_params = type_params.items,
                     });
-                    try methods.append(method);
+                    try methods.append(self.arenaAllocator(), method);
                 } else {
                     const variant_name = try self.consume(.identifier);
                     
-                    var var_fields = std.ArrayList(ast.Type).init(self.arenaAllocator());
+                    var var_fields = std.ArrayList(ast.Type){};
                     if (self.match(.lparen)) {
                         while (!self.check(.rparen) and !self.isAtEnd()) {
                             const field_type = try self.parseType();
-                            try var_fields.append(field_type);
+                            try var_fields.append(self.arenaAllocator(), field_type);
                             if (!self.match(.comma)) break;
                         }
                         _ = try self.consume(.rparen);
                     }
                     
-                    try variants.append(ast.EnumVariant{
+                    try variants.append(self.arenaAllocator(), ast.EnumVariant{
                         .name = variant_name.lexeme,
-                        .fields = try var_fields.toOwnedSlice(),
+                        .fields = try var_fields.toOwnedSlice(self.arenaAllocator()),
                     });
                     
                     _ = self.match(.comma);
@@ -384,19 +383,19 @@ pub const Parser = struct {
             _ = try self.consume(.rbrace);
             
             kind = ast.TypeDeclKind{ .enum_type = .{
-                .variants = try variants.toOwnedSlice(),
-                .methods = try methods.toOwnedSlice(),
+                .variants = try variants.toOwnedSlice(self.arenaAllocator()),
+                .methods = try methods.toOwnedSlice(self.arenaAllocator()),
             }};
         } else if (std.mem.eql(u8, type_kind, "trait")) {
             _ = try self.consume(.lbrace);
             
-            var method_sigs = std.ArrayList(ast.FunctionSignature).init(self.arenaAllocator());
+            var method_sigs = std.ArrayList(ast.FunctionSignature){};
             while (!self.check(.rbrace) and !self.isAtEnd()) {
                 _ = try self.consume(.keyword_fn);
                 const method_name = try self.consume(.identifier);
                 
                 _ = try self.consume(.lparen);
-                var params = std.ArrayList(ast.Param).init(self.arenaAllocator());
+                var params = std.ArrayList(ast.Param){};
                 while (!self.check(.rparen) and !self.isAtEnd()) {
                     // 🆕 支持 self 和 mut self
                     var param_name: []const u8 = undefined;
@@ -424,7 +423,7 @@ pub const Parser = struct {
                         param_type = try self.parseType();
                     }
                     
-                    try params.append(ast.Param{
+                    try params.append(self.arenaAllocator(), ast.Param{
                         .name = param_name,
                         .type = param_type,
                         .is_mut = param_is_mut,  // 🆕 v0.1.6
@@ -437,9 +436,9 @@ pub const Parser = struct {
                 _ = try self.consume(.arrow);
                 const return_type = try self.parseType();
                 
-                try method_sigs.append(ast.FunctionSignature{
+                try method_sigs.append(self.arenaAllocator(), ast.FunctionSignature{
                     .name = method_name.lexeme,
-                    .params = try params.toOwnedSlice(),
+                    .params = try params.toOwnedSlice(self.arenaAllocator()),
                     .return_type = return_type,
                 });
             }
@@ -447,7 +446,7 @@ pub const Parser = struct {
             _ = try self.consume(.rbrace);
             
             kind = ast.TypeDeclKind{ .trait_type = .{
-                .methods = try method_sigs.toOwnedSlice(),
+                .methods = try method_sigs.toOwnedSlice(self.arenaAllocator()),
             }};
         } else {
             return error.ExpectedTypeKind;
@@ -455,7 +454,7 @@ pub const Parser = struct {
         
         return ast.TypeDecl{
             .name = name.lexeme,
-            .type_params = try type_params.toOwnedSlice(),
+            .type_params = try type_params.toOwnedSlice(self.arenaAllocator()),
             .kind = kind,
             .is_public = is_public,
         };
@@ -465,11 +464,11 @@ pub const Parser = struct {
         const name = try self.consume(.identifier);
         
         // 解析泛型参数
-        var type_params = std.ArrayList([]const u8).init(self.arenaAllocator());
+        var type_params = std.ArrayList([]const u8){};
         if (self.match(.lt)) {
             while (!self.check(.gt)) {
                 const type_param = try self.consume(.identifier);
-                try type_params.append(type_param.lexeme);
+                try type_params.append(self.arenaAllocator(), type_param.lexeme);
                 if (!self.match(.comma)) break;
             }
             _ = try self.consume(.gt);
@@ -477,8 +476,8 @@ pub const Parser = struct {
 
         _ = try self.consume(.lbrace);
         
-        var fields = std.ArrayList(ast.StructField).init(self.arenaAllocator());
-        var methods = std.ArrayList(ast.FunctionDecl).init(self.arenaAllocator());
+        var fields = std.ArrayList(ast.StructField){};
+        var methods = std.ArrayList(ast.FunctionDecl){};
         
         while (!self.check(.rbrace) and !self.isAtEnd()) {
             const field_is_pub = self.match(.keyword_pub);
@@ -486,13 +485,13 @@ pub const Parser = struct {
             if (self.check(.keyword_fn)) {
                 _ = self.advance();
                 const method = try self.parseFunctionDecl(field_is_pub, false);
-                try methods.append(method);
+                try methods.append(self.arenaAllocator(), method);
             } else {
                 const field_name = try self.consume(.identifier);
                 _ = try self.consume(.colon);
                 const field_type = try self.parseType();
                 
-                try fields.append(ast.StructField{
+                try fields.append(self.arenaAllocator(), ast.StructField{
                     .name = field_name.lexeme,
                     .type = field_type,
                     .is_public = field_is_pub,
@@ -507,9 +506,9 @@ pub const Parser = struct {
 
         return ast.StructDecl{
             .name = name.lexeme,
-            .type_params = try type_params.toOwnedSlice(),
-            .fields = try fields.toOwnedSlice(),
-            .methods = try methods.toOwnedSlice(),
+            .type_params = try type_params.toOwnedSlice(self.arenaAllocator()),
+            .fields = try fields.toOwnedSlice(self.arenaAllocator()),
+            .methods = try methods.toOwnedSlice(self.arenaAllocator()),
             .is_public = is_public,
         };
     }
@@ -518,11 +517,11 @@ pub const Parser = struct {
         const name = try self.consume(.identifier);
         
         // 解析泛型参数
-        var type_params = std.ArrayList([]const u8).init(self.arenaAllocator());
+        var type_params = std.ArrayList([]const u8){};
         if (self.match(.lt)) {
             while (!self.check(.gt)) {
                 const type_param = try self.consume(.identifier);
-                try type_params.append(type_param.lexeme);
+                try type_params.append(self.arenaAllocator(), type_param.lexeme);
                 if (!self.match(.comma)) break;
             }
             _ = try self.consume(.gt);
@@ -530,8 +529,8 @@ pub const Parser = struct {
 
         _ = try self.consume(.lbrace);
         
-        var variants = std.ArrayList(ast.EnumVariant).init(self.arenaAllocator());
-        var methods = std.ArrayList(ast.FunctionDecl).init(self.arenaAllocator());
+        var variants = std.ArrayList(ast.EnumVariant){};
+        var methods = std.ArrayList(ast.FunctionDecl){};
         
         while (!self.check(.rbrace) and !self.isAtEnd()) {
             const variant_is_pub = self.match(.keyword_pub);
@@ -539,23 +538,23 @@ pub const Parser = struct {
             if (self.check(.keyword_fn)) {
                 _ = self.advance();
                 const method = try self.parseFunctionDecl(variant_is_pub, false);
-                try methods.append(method);
+                try methods.append(self.arenaAllocator(), method);
             } else {
                 const variant_name = try self.consume(.identifier);
                 
-                var fields = std.ArrayList(ast.Type).init(self.arenaAllocator());
+                var fields = std.ArrayList(ast.Type){};
                 if (self.match(.lparen)) {
                     while (!self.check(.rparen) and !self.isAtEnd()) {
                         const field_type = try self.parseType();
-                        try fields.append(field_type);
+                        try fields.append(self.arenaAllocator(), field_type);
                         if (!self.match(.comma)) break;
                     }
                     _ = try self.consume(.rparen);
                 }
                 
-                try variants.append(ast.EnumVariant{
+                try variants.append(self.arenaAllocator(), ast.EnumVariant{
                     .name = variant_name.lexeme,
-                    .fields = try fields.toOwnedSlice(),
+                    .fields = try fields.toOwnedSlice(self.arenaAllocator()),
                 });
                 
                 _ = self.match(.comma);
@@ -566,9 +565,9 @@ pub const Parser = struct {
 
         return ast.EnumDecl{
             .name = name.lexeme,
-            .type_params = try type_params.toOwnedSlice(),
-            .variants = try variants.toOwnedSlice(),
-            .methods = try methods.toOwnedSlice(),
+            .type_params = try type_params.toOwnedSlice(self.arenaAllocator()),
+            .variants = try variants.toOwnedSlice(self.arenaAllocator()),
+            .methods = try methods.toOwnedSlice(self.arenaAllocator()),
             .is_public = is_public,
         };
     }
@@ -577,11 +576,11 @@ pub const Parser = struct {
         const name = try self.consume(.identifier);
         
         // 解析泛型参数
-        var type_params = std.ArrayList([]const u8).init(self.arenaAllocator());
+        var type_params = std.ArrayList([]const u8){};
         if (self.match(.lt)) {
             while (!self.check(.gt)) {
                 const type_param = try self.consume(.identifier);
-                try type_params.append(type_param.lexeme);
+                try type_params.append(self.arenaAllocator(), type_param.lexeme);
                 if (!self.match(.comma)) break;
             }
             _ = try self.consume(.gt);
@@ -589,13 +588,13 @@ pub const Parser = struct {
 
         _ = try self.consume(.lbrace);
         
-        var methods = std.ArrayList(ast.FunctionSignature).init(self.arenaAllocator());
+        var methods = std.ArrayList(ast.FunctionSignature){};
         while (!self.check(.rbrace) and !self.isAtEnd()) {
             _ = try self.consume(.keyword_fn);
             const method_name = try self.consume(.identifier);
             
             _ = try self.consume(.lparen);
-            var params = std.ArrayList(ast.Param).init(self.arenaAllocator());
+            var params = std.ArrayList(ast.Param){};
             
             while (!self.check(.rparen) and !self.isAtEnd()) {
                 // 🆕 支持 self 和 mut self
@@ -624,7 +623,7 @@ pub const Parser = struct {
                     param_type = try self.parseType();
                 }
                 
-                try params.append(ast.Param{
+                try params.append(self.arenaAllocator(), ast.Param{
                     .name = param_name,
                     .type = param_type,
                     .is_mut = param_is_mut,  // 🆕 v0.1.6
@@ -638,9 +637,9 @@ pub const Parser = struct {
             const return_type = try self.parseType();
             _ = try self.consume(.semicolon);
             
-            try methods.append(ast.FunctionSignature{
+            try methods.append(self.arenaAllocator(), ast.FunctionSignature{
                 .name = method_name.lexeme,
-                .params = try params.toOwnedSlice(),
+                .params = try params.toOwnedSlice(self.arenaAllocator()),
                 .return_type = return_type,
             });
         }
@@ -649,8 +648,8 @@ pub const Parser = struct {
 
         return ast.TraitDecl{
             .name = name.lexeme,
-            .type_params = try type_params.toOwnedSlice(),
-            .methods = try methods.toOwnedSlice(),
+            .type_params = try type_params.toOwnedSlice(self.arenaAllocator()),
+            .methods = try methods.toOwnedSlice(self.arenaAllocator()),
             .is_public = is_public,
         };
     }
@@ -659,11 +658,11 @@ pub const Parser = struct {
         const trait_name_tok = try self.consume(.identifier);
         
         // 解析类型参数
-        var type_args = std.ArrayList(ast.Type).init(self.arenaAllocator());
+        var type_args = std.ArrayList(ast.Type){};
         if (self.match(.lt)) {
             while (!self.check(.gt)) {
                 const type_arg = try self.parseType();
-                try type_args.append(type_arg);
+                try type_args.append(self.arenaAllocator(), type_arg);
                 if (!self.match(.comma)) break;
             }
             _ = try self.consume(.gt);
@@ -671,19 +670,19 @@ pub const Parser = struct {
 
         _ = try self.consume(.lbrace);
         
-        var methods = std.ArrayList(ast.FunctionDecl).init(self.arenaAllocator());
+        var methods = std.ArrayList(ast.FunctionDecl){};
         while (!self.check(.rbrace) and !self.isAtEnd()) {
             const func = try self.parseFunctionDecl(false, false);
-            try methods.append(func);
+            try methods.append(self.arenaAllocator(), func);
         }
         
         _ = try self.consume(.rbrace);
 
         return ast.ImplDecl{
             .trait_name = trait_name_tok.lexeme,
-            .type_args = try type_args.toOwnedSlice(),
+            .type_args = try type_args.toOwnedSlice(self.arenaAllocator()),
             .target_type = ast.Type.void, // 简化处�?
-            .methods = try methods.toOwnedSlice(),
+            .methods = try methods.toOwnedSlice(self.arenaAllocator()),
         };
     }
 
@@ -692,35 +691,35 @@ pub const Parser = struct {
         // 1. import math.add;           (单项导入)
         // 2. import math.{add, sub};    (多项导入)
         
-        var path_parts = std.ArrayList([]const u8).init(self.arenaAllocator());
-        defer path_parts.deinit();
+        var path_parts = std.ArrayList([]const u8){};
+        defer path_parts.deinit(self.arenaAllocator());
         
         // 第一个标识符
         const first = try self.consume(.identifier);
-        try path_parts.append(first.lexeme);
+        try path_parts.append(self.arenaAllocator(), first.lexeme);
         
         // 解析 .identifier 链，直到遇到 { 或 ;
         while (self.match(.dot) and !self.check(.lbrace)) {
             const part = try self.consume(.identifier);
-            try path_parts.append(part.lexeme);
+            try path_parts.append(self.arenaAllocator(), part.lexeme);
         }
         
         // 构建module_path
-        var module_path = std.ArrayList(u8).init(self.arenaAllocator());
+        var module_path = std.ArrayList(u8){};
         for (path_parts.items, 0..) |part, i| {
-            if (i > 0) try module_path.append('/');
-            try module_path.appendSlice(part);
+            if (i > 0) try module_path.append(self.arenaAllocator(), '/');
+            try module_path.appendSlice(self.arenaAllocator(), part);
         }
-        const module_path_owned = try module_path.toOwnedSlice();
+        const module_path_owned = try module_path.toOwnedSlice(self.arenaAllocator());
         
         // 检查是否是多项导入
         if (self.match(.lbrace)) {
             // 多项导入：import math.{add, sub, Vec2}
-            var items = std.ArrayList([]const u8).init(self.arenaAllocator());
+            var items = std.ArrayList([]const u8){};
             
             while (!self.check(.rbrace)) {
                 const item = try self.consume(.identifier);
-                try items.append(item.lexeme);
+                try items.append(self.arenaAllocator(), item.lexeme);
                 
                 if (!self.match(.comma)) {
                     break;
@@ -732,7 +731,7 @@ pub const Parser = struct {
             
             return ast.ImportDecl{
                 .module_path = module_path_owned,
-                .items = .{ .multiple = try items.toOwnedSlice() },
+                .items = .{ .multiple = try items.toOwnedSlice(self.arenaAllocator()) },
             };
         } else {
             // 单项导入：import math.add;
@@ -745,16 +744,16 @@ pub const Parser = struct {
             
             // 重新构建module_path（去掉最后一个部分）
             self.allocator.free(module_path_owned);
-            var module_path2 = std.ArrayList(u8).init(self.arenaAllocator());
+            var module_path2 = std.ArrayList(u8){};
             for (path_parts.items[0..path_parts.items.len - 1], 0..) |part, i| {
-                if (i > 0) try module_path2.append('/');
-                try module_path2.appendSlice(part);
+                if (i > 0) try module_path2.append(self.arenaAllocator(), '/');
+                try module_path2.appendSlice(self.arenaAllocator(), part);
             }
             
             _ = self.match(.semicolon);
             
             return ast.ImportDecl{
-                .module_path = try module_path2.toOwnedSlice(),
+                .module_path = try module_path2.toOwnedSlice(self.arenaAllocator()),
                 .items = .{ .single = item_name },
             };
         }
@@ -814,10 +813,10 @@ pub const Parser = struct {
             
             // 检查是否有泛型参数
             if (self.match(.lt)) {
-                var type_args = std.ArrayList(ast.Type).init(self.arenaAllocator());
+                var type_args = std.ArrayList(ast.Type){};
                 while (!self.check(.gt)) {
                     const type_arg = try self.parseType();
-                    try type_args.append(type_arg);
+                    try type_args.append(self.arenaAllocator(), type_arg);
                     if (!self.match(.comma)) break;
                 }
                 _ = try self.consume(.gt);
@@ -825,7 +824,7 @@ pub const Parser = struct {
                 return ast.Type{
                     .generic_instance = .{
                         .name = name.lexeme,
-                        .type_args = try type_args.toOwnedSlice(),
+                        .type_args = try type_args.toOwnedSlice(self.arenaAllocator()),
                     },
                 };
             }
@@ -837,14 +836,14 @@ pub const Parser = struct {
     }
 
     fn parseStmtList(self: *Parser) (std.mem.Allocator.Error || error{UnexpectedToken,ExpectedType,ExpectedPattern,InvalidCharacter,Overflow})![]ast.Stmt {
-        var stmts = std.ArrayList(ast.Stmt).init(self.arenaAllocator());
+        var stmts = std.ArrayList(ast.Stmt){};
         
         while (!self.check(.rbrace) and !self.isAtEnd()) {
             const stmt = try self.parseStmt();
-            try stmts.append(stmt);
+            try stmts.append(self.arenaAllocator(), stmt);
         }
         
-        return try stmts.toOwnedSlice();
+        return try stmts.toOwnedSlice(self.arenaAllocator());
     }
 
     // ============================================================================
@@ -1050,7 +1049,7 @@ pub const Parser = struct {
         if (self.match(.keyword_is)) {
             _ = try self.consume(.lbrace);
             
-            var arms = std.ArrayList(ast.IsArm).init(self.arenaAllocator());
+            var arms = std.ArrayList(ast.IsArm){};
             
             while (!self.check(.rbrace) and !self.isAtEnd()) {
                 const pattern = try self.parsePattern();
@@ -1064,7 +1063,7 @@ pub const Parser = struct {
                 _ = try self.consume(.fat_arrow);
                 const body = try self.parseExpr();
                 
-                try arms.append(ast.IsArm{
+                try arms.append(self.arenaAllocator(), ast.IsArm{
                     .pattern = pattern,
                     .guard = guard,
                     .body = body,
@@ -1082,7 +1081,7 @@ pub const Parser = struct {
             return ast.Expr{
                 .is_expr = .{
                     .value = value_ptr,
-                    .arms = try arms.toOwnedSlice(),
+                    .arms = try arms.toOwnedSlice(self.arenaAllocator()),
                 },
             };
         }
@@ -1339,11 +1338,11 @@ pub const Parser = struct {
         while (true) {
             if (self.match(.lparen)) {
                 // 函数调用
-                var args = std.ArrayList(ast.Expr).init(self.arenaAllocator());
+                var args = std.ArrayList(ast.Expr){};
                 
                 while (!self.check(.rparen) and !self.isAtEnd()) {
                     const arg = try self.parseExpr();
-                    try args.append(arg);
+                    try args.append(self.arenaAllocator(), arg);
                     if (!self.match(.comma)) break;
                 }
                 
@@ -1355,7 +1354,7 @@ pub const Parser = struct {
                 expr = ast.Expr{
                     .call = .{
                         .callee = callee,
-                        .args = try args.toOwnedSlice(),
+                        .args = try args.toOwnedSlice(self.arenaAllocator()),
                         .type_args = &[_]ast.Type{},
                     },
                 };
@@ -1477,18 +1476,18 @@ pub const Parser = struct {
         
         // 🆕 数组字面量 [1, 2, 3]
         if (self.match(.lbracket)) {
-            var elements = std.ArrayList(ast.Expr).init(self.arenaAllocator());
+            var elements = std.ArrayList(ast.Expr){};
             
             while (!self.check(.rbracket) and !self.isAtEnd()) {
                 const elem = try self.parseExpr();
-                try elements.append(elem);
+                try elements.append(self.arenaAllocator(), elem);
                 if (!self.match(.comma)) break;
             }
             
             _ = try self.consume(.rbracket);
             
             return ast.Expr{
-                .array_literal = try elements.toOwnedSlice(),
+                .array_literal = try elements.toOwnedSlice(self.arenaAllocator()),
             };
         }
         
@@ -1500,10 +1499,10 @@ pub const Parser = struct {
             const is_generic = self.check(.lt) and self.isGenericStart();
             
             if (is_generic and self.match(.lt)) {
-                var type_args = std.ArrayList(ast.Type).init(self.arenaAllocator());
+                var type_args = std.ArrayList(ast.Type){};
                 while (!self.check(.gt)) {
                     const type_arg = try self.parseType();
-                    try type_args.append(type_arg);
+                    try type_args.append(self.arenaAllocator(), type_arg);
                     if (!self.match(.comma)) break;
                 }
                 _ = try self.consume(.gt);
@@ -1513,10 +1512,10 @@ pub const Parser = struct {
                     const method_name = try self.consume(.identifier);
                     _ = try self.consume(.lparen);
                     
-                    var args = std.ArrayList(ast.Expr).init(self.arenaAllocator());
+                    var args = std.ArrayList(ast.Expr){};
                     while (!self.check(.rparen) and !self.isAtEnd()) {
                         const arg = try self.parseExpr();
-                        try args.append(arg);
+                        try args.append(self.arenaAllocator(), arg);
                         if (!self.match(.comma)) break;
                     }
                     _ = try self.consume(.rparen);
@@ -1524,23 +1523,23 @@ pub const Parser = struct {
                     return ast.Expr{
                         .static_method_call = .{
                             .type_name = name.lexeme,
-                            .type_args = try type_args.toOwnedSlice(),
+                            .type_args = try type_args.toOwnedSlice(self.arenaAllocator()),
                             .method_name = method_name.lexeme,
-                            .args = try args.toOwnedSlice(),
+                            .args = try args.toOwnedSlice(self.arenaAllocator()),
                         },
                     };
                 }
                 
                 // 结构体初始化
                 if (self.match(.lbrace)) {
-                    var fields = std.ArrayList(ast.StructFieldInit).init(self.arenaAllocator());
+                    var fields = std.ArrayList(ast.StructFieldInit){};
                     
                     while (!self.check(.rbrace) and !self.isAtEnd()) {
                         const field_name = try self.consume(.identifier);
                         _ = try self.consume(.colon);
                         const value = try self.parseExpr();
                         
-                        try fields.append(ast.StructFieldInit{
+                        try fields.append(self.arenaAllocator(), ast.StructFieldInit{
                             .name = field_name.lexeme,
                             .value = value,
                         });
@@ -1553,8 +1552,8 @@ pub const Parser = struct {
                     return ast.Expr{
                         .struct_init = .{
                             .type_name = name.lexeme,
-                            .type_args = try type_args.toOwnedSlice(),
-                            .fields = try fields.toOwnedSlice(),
+                            .type_args = try type_args.toOwnedSlice(self.arenaAllocator()),
+                            .fields = try fields.toOwnedSlice(self.arenaAllocator()),
                         },
                     };
                 }
@@ -1564,14 +1563,14 @@ pub const Parser = struct {
                 _ = self.advance();  // 消费 {
                 
                 // 非泛型结构体初始�?
-                var fields = std.ArrayList(ast.StructFieldInit).init(self.arenaAllocator());
+                var fields = std.ArrayList(ast.StructFieldInit){};
                 
                 while (!self.check(.rbrace) and !self.isAtEnd()) {
                     const field_name = try self.consume(.identifier);
                     _ = try self.consume(.colon);
                     const value = try self.parseExpr();
                     
-                    try fields.append(ast.StructFieldInit{
+                    try fields.append(self.arenaAllocator(), ast.StructFieldInit{
                         .name = field_name.lexeme,
                         .value = value,
                     });
@@ -1585,7 +1584,7 @@ pub const Parser = struct {
                     .struct_init = .{
                         .type_name = name.lexeme,
                         .type_args = &[_]ast.Type{},
-                        .fields = try fields.toOwnedSlice(),
+                        .fields = try fields.toOwnedSlice(self.arenaAllocator()),
                     },
                 };
             }
@@ -1629,14 +1628,14 @@ pub const Parser = struct {
         
         _ = try self.consume(.lbrace);
         
-        var arms = std.ArrayList(ast.MatchArm).init(self.arenaAllocator());
+        var arms = std.ArrayList(ast.MatchArm){};
         
         while (!self.check(.rbrace) and !self.isAtEnd()) {
             const pattern = try self.parsePattern();
             _ = try self.consume(.fat_arrow);
             const body = try self.parseExpr();
             
-            try arms.append(ast.MatchArm{
+            try arms.append(self.arenaAllocator(), ast.MatchArm{
                 .pattern = pattern,
                 .body = body,
             });
@@ -1652,7 +1651,7 @@ pub const Parser = struct {
         return ast.Expr{
             .match_expr = .{
                 .value = value_ptr,
-                .arms = try arms.toOwnedSlice(),
+                .arms = try arms.toOwnedSlice(self.arenaAllocator()),
             },
         };
     }
@@ -1677,11 +1676,11 @@ pub const Parser = struct {
             
             // 检查是否是变体模式
             if (self.match(.lparen)) {
-                var bindings = std.ArrayList([]const u8).init(self.arenaAllocator());
+                var bindings = std.ArrayList([]const u8){};
                 
                 while (!self.check(.rparen) and !self.isAtEnd()) {
                     const binding = try self.consume(.identifier);
-                    try bindings.append(binding.lexeme);
+                    try bindings.append(self.arenaAllocator(), binding.lexeme);
                     if (!self.match(.comma)) break;
                 }
                 
@@ -1690,7 +1689,7 @@ pub const Parser = struct {
                 return ast.Pattern{
                     .variant = .{
                         .name = name.lexeme,
-                        .bindings = try bindings.toOwnedSlice(),
+                        .bindings = try bindings.toOwnedSlice(self.arenaAllocator()),
                     },
                 };
             }
@@ -1799,7 +1798,7 @@ pub const Parser = struct {
     
     // 🆕 解析字符串插值
     fn parseStringInterpolation(self: *Parser, str: []const u8) !ast.Expr {
-        var parts = std.ArrayList(ast.StringInterpPart).init(self.arenaAllocator());
+        var parts = std.ArrayList(ast.StringInterpPart){};
         
         var i: usize = 0;
         var literal_start: usize = 0;
@@ -1808,7 +1807,7 @@ pub const Parser = struct {
             if (str[i] == '$') {
                 // 添加之前的字面量部分
                 if (i > literal_start) {
-                    try parts.append(ast.StringInterpPart{
+                    try parts.append(self.arenaAllocator(), ast.StringInterpPart{
                         .literal = str[literal_start..i],
                     });
                 }
@@ -1833,7 +1832,7 @@ pub const Parser = struct {
                     
                     // 解析表达式（简化：暂时只支持标识符）
                     const expr = ast.Expr{ .identifier = expr_str };
-                    try parts.append(ast.StringInterpPart{ .expr = expr });
+                    try parts.append(self.arenaAllocator(), ast.StringInterpPart{ .expr = expr });
                     
                     literal_start = i;
                 } else {
@@ -1845,7 +1844,7 @@ pub const Parser = struct {
                     
                     const var_name = str[var_start..i];
                     const expr = ast.Expr{ .identifier = var_name };
-                    try parts.append(ast.StringInterpPart{ .expr = expr });
+                    try parts.append(self.arenaAllocator(), ast.StringInterpPart{ .expr = expr });
                     
                     literal_start = i;
                 }
@@ -1856,14 +1855,14 @@ pub const Parser = struct {
         
         // 添加最后的字面量部分
         if (literal_start < str.len) {
-            try parts.append(ast.StringInterpPart{
+            try parts.append(self.arenaAllocator(), ast.StringInterpPart{
                 .literal = str[literal_start..],
             });
         }
         
         return ast.Expr{
             .string_interp = .{
-                .parts = try parts.toOwnedSlice(),
+                .parts = try parts.toOwnedSlice(self.arenaAllocator()),
             },
         };
     }
