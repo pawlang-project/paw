@@ -44,38 +44,41 @@ jobs:
           arch: armv7
           distro: ubuntu22.04
           
+          dockerRunArgs: |
+            --volume "${PWD}:/workspace"
+          
           install: |
-            apt-get update -q -y
-            apt-get install -q -y wget curl xz-utils lsb-release software-properties-common gnupg
+            apt-get update
+            apt-get install -y wget xz-utils
+          
+          run: |
+            cd /workspace
             
             echo "📦 Installing Zig 0.15.1 for armv7..."
             wget -q https://ziglang.org/download/0.15.1/zig-linux-armv7a-0.15.1.tar.xz
             tar -xf zig-linux-armv7a-0.15.1.tar.xz
-            cp -r zig-linux-armv7a-0.15.1/* /usr/local/
+            export PATH=$PWD/zig-linux-armv7a-0.15.1:$PATH
             
-            echo "📦 Installing LLVM 19 for armv7..."
-            wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-            echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" | tee /etc/apt/sources.list.d/llvm.list
-            apt-get update
-            apt-get install -y llvm-19 llvm-19-dev clang-19 || echo "LLVM install attempted"
-          
-          run: |
-            cd /root
+            echo "📦 Attempting to install LLVM 19..."
+            wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - || true
+            echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" >> /etc/apt/sources.list
+            apt-get update || true
+            apt-get install -y llvm-19 llvm-19-dev clang-19 || echo "⚠️ LLVM not available for armv7"
             
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "🔨 Building PawLang for ARM32 with LLVM..."
+            echo "🔨 Building PawLang for ARM32..."
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             zig version
-            llvm-config-19 --version || echo "LLVM not available"
+            llvm-config-19 --version || echo "⚠️ LLVM not available"
             
             zig build
             
             echo "✅ Build successful!"
             
-            # Check if binary exists and has LLVM
+            # Check binary
             ls -lh zig-out/bin/pawc
-            ldd zig-out/bin/pawc | grep -i llvm || echo "No LLVM linkage"
+            ldd zig-out/bin/pawc | grep -i llvm || echo "No LLVM (expected if LLVM unavailable)"
       
       - name: Build x86 with LLVM (Docker)
         if: matrix.arch == 'x86'
@@ -83,7 +86,7 @@ jobs:
           docker run --rm --platform linux/386 \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            i386/ubuntu:22.04 \
+            ubuntu:22.04 \
             bash -c '
               set -e
               
