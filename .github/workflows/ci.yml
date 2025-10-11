@@ -54,10 +54,10 @@ jobs:
           run: |
             cd /workspace
             
-            echo "📦 Installing Zig 0.15.1 for armv7..."
-            wget -q https://ziglang.org/download/0.15.1/zig-linux-armv7a-0.15.1.tar.xz
-            tar -xf zig-linux-armv7a-0.15.1.tar.xz
-            export PATH=$PWD/zig-linux-armv7a-0.15.1:$PATH
+            echo "📦 Installing Zig 0.15.1 for arm..."
+            wget -q https://ziglang.org/download/0.15.1/zig-linux-arm-0.15.1.tar.xz
+            tar -xf zig-linux-arm-0.15.1.tar.xz
+            export PATH=$PWD/zig-linux-arm-0.15.1:$PATH
             
             echo "📦 Attempting to install LLVM 19..."
             wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - || true
