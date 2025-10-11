@@ -120,8 +120,13 @@ pub fn build(b: *std.Build) void {
             "LLVMCFGuard",
         };
         
-        for (llvm_libs) |lib| {
-            exe.linkSystemLibrary(lib);
+        // On Linux with llvm-config, skip static libs (use shared lib instead)
+        const use_llvm_static = !( target.result.os.tag == .linux and llvm_link_flags != null);
+        
+        if (use_llvm_static) {
+            for (llvm_libs) |lib| {
+                exe.linkSystemLibrary(lib);
+            }
         }
         
         // Platform-specific C++ runtime libraries (AFTER LLVM libraries)
