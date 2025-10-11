@@ -7,8 +7,13 @@ pub fn build(b: *std.Build) void {
     // 🆕 Build options for conditional compilation
     const build_options = b.addOptions();
     
-    // 🆕 选项：构建不含LLVM的轻量版本
-    const enable_llvm = b.option(bool, "enable-llvm", "Enable LLVM backend support (default: true)") orelse true;
+    // 🆕 LLVM后端是必须的，但可以选择不检测系统LLVM（用于测试）
+    const enable_llvm = b.option(bool, "enable-llvm", "Enable LLVM backend support (required: true)") orelse true;
+    
+    if (!enable_llvm) {
+        std.debug.print("❌ Error: LLVM backend is required for PawLang\n", .{});
+        std.debug.print("💡 Remove -Denable-llvm=false flag\n", .{});
+    }
     
     const main_mod = b.createModule(.{
         .root_source_file = .{ .cwd_relative = "src/main.zig" },
@@ -223,22 +228,54 @@ pub fn build(b: *std.Build) void {
 
     const install_artifact = b.addInstallArtifact(exe, .{});
     
-    // Windows: 自动复制LLVM DLL到输出目录
-    if (target.result.os.tag == .windows and has_llvm) {
-        const copy_dlls = b.addSystemCommand(&[_][]const u8{
-            "powershell",
-            "-Command",
-            "Copy-Item 'C:\\Program Files\\LLVM\\bin\\*.dll' 'zig-out\\bin\\' -ErrorAction SilentlyContinue; if ($?) { Write-Host '✅ LLVM DLLs copied to zig-out\\bin\\' }",
-        });
-        // DLL复制依赖于exe安装完成
-        copy_dlls.step.dependOn(&install_artifact.step);
+    // 🆕 Cross-platform: Auto-copy LLVM libraries to output directory (for distribution)
+    if (has_llvm) {
+        const copy_libs_step = switch (target.result.os.tag) {
+            .windows => blk: {
+                // Windows: Copy all DLL files
+                const cmd = b.addSystemCommand(&[_][]const u8{
+                    "powershell", "-Command",
+                    "Copy-Item 'C:\\Program Files\\LLVM\\bin\\*.dll' 'zig-out\\bin\\' -ErrorAction SilentlyContinue; if ($?) { Write-Host '✅ Copied LLVM DLLs' }",
+                });
+                cmd.step.dependOn(&install_artifact.step);
+                std.debug.print("\n💡 Windows: LLVM DLLs will be auto-copied to output directory\n", .{});
+                break :blk cmd;
+            },
+            .macos => blk: {
+                // macOS: Copy LLVM dylib files
+                const llvm_lib_path = if (target.result.cpu.arch == .aarch64)
+                    "/opt/homebrew/opt/llvm@19/lib"
+                else
+                    "/usr/local/opt/llvm@19/lib";
+                
+                const cmd = b.addSystemCommand(&[_][]const u8{
+                    "sh", "-c",
+                    b.fmt("mkdir -p zig-out/lib && cp -f {s}/libLLVM-C.dylib zig-out/lib/ 2>/dev/null && echo '✅ Copied LLVM libraries' || true", .{llvm_lib_path}),
+                });
+                cmd.step.dependOn(&install_artifact.step);
+                std.debug.print("\n💡 macOS: LLVM libraries will be auto-copied to zig-out/lib/\n", .{});
+                break :blk cmd;
+            },
+            .linux => blk: {
+                // Linux: Copy LLVM .so files
+                const cmd = b.addSystemCommand(&[_][]const u8{
+                    "sh", "-c",
+                    "mkdir -p zig-out/lib && cp -f /usr/lib/llvm-19/lib/libLLVM-*.so* zig-out/lib/ 2>/dev/null && echo '✅ Copied LLVM libraries' || cp -f /usr/lib/x86_64-linux-gnu/libLLVM-*.so* zig-out/lib/ 2>/dev/null && echo '✅ Copied LLVM libraries' || true",
+                });
+                cmd.step.dependOn(&install_artifact.step);
+                std.debug.print("\n💡 Linux: LLVM libraries will be auto-copied to zig-out/lib/\n", .{});
+                break :blk cmd;
+            },
+            else => null,
+        };
         
-        // 默认安装步骤包含DLL复制
-        b.getInstallStep().dependOn(&copy_dlls.step);
-        
-        std.debug.print("\n💡 Windows: LLVM DLL将自动复制到输出目录\n", .{});
+        if (copy_libs_step) |step| {
+            b.getInstallStep().dependOn(&step.step);
+        } else {
+            b.getInstallStep().dependOn(&install_artifact.step);
+        }
     } else {
-        // 非Windows或无LLVM: 只添加artifact安装
+        // 无LLVM: 只添加artifact安装
         b.getInstallStep().dependOn(&install_artifact.step);
     }
 
@@ -249,7 +286,7 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "运行 Paw 编译器");
+    const run_step = b.step("run", "Run Paw compiler");
     run_step.dependOn(&run_cmd.step);
     
     // 🆕 LLVM 编译流程步骤
@@ -303,11 +340,163 @@ pub fn build(b: *std.Build) void {
     const clean_llvm_step = b.step("clean-llvm", "Clean LLVM build artifacts");
     clean_llvm_step.dependOn(&clean_llvm.step);
     
-    // 🆕 便捷构建命令：显示轻量版提示
-    const lite_step = b.step("lite", "Show how to build pawc without LLVM (C backend only, zero dependencies)");
-    const lite_run = b.addSystemCommand(&[_][]const u8{
-        "echo",
-        "\n💡 To build a lightweight pawc without LLVM:\n   → zig build -Denable-llvm=false\n\nThis creates a pawc with only C backend - perfect for distribution!\n",
+    // 🆕 Help command for distribution
+    const help_dist = b.step("help-dist", "Show distribution packaging instructions");
+    const help_cmd = b.addSystemCommand(&[_][]const u8{
+        "sh", "-c",
+        "echo ''; echo '📦 PawLang Distribution Commands:'; echo ''; " ++
+        "echo '  zig build dist    - Prepare distribution files'; " ++
+        "echo '  zig build package - Create platform-specific archive'; " ++
+        "echo ''; echo '📋 Output:'; " ++
+        "echo '  • Windows: pawlang-windows.zip (~200MB with all DLLs)'; " ++
+        "echo '  • macOS:   pawlang-macos.tar.gz (~1MB compressed)'; " ++
+        "echo '  • Linux:   pawlang-linux.tar.gz (~1MB compressed)'; " ++
+        "echo ''; echo '✨ All packages include:'; " ++
+        "echo '  • Compiler executable'; " ++
+        "echo '  • LLVM libraries (bundled)'; " ++
+        "echo '  • Launcher script'; " ++
+        "echo '  • Examples + Documentation'; " ++
+        "echo '  • Both C and LLVM backends ready to use'; " ++
+        "echo ''",
     });
-    lite_step.dependOn(&lite_run.step);
+    help_dist.dependOn(&help_cmd.step);
+    
+    // 🆕 Create distribution package step
+    const dist_step = b.step("dist", "Create distribution package with all dependencies");
+    
+    if (has_llvm) {
+        // Copy examples, documentation and launcher scripts for distribution
+        const copy_dist_files = switch (target.result.os.tag) {
+            .windows => b.addSystemCommand(&[_][]const u8{
+                "powershell", "-Command",
+                "if (Test-Path zig-out\\examples) { Remove-Item -Recurse zig-out\\examples }; " ++
+                "Copy-Item -Recurse examples zig-out\\examples; " ++
+                "Copy-Item README.md zig-out\\README.md -Force; " ++
+                "Copy-Item USAGE.md zig-out\\USAGE.md -Force; " ++
+                "Copy-Item LICENSE zig-out\\LICENSE -Force -ErrorAction SilentlyContinue; " ++
+                "Copy-Item scripts\\pawc.bat zig-out\\pawc.bat -Force; " ++
+                "Write-Host '✅ Copied examples, docs and launcher script'",
+            }),
+            else => b.addSystemCommand(&[_][]const u8{
+                "sh", "-c",
+                "rm -rf zig-out/examples && cp -r examples zig-out/examples && " ++
+                "cp README.md zig-out/README.md && " ++
+                "cp USAGE.md zig-out/USAGE.md && " ++
+                "cp LICENSE zig-out/LICENSE 2>/dev/null || true && " ++
+                "cp scripts/pawc.sh zig-out/pawc && chmod +x zig-out/pawc && " ++
+                "echo '✅ Copied examples, docs and launcher script'",
+            }),
+        };
+        copy_dist_files.step.dependOn(b.getInstallStep());
+        
+        // Platform-specific info display
+        const package_cmd = switch (target.result.os.tag) {
+            .windows => b.addSystemCommand(&[_][]const u8{
+                "powershell", "-Command", 
+                "Write-Host ''; Write-Host '📦 Windows Distribution Package Prepared'; " ++
+                "Write-Host ''; Write-Host 'Contents:'; " ++
+                "Write-Host '  • bin/pawc.exe (compiler)'; " ++
+                "Write-Host '  • bin/*.dll (LLVM libraries ~200MB)'; " ++
+                "Write-Host '  • pawc.bat (launcher script)'; " ++
+                "Write-Host '  • examples/ + documentation'; " ++
+                "Write-Host ''; " ++
+                "$dllCount = (Get-ChildItem zig-out\\bin\\*.dll | Measure-Object).Count; " ++
+                "Write-Host \"  ✅ Total: $dllCount DLL files bundled\"; " ++
+                "Write-Host ''; Write-Host '📂 Location: zig-out\\'; " ++
+                "Write-Host ''; Write-Host '🚀 Users run: pawc.bat file.paw'; " ++
+                "Write-Host '   (Both C and LLVM backends work out-of-the-box!)'; " ++
+                "Write-Host ''; Write-Host '💡 Next: Run \"zig build package\" to create .zip'",
+            }),
+            .macos => b.addSystemCommand(&[_][]const u8{
+                "sh", "-c",
+                "echo ''; echo '📦 macOS Distribution Package Prepared'; " ++
+                "echo ''; echo 'Contents:'; " ++
+                "echo '  • bin/pawc (compiler executable)'; " ++
+                "echo '  • lib/libLLVM-C.dylib (LLVM library)'; " ++
+                "echo '  • pawc (launcher script with auto-path setup)'; " ++
+                "echo '  • examples/ + documentation'; " ++
+                "echo ''; echo '📂 Location: zig-out/'; " ++
+                "echo ''; echo '🚀 Users run: ./pawc file.paw'; " ++
+                "echo '   (Both C and LLVM backends work automatically!)'; " ++
+                "echo ''; echo '💡 Next: Run \"zig build package\" to create .tar.gz'",
+            }),
+            .linux => b.addSystemCommand(&[_][]const u8{
+                "sh", "-c",
+                "echo ''; echo '📦 Linux Distribution Package Prepared'; " ++
+                "echo ''; echo 'Contents:'; " ++
+                "echo '  • bin/pawc (compiler executable)'; " ++
+                "echo '  • lib/*.so (LLVM libraries)'; " ++
+                "echo '  • pawc (launcher script with auto-path setup)'; " ++
+                "echo '  • examples/ + documentation'; " ++
+                "echo ''; echo '📂 Location: zig-out/'; " ++
+                "echo ''; echo '🚀 Users run: ./pawc file.paw'; " ++
+                "echo '   (Both C and LLVM backends work automatically!)'; " ++
+                "echo ''; echo '💡 Next: Run \"zig build package\" to create .tar.gz'",
+            }),
+            else => b.addSystemCommand(&[_][]const u8{ "echo", "Platform not supported for dist" }),
+        };
+        
+        package_cmd.step.dependOn(&copy_dist_files.step);
+        dist_step.dependOn(&package_cmd.step);
+        
+        // 🆕 Actual packaging step - Creates ready-to-distribute archive
+        const package_step = b.step("package", "Build and package for distribution (creates archive with all dependencies)");
+        const create_archive = switch (target.result.os.tag) {
+            .windows => b.addSystemCommand(&[_][]const u8{
+                "powershell", "-Command",
+                "Compress-Archive -Path zig-out\\bin,zig-out\\examples,zig-out\\README.md,zig-out\\USAGE.md,zig-out\\LICENSE,zig-out\\pawc.bat -DestinationPath pawlang-windows.zip -Force -ErrorAction SilentlyContinue; " ++
+                "Write-Host ''; Write-Host '✅ Created: pawlang-windows.zip'; " ++
+                "$size = (Get-Item pawlang-windows.zip).Length / 1MB; " ++
+                "Write-Host \"📦 Size: $([math]::Round($size, 2)) MB\"; " ++
+                "Write-Host ''; Write-Host '📋 Complete Package:'; " ++
+                "Write-Host '  • pawc.exe + All LLVM DLLs'; " ++
+                "Write-Host '  • Launcher script (pawc.bat)'; " ++
+                "Write-Host '  • Examples + Documentation'; " ++
+                "Write-Host '  • Both C and LLVM backends included'; " ++
+                "Write-Host ''; Write-Host '🚀 Users extract and run: pawc.bat hello.paw'; " ++
+                "Write-Host '   No installation needed!'"
+            }),
+            .macos => b.addSystemCommand(&[_][]const u8{
+                "sh", "-c",
+                "tar -czf pawlang-macos.tar.gz -C zig-out bin lib examples pawc README.md USAGE.md LICENSE 2>/dev/null || " ++
+                "tar -czf pawlang-macos.tar.gz -C zig-out bin lib examples pawc README.md USAGE.md; " ++
+                "echo ''; echo '✅ Created: pawlang-macos.tar.gz'; " ++
+                "ls -lh pawlang-macos.tar.gz | awk '{print \"📦 Size: \" $5}'; " ++
+                "echo ''; echo '📋 Complete Package:'; " ++
+                "echo '  • pawc + LLVM libraries'; " ++
+                "echo '  • Launcher script (auto-sets library path)'; " ++
+                "echo '  • Examples + Documentation'; " ++
+                "echo '  • Both C and LLVM backends included'; " ++
+                "echo ''; echo '🚀 Users extract and run: ./pawc hello.paw'; " ++
+                "echo '   No LLVM installation needed!'"
+            }),
+            .linux => b.addSystemCommand(&[_][]const u8{
+                "sh", "-c",
+                "tar -czf pawlang-linux.tar.gz -C zig-out bin lib examples pawc README.md USAGE.md LICENSE 2>/dev/null || " ++
+                "tar -czf pawlang-linux.tar.gz -C zig-out bin lib examples pawc README.md USAGE.md; " ++
+                "echo ''; echo '✅ Created: pawlang-linux.tar.gz'; " ++
+                "ls -lh pawlang-linux.tar.gz | awk '{print \"📦 Size: \" $5}'; " ++
+                "echo ''; echo '📋 Complete Package:'; " ++
+                "echo '  • pawc + LLVM libraries'; " ++
+                "echo '  • Launcher script (auto-sets library path)'; " ++
+                "echo '  • Examples + Documentation'; " ++
+                "echo '  • Both C and LLVM backends included'; " ++
+                "echo ''; echo '🚀 Users extract and run: ./pawc hello.paw'; " ++
+                "echo '   No LLVM installation needed!'"
+            }),
+            else => b.addSystemCommand(&[_][]const u8{ "echo", "Platform not supported" }),
+        };
+        create_archive.step.dependOn(&copy_dist_files.step);
+        package_step.dependOn(&create_archive.step);
+    } else {
+        const no_llvm_info = b.addSystemCommand(&[_][]const u8{
+            "sh", "-c",
+            "echo ''; echo '📦 Creating lightweight distribution (C backend only)...'; " ++
+            "echo '✅ Zero dependencies - single executable!'; " ++
+            "echo '📂 Location: zig-out/bin/pawc'; " ++
+            "echo ''; echo '💡 Just distribute the pawc executable'",
+        });
+        no_llvm_info.step.dependOn(b.getInstallStep());
+        dist_step.dependOn(&no_llvm_info.step);
+    }
 }
