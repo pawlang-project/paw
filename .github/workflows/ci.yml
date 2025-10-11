@@ -390,9 +390,9 @@ jobs:
       shell: powershell
       run: |
         Write-Host ""
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        Write-Host "📦 Testing distribution package..."
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        Write-Host "=========================================="
+        Write-Host "Testing distribution package..."
+        Write-Host "=========================================="
         
         # Rebuild with LLVM for packaging
         zig build package
@@ -485,7 +485,7 @@ jobs:
         Remove-Item -Recurse -Force $TEST_DIR
         
         Write-Host ""
-        Write-Host "Distribution package is self-contained!"
+        Write-Host "SUCCESS: Distribution package is self-contained!"
     
     - name: Summary
       run: |
