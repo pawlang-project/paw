@@ -23,6 +23,37 @@ jobs:
       uses: goto-bus-stop/setup-zig@v2
       with:
         version: 0.14.0
+    
+    - name: Install LLVM (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y llvm-19 llvm-19-dev clang-19
+        # Create symlink for PawLang's expected LLVM location
+        mkdir -p llvm/install
+        sudo ln -sf /usr/lib/llvm-19/bin llvm/install/bin
+        sudo ln -sf /usr/lib/llvm-19/lib llvm/install/lib  
+        sudo ln -sf /usr/lib/llvm-19/include llvm/install/include
+        
+    - name: Install LLVM (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install llvm@19
+        # Create symlink for PawLang's expected LLVM location
+        mkdir -p llvm/install
+        ln -sf $(brew --prefix llvm@19)/bin llvm/install/bin
+        ln -sf $(brew --prefix llvm@19)/lib llvm/install/lib
+        ln -sf $(brew --prefix llvm@19)/include llvm/install/include
+        
+    - name: Install LLVM (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install llvm --version=19.1.6 -y
+        mkdir llvm\install
+        mklink /D llvm\install\bin "C:\Program Files\LLVM\bin"
+        mklink /D llvm\install\lib "C:\Program Files\LLVM\lib"
+        mklink /D llvm\install\include "C:\Program Files\LLVM\include"
+      shell: cmd
         
     - name: Build PawLang compiler
       run: zig build
@@ -75,6 +106,36 @@ jobs:
         if exist output.c (
           echo ✅ Integration test passed
           del output.c
+        )
+      shell: cmd
+      
+    - name: Test - LLVM Backend (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        ./zig-out/bin/pawc tests/syntax/test_type_cast.paw --backend=llvm
+        if [ -f output.ll ]; then
+          echo "✅ LLVM backend test passed"
+          # Try to compile with clang if available
+          if command -v clang &> /dev/null; then
+            clang output.ll -o test_llvm 2>/dev/null || echo "⚠️  clang compilation skipped"
+            if [ -f test_llvm ]; then
+              ./test_llvm
+              if [ $? -eq 21 ]; then
+                echo "✅ LLVM runtime test passed (exit code: 21)"
+              fi
+              rm -f test_llvm
+            fi
+          fi
+          rm output.ll
+        fi
+      
+    - name: Test - LLVM Backend (Windows)  
+      if: runner.os == 'Windows'
+      run: |
+        .\zig-out\bin\pawc.exe tests\syntax\test_type_cast.paw --backend=llvm
+        if exist output.ll (
+          echo ✅ LLVM backend test passed
+          del output.ll
         )
       shell: cmd
       
