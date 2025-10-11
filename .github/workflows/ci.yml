@@ -13,19 +13,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Note: Windows excluded due to Zig 0.14.0 compiler bug
-        # Error: "no encoding found for: none cmp m64 xmm0 none none"
-        # Will be re-enabled when Zig 0.14.1+ is released
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13, windows-latest]
         include:
           - os: ubuntu-latest
             arch: Linux x86_64
+            zig_version: 0.14.0
           - os: ubuntu-24.04-arm
             arch: Linux ARM64
+            zig_version: 0.14.0
           - os: macos-latest
             arch: Apple Silicon (M1/M2/M3)
+            zig_version: 0.14.0
           - os: macos-13
             arch: Intel (x86_64)
+            zig_version: 0.14.0
+          - os: windows-latest
+            arch: Windows x86_64
+            zig_version: 0.14.1
         
     steps:
     - name: Checkout code
@@ -34,7 +38,7 @@ jobs:
     - name: Setup Zig
       uses: goto-bus-stop/setup-zig@v2
       with:
-        version: 0.14.0
+        version: ${{ matrix.zig_version }}
     
     - name: Setup Python
       uses: actions/setup-python@v5
