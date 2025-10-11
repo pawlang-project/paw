@@ -859,9 +859,11 @@ zig build run-llvm
 
 ### Dependencies
 
-- **Zig** 0.14.0 or higher
-- **GCC** or **Clang** (optional, for C backend)
-- **CMake** and **Ninja** (optional, for building local LLVM)
+- **Zig** 0.15.1 (recommended) or 0.14.0+ (minimum)
+- **LLVM** 19.1.7 (required for LLVM backend)
+- **GCC** or **Clang** (optional, for C backend compilation)
+
+📋 **See [Version Requirements](docs/VERSION_REQUIREMENTS.md) for detailed version specifications**
 
 ### Building
 
@@ -927,7 +929,8 @@ Contributions welcome! Please ensure:
 ## 📄 Documentation
 
 - [CHANGELOG.md](CHANGELOG.md) - Complete change history
-- 🆕 [ARCHITECTURE_SUPPORT.md](ARCHITECTURE_SUPPORT.md) - Platform support & testing ⭐
+- 🆕 [VERSION_REQUIREMENTS.md](docs/VERSION_REQUIREMENTS.md) - Required versions (Zig 0.15.1, LLVM 19.1.7) ⭐
+- 🆕 [ARCHITECTURE_SUPPORT.md](ARCHITECTURE_SUPPORT.md) - Platform support & testing
 - [RELEASE_NOTES_v0.1.7.md](docs/RELEASE_NOTES_v0.1.7.md) - v0.1.7 release notes
 - [RELEASE_NOTES_v0.1.6.md](docs/RELEASE_NOTES_v0.1.6.md) - v0.1.6 release notes
 - [RELEASE_NOTES_v0.1.5.md](docs/RELEASE_NOTES_v0.1.5.md) - v0.1.5 release notes
