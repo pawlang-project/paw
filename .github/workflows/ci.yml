@@ -62,14 +62,24 @@ jobs:
         echo "✅ LLVM installed to llvm/install (isolated from system)"
         ls -la llvm/install/
       
+    - name: Install LLVM to local directory (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        # Install via Homebrew (fast, cached)
+        brew install llvm@19
+        
+        # Copy to project directory for isolation
+        mkdir -p llvm/install
+        cp -r $(brew --prefix llvm@19)/bin llvm/install/
+        cp -r $(brew --prefix llvm@19)/lib llvm/install/
+        cp -r $(brew --prefix llvm@19)/include llvm/install/
+        
+        echo "✅ LLVM installed to llvm/install (isolated from system)"
+        ls -la llvm/install/
+      
     - name: Install Python dependencies (Windows)
       if: runner.os == 'Windows'
       run: pip install py7zr
-      
-    - name: Install LLVM (macOS)
-      if: runner.os == 'macOS'
-      run: python scripts/install_llvm_complete.py --yes --skip-build --skip-test
-      shell: bash
     
     - name: Skip LLVM on Windows (test C backend only)
       if: runner.os == 'Windows'
