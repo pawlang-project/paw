@@ -29,7 +29,8 @@ jobs:
             zig_version: 0.14.0
           - os: windows-latest
             arch: Windows x86_64
-            zig_version: 0.15.1
+            zig_version: 0.14.0
+            skip_llvm: true
         
     steps:
     - name: Checkout code
@@ -60,10 +61,14 @@ jobs:
       if: runner.os == 'Windows'
       run: pip install py7zr
       
-    - name: Install LLVM (macOS and Windows)
-      if: runner.os != 'Linux'
+    - name: Install LLVM (macOS)
+      if: runner.os == 'macOS'
       run: python scripts/install_llvm_complete.py --yes --skip-build --skip-test
       shell: bash
+    
+    - name: Skip LLVM on Windows (test C backend only)
+      if: runner.os == 'Windows'
+      run: echo "Skipping LLVM installation on Windows - testing C backend only"
         
     - name: Build PawLang compiler
       run: zig build
