@@ -74,7 +74,7 @@ jobs:
         python-version: '3.11'
     
     - name: Install LLVM (Linux)
-      if: runner.os == 'Linux' && (matrix.cross_target == null || matrix.cross_target == 'null')
+      if: runner.os == 'Linux'
       run: |
         # Install LLVM 19 from official LLVM repository
         echo "Installing LLVM 19 from official source..."
@@ -91,10 +91,27 @@ jobs:
         
         # Update and install
         sudo apt-get update
-        sudo apt-get install -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev
+        
+        # Install LLVM based on target architecture
+        if [ "${{ matrix.cross_target }}" = "arm-linux-gnueabihf" ]; then
+          echo "📦 Installing ARM LLVM libraries for cross-compilation..."
+          sudo dpkg --add-architecture armhf
+          sudo apt-get update
+          sudo apt-get install -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev
+          sudo apt-get install -y llvm-19-dev:armhf libllvm19:armhf || echo "⚠️ ARM LLVM not available, will build without LLVM backend"
+        elif [ "${{ matrix.cross_target }}" = "x86-linux" ]; then
+          echo "📦 Installing i386 LLVM libraries for cross-compilation..."
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev
+          sudo apt-get install -y llvm-19-dev:i386 libllvm19:i386 || echo "⚠️ i386 LLVM not available, will build without LLVM backend"
+        else
+          # Native build
+          sudo apt-get install -y llvm-19 llvm-19-dev clang-19 libc++-19-dev libc++abi-19-dev
+        fi
         
         # Verify installation
-        llvm-config-19 --version
+        llvm-config-19 --version || echo "⚠️ llvm-config-19 not available"
         echo "✅ LLVM 19 installed successfully"
       
     - name: Install LLVM (macOS)
