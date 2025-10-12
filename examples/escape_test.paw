@@ -1,0 +1,11 @@
+// 测试字符串转义
+
+fn main() -> i32 {
+    let json: string = "{\"name\":\"Alice\"}";
+    let newline: string = "Hello\nWorld";
+    let tab: string = "Tab\there";
+    let quote: char = '\"';
+    
+    return 0;
+}
+

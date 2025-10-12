@@ -1,0 +1,27 @@
+// JSON 解析器测试
+// 测试纯 Paw 实现
+
+fn main() -> i32 {
+    // 简单测试：解析一个字符串
+    let json: string = "{\"name\":\"Alice\"}";
+    
+    // 测试字符串索引
+    let first_char: char = json[0];
+    let c: i32 = first_char as i32;
+    
+    // 测试字符串遍历
+    let mut len: i32 = 0;
+    let mut i: i32 = 0;
+    
+    loop i in 0..100 {
+        let ch: char = json[i];
+        let code: i32 = ch as i32;
+        if code == 0 {
+            break;
+        }
+        len += 1;
+    }
+    
+    return len;  // 应该返回字符串长度
+}
+

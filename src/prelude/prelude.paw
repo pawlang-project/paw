@@ -1,0 +1,321 @@
+// PawLang Standard Prelude
+// v0.2.0
+// 
+// 自动导入到每个 PawLang 程序中
+// 提供最常用的类型和函数，无需手动 import
+
+// ============================================================================
+// 1. 标准输出函数
+// ============================================================================
+
+/// 打印消息并换行（输出到 stdout）
+fn println(msg: string) -> i32 {
+    // 内置函数，由编译器特殊处理
+    return 0;
+}
+
+/// 打印消息不换行（输出到 stdout）
+fn print(msg: string) -> i32 {
+    // 内置函数，由编译器特殊处理
+    return 0;
+}
+
+/// 打印错误消息并换行（输出到 stderr）
+fn eprintln(msg: string) -> i32 {
+    // 内置函数，由编译器特殊处理
+    return 0;
+}
+
+/// 打印错误消息不换行（输出到 stderr）
+fn eprint(msg: string) -> i32 {
+    // 内置函数，由编译器特殊处理
+    return 0;
+}
+
+// ============================================================================
+// 2. 错误处理类型
+// ============================================================================
+
+/// Result<T, E> - 表示成功或失败的结果
+/// 
+/// 示例:
+/// ```paw
+/// fn divide(a: i32, b: i32) -> Result {
+///     if b == 0 {
+///         return Result::Err(1);
+///     }
+///     return Result::Ok(a / b);
+/// }
+/// ```
+pub type Result = enum {
+    Ok(i32),
+    Err(i32),
+}
+
+/// Option<T> - 表示可选值
+/// 
+/// 示例:
+/// ```paw
+/// fn find(arr: [i32], target: i32) -> Option {
+///     // ...
+///     if found {
+///         return Option::Some(index);
+///     }
+///     return Option::None();
+/// }
+/// ```
+pub type Option = enum {
+    Some(i32),
+    None(),
+}
+
+// ============================================================================
+// 3. 基础字符串操作（从 stdlib/string 提取）
+// ============================================================================
+
+/// 获取字符串长度
+pub fn string_length(s: string) -> i32 {
+    let mut len: i32 = 0;
+    loop {
+        let ch: char = s[len];
+        let code: i32 = ch as i32;
+        if code == 0 {
+            break;
+        }
+        len += 1;
+    }
+    return len;
+}
+
+/// 获取字符串指定位置的字符
+pub fn char_at(s: string, index: i32) -> char {
+    return s[index];
+}
+
+/// 比较两个字符串是否相等
+pub fn string_equals(s1: string, s2: string) -> bool {
+    let len1: i32 = string_length(s1);
+    let len2: i32 = string_length(s2);
+    
+    if len1 != len2 {
+        return false;
+    }
+    
+    let mut i: i32 = 0;
+    loop {
+        if i >= len1 {
+            break;
+        }
+        
+        let ch1: char = s1[i];
+        let ch2: char = s2[i];
+        
+        if (ch1 as i32) != (ch2 as i32) {
+            return false;
+        }
+        
+        i += 1;
+    }
+    
+    return true;
+}
+
+// ============================================================================
+// 4. 字符判断函数（从 stdlib/string 提取）
+// ============================================================================
+
+/// 判断字符是否为空白字符（空格、制表符、换行、回车）
+pub fn is_whitespace(ch: char) -> bool {
+    let code: i32 = ch as i32;
+    return code == 32 || code == 9 || code == 10 || code == 13;
+}
+
+/// 判断字符是否为数字（0-9）
+pub fn is_digit(ch: char) -> bool {
+    let code: i32 = ch as i32;
+    return code >= 48 && code <= 57;
+}
+
+/// 判断字符是否为字母（a-z, A-Z）
+pub fn is_alpha(ch: char) -> bool {
+    let code: i32 = ch as i32;
+    return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+/// 判断字符是否为字母或数字
+pub fn is_alphanumeric(ch: char) -> bool {
+    return is_alpha(ch) || is_digit(ch);
+}
+
+/// 将数字字符转换为整数（'0' -> 0, '9' -> 9）
+pub fn char_to_digit(ch: char) -> i32 {
+    let code: i32 = ch as i32;
+    if code >= 48 && code <= 57 {
+        return code - 48;
+    }
+    return -1;
+}
+
+/// 比较两个字符是否相等
+pub fn char_equals(ch1: char, ch2: char) -> bool {
+    let code1: i32 = ch1 as i32;
+    let code2: i32 = ch2 as i32;
+    return code1 == code2;
+}
+
+// ============================================================================
+// 5. 数学函数
+// ============================================================================
+
+/// 返回整数的绝对值
+pub fn abs(n: i32) -> i32 {
+    if n < 0 {
+        return -n;
+    }
+    return n;
+}
+
+/// 返回两个整数中的较小值
+pub fn min(a: i32, b: i32) -> i32 {
+    if a < b {
+        return a;
+    }
+    return b;
+}
+
+/// 返回两个整数中的较大值
+pub fn max(a: i32, b: i32) -> i32 {
+    if a > b {
+        return a;
+    }
+    return b;
+}
+
+// ============================================================================
+// 6. Vec<T> - 动态数组（泛型容器）
+// ============================================================================
+
+/// Vec<T> - 动态数组
+/// 
+/// 注意：当前版本使用固定大小实现，未来版本将支持动态扩容
+pub type Vec<T> = struct {
+    ptr: i32,       // 数据指针（简化为 i32）
+    len: i32,       // 当前长度
+    cap: i32,       // 容量
+    
+    /// 创建新的空 Vec
+    pub fn new() -> Vec<T> {
+        return Vec { ptr: 0, len: 0, cap: 0 };
+    }
+    
+    /// 创建指定容量的 Vec
+    pub fn with_capacity(capacity: i32) -> Vec<T> {
+        return Vec { ptr: 0, len: 0, cap: capacity };
+    }
+    
+    /// 获取 Vec 的长度
+    pub fn length(self) -> i32 {
+        return self.len;
+    }
+    
+    /// 获取 Vec 的容量
+    pub fn capacity(self) -> i32 {
+        return self.cap;
+    }
+    
+    /// 判断 Vec 是否为空
+    pub fn is_empty(self) -> bool {
+        return self.len == 0;
+    }
+}
+
+// ============================================================================
+// 7. Box<T> - 智能指针
+// ============================================================================
+
+/// Box<T> - 堆分配的智能指针
+pub type Box<T> = struct {
+    value: T,
+    
+    /// 创建新的 Box
+    pub fn new(val: T) -> Box<T> {
+        return Box { value: val };
+    }
+    
+    /// 获取 Box 内的值
+    pub fn get(self) -> T {
+        return self.value;
+    }
+}
+
+// ============================================================================
+// 8. 断言和调试
+// ============================================================================
+
+/// 断言条件为真，否则 panic
+/// 
+/// 示例:
+/// ```paw
+/// assert(x > 0, "x must be positive");
+/// ```
+pub fn assert(condition: bool, msg: string) -> i32 {
+    if !condition {
+        eprintln("Assertion failed:");
+        eprintln(msg);
+        return 1;
+    }
+    return 0;
+}
+
+/// 程序 panic，打印错误消息并退出
+pub fn panic(msg: string) -> i32 {
+    eprintln("PANIC:");
+    eprintln(msg);
+    return 1;
+}
+
+// ============================================================================
+// 9. 类型转换辅助
+// ============================================================================
+
+/// 将布尔值转换为整数（true -> 1, false -> 0）
+pub fn bool_to_i32(b: bool) -> i32 {
+    if b {
+        return 1;
+    }
+    return 0;
+}
+
+/// 将整数转换为布尔值（0 -> false, 非0 -> true）
+pub fn i32_to_bool(n: i32) -> bool {
+    return n != 0;
+}
+
+// ============================================================================
+// 10. 数组操作
+// ============================================================================
+
+/// 获取数组长度（编译时已知大小的数组）
+/// 注意：此函数为占位符，实际应由编译器内置支持
+pub fn array_length<T>(arr: [T]) -> i32 {
+    // TODO: 需要编译器支持
+    return 0;
+}
+
+// ============================================================================
+// Prelude 设计原则
+// ============================================================================
+//
+// 1. 最小化 - 只包含最常用的基础功能
+// 2. 零依赖 - 不依赖其他库
+// 3. 高性能 - 简单直接的实现
+// 4. 稳定性 - API 很少变化
+//
+// 不包含在 prelude 中的功能：
+// - 复杂的字符串操作 → stdlib/string
+// - JSON 解析 → stdlib/json
+// - 文件 I/O → stdlib/fs
+// - 网络操作 → stdlib/net（未来）
+// - 正则表达式 → stdlib/regex（未来）
+//
+// ============================================================================

@@ -216,7 +216,15 @@ pub const Lexer = struct {
                 self.line += 1;
                 self.column = 1;
             }
-            _ = self.advance();
+            // 🆕 处理转义序列
+            if (self.peek() == '\\' and !self.isAtEnd()) {
+                _ = self.advance(); // 消耗 \
+                if (!self.isAtEnd()) {
+                    _ = self.advance(); // 消耗转义字符
+                }
+            } else {
+                _ = self.advance();
+            }
         }
 
         if (self.isAtEnd()) {
@@ -234,7 +242,15 @@ pub const Lexer = struct {
                 self.line += 1;
                 self.column = 1;
             }
-            _ = self.advance();
+            // 🆕 处理转义序列
+            if (self.peek() == '\\' and !self.isAtEnd()) {
+                _ = self.advance(); // 消耗 \
+                if (!self.isAtEnd()) {
+                    _ = self.advance(); // 消耗转义字符
+                }
+            } else {
+                _ = self.advance();
+            }
         }
 
         if (self.isAtEnd()) {

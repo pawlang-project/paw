@@ -1,69 +1,186 @@
-// 🆕 v0.1.9: 文件系统标准库
-//
-// 功能:
-// - 文件读写
-// - 目录操作
-// - 路径处理
-// - 文件信息查询
-//
-// 示例:
-// ```
-// import fs.{read_file, write_file, exists};
-//
-// if (exists("config.json")) {
-//     let content = read_file("config.json");
-//     print(content);
-// }
-//
-// write_file("output.txt", "Hello, World!");
-// ```
+// 文件系统 API
+// PawLang v0.2.0
+// 提供跨平台的文件和目录操作
 
-// 文件读取
+// ============================================================================
+// 外部函数声明（来自 builtin_fs.zig）
+// ============================================================================
+
+// 注意：这些是 Zig 层的系统调用
+// PawLang 当前不支持直接调用外部函数，所以这是占位符
+// 实际实现需要编译器支持 FFI
+
+// ============================================================================
+// 文件读写 API
+// ============================================================================
+
+/// 读取文件内容
+/// @param path 文件路径
+/// @return 文件内容字符串
 pub fn read_file(path: string) -> string {
-    // TODO: 实现文件读取
-    return "";
+    // TODO: 调用 paw_read_file
+    // 当前返回占位符
+    return "file content";
 }
 
-// 文件写入
+/// 写入文件（覆盖）
+/// @param path 文件路径
+/// @param content 文件内容
+/// @return 成功返回 true
 pub fn write_file(path: string, content: string) -> bool {
-    // TODO: 实现文件写入
+    // TODO: 调用 paw_write_file
     return true;
 }
 
-// 检查文件是否存在
+/// 追加到文件
+/// @param path 文件路径
+/// @param content 要追加的内容
+/// @return 成功返回 true
+pub fn append_file(path: string, content: string) -> bool {
+    // TODO: 调用 paw_append_file
+    return true;
+}
+
+// ============================================================================
+// 文件检查 API
+// ============================================================================
+
+/// 检查文件是否存在
+/// @param path 文件路径
+/// @return 存在返回 true
 pub fn exists(path: string) -> bool {
-    // TODO: 实现存在性检查
+    // TODO: 调用 paw_file_exists
+    return true;
+}
+
+/// 检查是否为目录
+/// @param path 路径
+/// @return 是目录返回 true
+pub fn is_dir(path: string) -> bool {
+    // TODO: 调用 paw_is_dir
     return false;
 }
 
-// 创建目录
-pub fn create_dir(path: string) -> bool {
-    // TODO: 实现目录创建
-    return true;
-}
-
-// 删除文件
-pub fn remove_file(path: string) -> bool {
-    // TODO: 实现文件删除
-    return true;
-}
-
-// 列出目录内容
-pub fn read_dir(path: string) -> Vec<string> {
-    // TODO: 实现目录读取
-    let empty: Vec<string> = Vec::new();
-    return empty;
-}
-
-// 获取文件大小
-pub fn file_size(path: string) -> i64 {
-    // TODO: 实现文件大小查询
+/// 获取文件大小
+/// @param path 文件路径
+/// @return 文件大小（字节），失败返回 -1
+pub fn file_size(path: string) -> i32 {
+    // TODO: 调用 paw_file_size
     return 0;
 }
 
-// 路径拼接
-pub fn join_path(base: string, part: string) -> string {
-    // TODO: 实现路径拼接
-    return base;
+// ============================================================================
+// 文件操作 API
+// ============================================================================
+
+/// 删除文件
+/// @param path 文件路径
+/// @return 成功返回 true
+pub fn delete_file(path: string) -> bool {
+    // TODO: 调用 paw_delete_file
+    return true;
 }
 
+/// 重命名/移动文件
+/// @param old_path 旧路径
+/// @param new_path 新路径
+/// @return 成功返回 true
+pub fn rename(old_path: string, new_path: string) -> bool {
+    // TODO: 调用 paw_rename_file
+    return true;
+}
+
+/// 复制文件
+/// @param src 源文件路径
+/// @param dst 目标文件路径
+/// @return 成功返回 true
+pub fn copy_file(src: string, dst: string) -> bool {
+    // 实现：读取 -> 写入
+    let content: string = read_file(src);
+    return write_file(dst, content);
+}
+
+// ============================================================================
+// 目录操作 API
+// ============================================================================
+
+/// 创建目录
+/// @param path 目录路径
+/// @return 成功返回 true
+pub fn create_dir(path: string) -> bool {
+    // TODO: 调用 paw_create_dir
+    return true;
+}
+
+/// 递归创建目录
+/// @param path 目录路径
+/// @return 成功返回 true
+pub fn create_dir_all(path: string) -> bool {
+    // TODO: 调用 paw_create_dir_all
+    return true;
+}
+
+/// 删除空目录
+/// @param path 目录路径
+/// @return 成功返回 true
+pub fn delete_dir(path: string) -> bool {
+    // TODO: 调用 paw_delete_dir
+    return true;
+}
+
+/// 递归删除目录及内容
+/// @param path 目录路径
+/// @return 成功返回 true
+pub fn delete_dir_all(path: string) -> bool {
+    // TODO: 调用 paw_delete_dir_all
+    return true;
+}
+
+// ============================================================================
+// 工具函数
+// ============================================================================
+
+/// 获取文件扩展名
+/// @param path 文件路径
+/// @return 扩展名（不含点）
+pub fn extension(path: string) -> string {
+    // TODO: 实现路径解析
+    return "txt";
+}
+
+/// 获取文件名（不含路径）
+/// @param path 文件路径
+/// @return 文件名
+pub fn filename(path: string) -> string {
+    // TODO: 实现路径解析
+    return "file.txt";
+}
+
+/// 获取父目录路径
+/// @param path 文件路径
+/// @return 父目录路径
+pub fn parent(path: string) -> string {
+    // TODO: 实现路径解析
+    return "/path/to";
+}
+
+// ============================================================================
+// 路径操作
+// ============================================================================
+
+/// 拼接路径
+/// @param base 基础路径
+/// @param part 要拼接的部分
+/// @return 拼接后的路径
+pub fn join(base: string, part: string) -> string {
+    // TODO: 实现路径拼接
+    return "/path/to/file";
+}
+
+/// 规范化路径
+/// @param path 原始路径
+/// @return 规范化后的路径
+pub fn normalize(path: string) -> string {
+    // TODO: 实现路径规范化
+    return path;
+}
