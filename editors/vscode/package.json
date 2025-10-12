@@ -1,0 +1,44 @@
+{
+  "name": "paw-language-support",
+  "displayName": "Paw Language Support",
+  "description": "Syntax highlighting and language support for PawLang",
+  "version": "0.1.9",
+  "publisher": "pawlang",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pawlang-project/paw"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "paw",
+        "aliases": [
+          "Paw",
+          "paw"
+        ],
+        "extensions": [
+          ".paw"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "../../assets/logo.png",
+          "dark": "../../assets/logo.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "paw",
+        "scopeName": "source.paw",
+        "path": "./paw.tmLanguage.json"
+      }
+    ]
+  }
+}
+
