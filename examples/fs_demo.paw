@@ -1,0 +1,29 @@
+// 🆕 v0.1.9: 文件系统操作示例
+// 演示 PawLang 的文件系统 API
+
+// import fs.{read_file, write_file, exists, create_dir};
+
+fn main() {
+    // TODO: 读取文件
+    // if (exists("config.json")) {
+    //     let content = read_file("config.json");
+    //     print("Config: " + content);
+    // }
+    
+    // TODO: 写入文件
+    // let data = "Hello from PawLang!";
+    // write_file("output.txt", data);
+    // print("File written successfully");
+    
+    // TODO: 目录操作
+    // create_dir("logs");
+    // let files = read_dir(".");
+    // for file in files {
+    //     print(file);
+    // }
+    
+    // 占位符输出
+    let msg = "File system API coming soon in v0.1.9!";
+    // print(msg);
+}
+

@@ -1,0 +1,30 @@
+// 🆕 v0.1.9: JSON 解析器示例
+// 演示 PawLang 的 JSON 支持
+
+// import json.{parse, stringify, JsonValue};
+
+fn main() {
+    // JSON 字符串
+    let json_str = '{"name": "Alice", "age": 30, "active": true}';
+    
+    // TODO: 解析 JSON
+    // let parsed = parse(json_str);
+    
+    // TODO: 访问字段
+    // let name = get_field(parsed, "name");
+    // let age = get_field(parsed, "age");
+    
+    // TODO: 创建 JSON 对象
+    // let user = JsonValue::Object([
+    //     JsonPair { key: "name", value: JsonValue::String("Bob") },
+    //     JsonPair { key: "age", value: JsonValue::Number(25.0) },
+    // ]);
+    
+    // TODO: 序列化
+    // let output = stringify(user);
+    
+    // 占位符输出
+    let msg = "JSON parser coming soon in v0.1.9!";
+    // print(msg);
+}
+

@@ -1,0 +1,63 @@
+// 🆕 v0.1.9: JSON 解析器标准库
+// 
+// 功能:
+// - JSON 字符串解析
+// - JSON 对象创建
+// - JSON 数组操作
+// - JSON 序列化
+//
+// 示例:
+// ```
+// import json.{parse, stringify, JsonValue};
+// 
+// let json_str = '{"name": "Alice", "age": 30}';
+// let parsed = parse(json_str);
+// 
+// let output = stringify(parsed);
+// ```
+
+pub type JsonValue = enum {
+    Null,
+    Bool(bool),
+    Number(f64),
+    String(string),
+    Array(Vec<JsonValue>),
+    Object(Vec<JsonPair>),
+};
+
+pub type JsonPair = struct {
+    key: string;
+    value: JsonValue;
+};
+
+// JSON 解析器
+pub fn parse(json_str: string) -> JsonValue {
+    // TODO: 实现完整的JSON解析
+    // 当前返回简单版本
+    return JsonValue::Null;
+}
+
+// JSON 序列化
+pub fn stringify(value: JsonValue) -> string {
+    // TODO: 实现完整的JSON序列化
+    return "{}";
+}
+
+// JSON 工具函数
+pub fn is_valid(json_str: string) -> bool {
+    // TODO: 验证JSON格式
+    return true;
+}
+
+// 获取对象字段
+pub fn get_field(obj: JsonValue, key: string) -> JsonValue {
+    // TODO: 从JSON对象中获取字段
+    return JsonValue::Null;
+}
+
+// 获取数组元素
+pub fn get_index(arr: JsonValue, index: i32) -> JsonValue {
+    // TODO: 从JSON数组中获取元素
+    return JsonValue::Null;
+}
+
