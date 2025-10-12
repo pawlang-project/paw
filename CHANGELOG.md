@@ -2,6 +2,85 @@
 
 All notable changes to the Paw programming language will be documented in this file.
 
+## [0.1.9] - 2025-10-12 (In Development)
+
+### 🎨 Quality & Developer Experience Release
+
+**Focus**: Code quality improvements, bug fixes, and developer tooling enhancements.
+
+#### Bug Fixes
+
+**Memory Management** 🔧:
+- ✅ **Module Import Bug**: Fixed invalid memory free in single-item imports
+- ✅ **Arena Allocator**: Corrected allocator usage in parser
+- ✅ **CI Test Fix**: Explicit backend specification for consistent tests
+
+#### New Features
+
+**Developer Tools** 🛠️:
+- ✅ **Compilation Time Analysis**: New `--time` flag shows detailed performance breakdown
+- ✅ **REPL Framework**: Interactive environment with `pawc repl` command
+- ✅ **VSCode Extension**: Full syntax highlighting and language support
+
+**Error Reporting** 📝:
+- ✅ **Enhanced Parser Errors**: Rust-style error messages with context and suggestions
+- ✅ **Helpful Hints**: Lists valid options when syntax errors occur
+- ✅ **Color-Coded Output**: Beautiful, readable error messages
+
+**Standard Library (Scaffolding)** 📚:
+- ✅ **JSON Module**: API defined in `stdlib/json/mod.paw`
+- ✅ **File System Module**: API defined in `stdlib/fs/mod.paw`
+- 🚧 Full implementations coming soon
+
+**Editor Support** 🎨:
+- ✅ **VSCode Extension**: Complete syntax highlighting
+- ✅ **Auto-Completion**: Bracket and quote auto-closing
+- ✅ **Smart Indentation**: Automatic indentation rules
+- ✅ **Language Configuration**: Comment support and word patterns
+
+#### Documentation
+
+- ✅ **ROADMAP.md**: 3-phase progressive improvement plan
+- ✅ **RELEASE_NOTES_v0.1.9.md**: Detailed release documentation
+- ✅ **VSCode Extension README**: Installation and usage guide
+
+#### Technical Improvements
+
+**Performance** ⚡:
+- ✅ **Time Analysis Tool**: Identify compilation bottlenecks
+- ✅ **Phase Breakdown**: Lexer, Parser, Type Checker, Code Gen metrics
+- 🎯 **Future Optimization**: Data-driven performance improvements
+
+**Quality** ✨:
+- ✅ **Memory Safety**: Fixed allocator misuse
+- ✅ **Error UX**: Significantly improved beginner experience
+- ✅ **CI Stability**: All 8 platforms passing consistently
+
+#### Project Status
+
+| Component | Status | Completion |
+|-----------|--------|------------|
+| Bug Fixes | ✅ | 100% |
+| Error Messages | ✅ | Parser done, Type Checker pending |
+| Developer Tools | ✅ | Core tools complete |
+| Standard Library | 🚧 | APIs defined, implementation pending |
+| Editor Support | ✅ | VSCode complete |
+| Documentation | ✅ | Complete |
+
+#### Breaking Changes
+
+None. All changes are backward compatible.
+
+#### What's Next
+
+**Planned for final v0.1.9 release**:
+- JSON parser full implementation
+- File system API full implementation
+- Optional: More type checker error improvements
+- Optional: Performance optimizations
+
+---
+
 ## [0.1.8] - 2025-10-11
 
 ### 🎉 Multi-Platform Release with New Orange Cat Logo
