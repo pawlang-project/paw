@@ -150,6 +150,25 @@ pub const Parser = struct {
             const import_decl = try self.parseImportDecl();
             return ast.TopLevelDecl{ .import_decl = import_decl };
         } else {
+            // 🆕 v0.1.9: 更友好的错误信息
+            const current = self.tokens[self.current];
+            std.debug.print("\x1b[1;31merror\x1b[0m: unexpected token\n", .{});
+            std.debug.print("   \x1b[1;36m--> {s}:{d}:{d}\x1b[0m\n", .{
+                current.filename,
+                current.line,
+                current.column,
+            });
+            std.debug.print("   \x1b[1;36m|\x1b[0m\n", .{});
+            std.debug.print(" \x1b[1;36m{d:>3} |\x1b[0m expected top-level declaration\n", .{current.line});
+            std.debug.print("   \x1b[1;36m|\x1b[0m\n", .{});
+            std.debug.print("   \x1b[1;36m= note\x1b[0m: top-level declarations must be one of:\n", .{});
+            std.debug.print("     • 'let' (variable declaration)\n", .{});
+            std.debug.print("     • 'type' (type definition)\n", .{});
+            std.debug.print("     • 'fn' (function definition)\n", .{});
+            std.debug.print("     • 'import' (module import)\n", .{});
+            std.debug.print("   \x1b[1;32m= help\x1b[0m: found '{s}', did you mean to start a declaration?\n\n", .{
+                current.lexeme,
+            });
             return error.UnexpectedToken;
         }
     }

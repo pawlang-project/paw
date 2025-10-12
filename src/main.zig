@@ -6,6 +6,7 @@ const CodeGen = @import("codegen.zig").CodeGen;
 const CBackend = @import("c_backend.zig").CBackend;
 const ModuleLoader = @import("module.zig").ModuleLoader;
 const ast_mod = @import("ast.zig");
+const REPL = @import("repl.zig").REPL;  // 🆕 v0.1.9
 
 const builtin = @import("builtin");
 const build_options = @import("build_options");
@@ -204,6 +205,14 @@ pub fn main() !void {
             return;
         }
         try initProject(allocator, args[2]);
+        return;
+    }
+    
+    // 🆕 v0.1.9: Handle repl command
+    if (std.mem.eql(u8, args[1], "repl")) {
+        var repl = REPL.init(allocator);
+        defer repl.deinit();
+        try repl.run();
         return;
     }
 
