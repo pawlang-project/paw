@@ -19,7 +19,51 @@ const llvm_backend = if (llvm_available) @import("llvm_native_backend.zig") else
 const LLVMNativeBackend = llvm_backend.LLVMNativeBackend;
 const LLVMOptLevel = llvm_backend.OptLevel; // 🆕 v0.1.7
 
-const VERSION = "0.1.4-dev";
+const VERSION = "0.1.9-dev";
+
+// 🆕 v0.1.9: 编译时间分析
+const CompilationTimer = struct {
+    total_start: i64,
+    lexer_time: i64 = 0,
+    parser_time: i64 = 0,
+    typecheck_time: i64 = 0,
+    codegen_time: i64 = 0,
+    
+    pub fn init() CompilationTimer {
+        return CompilationTimer{
+            .total_start = std.time.milliTimestamp(),
+        };
+    }
+    
+    pub fn printStats(self: CompilationTimer) void {
+        const total_time = std.time.milliTimestamp() - self.total_start;
+        
+        std.debug.print("\n", .{});
+        std.debug.print("╭─────────────────────────────────────╮\n", .{});
+        std.debug.print("│  ⏱️  Compilation Time Analysis      │\n", .{});
+        std.debug.print("├─────────────────────────────────────┤\n", .{});
+        std.debug.print("│  Lexer:        {d:>6}ms  ({d:>5.1}%)  │\n", .{
+            self.lexer_time,
+            @as(f64, @floatFromInt(self.lexer_time)) / @as(f64, @floatFromInt(total_time)) * 100.0,
+        });
+        std.debug.print("│  Parser:       {d:>6}ms  ({d:>5.1}%)  │\n", .{
+            self.parser_time,
+            @as(f64, @floatFromInt(self.parser_time)) / @as(f64, @floatFromInt(total_time)) * 100.0,
+        });
+        std.debug.print("│  Type Check:   {d:>6}ms  ({d:>5.1}%)  │\n", .{
+            self.typecheck_time,
+            @as(f64, @floatFromInt(self.typecheck_time)) / @as(f64, @floatFromInt(total_time)) * 100.0,
+        });
+        std.debug.print("│  Code Gen:     {d:>6}ms  ({d:>5.1}%)  │\n", .{
+            self.codegen_time,
+            @as(f64, @floatFromInt(self.codegen_time)) / @as(f64, @floatFromInt(total_time)) * 100.0,
+        });
+        std.debug.print("├─────────────────────────────────────┤\n", .{});
+        std.debug.print("│  Total:        {d:>6}ms  (100.0%)  │\n", .{total_time});
+        std.debug.print("╰─────────────────────────────────────╯\n", .{});
+        std.debug.print("\n", .{});
+    }
+};
 
 // 🆕 v0.1.4: Simplified backend selection
 const Backend = enum {
@@ -171,6 +215,7 @@ pub fn main() !void {
     var should_compile = false;  // 是否编译为可执行文件
     var backend: ?Backend = null;     // 🆕 v0.1.8: 后端选择，null = 自动检测
     var opt_level: ?OptLevel = null;  // 🆕 v0.1.7: LLVM 优化级别
+    var show_timing = false;          // 🆕 v0.1.9: 显示编译时间分析
 
     // 解析命令行选项
     var i: usize = 2;
@@ -183,6 +228,8 @@ pub fn main() !void {
             optimize = true;
         } else if (std.mem.eql(u8, arg, "-v")) {
             verbose = true;
+        } else if (std.mem.eql(u8, arg, "--time")) {
+            show_timing = true;  // 🆕 v0.1.9: 显示编译时间分析
         } else if (std.mem.eql(u8, arg, "--run")) {
             should_run = true;
             should_compile = true;
@@ -257,22 +304,33 @@ pub fn main() !void {
     const combined_source = try std.fmt.allocPrint(allocator, "{s}\n\n{s}", .{prelude_source, source});
     defer allocator.free(combined_source);
     
+    // 🆕 v0.1.9: 初始化编译时间分析器
+    var timer = if (show_timing) CompilationTimer.init() else undefined;
+    
     // 1. Lexical analysis
+    const lexer_start = std.time.milliTimestamp();
     var lexer = Lexer.init(allocator, combined_source, source_file);
     lexer.setLineOffset(prelude_lines);  // 🆕 v0.1.8: 设置行号偏移
     defer lexer.deinit();
     
     const tokens = try lexer.tokenize();
+    if (show_timing) {
+        timer.lexer_time = std.time.milliTimestamp() - lexer_start;
+    }
     if (verbose) {
         const lex_time = std.time.nanoTimestamp();
         std.debug.print("[PERF] Lexical analysis: {d}μs\n", .{@divTrunc(lex_time - start_time, 1000)});
     }
 
     // 2. Parsing
+    const parser_start = std.time.milliTimestamp();
     var parser = Parser.init(allocator, tokens);
     defer parser.deinit();  // 这会自动释放所有 AST 内存（通过 arena）
     
     const ast_result = try parser.parse();
+    if (show_timing) {
+        timer.parser_time = std.time.milliTimestamp() - parser_start;
+    }
     // 注意: ast_result 的内存由 parser.arena 管理，不需要单独 deinit
     // AST 会在 parser.deinit() 时自动释放
     
@@ -345,16 +403,21 @@ pub fn main() !void {
     }
 
     // 3. Type checking
+    const typecheck_start = std.time.milliTimestamp();
     var type_checker = TypeChecker.init(allocator, source_file, tokens);
     defer type_checker.deinit();
     
     try type_checker.check(ast);
+    if (show_timing) {
+        timer.typecheck_time = std.time.milliTimestamp() - typecheck_start;
+    }
     if (verbose) {
         const typecheck_time = std.time.nanoTimestamp();
         std.debug.print("[PERF] Type checking: {d}μs\n", .{@divTrunc(typecheck_time - start_time, 1000)});
     }
 
         // 4. Code generation - 🆕 v0.1.4: 双后端架构 (C + LLVM Native)
+        const codegen_start = std.time.milliTimestamp();
         const output_code = switch (selected_backend) {
             .c => blk: {
                 var codegen = CodeGen.init(allocator);
@@ -385,6 +448,10 @@ pub fn main() !void {
             },
         };
     defer allocator.free(output_code);  // 🔧 释放生成的代码（来自 codegen 或 llvm_native_backend）
+    
+    if (show_timing) {
+        timer.codegen_time = std.time.milliTimestamp() - codegen_start;
+    }
     
     const total_time = std.time.nanoTimestamp();
     
@@ -568,6 +635,11 @@ pub fn main() !void {
         } else {
             std.debug.print("✅ {s} -> {s}\n", .{source_file, code_filename});
         }
+        
+        // 🆕 v0.1.9: 显示编译时间分析
+        if (show_timing) {
+            timer.printStats();
+        }
     }
 }
 
@@ -587,6 +659,7 @@ fn printUsage() void {
     std.debug.print("Options:\n", .{});
     std.debug.print("  -o <file>        Specify output file name\n", .{});
     std.debug.print("  -v               Verbose output\n", .{});
+    std.debug.print("  --time           Show compilation time analysis 🆕\n", .{});
     std.debug.print("  --compile        Compile to executable (C backend only)\n", .{});
     std.debug.print("  --run            Compile and run immediately (C backend only)\n", .{});
     std.debug.print("\n", .{});
