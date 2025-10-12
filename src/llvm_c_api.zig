@@ -334,6 +334,9 @@ pub extern "c" fn LLVMAddIncoming(
 /// Get basic block of a value (for PHI nodes)
 pub extern "c" fn LLVMGetInsertBlock(Builder: BuilderRef) BasicBlockRef;
 
+/// Get the terminator instruction of a basic block (returns null if none)
+pub extern "c" fn LLVMGetBasicBlockTerminator(BB: BasicBlockRef) ValueRef;
+
 /// Build global string pointer (for string literals)
 pub extern "c" fn LLVMBuildGlobalStringPtr(
     Builder: BuilderRef,
@@ -662,6 +665,12 @@ pub const Builder = struct {
     
     pub fn getInsertBlock(self: Builder) BasicBlockRef {
         return LLVMGetInsertBlock(self.ref);
+    }
+    
+    /// Check if a basic block has a terminator
+    pub fn blockHasTerminator(block: BasicBlockRef) bool {
+        const term = LLVMGetBasicBlockTerminator(block);
+        return term != null;
     }
     
     pub fn buildGlobalStringPtr(self: Builder, str: [:0]const u8, name: [:0]const u8) ValueRef {
