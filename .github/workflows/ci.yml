@@ -431,9 +431,8 @@ jobs:
       run: |
         Write-Host ""
         Write-Host "Building distribution package..."
-        # Skip package build for now (not implemented in build.zig)
-        # zig build package
-        Write-Host "Package build skipped (not implemented)"
+        zig build package
+        Write-Host "Package created"
     
     - name: Test - Distribution Package (Windows) - Uninstall LLVM
       if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
