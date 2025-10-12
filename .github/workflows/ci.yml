@@ -142,16 +142,22 @@ jobs:
     - name: Test - Hello World (Unix)
       if: runner.os != 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       run: |
-        ./zig-out/bin/pawc examples/hello.paw
-        echo "✅ Hello World test passed"
+        ./zig-out/bin/pawc examples/hello.paw --backend=c
+        if [ -f output.c ]; then
+          echo "✅ Hello World test passed (C backend)"
+          rm output.c
+        else
+          echo "❌ Test failed"
+          exit 1
+        fi
       
     - name: Test - Hello World (Windows)
       if: runner.os == 'Windows' && (matrix.cross_target == null || matrix.cross_target == 'null')
       shell: powershell
       run: |
-        .\zig-out\bin\pawc.exe examples\hello.paw
+        .\zig-out\bin\pawc.exe examples\hello.paw --backend=c
         if (Test-Path output.c) {
-          echo "✅ Hello World test passed"
+          echo "✅ Hello World test passed (C backend)"
           Remove-Item output.c
         } else {
           echo "❌ Test failed"
