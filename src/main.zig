@@ -174,9 +174,9 @@ pub fn main() !void {
 
     // 🆕 Handle --version / -v
     if (std.mem.eql(u8, args[1], "--version") or std.mem.eql(u8, args[1], "-v")) {
-        std.debug.print("pawc 0.1.1\n", .{});
+        std.debug.print("pawc 0.1.9\n", .{});
         std.debug.print("Paw Programming Language Compiler\n", .{});
-        std.debug.print("Generics: Functions + Structs\n", .{});
+        std.debug.print("🆕 New in v0.1.9: Enhanced errors, --time analysis, VSCode support, REPL\n", .{});
         return;
     }
 
@@ -655,7 +655,7 @@ pub fn main() !void {
 fn printUsage() void {
     std.debug.print("\n", .{});
     std.debug.print("╔═══════════════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║        pawc - Paw Language Compiler v0.1.4-dev               ║\n", .{});
+    std.debug.print("║        pawc - Paw Language Compiler v0.1.9                   ║\n", .{});
     std.debug.print("╚═══════════════════════════════════════════════════════════════╝\n", .{});
     std.debug.print("\n", .{});
     std.debug.print("Usage:\n", .{});
