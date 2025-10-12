@@ -43,3 +43,19 @@ vendor/*.tar.gz
 /llvm/build/
 llvm/install/
 !llvm/.gitkeep     # Keep directory structure marker
+
+# 编译产物
+output.c
+output.ll
+output
+*.o
+*.a
+
+# 测试文件
+test
+test_*
+!test_backends.sh
+
+# 临时文件
+*.tmp
+*.swp

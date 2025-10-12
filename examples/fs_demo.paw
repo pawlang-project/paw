@@ -1,29 +1,58 @@
-// 🆕 v0.1.9: 文件系统操作示例
-// 演示 PawLang 的文件系统 API
+// 文件系统 API 演示
+// PawLang v0.2.0
 
-// import fs.{read_file, write_file, exists, create_dir};
+// 注意：当前 PawLang 还不支持 FFI 调用，所以这是一个演示
+// 展示未来的 API 设计
 
-fn main() {
-    // TODO: 读取文件
-    // if (exists("config.json")) {
-    //     let content = read_file("config.json");
-    //     print("Config: " + content);
+fn demo_file_operations() -> i32 {
+    // 写入文件
+    // write_file("test.txt", "Hello, PawLang!");
+    
+    // 检查文件存在
+    // if exists("test.txt") {
+    //     let content: string = read_file("test.txt");
+    //     println(content);
     // }
     
-    // TODO: 写入文件
-    // let data = "Hello from PawLang!";
-    // write_file("output.txt", data);
-    // print("File written successfully");
+    // 追加内容
+    // append_file("test.txt", "\nNew line!");
     
-    // TODO: 目录操作
-    // create_dir("logs");
-    // let files = read_dir(".");
-    // for file in files {
-    //     print(file);
-    // }
+    // 获取文件大小
+    // let size: i32 = file_size("test.txt");
     
-    // 占位符输出
-    let msg = "File system API coming soon in v0.1.9!";
-    // print(msg);
+    // 删除文件
+    // delete_file("test.txt");
+    
+    return 0;
 }
 
+fn demo_dir_operations() -> i32 {
+    // 创建目录
+    // create_dir("mydir");
+    
+    // 递归创建
+    // create_dir_all("path/to/deep/dir");
+    
+    // 检查是否为目录
+    // if is_dir("mydir") {
+    //     println("It's a directory");
+    // }
+    
+    // 删除目录
+    // delete_dir("mydir");
+    
+    return 0;
+}
+
+fn main() -> i32 {
+    println("文件系统 API 演示");
+    println("==================");
+    
+    // 演示文件操作
+    let r1: i32 = demo_file_operations();
+    
+    // 演示目录操作
+    let r2: i32 = demo_dir_operations();
+    
+    return r1 + r2;
+}

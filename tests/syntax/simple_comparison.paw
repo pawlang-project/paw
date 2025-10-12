@@ -1,0 +1,22 @@
+// 简单的后端对照测试
+
+fn string_length(s: string) -> i32 {
+    let mut len: i32 = 0;
+    let mut i: i32 = 0;
+    
+    loop i in 0..100 {
+        let ch_code: i32 = s[i] as i32;
+        if ch_code == 0 {
+            break;
+        }
+        len += 1;
+    }
+    
+    return len;
+}
+
+fn main() -> i32 {
+    let test: string = "Hello";
+    return string_length(test);  // 应该返回 5
+}
+

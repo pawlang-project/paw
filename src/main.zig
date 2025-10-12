@@ -99,7 +99,7 @@ fn checkFile(allocator: std.mem.Allocator, source_file: []const u8) !void {
     defer allocator.free(source);
     
     // Load standard library
-    const prelude_source = @embedFile("std/prelude.paw");
+    const prelude_source = @embedFile("prelude/prelude.paw");
     const combined_source = try std.fmt.allocPrint(allocator, "{s}\n\n{s}", .{prelude_source, source});
     defer allocator.free(combined_source);
     
@@ -300,7 +300,7 @@ pub fn main() !void {
     const start_time = std.time.nanoTimestamp();
 
     // 🆕 0. 自动加载标准库 prelude（嵌入到可执行文件中）
-    const prelude_source = @embedFile("std/prelude.paw");
+    const prelude_source = @embedFile("prelude/prelude.paw");
     
     // 🆕 v0.1.8: 计算 prelude 行数用于行号偏移
     var prelude_lines: usize = 0;

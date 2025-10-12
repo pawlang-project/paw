@@ -1,0 +1,56 @@
+// JSON 演示 - 使用 is 表达式
+// v0.2.0
+
+type JsonValue = enum {
+    Null,
+    Bool(bool),
+    Number(i32),
+    String(string),
+}
+
+fn stringify(value: JsonValue) -> string {
+    return value is {
+        Null => "null",
+        Bool(b) => if b { "true" } else { "false" },
+        Number(n) => "number",
+        String(s) => s,
+        _ => "unknown",
+    };
+}
+
+fn get_number(value: JsonValue) -> i32 {
+    return value is {
+        Null => 0,
+        Bool(b) => if b { 1 } else { 0 },
+        Number(n) => n,
+        String(s) => -1,
+        _ => -99,
+    };
+}
+
+fn main() -> i32 {
+    // 创建不同类型的 JSON 值
+    let null_val: JsonValue = JsonValue::Null;
+    let true_val: JsonValue = JsonValue::Bool(true);
+    let false_val: JsonValue = JsonValue::Bool(false);
+    let num_val: JsonValue = JsonValue::Number(42);
+    let str_val: JsonValue = JsonValue::String("hello");
+    
+    // 使用 stringify（is 表达式）
+    let s1: string = stringify(null_val);     // "null"
+    let s2: string = stringify(true_val);     // "true"
+    let s3: string = stringify(false_val);    // "false"
+    let s4: string = stringify(num_val);      // "number"
+    let s5: string = stringify(str_val);      // "hello"
+    
+    // 使用 get_number（is 表达式）
+    let n1: i32 = get_number(null_val);    // 0
+    let n2: i32 = get_number(true_val);    // 1
+    let n3: i32 = get_number(false_val);   // 0
+    let n4: i32 = get_number(num_val);     // 42
+    let n5: i32 = get_number(str_val);     // -1
+    
+    // 返回总和: 0 + 1 + 0 + 42 + (-1) = 42
+    return n1 + n2 + n3 + n4 + n5;
+}
+

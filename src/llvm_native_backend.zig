@@ -225,7 +225,7 @@ pub const LLVMNativeBackend = struct {
             },
             .let_decl => |let_stmt| {
                 if (let_stmt.init) |init_expr| {
-                    const init_value = try self.generateExpr(init_expr);
+                    var init_value = try self.generateExpr(init_expr);
                     
                     // Determine variable type
                     const var_type = if (let_stmt.type) |typ|
@@ -233,12 +233,23 @@ pub const LLVMNativeBackend = struct {
                     else
                         llvm.LLVMTypeOf(init_value);
                     
+                    // 🆕 v0.2.0: 如果初始值类型与变量类型不匹配，进行转换
+                    const init_type = llvm.LLVMTypeOf(init_value);
+                    if (init_type != var_type) {
+                        // 需要类型转换
+                        const cast_name_z = try self.allocator.dupeZ(u8, "auto_cast");
+                        defer self.allocator.free(cast_name_z);
+                        
+                        // 简化：假设 i8 -> i32 的扩展（最常见情况）
+                        init_value = self.builder.buildZExt(init_value, var_type, cast_name_z);
+                    }
+                    
                     // Allocate space for variable
                     const alloca_name_z = try self.allocator.dupeZ(u8, let_stmt.name);
                     defer self.allocator.free(alloca_name_z);
                     const alloca = self.builder.buildAlloca(var_type, alloca_name_z);
                     
-                    // Store initial value
+                    // Store initial value (已转换到正确类型)
                     _ = self.builder.buildStore(init_value, alloca);
                     
                     // Store pointer in variables map
@@ -579,7 +590,11 @@ pub const LLVMNativeBackend = struct {
                 self.builder.positionAtEnd(then_block);
                 const then_value = try self.generateExpr(if_expr.then_branch.*);
                 const then_end_block = self.builder.getInsertBlock();
-                _ = self.builder.buildBr(cont_block);
+                // 🆕 v0.2.0: 只有当块没有终止符时才添加跳转
+                const then_has_terminator = llvm.Builder.blockHasTerminator(then_end_block);
+                if (!then_has_terminator) {
+                    _ = self.builder.buildBr(cont_block);
+                }
                 
                 // Generate else branch
                 self.builder.positionAtEnd(else_block);
@@ -588,10 +603,21 @@ pub const LLVMNativeBackend = struct {
                 else
                     llvm.constI32(self.context, 0);
                 const else_end_block = self.builder.getInsertBlock();
-                _ = self.builder.buildBr(cont_block);
+                // 🆕 v0.2.0: 只有当块没有终止符时才添加跳转
+                const else_has_terminator = llvm.Builder.blockHasTerminator(else_end_block);
+                if (!else_has_terminator) {
+                    _ = self.builder.buildBr(cont_block);
+                }
                 
                 // Continue block with PHI node
                 self.builder.positionAtEnd(cont_block);
+                
+                // 🆕 v0.2.0: 只为实际到达的分支创建 PHI
+                // 如果两个分支都终止了，cont_block 不可达
+                if (then_has_terminator and else_has_terminator) {
+                    // 两个分支都终止，返回默认值（cont_block 不可达）
+                    break :blk llvm.constI32(self.context, 0);
+                }
                 
                 // Create PHI node to merge values from both branches
                 const result_type = llvm.LLVMTypeOf(then_value);
@@ -599,10 +625,23 @@ pub const LLVMNativeBackend = struct {
                 defer self.allocator.free(phi_name_z);
                 const phi = self.builder.buildPhi(result_type, phi_name_z);
                 
-                // Add incoming values
-                var incoming_values = [_]llvm.ValueRef{ then_value, else_value };
-                var incoming_blocks = [_]llvm.BasicBlockRef{ then_end_block, else_end_block };
-                llvm.LLVMAddIncoming(phi, &incoming_values, &incoming_blocks, 2);
+                // 🆕 v0.2.0: 只添加未终止的分支到 PHI
+                if (!then_has_terminator and !else_has_terminator) {
+                    // 两个分支都未终止
+                    var incoming_values = [_]llvm.ValueRef{ then_value, else_value };
+                    var incoming_blocks = [_]llvm.BasicBlockRef{ then_end_block, else_end_block };
+                    llvm.LLVMAddIncoming(phi, &incoming_values, &incoming_blocks, 2);
+                } else if (!then_has_terminator) {
+                    // 只有 then 分支未终止
+                    var incoming_values = [_]llvm.ValueRef{then_value};
+                    var incoming_blocks = [_]llvm.BasicBlockRef{then_end_block};
+                    llvm.LLVMAddIncoming(phi, &incoming_values, &incoming_blocks, 1);
+                } else {
+                    // 只有 else 分支未终止
+                    var incoming_values = [_]llvm.ValueRef{else_value};
+                    var incoming_blocks = [_]llvm.BasicBlockRef{else_end_block};
+                    llvm.LLVMAddIncoming(phi, &incoming_values, &incoming_blocks, 1);
+                }
                 
                 break :blk phi;
             },
@@ -628,14 +667,22 @@ pub const LLVMNativeBackend = struct {
                 const array_value = try self.generateExpr(index_expr.array.*);
                 const index_value = try self.generateExpr(index_expr.index.*);
                 
+                // 🆕 v0.2.0: 检测是否是字符串索引
+                // 如果 array 是字符串字面量或字符串类型，使用 i8
+                const is_string = index_expr.array.* == .string_literal or
+                                 index_expr.array.* == .identifier;  // 简化判断
+                
+                const element_type = if (is_string) 
+                    self.context.i8Type()  // 字符串 -> i8 (char)
+                else 
+                    self.context.i32Type();  // 数组 -> i32
+                
                 // Build GEP instruction
                 var indices = [_]llvm.ValueRef{ llvm.constI32(self.context, 0), index_value };
                 
                 const gep_name_z = try self.allocator.dupeZ(u8, "index");
                 defer self.allocator.free(gep_name_z);
                 
-                // Get element type (assuming i32 for now, should be improved)
-                const element_type = self.context.i32Type();
                 const array_type = llvm.arrayType(element_type, 0);  // Size doesn't matter for GEP
                 
                 const gep = self.builder.buildInBoundsGEP(array_type, array_value, &indices, gep_name_z);

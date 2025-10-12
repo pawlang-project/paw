@@ -925,6 +925,11 @@ pub const TypeChecker = struct {
                     try self.errors.append(self.allocator, "Type error: array index must be integer");
                 }
                 
+                // 🆕 支持字符串索引：s[i] 返回 char
+                if (array_type == .string) {
+                    break :blk ast.Type.char;
+                }
+                
                 // 返回数组元素类型
                 if (array_type == .array) {
                     break :blk array_type.array.element.*;

@@ -474,8 +474,44 @@ pub const CodeGen = struct {
     fn generateStmt(self: *CodeGen, stmt: ast.Stmt) !void {
         switch (stmt) {
             .expr => |expr| {
-                _ = try self.generateExpr(expr);
-                try self.output.appendSlice(self.allocator, ";\n");
+                // 🆕 v0.2.0: 特殊处理 if 表达式作为语句
+                if (expr == .if_expr) {
+                    const if_data = expr.if_expr;
+                    try self.output.appendSlice(self.allocator, "if (");
+                    _ = try self.generateExpr(if_data.condition.*);
+                    try self.output.appendSlice(self.allocator, ") {\n");
+                    
+                    // then 分支
+                    if (if_data.then_branch.* == .block) {
+                        for (if_data.then_branch.block) |s| {
+                            try self.generateStmt(s);
+                        }
+                    } else {
+                        _ = try self.generateExpr(if_data.then_branch.*);
+                        try self.output.appendSlice(self.allocator, ";\n");
+                    }
+                    
+                    try self.output.appendSlice(self.allocator, "}");
+                    
+                    // else 分支
+                    if (if_data.else_branch) |else_branch| {
+                        try self.output.appendSlice(self.allocator, " else {\n");
+                        if (else_branch.* == .block) {
+                            for (else_branch.block) |s| {
+                                try self.generateStmt(s);
+                            }
+                        } else {
+                            _ = try self.generateExpr(else_branch.*);
+                            try self.output.appendSlice(self.allocator, ";\n");
+                        }
+                        try self.output.appendSlice(self.allocator, "}");
+                    }
+                    
+                    try self.output.appendSlice(self.allocator, "\n");
+                } else {
+                    _ = try self.generateExpr(expr);
+                    try self.output.appendSlice(self.allocator, ";\n");
+                }
             },
             // 🆕 赋值语句
             .assign => |assign| {
@@ -720,7 +756,18 @@ pub const CodeGen = struct {
                 try self.output.appendSlice(self.allocator, "\"");
             },
             .char_literal => |c| {
-                const str = try std.fmt.allocPrint(self.allocator, "'{c}'", .{@as(u8, @intCast(c))});
+                // 🆕 v0.2.0: 正确处理转义字符
+                const char_val = @as(u8, @intCast(c));
+                const str = switch (char_val) {
+                    '\n' => try std.fmt.allocPrint(self.allocator, "'\\n'", .{}),
+                    '\r' => try std.fmt.allocPrint(self.allocator, "'\\r'", .{}),
+                    '\t' => try std.fmt.allocPrint(self.allocator, "'\\t'", .{}),
+                    '\\' => try std.fmt.allocPrint(self.allocator, "'\\\\'", .{}),
+                    '\'' => try std.fmt.allocPrint(self.allocator, "'\\''", .{}),
+                    '"' => try std.fmt.allocPrint(self.allocator, "'\"'", .{}),
+                    0 => try std.fmt.allocPrint(self.allocator, "'\\0'", .{}),
+                    else => try std.fmt.allocPrint(self.allocator, "'{c}'", .{char_val}),
+                };
                 defer self.allocator.free(str);
                 try self.output.appendSlice(self.allocator, str);
             },

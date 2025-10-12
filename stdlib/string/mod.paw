@@ -1,0 +1,303 @@
+// 字符串工具函数
+// v0.2.0 - 尽可能使用纯 PawLang 实现
+//
+// 设计原则：
+// - 优先使用 Paw 语言本身的特性
+// - 只在必要时依赖底层（内存分配）
+
+// ============================================================================
+// 纯 Paw 实现 - 无需 Zig 支持
+// ============================================================================
+
+// 获取字符串长度（遍历查找 null 终止符）
+pub fn length(s: string) -> i32 {
+    let mut len: i32 = 0;
+    let mut i: i32 = 0;
+    
+    // 假设最大长度为 1000000
+    loop i in 0..1000000 {
+        let ch: i32 = s[i] as i32;
+        if ch == 0 {
+            break;
+        }
+        len = len + 1;
+    }
+    
+    return len;
+}
+
+// 获取指定位置的字符
+pub fn char_at(s: string, index: i32) -> char {
+    return s[index];
+}
+
+// 检查字符串是否相等
+pub fn equals(s1: string, s2: string) -> bool {
+    let len1: i32 = length(s1);
+    let len2: i32 = length(s2);
+    
+    if len1 != len2 {
+        return false;
+    }
+    
+    let mut i: i32 = 0;
+    loop i in 0..len1 {
+        if s1[i] != s2[i] {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// 检查字符是否为空白字符
+pub fn is_whitespace(ch: char) -> bool {
+    let c: i32 = ch as i32;
+    return c == 32 || c == 9 || c == 10 || c == 13;  // space, tab, \n, \r
+}
+
+// 检查字符是否为数字
+pub fn is_digit(ch: char) -> bool {
+    let c: i32 = ch as i32;
+    return c >= 48 && c <= 57;  // '0' to '9'
+}
+
+// 检查字符是否为字母
+pub fn is_alpha(ch: char) -> bool {
+    let c: i32 = ch as i32;
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);  // A-Z or a-z
+}
+
+// 字符转数字（纯 Paw 实现）
+pub fn char_to_digit(ch: char) -> i32 {
+    let c: i32 = ch as i32;
+    return c - 48;  // '0' = 48
+}
+
+// 比较两个字符（纯 Paw 实现）
+pub fn char_equals(c1: char, c2: char) -> bool {
+    return (c1 as i32) == (c2 as i32);
+}
+
+// ============================================================================
+// 需要固定缓冲区的操作 - 不需要动态内存分配
+// ============================================================================
+
+// 字符串复制到固定缓冲区
+// 注意：dst 必须是预分配的数组
+pub fn copy_to_buffer(src: string, mut dst: [char; 1024], max_len: i32) -> i32 {
+    let src_len: i32 = length(src);
+    let copy_len: i32 = if src_len < max_len { src_len } else { max_len };
+    
+    let mut i: i32 = 0;
+    loop i in 0..copy_len {
+        dst[i] = src[i];
+    }
+    
+    return copy_len;
+}
+
+// 比较字符串的前 n 个字符
+pub fn starts_with_n(s: string, prefix: string, n: i32) -> bool {
+    let mut i: i32 = 0;
+    loop i in 0..n {
+        if s[i] != prefix[i] {
+            return false;
+        }
+    }
+    return true;
+}
+
+// 在字符串中查找字符
+pub fn index_of(s: string, ch: char) -> i32 {
+    let len: i32 = length(s);
+    let mut i: i32 = 0;
+    
+    loop i in 0..len {
+        if s[i] == ch {
+            return i;
+        }
+    }
+    
+    return -1;  // 未找到
+}
+
+// 统计字符出现次数
+pub fn count_char(s: string, ch: char) -> i32 {
+    let len: i32 = length(s);
+    let mut count: i32 = 0;
+    let mut i: i32 = 0;
+    
+    loop i in 0..len {
+        if s[i] == ch {
+            count += 1;
+        }
+    }
+    
+    return count;
+}
+
+// ============================================================================
+// 字符串解析 - 纯 Paw 实现
+// ============================================================================
+
+// 解析整数（从字符串）
+pub fn parse_i32(s: string) -> i32 {
+    let len: i32 = length(s);
+    let mut result: i32 = 0;
+    let mut i: i32 = 0;
+    let mut is_negative: bool = false;
+    
+    // 检查负号
+    if len > 0 {
+        let first: i32 = s[0] as i32;
+        if first == 45 {  // '-'
+            is_negative = true;
+            i = 1;
+        }
+    }
+    
+    // 解析数字
+    loop i in i..len {
+        let c: i32 = s[i] as i32;
+        if c >= 48 && c <= 57 {  // '0' to '9'
+            let digit: i32 = c - 48;
+            result = result * 10 + digit;
+        } else {
+            break;
+        }
+    }
+    
+    if is_negative {
+        return -result;
+    }
+    return result;
+}
+
+// ============================================================================
+// 字符串构建器 - 使用固定缓冲区
+// ============================================================================
+
+// 简单的字符串构建器（固定大小）
+pub type StringBuilder = struct {
+    buffer: [char; 4096],
+    length: i32,
+    
+    pub fn new() -> StringBuilder {
+        // 初始化空缓冲区
+        // 注意：PawLang 不支持 [value; count] 语法
+        // 所以我们创建一个未初始化的缓冲区（在 C 中会是栈上的内存）
+        let buf: [char; 4096] = ['\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0'];  // 占位
+        return StringBuilder {
+            buffer: buf,
+            length: 0,
+        };
+    }
+    
+    // 追加单个字符
+    pub fn append_char(mut self, ch: char) -> bool {
+        if self.length >= 4096 {
+            return false;  // 缓冲区满
+        }
+        
+        self.buffer[self.length] = ch;
+        self.length += 1;
+        return true;
+    }
+    
+    // 追加字符串
+    pub fn append_string(mut self, s: string) -> bool {
+        let s_len: i32 = length(s);
+        let mut i: i32 = 0;
+        
+        loop i in 0..s_len {
+            if !self.append_char(s[i]) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    // 追加整数（转为字符串）
+    pub fn append_i32(mut self, num: i32) -> bool {
+        if num == 0 {
+            return self.append_char('0');
+        }
+        
+        let mut n: i32 = num;
+        let mut is_negative: bool = false;
+        
+        if n < 0 {
+            is_negative = true;
+            n = -n;
+        }
+        
+        // 计算数字
+        let mut digits: [char; 12] = ['\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0'];
+        let mut digit_count: i32 = 0;
+        
+        loop {
+            if n == 0 {
+                break;
+            }
+            let digit: i32 = n % 10;
+            let ch: char = (48 + digit) as char;  // '0' + digit
+            digits[digit_count] = ch;
+            digit_count += 1;
+            n = n / 10;
+        }
+        
+        // 添加负号
+        if is_negative {
+            if !self.append_char('-') {
+                return false;
+            }
+        }
+        
+        // 反向添加数字
+        let mut i: i32 = digit_count - 1;
+        loop {
+            if i < 0 {
+                break;
+            }
+            if !self.append_char(digits[i]) {
+                return false;
+            }
+            i -= 1;
+        }
+        
+        return true;
+    }
+    
+    // 获取长度
+    pub fn len(self) -> i32 {
+        return self.length;
+    }
+}
+
+// ============================================================================
+// 使用示例和说明
+// ============================================================================
+
+// 示例：使用纯 Paw 构建字符串
+// 
+// let mut sb = StringBuilder::new();
+// sb.append_string("Hello, ");
+// sb.append_string("World");
+// sb.append_char('!');
+// sb.append_string(" Number: ");
+// sb.append_i32(42);
+// 
+// // 结果：buffer 包含 "Hello, World! Number: 42"
+// let final_len = sb.len();
+
+// ============================================================================
+// 未来扩展 - 当 PawLang 支持动态内存后
+// ============================================================================
+
+// TODO: 当有动态内存分配时，实现这些
+// pub fn concat(s1: string, s2: string) -> string  // 动态拼接
+// pub fn substring(s: string, start: i32, end: i32) -> string  // 提取子串
+// pub fn to_uppercase(s: string) -> string  // 转大写
+// pub fn to_lowercase(s: string) -> string  // 转小写
