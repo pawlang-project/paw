@@ -743,7 +743,7 @@ pub const Parser = struct {
             const item_name = path_parts.items[path_parts.items.len - 1];
             
             // 重新构建module_path（去掉最后一个部分）
-            self.allocator.free(module_path_owned);
+            // 注意: module_path_owned是通过arenaAllocator分配的，不需要手动释放
             var module_path2 = std.ArrayList(u8){};
             for (path_parts.items[0..path_parts.items.len - 1], 0..) |part, i| {
                 if (i > 0) try module_path2.append(self.arenaAllocator(), '/');
