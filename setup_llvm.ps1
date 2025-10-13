@@ -1,6 +1,10 @@
 # LLVM Auto-Download Script for Windows
 # Detects architecture and downloads corresponding pre-compiled LLVM
 
+param(
+    [switch]$Yes
+)
+
 $ErrorActionPreference = "Stop"
 
 $LLVM_VERSION = "21.1.3"
@@ -43,10 +47,14 @@ Write-Host ""
 $VENDOR_DIR = "vendor\llvm\$TARGET"
 if (Test-Path "$VENDOR_DIR\install") {
     Write-Host "⚠️  LLVM already exists: $VENDOR_DIR\install\" -ForegroundColor Yellow
-    $confirm = Read-Host "Re-download? [y/N]"
-    if ($confirm -ne "y" -and $confirm -ne "Y") {
-        Write-Host "Cancelled"
-        exit 0
+    if (-not $Yes) {
+        $confirm = Read-Host "Re-download? [y/N]"
+        if ($confirm -ne "y" -and $confirm -ne "Y") {
+            Write-Host "Cancelled"
+            exit 0
+        }
+    } else {
+        Write-Host "🔄 Auto-yes mode: Re-downloading..." -ForegroundColor Yellow
     }
     Remove-Item -Recurse -Force "$VENDOR_DIR"
 }

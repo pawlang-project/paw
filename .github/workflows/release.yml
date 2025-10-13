@@ -170,9 +170,9 @@ jobs:
           echo "📦 Installing LLVM 21.1.3 via setup script..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          # 使用项目的 LLVM 安装脚本
+          # 使用项目的 LLVM 安装脚本 (non-interactive mode)
           chmod +x setup_llvm.sh
-          ./setup_llvm.sh
+          ./setup_llvm.sh --yes
           
           echo "✅ LLVM installed via vendor script"
       
@@ -246,9 +246,9 @@ jobs:
           echo "📦 Installing LLVM 21.1.3 via setup script..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          # 使用项目的 LLVM 安装脚本
+          # 使用项目的 LLVM 安装脚本 (non-interactive mode)
           chmod +x setup_llvm.sh
-          ./setup_llvm.sh
+          ./setup_llvm.sh --yes
           
           echo "✅ LLVM installed via vendor script"
       
@@ -318,8 +318,8 @@ jobs:
           Write-Host "📦 Installing LLVM 21.1.3 via setup script..."
           Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          # 使用项目的 LLVM 安装脚本
-          .\setup_llvm.ps1
+          # 使用项目的 LLVM 安装脚本 (non-interactive mode)
+          .\setup_llvm.ps1 -Yes
           
           Write-Host "✅ LLVM installed via vendor script"
       

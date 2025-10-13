@@ -6,6 +6,13 @@ set -e
 
 LLVM_VERSION="21.1.3"
 BASE_URL="https://github.com/pawlang-project/llvm-build/releases/download/llvm-${LLVM_VERSION}"
+VENDOR_DIR="vendor/llvm"
+
+# Support non-interactive mode with --yes flag
+AUTO_YES=false
+if [ "$1" = "--yes" ] || [ "$1" = "-y" ]; then
+  AUTO_YES=true
+fi
 
 echo "=========================================="
 echo "   LLVM Auto-Download"
@@ -62,15 +69,23 @@ esac
 echo "Detected platform: $TARGET"
 echo ""
 
+# Create vendor directory if it doesn't exist
+mkdir -p "$VENDOR_DIR"
+
 # Check if already exists
-if [ -d "$TARGET/install" ]; then
-  echo "⚠️  LLVM already exists: $TARGET/install/"
-  read -p "Re-download? [y/N]: " confirm
-  if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
-    echo "Cancelled"
-    exit 0
+INSTALL_DIR="$VENDOR_DIR/$TARGET"
+if [ -d "$INSTALL_DIR/install" ]; then
+  echo "⚠️  LLVM already exists: $INSTALL_DIR/install/"
+  if [ "$AUTO_YES" = false ]; then
+    read -p "Re-download? [y/N]: " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+      echo "Cancelled"
+      exit 0
+    fi
+  else
+    echo "🔄 Auto-yes mode: Re-downloading..."
   fi
-  rm -rf "$TARGET"
+  rm -rf "$INSTALL_DIR"
 fi
 
 # Download
@@ -91,10 +106,10 @@ else
 fi
 
 echo ""
-echo "📦 Extracting..."
+echo "📦 Extracting to $INSTALL_DIR..."
 
-mkdir -p "$TARGET"
-tar xzf "$FILENAME" -C "$TARGET"/
+mkdir -p "$INSTALL_DIR"
+tar xzf "$FILENAME" -C "$INSTALL_DIR"/
 
 rm "$FILENAME"
 
@@ -103,7 +118,7 @@ echo "=========================================="
 echo "   ✅ LLVM Installed Successfully!"
 echo "=========================================="
 echo ""
-echo "Installation location: vendor/llvm/$TARGET/install/"
+echo "Installation location: $INSTALL_DIR/install/"
 echo ""
 echo "Included tools:"
 echo "  • clang - C/C++ compiler"
@@ -111,7 +126,7 @@ echo "  • llc - LLVM compiler"
 echo "  • lld - LLVM linker"
 echo ""
 echo "Verify installation:"
-echo "  vendor/llvm/$TARGET/install/bin/clang --version"
+echo "  $INSTALL_DIR/install/bin/clang --version"
 echo ""
 echo "🚀 Now you can build PawLang:"
 echo "   zig build"
