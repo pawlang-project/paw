@@ -106,10 +106,10 @@ else
 fi
 
 echo ""
-echo "📦 Extracting to $INSTALL_DIR..."
+echo "📦 Extracting to $INSTALL_DIR/install..."
 
-mkdir -p "$INSTALL_DIR"
-tar xzf "$FILENAME" -C "$INSTALL_DIR"/
+mkdir -p "$INSTALL_DIR/install"
+tar xzf "$FILENAME" -C "$INSTALL_DIR/install"/
 
 rm "$FILENAME"
 
