@@ -142,8 +142,10 @@ pub fn build(b: *std.Build) void {
             "LLVMDemangle",
         };
         
+        // 链接静态库（必须直接指定 .a 文件，因为 LLVM 包只包含静态库）
         for (llvm_libs) |lib| {
-            exe.linkSystemLibrary(lib);
+            const lib_path = b.fmt("{s}/lib{s}.a", .{llvm_lib_path.?, lib});
+            exe.addObjectFile(b.path(lib_path));
         }
         
         exe.linkLibCpp();
@@ -183,54 +185,10 @@ pub fn build(b: *std.Build) void {
 
     const install_artifact = b.addInstallArtifact(exe, .{});
     
-    // 🆕 从vendor目录复制LLVM库到输出目录
+    // 🆕 静态链接 LLVM 库，无需复制动态库文件
     if (has_llvm) {
-        const vendor_lib_path = llvm_lib_path.?;
-        
-        const copy_libs_step = switch (target.result.os.tag) {
-            .windows => blk: {
-                // Windows: Copy all DLL files from vendor
-                const cmd = b.addSystemCommand(&[_][]const u8{
-                    "powershell", "-Command",
-                    b.fmt("Copy-Item '{s}\\*.dll' 'zig-out\\bin\\' -ErrorAction SilentlyContinue; if ($?) {{ Write-Host '✅ Copied LLVM DLLs from vendor' }}", .{vendor_lib_path}),
-                });
-                cmd.step.dependOn(&install_artifact.step);
-                std.debug.print("\n[Windows] LLVM DLLs will be copied from vendor to output\n", .{});
-                break :blk cmd;
-            },
-            .macos => blk: {
-                // macOS: Copy LLVM dylib files from vendor and fix paths
-                const cmd = b.addSystemCommand(&[_][]const u8{
-                    "sh", "-c",
-                    b.fmt("mkdir -p zig-out/lib && " ++
-                          "cp -f {s}/libLLVM*.dylib zig-out/lib/ 2>/dev/null && " ++
-                          "install_name_tool -add_rpath @executable_path/../lib zig-out/bin/pawc 2>/dev/null || true && " ++
-                          "echo '✅ Copied LLVM libraries from vendor and fixed paths' || true", 
-                          .{vendor_lib_path}),
-                });
-                cmd.step.dependOn(&install_artifact.step);
-                std.debug.print("\n💡 macOS: LLVM libraries will be copied from vendor to zig-out/lib/\n", .{});
-                std.debug.print("💡 macOS: Binary paths will be fixed for portability\n", .{});
-                break :blk cmd;
-            },
-            .linux => blk: {
-                // Linux: Copy LLVM .so files from vendor
-                const cmd = b.addSystemCommand(&[_][]const u8{
-                    "sh", "-c",
-                    b.fmt("mkdir -p zig-out/lib && cp -f {s}/libLLVM*.so* zig-out/lib/ 2>/dev/null && echo '✅ Copied LLVM libraries from vendor' || true", .{vendor_lib_path}),
-                });
-                cmd.step.dependOn(&install_artifact.step);
-                std.debug.print("\n💡 Linux: LLVM libraries will be copied from vendor to zig-out/lib/\n", .{});
-                break :blk cmd;
-            },
-            else => null,
-        };
-        
-        if (copy_libs_step) |step| {
-            b.getInstallStep().dependOn(&step.step);
-        } else {
-            b.getInstallStep().dependOn(&install_artifact.step);
-        }
+        std.debug.print("\n💡 LLVM libraries are statically linked (no runtime dependencies)\n", .{});
+        b.getInstallStep().dependOn(&install_artifact.step);
     } else {
         // 🆕 v0.1.8: 无LLVM时的提示信息
         const info_step = switch (target.result.os.tag) {
