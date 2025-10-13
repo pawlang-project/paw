@@ -27,93 +27,52 @@ pub fn build(b: *std.Build) void {
     // Note: Let Zig use default linker (lld) for all platforms
     // This ensures compatibility without external dependencies like MinGW
 
-    // 🆕 检测系统 LLVM - 定义路径列表
-    const llvm_config_paths: []const []const u8 = if (target.result.os.tag == .macos)
-        &[_][]const u8{
-            "llvm-config",
-            "/opt/homebrew/opt/llvm@19/bin/llvm-config",  // ARM64 macOS
-            "/usr/local/opt/llvm@19/bin/llvm-config",     // Intel macOS
-        }
-    else if (target.result.os.tag == .linux)
-        &[_][]const u8{
-            "llvm-config",
-            "/usr/bin/llvm-config-19",
-            "/usr/lib/llvm-19/bin/llvm-config",
-        }
-    else if (target.result.os.tag == .windows)
-        &[_][]const u8{
-            "llvm-config.exe",
-            "C:\\Program Files\\LLVM\\bin\\llvm-config.exe",
-        }
-    else
-        &[_][]const u8{"llvm-config"};
+    // 🆕 仅检测vendor LLVM - 不依赖系统LLVM
+    const vendor_llvm_platform = switch (target.result.os.tag) {
+        .macos => if (target.result.cpu.arch == .aarch64)
+            "macos-aarch64"
+        else
+            "macos-x86_64",
+        .linux => switch (target.result.cpu.arch) {
+            .x86_64 => "linux-x86_64",
+            .aarch64 => "linux-aarch64",
+            .arm => "linux-arm",
+            .riscv64 => "linux-riscv64",
+            else => "linux-x86_64",
+        },
+        .windows => if (target.result.cpu.arch == .aarch64)
+            "windows-aarch64"
+        else
+            "windows-x86_64",
+        else => "unknown",
+    };
     
-    // Try to find llvm-config (Unix) or check LLVM directory (Windows)
+    const vendor_llvm_path = b.fmt("vendor/llvm/{s}/install", .{vendor_llvm_platform});
+    
+    // 检查vendor LLVM是否存在
     const llvm_config_path = blk: {
-        // 如果用户禁用LLVM，跳过检测
-        if (!enable_llvm) {
-            break :blk null;
-        }
+        if (!enable_llvm) break :blk null;
         
-        // Windows: llvm-config.exe doesn't exist in official builds, check directory directly
-        if (target.result.os.tag == .windows) {
-            const llvm_dir = "C:\\Program Files\\LLVM";
-            const llvm_bin = b.fmt("{s}\\bin", .{llvm_dir});
-            
-            // Check if LLVM directory exists by trying to access clang.exe
-            const clang_path = b.fmt("{s}\\clang.exe", .{llvm_bin});
-            std.fs.accessAbsolute(clang_path, .{}) catch {
-                break :blk null;  // LLVM not found
-            };
-            
-            // LLVM found, return a marker (we'll handle Windows specially later)
-            break :blk "windows_llvm";
-        }
+        // 检查vendor LLVM目录（使用相对路径）
+        const llvm_lib_dir = b.fmt("{s}/lib", .{vendor_llvm_path});
+        std.fs.cwd().access(llvm_lib_dir, .{}) catch {
+            break :blk null;  // vendor LLVM不存在
+        };
         
-        // Unix: use llvm-config
-        for (llvm_config_paths) |path| {
-            const result = std.process.Child.run(.{
-                .allocator = b.allocator,
-                .argv = &[_][]const u8{ path, "--version" },
-            }) catch continue;
-            defer b.allocator.free(result.stdout);
-            defer b.allocator.free(result.stderr);
-            if (result.term.Exited == 0) {
-                break :blk path;
-            }
-        }
-        break :blk null;
+        // vendor LLVM存在
+        const llvm_config = b.fmt("{s}/bin/llvm-config", .{vendor_llvm_path});
+        break :blk llvm_config;
     };
     
     const has_llvm = llvm_config_path != null;
-    const is_windows_llvm = if (llvm_config_path) |path| std.mem.eql(u8, path, "windows_llvm") else false;
     
-    // Get LLVM configuration from llvm-config
-    var llvm_link_flags: ?[]const u8 = null;
+    // 🆕 直接使用vendor路径，不需要llvm-config
     var llvm_include_path: ?[]const u8 = null;
+    var llvm_lib_path: ?[]const u8 = null;
     
-    // Configure LLVM paths and flags
-    if (llvm_config_path) |config_path| {
-        if (is_windows_llvm) {
-            // Windows: Use hardcoded paths since llvm-config.exe doesn't exist
-            llvm_include_path = "C:\\Program Files\\LLVM\\include";
-        } else {
-            // Unix: Use llvm-config
-            const link_result = b.run(&[_][]const u8{
-                config_path,
-                "--link-shared",
-                "--ldflags",
-                "--libs",
-                "--system-libs",
-            });
-            llvm_link_flags = link_result;
-            
-            // Get include path
-            llvm_include_path = b.run(&[_][]const u8{
-                config_path,
-                "--includedir",
-            });
-        }
+    if (has_llvm) {
+        llvm_include_path = b.fmt("{s}/include", .{vendor_llvm_path});
+        llvm_lib_path = b.fmt("{s}/lib", .{vendor_llvm_path});
     }
     
     build_options.addOption(bool, "llvm_native_available", has_llvm);
@@ -133,67 +92,72 @@ pub fn build(b: *std.Build) void {
     // Print LLVM configuration
     if (has_llvm) {
         std.debug.print("--- LLVM Configuration ---\n", .{});
-        if (is_windows_llvm) {
-            std.debug.print("Location: C:\\Program Files\\LLVM\n", .{});
-            std.debug.print("Detection: clang.exe found\n", .{});
-            std.debug.print("Linking: LLVM-C + libc++\n", .{});
-        } else if (llvm_config_path) |config_path| {
-            std.debug.print("Config: {s}\n", .{config_path});
-            std.debug.print("Detection: llvm-config\n", .{});
-            std.debug.print("Linking: shared libraries\n", .{});
-        }
+        std.debug.print("Location: {s}\n", .{vendor_llvm_path});
+        std.debug.print("Platform: {s}\n", .{vendor_llvm_platform});
+        std.debug.print("Version: 21.1.3\n", .{});
         std.debug.print("\n", .{});
         
         std.debug.print("Available Backends:\n", .{});
         std.debug.print("  - C backend    (default) -> --backend=c\n", .{});
         std.debug.print("  - LLVM backend (enabled) -> --backend=llvm\n", .{});
         
-        // Add LLVM include path
+        // Add LLVM include and library paths
         if (llvm_include_path) |include_path| {
-            const trimmed = std.mem.trim(u8, include_path, " \n\r\t");
-            exe.addIncludePath(.{ .cwd_relative = trimmed });
+            exe.addIncludePath(.{ .cwd_relative = include_path });
         }
         
-        // Windows: Link LLVM directly without llvm-config
-        if (is_windows_llvm) {
-            // Add LLVM library path
-            exe.addLibraryPath(.{ .cwd_relative = "C:\\Program Files\\LLVM\\lib" });
-            
-            // Link main LLVM library
-            exe.linkSystemLibrary("LLVM-C");
-            
-            // Windows C++ runtime (use linkLibCpp for proper MSVC linking)
-            exe.linkLibCpp();
-        } else {
-            // Unix: Use llvm-config output for all linking
-            if (llvm_link_flags) |flags| {
-                // Parse and add flags from llvm-config
-                var iter = std.mem.tokenizeAny(u8, flags, " \n\r\t");
-                while (iter.next()) |flag| {
-                    if (std.mem.startsWith(u8, flag, "-l")) {
-                        const lib_name = flag[2..];
-                        exe.linkSystemLibrary(lib_name);
-                    } else if (std.mem.startsWith(u8, flag, "-L")) {
-                        const lib_path = flag[2..];
-                        exe.addLibraryPath(.{ .cwd_relative = lib_path });
-                    }
-                }
-            }
-            
-            // Platform-specific C++ runtime
-            if (target.result.os.tag == .linux) {
-                exe.linkLibCpp();
-            } else if (target.result.os.tag == .macos) {
-                exe.linkLibCpp();
-            }
+        if (llvm_lib_path) |lib_path| {
+            exe.addLibraryPath(.{ .cwd_relative = lib_path });
         }
+        
+        // Link LLVM libraries (静态链接)
+        // 使用静态库避免动态库依赖
+        const llvm_libs = [_][]const u8{
+            "LLVMCore",
+            "LLVMSupport", 
+            "LLVMBitReader",
+            "LLVMBitWriter",
+            "LLVMTarget",
+            "LLVMTargetParser",
+            "LLVMAArch64CodeGen",
+            "LLVMAArch64AsmParser",
+            "LLVMAArch64Desc",
+            "LLVMAArch64Info",
+            "LLVMAArch64Utils",
+            "LLVMCodeGen",
+            "LLVMScalarOpts",
+            "LLVMInstCombine",
+            "LLVMTransformUtils",
+            "LLVMAnalysis",
+            "LLVMObject",
+            "LLVMMCParser",
+            "LLVMMC",
+            "LLVMBinaryFormat",
+            "LLVMRemarks",
+            "LLVMBitstreamReader",
+            "LLVMTextAPI",
+            "LLVMProfileData",
+            "LLVMSymbolize",
+            "LLVMDebugInfoDWARF",
+            "LLVMDemangle",
+        };
+        
+        for (llvm_libs) |lib| {
+            exe.linkSystemLibrary(lib);
+        }
+        
+        exe.linkLibCpp();
+        exe.linkSystemLibrary("z");  // zlib
+        exe.linkSystemLibrary("curses");  // ncurses
+        
     } else {
         std.debug.print("--- LLVM Configuration ---\n", .{});
         if (!enable_llvm) {
             std.debug.print("Status: LLVM backend disabled by user\n", .{});
             std.debug.print("Tip: Remove -Denable-llvm=false to enable\n", .{});
         } else {
-            std.debug.print("Status: LLVM not detected\n", .{});
+            std.debug.print("Status: LLVM not found in vendor/\n", .{});
+            std.debug.print("Platform: {s}\n", .{vendor_llvm_platform});
         }
         std.debug.print("\n", .{});
         
@@ -202,15 +166,11 @@ pub fn build(b: *std.Build) void {
         std.debug.print("  - LLVM backend (unavailable)\n\n", .{});
         
         if (enable_llvm) {
-            std.debug.print("Install LLVM to enable LLVM backend:\n", .{});
-            const os_tag = target.result.os.tag;
-            if (os_tag == .windows) {
-                std.debug.print("  -> choco install llvm --version=19.1.7\n", .{});
-            } else if (os_tag == .macos) {
-                std.debug.print("  -> brew install llvm@19\n", .{});
-            } else if (os_tag == .linux) {
-                std.debug.print("  -> sudo apt install llvm-19-dev\n", .{});
-            }
+            std.debug.print("📥 Download LLVM to enable LLVM backend:\n", .{});
+            std.debug.print("   ./setup_llvm.sh\n", .{});
+            std.debug.print("\n", .{});
+            std.debug.print("Or download manually from:\n", .{});
+            std.debug.print("   https://github.com/pawlang-project/llvm-build/releases/tag/llvm-21.1.3\n", .{});
         }
     }
     
@@ -223,51 +183,44 @@ pub fn build(b: *std.Build) void {
 
     const install_artifact = b.addInstallArtifact(exe, .{});
     
-    // 🆕 Cross-platform: Auto-copy LLVM libraries to output directory (for distribution)
+    // 🆕 从vendor目录复制LLVM库到输出目录
     if (has_llvm) {
+        const vendor_lib_path = llvm_lib_path.?;
+        
         const copy_libs_step = switch (target.result.os.tag) {
             .windows => blk: {
-                // Windows: Copy all DLL files
+                // Windows: Copy all DLL files from vendor
                 const cmd = b.addSystemCommand(&[_][]const u8{
                     "powershell", "-Command",
-                    "Copy-Item 'C:\\Program Files\\LLVM\\bin\\*.dll' 'zig-out\\bin\\' -ErrorAction SilentlyContinue; if ($?) { Write-Host '✅ Copied LLVM DLLs' }",
+                    b.fmt("Copy-Item '{s}\\*.dll' 'zig-out\\bin\\' -ErrorAction SilentlyContinue; if ($?) {{ Write-Host '✅ Copied LLVM DLLs from vendor' }}", .{vendor_lib_path}),
                 });
                 cmd.step.dependOn(&install_artifact.step);
-                std.debug.print("\n[Windows] LLVM DLLs will be auto-copied to output directory\n", .{});
+                std.debug.print("\n[Windows] LLVM DLLs will be copied from vendor to output\n", .{});
                 break :blk cmd;
             },
             .macos => blk: {
-                // macOS: Copy LLVM dylib files and fix paths for portability
-                const llvm_lib_path = if (target.result.cpu.arch == .aarch64)
-                    "/opt/homebrew/opt/llvm@19/lib"
-                else
-                    "/usr/local/opt/llvm@19/lib";
-                
+                // macOS: Copy LLVM dylib files from vendor and fix paths
                 const cmd = b.addSystemCommand(&[_][]const u8{
                     "sh", "-c",
                     b.fmt("mkdir -p zig-out/lib && " ++
-                          // Copy libraries
-                          "cp -f {s}/libLLVM-C.dylib zig-out/lib/ 2>/dev/null && " ++
-                          "cp -f {s}/libLLVM.dylib zig-out/lib/ 2>/dev/null && " ++
-                          // Fix install names for portability
+                          "cp -f {s}/libLLVM*.dylib zig-out/lib/ 2>/dev/null && " ++
                           "install_name_tool -add_rpath @executable_path/../lib zig-out/bin/pawc 2>/dev/null || true && " ++
-                          "install_name_tool -change {s}/libLLVM.dylib @rpath/libLLVM.dylib zig-out/bin/pawc 2>/dev/null || true && " ++
-                          "echo '✅ Copied LLVM libraries and fixed paths' || true", 
-                          .{llvm_lib_path, llvm_lib_path, llvm_lib_path}),
+                          "echo '✅ Copied LLVM libraries from vendor and fixed paths' || true", 
+                          .{vendor_lib_path}),
                 });
                 cmd.step.dependOn(&install_artifact.step);
-                std.debug.print("\n💡 macOS: LLVM libraries will be auto-copied to zig-out/lib/\n", .{});
+                std.debug.print("\n💡 macOS: LLVM libraries will be copied from vendor to zig-out/lib/\n", .{});
                 std.debug.print("💡 macOS: Binary paths will be fixed for portability\n", .{});
                 break :blk cmd;
             },
             .linux => blk: {
-                // Linux: Copy LLVM .so files
+                // Linux: Copy LLVM .so files from vendor
                 const cmd = b.addSystemCommand(&[_][]const u8{
                     "sh", "-c",
-                    "mkdir -p zig-out/lib && cp -f /usr/lib/llvm-19/lib/libLLVM-*.so* zig-out/lib/ 2>/dev/null && echo '✅ Copied LLVM libraries' || cp -f /usr/lib/x86_64-linux-gnu/libLLVM-*.so* zig-out/lib/ 2>/dev/null && echo '✅ Copied LLVM libraries' || true",
+                    b.fmt("mkdir -p zig-out/lib && cp -f {s}/libLLVM*.so* zig-out/lib/ 2>/dev/null && echo '✅ Copied LLVM libraries from vendor' || true", .{vendor_lib_path}),
                 });
                 cmd.step.dependOn(&install_artifact.step);
-                std.debug.print("\n💡 Linux: LLVM libraries will be auto-copied to zig-out/lib/\n", .{});
+                std.debug.print("\n💡 Linux: LLVM libraries will be copied from vendor to zig-out/lib/\n", .{});
                 break :blk cmd;
             },
             else => null,
@@ -526,4 +479,79 @@ pub fn build(b: *std.Build) void {
         no_llvm_info.step.dependOn(b.getInstallStep());
         dist_step.dependOn(&no_llvm_info.step);
     }
+    
+    // 🆕 v0.2.0: LLVM 自动下载步骤
+    const setup_llvm_step = b.step("setup-llvm", "Download and setup LLVM for current platform");
+    
+    const setup_llvm_cmd = switch (target.result.os.tag) {
+        .windows => blk: {
+            // Windows: 使用 PowerShell 脚本
+            const ps_script = b.addSystemCommand(&[_][]const u8{
+                "powershell", "-ExecutionPolicy", "Bypass", "-File", "setup_llvm.ps1"
+            });
+            break :blk ps_script;
+        },
+        .macos, .linux => blk: {
+            // Unix: 使用 bash 脚本
+            const sh_script = b.addSystemCommand(&[_][]const u8{
+                "sh", "setup_llvm.sh"
+            });
+            break :blk sh_script;
+        },
+        else => blk: {
+            const error_cmd = b.addSystemCommand(&[_][]const u8{
+                "echo", "❌ Platform not supported for automatic LLVM setup"
+            });
+            break :blk error_cmd;
+        },
+    };
+    
+    setup_llvm_step.dependOn(&setup_llvm_cmd.step);
+    
+    // 🆕 v0.2.0: 检查 LLVM 步骤（如果不存在则提示）
+    const check_llvm_step = b.step("check-llvm", "Check if LLVM is installed");
+    
+    const check_llvm_cmd = switch (target.result.os.tag) {
+        .windows => b.addSystemCommand(&[_][]const u8{
+            "powershell", "-Command",
+            b.fmt(
+                "if (Test-Path '{s}\\install\\bin\\clang.exe') {{ " ++
+                "Write-Host ''; Write-Host '✅ LLVM is installed' -ForegroundColor Green; " ++
+                "Write-Host '   Location: {s}\\install\\' -ForegroundColor Cyan; " ++
+                "Write-Host ''; & '{s}\\install\\bin\\clang.exe' --version | Select-Object -First 1; " ++
+                "Write-Host ''; Write-Host '🚀 You can use: zig build' -ForegroundColor Green; " ++
+                "}} else {{ " ++
+                "Write-Host ''; Write-Host '❌ LLVM not found' -ForegroundColor Red; " ++
+                "Write-Host ''; Write-Host '📥 To install LLVM, run:' -ForegroundColor Yellow; " ++
+                "Write-Host '   zig build setup-llvm'; " ++
+                "Write-Host ''; Write-Host '   Or manually:'; " ++
+                "Write-Host '   .\\setup_llvm.ps1'; " ++
+                "}}",
+                .{ vendor_llvm_path, vendor_llvm_path, vendor_llvm_path }
+            ),
+        }),
+        .macos, .linux => b.addSystemCommand(&[_][]const u8{
+            "sh", "-c",
+            b.fmt(
+                "CLANG_PATH='{s}/bin/clang'; " ++
+                "if [ -f \"$CLANG_PATH\" ]; then " ++
+                "echo ''; echo '✅ LLVM is installed'; " ++
+                "echo '   Location: {s}/'; " ++
+                "echo ''; \"$CLANG_PATH\" --version | head -1; " ++
+                "echo ''; echo '🚀 You can use: zig build'; " ++
+                "else " ++
+                "echo ''; echo '❌ LLVM not found'; " ++
+                "echo '   Expected: '$CLANG_PATH; " ++
+                "echo ''; echo '📥 To install LLVM, run:'; " ++
+                "echo '   zig build setup-llvm'; " ++
+                "echo ''; echo '   Or manually:'; " ++
+                "echo '   ./setup_llvm.sh'; " ++
+                "fi",
+                .{ vendor_llvm_path, vendor_llvm_path }
+            ),
+        }),
+        else => b.addSystemCommand(&[_][]const u8{ "echo", "Platform not supported" }),
+    };
+    
+    check_llvm_step.dependOn(&check_llvm_cmd.step);
 }
