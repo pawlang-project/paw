@@ -78,18 +78,18 @@ try {
 }
 
 Write-Host ""
-Write-Host "📦 Extracting to $VENDOR_DIR\install..." -ForegroundColor Cyan
+Write-Host "📦 Extracting to $VENDOR_DIR..." -ForegroundColor Cyan
 
 # Create vendor directory structure
-New-Item -ItemType Directory -Force -Path "$VENDOR_DIR\install" | Out-Null
+New-Item -ItemType Directory -Force -Path "$VENDOR_DIR" | Out-Null
 
 # Extract using tar (available in Windows 10+)
 if (Get-Command tar -ErrorAction SilentlyContinue) {
-    tar -xzf $FILENAME -C "$VENDOR_DIR\install\"
+    tar -xzf $FILENAME -C "$VENDOR_DIR\"
 } else {
     # Fallback: use 7-Zip if available
     if (Get-Command 7z -ErrorAction SilentlyContinue) {
-        7z x $FILENAME -so | 7z x -si -ttar -o"$VENDOR_DIR\install"
+        7z x $FILENAME -so | 7z x -si -ttar -o"$VENDOR_DIR"
     } else {
         Write-Host "❌ Missing extraction tool" -ForegroundColor Red
         Write-Host "   Please install tar (Windows 10+) or 7-Zip" -ForegroundColor Yellow
