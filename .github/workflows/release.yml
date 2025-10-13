@@ -175,15 +175,6 @@ jobs:
           ./setup_llvm.sh --yes
           
           echo "✅ LLVM installed via vendor script"
-          
-          # Debug: Check actual directory structure
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🔍 Debugging: Checking LLVM directory structure..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          ls -la vendor/llvm/ || true
-          ls -la vendor/llvm/*/ || true
-          ls -la vendor/llvm/*/install/ || true
-          ls -la vendor/llvm/*/install/lib/ | head -20 || true
       
       - name: Build for ${{ matrix.arch }}
         run: |
@@ -211,7 +202,6 @@ jobs:
           # Create package directory
           mkdir -p pawlang
           cp -r zig-out/bin pawlang/
-          cp -r zig-out/lib pawlang/ 2>/dev/null || true
           cp -r examples pawlang/
           cp README.md LICENSE pawlang/
           
@@ -260,15 +250,6 @@ jobs:
           ./setup_llvm.sh --yes
           
           echo "✅ LLVM installed via vendor script"
-          
-          # Debug: Check actual directory structure
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🔍 Debugging: Checking LLVM directory structure..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          ls -la vendor/llvm/ || true
-          ls -la vendor/llvm/*/ || true
-          ls -la vendor/llvm/*/install/ || true
-          ls -la vendor/llvm/*/install/lib/ | head -20 || true
       
       - name: Build for macOS ${{ matrix.arch }}
         run: |
@@ -289,7 +270,6 @@ jobs:
           # Create package directory
           mkdir -p pawlang
           cp -r zig-out/bin pawlang/
-          cp -r zig-out/lib pawlang/
           cp -r examples pawlang/
           cp README.md LICENSE pawlang/
           
