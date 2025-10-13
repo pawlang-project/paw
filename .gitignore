@@ -44,6 +44,16 @@ vendor/*.tar.gz
 llvm/install/
 !llvm/.gitkeep     # Keep directory structure marker
 
+# LLVM编译相关
+llvm_build/*
+llvm-targets/*
+llvm_install/*
+llvm-build/
+llvm-install/
+llvm_all_targets_build.log
+llvm_build.log
+llvm_build.pid
+
 # 编译产物
 output.c
 output.ll

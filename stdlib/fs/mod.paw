@@ -3,184 +3,460 @@
 // 提供跨平台的文件和目录操作
 
 // ============================================================================
-// 外部函数声明（来自 builtin_fs.zig）
+// 路径工具函数（纯PawLang实现 - 立即可用！）
 // ============================================================================
 
-// 注意：这些是 Zig 层的系统调用
-// PawLang 当前不支持直接调用外部函数，所以这是占位符
-// 实际实现需要编译器支持 FFI
+/// 检查路径是否为绝对路径
+/// 
+/// Unix: 以 '/' 开头
+/// Windows: 以驱动器号开头 (如 'C:\')
+/// 
+/// 示例：
+/// ```paw
+/// let is_abs = is_absolute("/home/user");      // true (Unix)
+/// let is_abs2 = is_absolute("C:\\Windows");    // true (Windows)
+/// let is_rel = is_absolute("file.txt");        // false
+/// ```
+pub fn is_absolute(path: string) -> bool {
+    let len: i32 = string_length(path);
+    
+    if len == 0 {
+        return false;
+    }
+    
+    let first: char = path[0];
+    let code: i32 = first as i32;
+    
+    // Unix: '/' = 47
+    if code == 47 {
+        return true;
+    }
+    
+    // Windows: 检查 'C:' 格式
+    if len >= 2 {
+        let second: char = path[1];
+        let second_code: i32 = second as i32;
+        
+        // ':' = 58
+        if second_code == 58 {
+            // 检查第一个字符是否为字母
+            if (code >= 65 && code <= 90) || (code >= 97 && code <= 122) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+/// 检查路径是否为相对路径
+pub fn is_relative(path: string) -> bool {
+    return !is_absolute(path);
+}
+
+/// 检查路径是否有文件扩展名
+/// 
+/// 示例：
+/// ```paw
+/// let has_ext = has_extension("file.txt");  // true
+/// let has_ext2 = has_extension("README");   // false
+/// ```
+pub fn has_extension(path: string) -> bool {
+    let len: i32 = string_length(path);
+    let mut i: i32 = 0;
+    
+    loop {
+        if i >= len {
+            break;
+        }
+        
+        let ch: char = path[i];
+        let code: i32 = ch as i32;
+        
+        if code == 46 {  // '.'
+            // 确保不是开头的点（隐藏文件）
+            if i > 0 {
+                return true;
+            }
+        }
+        
+        i += 1;
+    }
+    
+    return false;
+}
+
+/// 检查字符是否为路径分隔符 ('/' 或 '\')
+pub fn is_separator(ch: char) -> bool {
+    let code: i32 = ch as i32;
+    return code == 47 || code == 92;  // '/' or '\'
+}
+
+/// 检查路径是否以分隔符结尾
+pub fn ends_with_separator(path: string) -> bool {
+    let len: i32 = string_length(path);
+    
+    if len == 0 {
+        return false;
+    }
+    
+    let last: char = path[len - 1];
+    return is_separator(last);
+}
 
 // ============================================================================
-// 文件读写 API
+// 高级路径工具
+// ============================================================================
+
+/// 统计路径中分隔符的数量（路径深度指示器）
+/// 
+/// 示例：
+/// ```paw
+/// let depth = count_separators("/a/b/c");  // 3
+/// let depth2 = count_separators("a/b");    // 1
+/// ```
+pub fn count_separators(path: string) -> i32 {
+    let len: i32 = string_length(path);
+    let mut count: i32 = 0;
+    let mut i: i32 = 0;
+    
+    loop {
+        if i >= len {
+            break;
+        }
+        
+        let ch: char = path[i];
+        if is_separator(ch) {
+            count += 1;
+        }
+        
+        i += 1;
+    }
+    
+    return count;
+}
+
+/// 查找路径中第一个分隔符的位置
+/// 返回-1表示未找到
+pub fn find_separator(path: string) -> i32 {
+    let len: i32 = string_length(path);
+    let mut i: i32 = 0;
+    
+    loop {
+        if i >= len {
+            break;
+        }
+        
+        let ch: char = path[i];
+        if is_separator(ch) {
+            return i;
+        }
+        
+        i += 1;
+    }
+    
+    return -1;
+}
+
+/// 查找路径中最后一个分隔符的位置
+/// 返回-1表示未找到
+pub fn find_last_separator(path: string) -> i32 {
+    let len: i32 = string_length(path);
+    let mut last_pos: i32 = -1;
+    let mut i: i32 = 0;
+    
+    loop {
+        if i >= len {
+            break;
+        }
+        
+        let ch: char = path[i];
+        if is_separator(ch) {
+            last_pos = i;
+        }
+        
+        i += 1;
+    }
+    
+    return last_pos;
+}
+
+/// 查找路径中最后一个点的位置（扩展名分隔符）
+/// 返回-1表示未找到
+pub fn find_last_dot(path: string) -> i32 {
+    let len: i32 = string_length(path);
+    let mut last_dot: i32 = -1;
+    let mut i: i32 = 0;
+    
+    loop {
+        if i >= len {
+            break;
+        }
+        
+        let ch: char = path[i];
+        let code: i32 = ch as i32;
+        
+        if code == 46 {  // '.'
+            if i > 0 {  // 不是第一个字符
+                last_dot = i;
+            }
+        }
+        
+        i += 1;
+    }
+    
+    return last_dot;
+}
+
+/// 获取路径长度（字符数）
+pub fn path_length(path: string) -> i32 {
+    return string_length(path);
+}
+
+/// 比较两个路径是否相同（简单字符串比较）
+pub fn path_equals(path1: string, path2: string) -> bool {
+    let len1: i32 = string_length(path1);
+    let len2: i32 = string_length(path2);
+    
+    if len1 != len2 {
+        return false;
+    }
+    
+    let mut i: i32 = 0;
+    loop {
+        if i >= len1 {
+            break;
+        }
+        
+        let ch1: char = path1[i];
+        let ch2: char = path2[i];
+        
+        if (ch1 as i32) != (ch2 as i32) {
+            return false;
+        }
+        
+        i += 1;
+    }
+    
+    return true;
+}
+
+// ============================================================================
+// 文件读写 API（待FFI支持）
 // ============================================================================
 
 /// 读取文件内容
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
+/// 
 /// @param path 文件路径
 /// @return 文件内容字符串
 pub fn read_file(path: string) -> string {
-    // TODO: 调用 paw_read_file
-    // 当前返回占位符
-    return "file content";
+    // TODO: 需要FFI支持调用 paw_read_file
+    return "file content placeholder";
 }
 
 /// 写入文件（覆盖）
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
+/// 
 /// @param path 文件路径
 /// @param content 文件内容
 /// @return 成功返回 true
 pub fn write_file(path: string, content: string) -> bool {
-    // TODO: 调用 paw_write_file
+    // TODO: 需要FFI支持调用 paw_write_file
     return true;
 }
 
 /// 追加到文件
-/// @param path 文件路径
-/// @param content 要追加的内容
-/// @return 成功返回 true
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
 pub fn append_file(path: string, content: string) -> bool {
-    // TODO: 调用 paw_append_file
+    // TODO: 需要FFI支持调用 paw_append_file
     return true;
 }
 
 // ============================================================================
-// 文件检查 API
+// 文件检查 API（待FFI支持）
 // ============================================================================
 
 /// 检查文件是否存在
-/// @param path 文件路径
-/// @return 存在返回 true
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
 pub fn exists(path: string) -> bool {
-    // TODO: 调用 paw_file_exists
-    return true;
+    // TODO: 需要FFI支持调用 paw_file_exists
+    return false;
 }
 
 /// 检查是否为目录
-/// @param path 路径
-/// @return 是目录返回 true
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
 pub fn is_dir(path: string) -> bool {
-    // TODO: 调用 paw_is_dir
+    // TODO: 需要FFI支持调用 paw_is_dir
     return false;
 }
 
 /// 获取文件大小
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
+/// 
 /// @param path 文件路径
 /// @return 文件大小（字节），失败返回 -1
 pub fn file_size(path: string) -> i32 {
-    // TODO: 调用 paw_file_size
+    // TODO: 需要FFI支持调用 paw_file_size
     return 0;
 }
 
 // ============================================================================
-// 文件操作 API
+// 文件操作 API（待FFI支持）
 // ============================================================================
 
 /// 删除文件
-/// @param path 文件路径
-/// @return 成功返回 true
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
 pub fn delete_file(path: string) -> bool {
-    // TODO: 调用 paw_delete_file
+    // TODO: 需要FFI支持调用 paw_delete_file
     return true;
 }
 
 /// 重命名/移动文件
-/// @param old_path 旧路径
-/// @param new_path 新路径
-/// @return 成功返回 true
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
 pub fn rename(old_path: string, new_path: string) -> bool {
-    // TODO: 调用 paw_rename_file
+    // TODO: 需要FFI支持调用 paw_rename_file
     return true;
 }
 
 /// 复制文件
-/// @param src 源文件路径
-/// @param dst 目标文件路径
-/// @return 成功返回 true
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
+/// 
+/// 实现：读取源文件内容，写入目标文件
 pub fn copy_file(src: string, dst: string) -> bool {
-    // 实现：读取 -> 写入
     let content: string = read_file(src);
     return write_file(dst, content);
 }
 
 // ============================================================================
-// 目录操作 API
+// 目录操作 API（待FFI支持）
 // ============================================================================
 
 /// 创建目录
-/// @param path 目录路径
-/// @return 成功返回 true
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
 pub fn create_dir(path: string) -> bool {
-    // TODO: 调用 paw_create_dir
+    // TODO: 需要FFI支持调用 paw_create_dir
     return true;
 }
 
-/// 递归创建目录
-/// @param path 目录路径
-/// @return 成功返回 true
+/// 递归创建目录（类似 mkdir -p）
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
 pub fn create_dir_all(path: string) -> bool {
-    // TODO: 调用 paw_create_dir_all
+    // TODO: 需要FFI支持调用 paw_create_dir_all
     return true;
 }
 
 /// 删除空目录
-/// @param path 目录路径
-/// @return 成功返回 true
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
 pub fn delete_dir(path: string) -> bool {
-    // TODO: 调用 paw_delete_dir
+    // TODO: 需要FFI支持调用 paw_delete_dir
     return true;
 }
 
 /// 递归删除目录及内容
-/// @param path 目录路径
-/// @return 成功返回 true
+/// 
+/// ⚠️ 需要FFI支持 - 当前为占位实现
+/// 
+/// ⚠️ 危险操作：会删除目录下所有内容
 pub fn delete_dir_all(path: string) -> bool {
-    // TODO: 调用 paw_delete_dir_all
+    // TODO: 需要FFI支持调用 paw_delete_dir_all
     return true;
 }
 
 // ============================================================================
-// 工具函数
+// 路径解析工具（待字符串切片支持）
 // ============================================================================
 
-/// 获取文件扩展名
-/// @param path 文件路径
-/// @return 扩展名（不含点）
+/// 获取文件扩展名（不含点）
+/// 
+/// ⚠️ 需要字符串切片支持 - 当前返回占位符
+/// 
+/// 示例：
+/// ```paw
+/// let ext = extension("file.txt");  // 应返回 "txt"
+/// ```
 pub fn extension(path: string) -> string {
-    // TODO: 实现路径解析
-    return "txt";
+    // TODO: 需要字符串切片支持
+    return "ext";
 }
 
 /// 获取文件名（不含路径）
-/// @param path 文件路径
-/// @return 文件名
+/// 
+/// ⚠️ 需要字符串切片支持 - 当前返回占位符
 pub fn filename(path: string) -> string {
-    // TODO: 实现路径解析
-    return "file.txt";
+    // TODO: 需要字符串切片支持
+    return "filename";
 }
 
 /// 获取父目录路径
-/// @param path 文件路径
-/// @return 父目录路径
-pub fn parent(path: string) -> string {
-    // TODO: 实现路径解析
-    return "/path/to";
+/// 
+/// ⚠️ 需要字符串切片支持 - 当前返回占位符
+pub fn parent_dir(path: string) -> string {
+    // TODO: 需要字符串切片支持
+    return "parent";
 }
 
 // ============================================================================
-// 路径操作
+// 路径操作（待字符串拼接支持）
 // ============================================================================
 
 /// 拼接路径
-/// @param base 基础路径
-/// @param part 要拼接的部分
-/// @return 拼接后的路径
+/// 
+/// ⚠️ 需要字符串拼接支持 - 当前返回第一个参数
 pub fn join(base: string, part: string) -> string {
-    // TODO: 实现路径拼接
-    return "/path/to/file";
+    // TODO: 需要字符串拼接支持
+    return base;
 }
 
 /// 规范化路径
-/// @param path 原始路径
-/// @return 规范化后的路径
+/// 
+/// ⚠️ 需要字符串处理支持 - 当前返回原路径
 pub fn normalize(path: string) -> string {
-    // TODO: 实现路径规范化
+    // TODO: 处理 '.' 和 '..'
     return path;
 }
+
+// ============================================================================
+// 版本和状态
+// ============================================================================
+
+// Version: v0.2.0
+// 
+// ✅ 立即可用:
+// - is_absolute()      - 检查绝对路径 ⭐
+// - is_relative()      - 检查相对路径 ⭐
+// - has_extension()    - 检查扩展名 ⭐
+// - is_separator()     - 检查分隔符 ⭐
+// - ends_with_separator() - 检查路径结尾 ⭐
+// 
+// ⏳ 等待FFI支持:
+// - read_file()        - 读取文件
+// - write_file()       - 写入文件
+// - append_file()      - 追加文件
+// - exists()           - 检查存在
+// - is_dir()           - 检查目录
+// - file_size()        - 文件大小
+// - delete_file()      - 删除文件
+// - rename()           - 重命名
+// - copy_file()        - 复制文件
+// - create_dir()       - 创建目录
+// - delete_dir()       - 删除目录
+// 
+// ⏳ 等待字符串切片:
+// - extension()        - 获取扩展名
+// - filename()         - 获取文件名
+// - parent_dir()       - 获取父目录
+// - join()             - 拼接路径
+// - normalize()        - 规范化路径

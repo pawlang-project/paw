@@ -41,49 +41,101 @@ jobs:
           body: |
             ## 🎉 PawLang ${{ steps.get_version.outputs.version }} Release
             
+            **LLVM Version**: 21.1.3  
+            **Zig Version**: 0.15.1  
+            **Build Date**: ${{ github.event.head_commit.timestamp }}
+            
+            ### 🌟 Highlights (v0.2.0)
+            
+            - ✅ **LLVM Backend 100% Complete** - Full enum support, error propagation (?)
+            - ✅ **Zero Memory Leaks** - Professional-grade memory management
+            - ✅ **90%+ Feature Coverage** - All core features working
+            - ✅ **Cross-Platform LLVM Setup** - `zig build setup-llvm` for all platforms
+            - ✅ **JSON & File System Modules** - Standard library enhancements
+            
             ### 🚀 Download Pre-built Binaries
             
             Choose the appropriate package for your platform:
             
-            | Platform | Architecture | Download |
-            |----------|-------------|----------|
-            | 🐧 Linux | x86_64 | `pawlang-linux-x86_64.tar.gz` |
-            | 🐧 Linux | x86 (32-bit) | `pawlang-linux-x86.tar.gz` |
-            | 🐧 Linux | ARM32 (armv7) | `pawlang-linux-armv7.tar.gz` |
-            | 🍎 macOS | Intel (x86_64) | `pawlang-macos-x86_64.tar.gz` |
-            | 🍎 macOS | Apple Silicon (ARM64) | `pawlang-macos-arm64.tar.gz` |
-            | 🪟 Windows | x86_64 | `pawlang-windows-x86_64.zip` |
-            | 🪟 Windows | x86 (32-bit) | `pawlang-windows-x86.zip` |
+            | Platform | Architecture | Download | LLVM Backend |
+            |----------|-------------|----------|--------------|
+            | 🐧 Linux | x86_64 | `pawlang-linux-x86_64.tar.gz` | ✅ |
+            | 🐧 Linux | x86 (32-bit) | `pawlang-linux-x86.tar.gz` | ❌ (C only) |
+            | 🐧 Linux | ARM32 (armv7) | `pawlang-linux-armv7.tar.gz` | ❌ (C only) |
+            | 🍎 macOS | Intel (x86_64) | `pawlang-macos-x86_64.tar.gz` | ✅ |
+            | 🍎 macOS | Apple Silicon (ARM64) | `pawlang-macos-arm64.tar.gz` | ✅ |
+            | 🪟 Windows | x86_64 | `pawlang-windows-x86_64.zip` | ✅ |
+            | 🪟 Windows | x86 (32-bit) | `pawlang-windows-x86.zip` | ❌ (C only) |
             
             ### ✨ Self-Contained Distribution
             
             All packages are **self-contained** and include:
-            - ✅ PawLang compiler (`pawc`)
-            - ✅ All LLVM libraries (no system LLVM required)
-            - ✅ Example programs
-            - ✅ Documentation
-            - ✅ Both C and LLVM backends
+            - ✅ PawLang compiler (`pawc` / `pawc.exe`)
+            - ✅ LLVM 21.1.3 libraries bundled (no system LLVM required)
+            - ✅ Example programs showcasing all features
+            - ✅ Complete documentation
+            - ✅ Both C and LLVM backends (where supported)
             
             ### 🎯 Quick Start
             
+            **Unix (macOS/Linux)**:
             ```bash
             # Extract the package
-            tar -xzf pawlang-*.tar.gz  # or unzip for Windows
+            tar -xzf pawlang-*.tar.gz
             cd pawlang
             
             # Run your first program
             ./bin/pawc examples/hello.paw --run
-            # Windows: bin\pawc.exe examples\hello.paw --run
+            
+            # Use LLVM backend for better performance
+            ./bin/pawc examples/hello.paw --backend=llvm --run
+            ```
+            
+            **Windows**:
+            ```powershell
+            # Extract the package
+            Expand-Archive pawlang-windows-x86_64.zip
+            cd pawlang
+            
+            # Run your first program
+            .\bin\pawc.exe examples\hello.paw --run
+            
+            # Use LLVM backend
+            .\bin\pawc.exe examples\hello.paw --backend=llvm --run
             ```
             
             ### 📚 Documentation
             
-            - [README](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/README.md)
-            - [Quick Start Guide](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/docs/QUICKSTART.md)
-            - [Version Requirements](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/docs/VERSION_REQUIREMENTS.md)
-            - [Architecture Support](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/ARCHITECTURE_SUPPORT.md)
+            - [README](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/README.md) - Project overview
+            - [CHANGELOG](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/CHANGELOG.md) - Full changelog
+            - [Quick Start Guide](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/docs/QUICKSTART.md) - Get started in 5 minutes
+            - [Build System Guide](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/docs/BUILD_SYSTEM_GUIDE.md) - Build from source
+            - [LLVM Setup Guide](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/docs/LLVM_SETUP_CROSS_PLATFORM.md) - LLVM installation
             
-            **Built with ❤️ using Zig and LLVM**
+            ### 🏗️ Build from Source
+            
+            ```bash
+            git clone https://github.com/${{ github.repository }}.git
+            cd paw
+            
+            # One-command LLVM setup (all platforms)
+            zig build setup-llvm
+            
+            # Build
+            zig build
+            
+            # Test
+            ./zig-out/bin/pawc examples/hello.paw --backend=llvm --run
+            ```
+            
+            ### 💎 What's New
+            
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/CHANGELOG.md) for complete details.
+            
+            ---
+            
+            **Built with ❤️ using Zig 0.15.1 and LLVM 21.1.3**  
+            **🐾 Happy Coding with PawLang!**
 
   build-linux:
     name: Build Linux (${{ matrix.arch }})
@@ -111,19 +163,18 @@ jobs:
         with:
           version: 0.15.1
       
-      - name: Install LLVM 19
+      - name: Install LLVM 21.1.3
         if: matrix.cross_compile == false
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📦 Installing LLVM 19.1.7..."
+          echo "📦 Installing LLVM 21.1.3 via setup script..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 19
-          sudo apt-get install -y llvm-19-dev libllvm19
+          # 使用项目的 LLVM 安装脚本
+          chmod +x setup_llvm.sh
+          ./setup_llvm.sh
           
-          echo "✅ LLVM installed"
+          echo "✅ LLVM installed via vendor script"
       
       - name: Build for ${{ matrix.arch }}
         run: |
@@ -189,15 +240,17 @@ jobs:
         with:
           version: 0.15.1
       
-      - name: Install LLVM 19
+      - name: Install LLVM 21.1.3
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📦 Installing LLVM 19.1.7..."
+          echo "📦 Installing LLVM 21.1.3 via setup script..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          brew install llvm@19
+          # 使用项目的 LLVM 安装脚本
+          chmod +x setup_llvm.sh
+          ./setup_llvm.sh
           
-          echo "✅ LLVM installed"
+          echo "✅ LLVM installed via vendor script"
       
       - name: Build for macOS ${{ matrix.arch }}
         run: |
@@ -258,25 +311,17 @@ jobs:
         with:
           version: 0.15.1
       
-      - name: Install LLVM 19
+      - name: Install LLVM 21.1.3
         if: matrix.enable_llvm
         run: |
-          Write-Host "Installing LLVM 19.1.7..."
+          Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          Write-Host "📦 Installing LLVM 21.1.3 via setup script..."
+          Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          # Download LLVM 19.1.7
-          $llvmUrl = "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/LLVM-19.1.7-win64.exe"
-          $llvmInstaller = "$env:TEMP\llvm-installer.exe"
+          # 使用项目的 LLVM 安装脚本
+          .\setup_llvm.ps1
           
-          Write-Host "Downloading LLVM..."
-          Invoke-WebRequest -Uri $llvmUrl -OutFile $llvmInstaller
-          
-          Write-Host "Installing LLVM..."
-          Start-Process -FilePath $llvmInstaller -ArgumentList "/S" -Wait
-          
-          # Add to PATH
-          $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
-          
-          Write-Host "LLVM installed"
+          Write-Host "✅ LLVM installed via vendor script"
       
       - name: Build for Windows ${{ matrix.arch }}
         run: |

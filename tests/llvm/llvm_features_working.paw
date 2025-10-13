@@ -1,0 +1,60 @@
+// LLVM Backend - Working Features Test
+// 修复版：所有功能测试
+
+// 1. 算术运算
+fn test_arithmetic() -> i32 {
+    let a = 15;
+    let b = 25;
+    let sum = a + b;
+    let diff = b - a;
+    let prod = a * 3;
+    let quot = b / 5;
+    return sum + diff + prod + quot;  // 100
+}
+
+// 2. 比较运算
+fn test_comparisons() -> i32 {
+    let a = 10;
+    let b = 20;
+    
+    let eq = if a == 10 { 1 } else { 0 };
+    let ne = if a != b { 1 } else { 0 };
+    let lt = if a < b { 1 } else { 0 };
+    let le = if a <= 10 { 1 } else { 0 };
+    let gt = if b > a { 1 } else { 0 };
+    let ge = if b >= 20 { 1 } else { 0 };
+    
+    return eq + ne + lt + le + gt + ge;  // 6
+}
+
+// 3. 递归函数
+fn factorial(n: i32) -> i32 {
+    return if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    };
+}
+
+// 4. 循环
+fn sum_to_n(n: i32) -> i32 {
+    let mut sum = 0;
+    let mut i = 0;
+    
+    loop i in 0..n {
+        sum = sum + i;
+    }
+    
+    return sum;
+}
+
+// 5. 主函数
+fn main() -> i32 {
+    let t1 = test_arithmetic();    // 100
+    let t2 = test_comparisons();   // 6
+    let t3 = factorial(5);         // 120
+    let t4 = sum_to_n(11);         // 0+1+2+...+10 = 55
+    
+    return t1 + t2 + t3 + t4;  // 281
+}
+

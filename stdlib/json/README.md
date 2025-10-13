@@ -1,28 +1,108 @@
-# 🔧 JSON Module
+# JSON 解析器模块
 
-**路径**: `stdlib/json/mod.paw`  
+PawLang v0.2.0 内置的 JSON 解析和序列化模块。
+
+## 📦 模块状态
+
 **版本**: v0.2.0  
-**状态**: 🚧 开发中
+**状态**: ✅ 基础功能完成  
+**支持的JSON类型**: Null, Boolean, Number, String  
+**待完善**: 嵌套对象和数组（需要动态Vec<T>支持）
 
----
+## 🚀 快速开始
 
-## 📋 概述
+### 导入模块
 
-JSON 模块提供 JSON 数据的解析和序列化功能。
+```paw
+import json.{parse, stringify, JsonValue};
+```
 
-### 当前状态
+### 基本用法
 
-- ✅ JsonValue enum 定义
-- ✅ Token enum 定义  
-- ✅ Lexer 词法分析（部分）
-- ✅ Parser 语法分析（基础）
-- ⏳ 嵌套结构支持（待实现）
+#### 1. 解析 JSON
 
----
+```paw
+// 解析 null
+let json_str = "null";
+let value = parse(json_str);
 
-## 🎯 API 设计
+// 解析布尔值
+let json_bool = "true";
+let value = parse(json_bool);
 
-### JsonValue 类型
+// 解析数字
+let json_num = "42";
+let value = parse(json_num);
+
+// 解析负数
+let json_neg = "-123";
+let value = parse(json_neg);
+
+// 解析浮点数
+let json_float = "3.14";
+let value = parse(json_float);
+
+// 解析字符串
+let json_str = "\"hello\"";
+let value = parse(json_str);
+```
+
+#### 2. 处理解析结果
+
+使用 `is` 表达式进行模式匹配：
+
+```paw
+let result = parse("42");
+
+let value = result is {
+    Null => {
+        println("Got null");
+        return 0;
+    },
+    Bool(b) => {
+        if b {
+            println("Got true");
+        } else {
+            println("Got false");
+        }
+        return 1;
+    },
+    Number(n) => {
+        let int_val = n as i32;
+        println("Got number");
+        return int_val;
+    },
+    String(s) => {
+        println("Got string");
+        return 1;
+    },
+    _ => {
+        println("Unknown type");
+        return -1;
+    },
+};
+```
+
+#### 3. 序列化为 JSON
+
+```paw
+// 创建 JSON 值
+let null_val = JsonValue::Null;
+let bool_val = JsonValue::Bool(true);
+let num_val = JsonValue::Number(42.0);
+let str_val = JsonValue::String("hello");
+
+// 转换为字符串
+let json_str = stringify(num_val);
+```
+
+## 📚 API 参考
+
+### 类型定义
+
+#### `JsonValue` (enum)
+
+表示 JSON 值的枚举类型：
 
 ```paw
 pub type JsonValue = enum {
@@ -30,358 +110,238 @@ pub type JsonValue = enum {
     Bool(bool),
     Number(f64),
     String(string),
-    // TODO: v0.3.0
-    // Array(Vec<JsonValue>),
-    // Object(HashMap<string, JsonValue>),
 }
 ```
 
----
+**变体说明**：
+- `Null`: JSON null 值
+- `Bool(bool)`: JSON 布尔值（true/false）
+- `Number(f64)`: JSON 数字（整数和浮点数）
+- `String(string)`: JSON 字符串
 
-### 解析 API
+### 公共函数
 
+#### `parse(json_str: string) -> JsonValue`
+
+解析 JSON 字符串。
+
+**参数**：
+- `json_str`: 要解析的 JSON 字符串
+
+**返回**：
+- `JsonValue`: 解析后的 JSON 值
+
+**示例**：
 ```paw
-// 解析 JSON 字符串
-pub fn parse(json_str: string) -> JsonValue
-
-// 示例:
-let json = parse("42");
-let result = json is {
-    Number(n) => n,
-    _ => 0,
-};
+let value = parse("42");
+let value2 = parse("true");
+let value3 = parse("\"hello\"");
 ```
 
-**当前限制**:
-- ⚠️ 仅支持基本类型（null, bool, number, string）
-- ⚠️ 不支持数组 `[1, 2, 3]`
-- ⚠️ 不支持对象 `{"key": "value"}`
+#### `stringify(value: JsonValue) -> string`
 
----
+将 JSON 值序列化为字符串。
 
-### 序列化 API
+**参数**：
+- `value`: 要序列化的 JSON 值
 
+**返回**：
+- `string`: JSON 字符串表示
+
+**注意**: 当前版本由于 StringBuilder 限制，返回简化的字符串表示。
+
+**示例**：
 ```paw
-// 序列化为 JSON 字符串
-pub fn stringify(value: JsonValue) -> string
-
-// 示例:
 let value = JsonValue::Number(42.0);
-let json_str = stringify(value);  // "42"
+let json_str = stringify(value);
 ```
 
-**当前限制**:
-- ⚠️ 数字转字符串简化实现
-- ⚠️ 字符串转义不完整
+#### `is_valid(json_str: string) -> bool`
 
----
+验证 JSON 字符串格式（待实现）。
 
-## 💡 使用示例
+#### `get_field(obj: JsonValue, key: string) -> JsonValue`
 
-### 示例 1: 解析基础类型
+从 JSON 对象获取字段（待实现）。
+
+#### `get_index(arr: JsonValue, index: i32) -> JsonValue`
+
+从 JSON 数组获取元素（待实现）。
+
+## 🎯 功能特性
+
+### ✅ 已实现
+
+- ✅ **词法分析**：完整的 JSON Token 识别
+- ✅ **语法解析**：递归下降解析器
+- ✅ **Null 解析**：`null` 关键字
+- ✅ **布尔解析**：`true`/`false` 关键字
+- ✅ **数字解析**：整数和浮点数（包括负数）
+- ✅ **字符串解析**：带引号的字符串（基本转义支持）
+- ✅ **序列化**：基本的 JSON 值转字符串
+- ✅ **转义处理**：`\n`, `\r`, `\t`, `\"`, `\\`
+
+### 🚧 待实现
+
+- ⏳ **嵌套对象**：`{"key": "value"}` （需要 HashMap）
+- ⏳ **嵌套数组**：`[1, 2, 3]` （需要动态 Vec<T>）
+- ⏳ **Unicode 转义**：`\uXXXX`
+- ⏳ **科学计数法**：`1.23e10`
+- ⏳ **完整字符串切片**：动态子字符串提取
+
+## 📝 示例程序
+
+### 完整示例
 
 ```paw
-import json;
+import json.{parse, stringify, JsonValue};
 
-fn test_parse() -> i32 {
-    // 解析 null
-    let null_val = json::parse("null");
+fn main() -> i32 {
+    // 解析不同类型的 JSON
+    let null_val = parse("null");
+    let bool_val = parse("true");
+    let num_val = parse("42");
+    let float_val = parse("3.14");
+    let str_val = parse("\"hello\"");
     
-    // 解析 bool
-    let true_val = json::parse("true");
-    let false_val = json::parse("false");
+    // 使用模式匹配处理
+    let result = num_val is {
+        Number(n) => {
+            let i = n as i32;
+            println("Number: 42");
+            return i;
+        },
+        _ => 0,
+    };
     
-    // 解析数字
-    let num = json::parse("42");
-    
-    // 解析字符串
-    let str_val = json::parse("\"hello\"");
+    // 序列化
+    let value = JsonValue::Number(123.0);
+    let json_str = stringify(value);
     
     return 0;
 }
 ```
 
----
+### 测试文件
 
-### 示例 2: 使用模式匹配
+查看 `tests/json/test_json_complete.paw` 获取完整的测试套件。
 
-```paw
-import json;
+查看 `examples/json_demo_v2.paw` 获取交互式演示。
 
-fn get_number(json_str: string) -> i32 {
-    let value = json::parse(json_str);
-    
-    return value is {
-        Number(n) => n as i32,
-        Null => 0,
-        Bool(b) => if b { 1 } else { 0 },
-        String(s) => -1,
-        _ => -99,
-    };
-}
+## 🔧 技术实现
 
-fn main() -> i32 {
-    let result = get_number("42");  // 42
-    return result;
-}
+### 架构设计
+
+```
+JSON 字符串
+    ↓
+Lexer (词法分析)
+    ↓
+Token 流
+    ↓
+Parser (语法分析)
+    ↓
+JsonValue (AST)
+    ↓
+stringify (序列化)
+    ↓
+JSON 字符串
 ```
 
----
+### 核心组件
 
-### 示例 3: 序列化
+1. **Lexer**: 将 JSON 字符串分解为 Token
+   - 支持空白符跳过
+   - 数字解析（整数/浮点数/负数）
+   - 字符串解析（带转义）
+   - 关键字识别（null/true/false）
 
-```paw
-import json;
+2. **Parser**: 递归下降解析器
+   - `parse_value()`: 解析任意 JSON 值
+   - 使用 `is` 表达式进行类型分发
 
-fn create_response() -> string {
-    let value = JsonValue::Bool(true);
-    return json::stringify(value);  // "true"
-}
+3. **Stringify**: 序列化器
+   - 使用 `StringBuilder` 构建字符串
+   - 处理字符转义
+   - f64 到字符串转换
+
+### 限制和权衡
+
+**当前限制**：
+1. **动态字符串**: PawLang 暂不支持动态字符串分配，字符串解析使用固定缓冲区
+2. **Vec<T>**: 动态数组功能有限，暂不支持嵌套结构
+3. **StringBuilder**: 无法转换回 string，序列化功能简化
+
+**设计原则**：
+- 纯 PawLang 实现，不依赖外部库
+- 使用固定缓冲区避免动态内存
+- 渐进式设计，为未来扩展预留空间
+
+## 🧪 测试
+
+### 运行测试
+
+```bash
+# 运行完整测试套件
+pawc tests/json/test_json_complete.paw --run
+
+# 运行演示程序
+pawc examples/json_demo_v2.paw --run
 ```
 
----
+### 测试覆盖
 
-## 🔧 实现细节
+- ✅ Null 解析
+- ✅ 布尔值解析（true/false）
+- ✅ 整数解析
+- ✅ 负数解析
+- ✅ 浮点数解析
+- ✅ 字符串解析
+- ✅ Stringify 基础功能
+- ✅ 往返测试（parse → stringify）
 
-### Lexer（词法分析）
+## 🗺️ 未来路线图
 
-**功能**: 将 JSON 字符串分解为 token
+### v0.2.1（计划中）
 
-```paw
-type Token = enum {
-    LeftBrace,      // {
-    RightBrace,     // }
-    LeftBracket,    // [
-    RightBracket,   // ]
-    Colon,          // :
-    Comma,          // ,
-    StringToken(string),
-    NumberToken(f64),
-    TrueToken,
-    FalseToken,
-    NullToken,
-    EOF,
-    Error,
-}
-```
+- [ ] 完整的字符串切片支持
+- [ ] StringBuilder.to_string() 方法
+- [ ] Unicode 转义序列
+- [ ] 科学计数法支持
 
-**状态**: ✅ 部分实现
+### v0.3.0（计划中）
 
----
+- [ ] JSON 对象支持（需要 HashMap<K,V>）
+- [ ] JSON 数组支持（需要动态 Vec<T>）
+- [ ] 嵌套结构解析
+- [ ] JSON Schema 验证
 
-### Parser（语法分析）
+### v0.4.0（计划中）
 
-**功能**: 使用 **is 表达式**进行模式匹配
+- [ ] JSON Path 查询
+- [ ] 流式解析（大文件）
+- [ ] 格式化输出（pretty print）
+- [ ] 错误位置报告
 
-```paw
-pub fn parse_value(mut self) -> JsonValue {
-    let token: Token = self.current_token;
-    
-    return token is {
-        NullToken => {
-            self.advance();
-            return JsonValue::Null;
-        },
-        NumberToken(num) => {
-            self.advance();
-            return JsonValue::Number(num);
-        },
-        // ...
-        _ => JsonValue::Null,
-    };
-}
-```
+## 📖 相关文档
 
-**状态**: ✅ 基础实现（简单类型）
+- [PawLang 快速开始](../../docs/QUICKSTART.md)
+- [标准库文档](../README.md)
+- [字符串模块](../string/README.md)
+- [Vec<T> 文档](../collections/README.md)
+
+## 🤝 贡献
+
+欢迎贡献！如果你想改进 JSON 模块：
+
+1. 报告 Bug：通过 GitHub Issues
+2. 功能建议：描述使用场景
+3. 代码贡献：Fork → 开发 → Pull Request
+
+## 📄 许可证
+
+MIT License - 与 PawLang 主项目相同
 
 ---
 
-## 🚧 当前限制
-
-### 1. 不支持嵌套结构
-
-```paw
-// ❌ 当前不支持
-parse("[1, 2, 3]")
-parse("{\"name\": \"Alice\"}")
-parse("{\"data\": [1, 2, 3]}")
-```
-
-**原因**:
-- 需要动态 Vec<JsonValue>
-- 需要 HashMap<string, JsonValue>
-- 等待 FFI 支持
-
----
-
-### 2. 字符串处理简化
-
-```paw
-// ⚠️ 转义处理不完整
-parse("\"hello\\nworld\"")  // 可能不正确
-```
-
-**原因**:
-- 需要完整的转义序列处理
-- 需要 StringBuilder 支持
-
----
-
-### 3. 数字转字符串
-
-```paw
-// ⚠️ 临时实现
-stringify(JsonValue::Number(3.14))  // "42" (错误)
-```
-
-**原因**:
-- 需要 f64 转 string 函数
-- 当前使用 i32 转换
-
----
-
-## 🔮 v0.3.0 计划
-
-### 完整的 JSON 解析器
-
-**功能**:
-```paw
-// ✅ 嵌套数组
-let arr = parse("[1, 2, [3, 4]]");
-
-// ✅ 嵌套对象
-let obj = parse("{\"user\": {\"name\": \"Alice\"}}");
-
-// ✅ 混合结构
-let data = parse("{\"items\": [1, 2, 3], \"count\": 3}");
-```
-
-**需要**:
-- Vec<JsonValue> 动态数组
-- HashMap<string, JsonValue> 键值对
-- 递归解析
-
----
-
-### 完整的转义处理
-
-```paw
-// ✅ 所有转义序列
-parse("\"Line 1\\nLine 2\"")
-parse("\"Tab\\there\"")
-parse("\"Quote: \\\"Hello\\\"\"")
-parse("\"Unicode: \\u4F60\\u597D\"")  // 未来
-```
-
----
-
-### 完整的数字支持
-
-```paw
-// ✅ 各种数字格式
-parse("42")           // 整数
-parse("3.14")         // 小数
-parse("-17")          // 负数
-parse("1.5e10")       // 科学计数法
-parse("1.23e-4")      // 负指数
-```
-
----
-
-## 📚 使用场景
-
-### 场景 1: 配置文件
-
-```paw
-import json;
-import fs;
-
-fn load_config() -> JsonValue {
-    if fs::exists("config.json") {
-        let content = fs::read_file("config.json");
-        return json::parse(content);
-    }
-    return JsonValue::Null;
-}
-```
-
----
-
-### 场景 2: API 响应
-
-```paw
-import json;
-
-fn create_response(success: bool, data: i32) -> string {
-    // v0.2.0: 简化版本
-    let value = JsonValue::Bool(success);
-    return json::stringify(value);
-    
-    // v0.3.0: 完整版本
-    // let response = JsonValue::Object({
-    //     "success": JsonValue::Bool(success),
-    //     "data": JsonValue::Number(data),
-    // });
-    // return json::stringify(response);
-}
-```
-
----
-
-### 场景 3: 数据持久化
-
-```paw
-import json;
-import fs;
-
-fn save_data(data: JsonValue) -> bool {
-    let json_str = json::stringify(data);
-    return fs::write_file("data.json", json_str);
-}
-```
-
----
-
-## 🔧 实现进度
-
-| 功能 | 状态 | 完成度 |
-|------|------|--------|
-| JsonValue 定义 | ✅ | 100% |
-| Token 定义 | ✅ | 100% |
-| Lexer 基础 | ✅ | 70% |
-| Parser 基础 | ✅ | 60% |
-| Stringify 基础 | ✅ | 50% |
-| 嵌套结构 | ⏳ | 0% |
-| 完整转义 | ⏳ | 30% |
-| 数字转换 | ⏳ | 40% |
-
-**总进度**: 🚧 **55%**
-
----
-
-## ✅ 总结
-
-### 当前可用
-
-- ✅ 基础类型解析（null, bool, number, string）
-- ✅ is 表达式模式匹配
-- ✅ 简单的序列化
-
-### 等待实现
-
-- ⏳ 嵌套数组和对象
-- ⏳ 完整的转义处理
-- ⏳ 精确的数字转换
-
-### 何时可用
-
-- **v0.2.0**: 基础类型可用（当前）
-- **v0.3.0**: 完整实现（FFI 后）
-
----
-
-**维护者**: PawLang 核心开发团队  
-**最后更新**: 2025-10-12  
-**版本**: v0.2.0  
-**许可**: MIT
-
+**Built with ❤️ for PawLang v0.2.0** 🐾

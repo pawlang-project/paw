@@ -146,6 +146,20 @@ pub extern "c" fn LLVMAddFunction(
 /// Get a function parameter
 pub extern "c" fn LLVMGetParam(Fn: ValueRef, Index: c_uint) ValueRef;
 
+// 🆕 v0.3.0: Struct类型支持
+pub extern "c" fn LLVMStructType(ElementTypes: [*c]TypeRef, ElementCount: c_uint, Packed: c_int) TypeRef;
+
+// Type kind constants
+pub const LLVMPointerTypeKind: c_uint = 15;
+
+pub extern "c" fn LLVMGetTypeKind(Ty: TypeRef) c_uint;
+
+/// Count parameters (🐛 v0.2.0: 新增以支持函数类型推断)
+pub extern "c" fn LLVMCountParams(Fn: ValueRef) c_uint;
+
+/// Get integer type width in bits (🐛 v0.2.0: 新增以支持类型转换)
+pub extern "c" fn LLVMGetIntTypeWidth(IntegerTy: TypeRef) c_uint;
+
 /// Set function linkage
 pub extern "c" fn LLVMSetLinkage(Global: ValueRef, Linkage: Linkage) void;
 
@@ -440,6 +454,14 @@ pub extern "c" fn LLVMBuildFPTrunc(
     Name: [*:0]const u8,
 ) ValueRef;
 
+/// 🆕 v0.2.0: BitCast pointer type conversion
+pub extern "c" fn LLVMBuildBitCast(
+    Builder: BuilderRef,
+    Val: ValueRef,
+    DestTy: TypeRef,
+    Name: [*:0]const u8,
+) ValueRef;
+
 /// Build struct GEP
 pub extern "c" fn LLVMBuildStructGEP2(
     Builder: BuilderRef,
@@ -724,6 +746,11 @@ pub const Builder = struct {
     
     pub fn buildFPTrunc(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
         return LLVMBuildFPTrunc(self.ref, value, dest_ty, name.ptr);
+    }
+    
+    /// 🆕 v0.2.0: BitCast for pointer type conversion
+    pub fn buildBitCast(self: Builder, value: ValueRef, dest_ty: TypeRef, name: [:0]const u8) ValueRef {
+        return LLVMBuildBitCast(self.ref, value, dest_ty, name.ptr);
     }
 };
 

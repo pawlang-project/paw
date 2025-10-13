@@ -1,7 +1,0 @@
-// LLVM Backend Test 1: Hello World
-// Return a constant value
-
-fn main() -> i32 {
-    return 42;
-}
-

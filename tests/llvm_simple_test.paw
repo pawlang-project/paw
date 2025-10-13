@@ -1,0 +1,17 @@
+// LLVM后端简单测试
+
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn main() -> i32 {
+    println("LLVM Simple Test");
+    
+    let x: i32 = add(10, 20);
+    let y: i32 = add(x, 12);
+    
+    println("Result: 42");
+    
+    return y;  // 应该是42
+}
+

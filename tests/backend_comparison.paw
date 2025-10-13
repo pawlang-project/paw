@@ -1,0 +1,68 @@
+// 测试C和LLVM后端对新stdlib的支持
+
+// 简化的JSON parse（不用enum）
+fn simple_parse_number(json_str: string) -> i32 {
+    let len: i32 = string_length(json_str);
+    let mut i: i32 = 0;
+    let mut result: i32 = 0;
+    let mut is_negative: bool = false;
+    
+    let first: char = json_str[0];
+    if (first as i32) == 45 {
+        is_negative = true;
+        i = 1;
+    }
+    
+    loop {
+        if i >= len { break; }
+        
+        let ch: char = json_str[i];
+        let code: i32 = ch as i32;
+        
+        if code >= 48 && code <= 57 {
+            let digit: i32 = code - 48;
+            result = result * 10 + digit;
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    
+    if is_negative {
+        result = -result;
+    }
+    
+    return result;
+}
+
+fn main() -> i32 {
+    println("Backend Comparison Test");
+    println("");
+    
+    // Test 1: 多位数字
+    let num1: i32 = simple_parse_number("42");
+    println("Parse 42:");
+    if num1 == 42 {
+        println("  PASS");
+    }
+    
+    // Test 2: 负数
+    let num2: i32 = simple_parse_number("-123");
+    println("Parse -123:");
+    if num2 == -123 {
+        println("  PASS");
+    }
+    
+    // Test 3: 大数字
+    let num3: i32 = simple_parse_number("999");
+    println("Parse 999:");
+    if num3 == 999 {
+        println("  PASS");
+    }
+    
+    println("");
+    println("All tests completed!");
+    
+    return num1 + num2 + num3;  // 42 + (-123) + 999 = 918
+}
+
