@@ -1,0 +1,13 @@
+// 测试字符串类型
+
+fn main() -> i32 {
+    let s1: string = "Hello";
+    let s2: string = "World";
+    
+    print(s1);
+    print(" ");
+    println(s2);
+    
+    return 0;
+}
+

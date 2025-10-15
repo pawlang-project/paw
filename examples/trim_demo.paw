@@ -1,0 +1,15 @@
+// trim演示
+
+import "std::string";
+
+fn main() -> i32 {
+    let text1: string = "   hello   ";
+    let trimmed1: string = string::trim(text1);
+    println(trimmed1);
+    
+    let text2: string = "\t\n  world  \n";
+    let trimmed2: string = string::trim(text2);
+    println(trimmed2);
+    
+    return 0;
+}

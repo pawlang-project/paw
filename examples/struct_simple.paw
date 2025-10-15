@@ -1,0 +1,54 @@
+// Struct with inline methods (no impl block)
+
+type Counter = struct {
+    value: i32,
+    
+    fn new(init: i32) -> Counter {
+        return Counter { value: init };
+    }
+    
+    fn get(self) -> i32 {
+        return self.value;
+    }
+    
+    fn increment(mut self) {
+        self.value = self.value + 1;
+    }
+}
+
+// Composition example
+type Logger = struct {
+    prefix: string,
+    
+    fn log(self, msg: string) {
+        print(self.prefix);
+        println(msg);
+    }
+}
+
+type Service = struct {
+    logger: Logger,
+    data: i32,
+    
+    fn new(prefix: string, data: i32) -> Service {
+        return Service {
+            logger: Logger { prefix: prefix },
+            data: data,
+        };
+    }
+    
+    fn process(self) {
+        self.logger.log("Processing...");
+    }
+}
+
+fn main() -> i32 {
+    let counter: Counter = Counter::new(0);
+    let val: i32 = counter.get();
+    
+    let service: Service = Service::new("INFO: ", 42);
+    service.process();
+    
+    return val;
+}
+

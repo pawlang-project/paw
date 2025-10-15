@@ -1,0 +1,25 @@
+// 高级IO示例
+
+import "std::io";
+
+fn main() -> i32 {
+    // 场景1：简单写入和删除
+    io::write("temp.txt", "Temporary data");
+    io::delete("temp.txt");
+    
+    // 场景2：多次追加
+    io::write("log.txt", "Log start\n");
+    io::append("log.txt", "Event 1\n");
+    io::append("log.txt", "Event 2\n");
+    io::delete("log.txt");
+    
+    // 场景3：手动控制文件句柄
+    let f: i64 = io::open("data.txt", "w");
+    if f != 0 {
+        // 可以多次操作...
+        let success: bool = io::close(f);
+    }
+    io::delete("data.txt");
+    
+    return 0;
+}

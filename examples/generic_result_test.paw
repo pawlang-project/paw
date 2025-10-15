@@ -1,0 +1,16 @@
+// 测试泛型Result
+
+type Result<T, E> = enum {
+    Ok(T),
+    Err(E),
+}
+
+fn main() -> i32 {
+    let res: Result<i32, i32> = Result<i32, i32>::Ok(100);
+    
+    return res is {
+        Ok(val) => val,
+        Err(e) => 0,
+    };
+}
+

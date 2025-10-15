@@ -1,0 +1,15 @@
+// 测试trim功能
+
+import "std::string";
+
+fn main() -> i32 {
+    let text: string = "  hello world  ";
+    let trimmed: string = string::trim(text);
+    println(trimmed);
+    
+    let text2: string = "\t\ttest\n\n";
+    let trimmed2: string = string::trim(text2);
+    println(trimmed2);
+    
+    return 0;
+}

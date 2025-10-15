@@ -1,0 +1,12 @@
+// 测试类型推导
+
+fn main() -> i32 {
+    // 基础类型推导
+    let i = 42;
+    let f = 3.14;
+    let b = true;
+    let s = "hello";
+    
+    return i;
+}
+

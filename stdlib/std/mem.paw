@@ -1,0 +1,55 @@
+// std::mem - 内存管理库
+// 提供动态内存分配和管理
+
+// ============ C标准库内存函数声明 ============
+
+extern "C" fn malloc(size: i64) -> string;
+extern "C" fn calloc(count: i64, size: i64) -> string;
+extern "C" fn realloc(ptr: string, size: i64) -> string;
+extern "C" fn free(ptr: string);
+extern "C" fn memset(ptr: string, value: i32, size: i64) -> string;
+extern "C" fn memcpy(dest: string, src: string, size: i64) -> string;
+
+// ============ PawLang内存管理函数 ============
+
+// 分配内存（返回指针）
+pub fn alloc(size: i64) -> string {
+    return malloc(size);
+}
+
+// 分配并清零
+pub fn alloc_zero(size: i64) -> string {
+    let one: i64 = 1;
+    return calloc(size, one);
+}
+
+// 重新分配
+pub fn realloc_mem(ptr: string, new_size: i64) -> string {
+    return realloc(ptr, new_size);
+}
+
+// 释放内存
+pub fn free_mem(ptr: string) {
+    free(ptr);
+}
+
+// 内存设置
+pub fn set(ptr: string, value: i32, size: i64) -> string {
+    return memset(ptr, value, size);
+}
+
+// 内存复制
+pub fn copy(dest: string, src: string, size: i64) -> string {
+    return memcpy(dest, src, size);
+}
+
+// ============ 高级内存管理 ============
+
+// 创建字符串缓冲区
+pub fn new_buffer(size: i64) -> string {
+    let buf: string = malloc(size);
+    let zero: i32 = 0;
+    memset(buf, zero, size);
+    return buf;
+}
+

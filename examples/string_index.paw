@@ -1,0 +1,14 @@
+// 测试字符串索引
+
+fn main() -> i32 {
+    let s: string = "Hello";
+    
+    let c0: char = s[0];  // 'H'
+    let c1: char = s[1];  // 'e'
+    let c4: char = s[4];  // 'o'
+    
+    // 转换为ASCII码
+    let code: i32 = c0 as i32;  // 72 ('H')
+    
+    return code;  // 72
+}

@@ -1,0 +1,48 @@
+// 简洁的数学库API测试
+
+import "std::math";
+
+fn main() -> i32 {
+    // 整数函数（简洁！）
+    let x: i32 = -42;
+    let abs_x: i32 = math::abs(x);  // 不再是 absolute
+    
+    let a: i32 = 10;
+    let b: i32 = 20;
+    let min_val: i32 = math::min(a, b);
+    let max_val: i32 = math::max(a, b);
+    
+    println("Integer math works!");
+    
+    // 浮点函数（简洁！）
+    let f: f64 = -3.14;
+    let abs_f: f64 = math::fabs(f);  // 不再是 absolute_f64
+    
+    let x1: f64 = 1.5;
+    let x2: f64 = 2.5;
+    let fmin_val: f64 = math::fmin(x1, x2);
+    let fmax_val: f64 = math::fmax(x1, x2);
+    
+    println("Float math works!");
+    
+    // 三角函数（简洁！）
+    let angle: f64 = 1.57;
+    let s: f64 = math::sin(angle);  // 不再是 sine
+    let c: f64 = math::cos(angle);  // 不再是 cosine
+    
+    println("Trig functions work!");
+    
+    // 幂运算（简洁！）
+    let sqrt_val: f64 = math::sqrt(16.0);  // 不再是 square_root
+    let pow_val: f64 = math::pow(2.0, 3.0);  // 不再是 power
+    
+    println("Power functions work!");
+    
+    // 取整（简洁！）
+    let floor_val: f64 = math::floor(3.7);  // 不再是 floor_value
+    let ceil_val: f64 = math::ceil(3.2);    // 不再是 ceiling
+    
+    println("Rounding works!");
+    
+    return 0;
+}

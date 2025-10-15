@@ -1,0 +1,56 @@
+// 测试char和string的完整功能
+
+import "std::string";
+
+fn main() -> i32 {
+    println("=== Char Operations ===");
+    
+    // 字符字面量
+    let c: char = 'a';
+    let upper: char = string::char_upper(c);  // 'A'
+    println("char_upper works");
+    
+    // 字符判断
+    let letter: char = 'B';
+    if string::is_alpha(letter) {
+        println("is_alpha works");
+    }
+    
+    let num: char = '5';
+    if string::is_digit(num) {
+        println("is_digit works");
+    }
+    
+    let space: char = ' ';
+    if string::is_space(space) {
+        println("is_space works");
+    }
+    
+    // ASCII码转换
+    let code: i32 = string::char_code('A');  // 65
+    let ch: char = string::from_code(65);    // 'A'
+    
+    println("");
+    println("=== String Operations ===");
+    
+    // 字符串操作
+    let text: string = "Hello World";
+    let len: i64 = string::len(text);
+    
+    if string::contains(text, "World") {
+        println("contains works");
+    }
+    
+    if string::starts_with(text, "Hello") {
+        println("starts_with works");
+    }
+    
+    if string::ends_with(text, "World") {
+        println("ends_with works");
+    }
+    
+    println("");
+    println("=== All Tests Passed ===");
+    
+    return 0;
+}

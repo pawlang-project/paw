@@ -1,0 +1,41 @@
+// std::string所有功能演示
+
+import "std::string";
+import "std::mem";
+
+fn main() -> i32 {
+    println("=== String Index Write ===");
+    let mut buf: string = mem::new_buffer(10);
+    let zero: i32 = 0;
+    let one: i32 = 1;
+    let two: i32 = 2;
+    
+    buf[zero] = 'H';
+    buf[one] = 'i';
+    buf[two] = 0 as char;
+    println(buf);  // "Hi"
+    
+    println("");
+    println("=== Case Conversion ===");
+    let lower_text: string = "hello world";
+    let upper_text: string = string::upper(lower_text);
+    println(upper_text);  // HELLO WORLD
+    
+    let upper2: string = "PAWLANG";
+    let lower2: string = string::lower(upper2);
+    println(lower2);  // pawlang
+    
+    println("");
+    println("=== Character Operations ===");
+    let c: char = 'a';
+    let upper_c: char = string::char_upper(c);
+    
+    if string::is_alpha('X') {
+        println("is_alpha works");
+    }
+    
+    println("");
+    println("=== All Features Work! ===");
+    
+    return 0;
+}

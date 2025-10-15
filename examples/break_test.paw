@@ -1,0 +1,16 @@
+// 测试break语句
+
+fn main() -> i32 {
+    let mut sum: i32 = 0;
+    
+    // 范围循环中使用break
+    loop i in 0..100 {
+        if i >= 10 {
+            break;  // 只累加0到9
+        }
+        sum = sum + i;
+    }
+    
+    return sum;  // 0+1+2+...+9 = 45
+}
+

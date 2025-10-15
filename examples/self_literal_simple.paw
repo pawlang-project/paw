@@ -1,0 +1,16 @@
+type Box = struct {
+    val: i32,
+    
+    fn new(v: i32) -> Self {
+        return Self { val: v };
+    }
+    
+    fn get(self) -> i32 {
+        return self.val;
+    }
+}
+
+fn main() -> i32 {
+    let b: Box = Box::new(99);
+    return b.get();  // 99
+}

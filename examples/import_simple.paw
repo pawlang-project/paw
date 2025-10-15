@@ -1,0 +1,15 @@
+// 测试import语法 - 使用双冒号
+
+import "math";
+import "utils::helper";
+
+fn main() -> i32 {
+    // import语句被解析但目前跳过
+    // 完整模块系统将在未来实现
+    // 
+    // 未来调用：
+    // let x = math::add(10, 20);
+    // let y = helper::func();
+    
+    return 42;
+}

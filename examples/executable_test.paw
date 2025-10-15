@@ -1,0 +1,15 @@
+// 测试生成可执行文件
+
+fn main() -> i32 {
+    println("Hello from PawLang!");
+    
+    let mut sum: i32 = 0;
+    loop i in 0..10 {
+        sum = sum + i;
+    }
+    
+    println("Sum of 0..10 = 45");
+    
+    return sum;
+}
+

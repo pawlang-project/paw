@@ -1,0 +1,11 @@
+// 测试char类型转换
+
+fn main() -> i32 {
+    let c: char = 'A';
+    let ascii: i32 = c as i32;  // char -> i32
+    
+    let code: i32 = 90;
+    let z: char = code as char;  // i32 -> char
+    
+    return ascii;  // 65
+}

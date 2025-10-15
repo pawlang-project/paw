@@ -1,0 +1,27 @@
+// 类型模块 - 定义公共类型
+
+pub type Point = struct {
+    x: i32,
+    y: i32,
+    
+    pub fn new(x: i32, y: i32) -> Point {
+        return Point { x: x, y: y };
+    }
+    
+    pub fn distance(self) -> i32 {
+        return self.x * self.x + self.y * self.y;
+    }
+}
+
+pub type Option = enum {
+    Some(i32),
+    None(),
+}
+
+pub fn unwrap_or(opt: Option, default_val: i32) -> i32 {
+    return opt is {
+        Some(x) => x,
+        None() => default_val,
+    };
+}
+

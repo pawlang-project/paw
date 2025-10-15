@@ -1,0 +1,14 @@
+// 使用简单类型
+
+import "simple_types";
+
+fn main() -> i32 {
+    // 使用跨模块的pub Enum类型
+    let status: Status = simple_types::create_ok(42);
+    
+    return status is {
+        Ok(x) => x,
+        Error() => 0,
+    };
+}
+

@@ -1,0 +1,37 @@
+// Enum 和模式匹配测试
+
+// 定义enum
+type Option = enum {
+    Some(i32),
+    None(),
+}
+
+type Result = enum {
+    Ok(i32),
+    Err(i32),
+}
+
+fn main() -> i32 {
+    let value: Option = Option::Some(42);
+    
+    // is 用于条件判断
+    if value is Some(x) {
+        println("Value is Some");
+        return x;
+    }
+    
+    // is 用于循环条件
+    let mut count: i32 = 0;
+    loop count is 0 {
+        count = count + 1;
+    }
+    
+    // 完整的模式匹配表达式
+    let result = value is {
+        Some(x) => x * 2,
+        None() => 0,
+    };
+    
+    return result;
+}
+

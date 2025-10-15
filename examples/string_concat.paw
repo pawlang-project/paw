@@ -1,0 +1,12 @@
+// 测试字符串拼接
+
+fn main() -> i32 {
+    let s1: string = "Hello, ";
+    let s2: string = "PawLang!";
+    let s3: string = s1 + s2;
+    
+    println(s3);
+    
+    return 0;
+}
+

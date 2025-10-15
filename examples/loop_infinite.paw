@@ -1,0 +1,17 @@
+// 测试无限循环: loop {}
+
+fn main() -> i32 {
+    let mut count: i32 = 0;
+    
+    loop {
+        count = count + 1;
+        
+        // 简单的退出条件（因为我们还没有break）
+        if count >= 10 {
+            return count;
+        }
+    }
+    
+    return 0;  // 不会到达
+}
+

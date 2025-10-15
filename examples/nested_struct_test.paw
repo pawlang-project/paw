@@ -1,0 +1,18 @@
+// 测试嵌套struct
+
+type Counter = struct {
+    value: i32,
+}
+
+type CounterMax = struct {
+    counter: Counter,
+    max: i32,
+}
+
+fn main() -> i32 {
+    let c: Counter = Counter { value: 10 };
+    let cm: CounterMax = CounterMax { counter: c, max: 100 };
+    
+    // 访问嵌套字段
+    return cm.counter.value;  // 10
+}

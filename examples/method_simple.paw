@@ -1,0 +1,15 @@
+// 简单的方法测试（不使用self.field）
+
+type Number = struct {
+    value: i32,
+    
+    fn create(val: i32) -> i32 {
+        return val;
+    }
+}
+
+fn main() -> i32 {
+    let result: i32 = Number::create(42);
+    return result;
+}
+

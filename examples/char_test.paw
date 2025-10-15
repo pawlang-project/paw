@@ -1,0 +1,6 @@
+// 测试char类型
+
+fn main() -> i32 {
+    let c: char = 'A';
+    return 65;  // ASCII值
+}

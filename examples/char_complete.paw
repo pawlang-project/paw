@@ -1,0 +1,41 @@
+// 字符类型完整演示
+
+import "std::string";
+
+fn main() -> i32 {
+    println("=== 字符类型演示 ===");
+    println("");
+    
+    // 1. 字符字面量
+    println("【1. 字符字面量】");
+    let ch1: char = 'A';
+    let ch2: char = 'z';
+    let ch3: char = '0';
+    
+    // 2. 字符和整数转换
+    println("【2. 字符转换】");
+    let code_a: i32 = 'A' as i32;     // 65
+    let code_z: i32 = 'z' as i32;     // 122
+    let char_from_65: char = 65 as char;    // 'A'
+    
+    // 3. 字符大小写转换
+    println("");
+    println("【3. 大小写转换】");
+    let lower_a: char = 'a';
+    let upper_a: char = string::char_upper(lower_a);  // 'A'
+    let upper_z: char = 'Z';
+    let lower_z: char = string::char_lower(upper_z);  // 'z'
+    
+    // 4. 字符判断
+    println("");
+    println("【4. 字符判断】");
+    let is_alpha: bool = string::is_alpha('A');        // true
+    let is_digit: bool = string::is_digit('5');        // true
+    let is_space: bool = string::is_space(' ');        // true
+    let is_upper: bool = string::is_upper_char('A');   // true
+    let is_lower: bool = string::is_lower_char('a');   // true
+    let is_alnum: bool = string::is_alphanumeric('5'); // true
+    
+    println("所有字符操作完成！");
+    return 0;
+}

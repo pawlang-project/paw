@@ -1,0 +1,10 @@
+// 使用data模块
+
+import "data";
+
+fn main() -> i32 {
+    // 在本模块创建Counter实例（使用跨模块类型定义）
+    let c: Counter = Counter { value: data::get_initial_value() };
+    return c.value;  // 100
+}
+

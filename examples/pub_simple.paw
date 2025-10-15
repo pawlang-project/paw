@@ -1,0 +1,14 @@
+// 简单的pub测试
+
+pub fn public_func() -> i32 {
+    return 42;
+}
+
+fn private_func() -> i32 {
+    return 10;
+}
+
+fn main() -> i32 {
+    return public_func() + private_func();  // 52
+}
+

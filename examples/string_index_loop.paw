@@ -1,0 +1,18 @@
+// 测试字符串索引循环
+
+fn main() -> i32 {
+    let text: string = "ABC";
+    
+    let zero: i32 = 0;
+    let one: i32 = 1;
+    let two: i32 = 2;
+    
+    let c0: char = text[zero];
+    let c1: char = text[one];
+    let c2: char = text[two];
+    
+    // 'A' + 'B' + 'C' = 65 + 66 + 67 = 198
+    let sum: i32 = (c0 as i32) + (c1 as i32) + (c2 as i32);
+    
+    return sum;  // 198
+}

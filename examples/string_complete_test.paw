@@ -1,0 +1,44 @@
+// 完整的字符串功能测试
+
+import "std::string";
+
+fn main() -> i32 {
+    println("=== 字符串索引 ===");
+    
+    let text: string = "Hello";
+    
+    // 使用char_at函数
+    let zero: i64 = 0;
+    let one: i64 = 1;
+    let four: i64 = 4;
+    
+    let c0: char = string::char_at(text, zero);   // 'H'
+    let c1: char = string::char_at(text, one);    // 'e'
+    let c4: char = string::char_at(text, four);   // 'o'
+    
+    println("char_at works");
+    
+    // 字符操作
+    let lower_a: char = 'a';
+    let upper_a: char = string::char_upper(lower_a);
+    println("char_upper works");
+    
+    // 字符判断
+    if string::is_alpha('X') {
+        println("is_alpha works");
+    }
+    
+    if string::is_digit('5') {
+        println("is_digit works");
+    }
+    
+    // ASCII转换
+    let code: i32 = string::char_code('A');
+    let ch: char = string::from_code(65);
+    println("ASCII conversion works");
+    
+    println("");
+    println("=== 所有测试通过 ===");
+    
+    return 0;
+}

@@ -1,0 +1,21 @@
+// 完整的类型转换测试 - 包括所有整数类型
+
+fn main() -> i32 {
+    // i8 -> i16 -> i32 -> i64 -> i128
+    let a: i8 = 100;
+    let b: i32 = a as i32;
+    
+    // u8 -> u32 -> u64
+    let x: u8 = 255;
+    let y: u32 = x as u32;
+    
+    // 大->小（截断）
+    let big: i64 = 1000;
+    let small: i32 = big as i32;
+    
+    // f64 -> i32
+    let f: f64 = 3.14;
+    let i: i32 = f as i32;  // 3
+    
+    return b + i;  // 100 + 3 = 103
+}

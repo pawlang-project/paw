@@ -1,0 +1,35 @@
+// 测试pub语法
+
+pub fn public_function() -> i32 {
+    return 42;
+}
+
+fn private_function() -> i32 {
+    return 10;
+}
+
+pub type Counter = struct {
+    value: i32,
+    
+    pub fn new(val: i32) -> Counter {
+        return Counter { value: val };
+    }
+    
+    pub fn get(self) -> i32 {
+        return self.value;
+    }
+    
+    fn private_helper(self) -> i32 {
+        return self.value * 2;
+    }
+}
+
+fn main() -> i32 {
+    let x: i32 = public_function();
+    let y: i32 = private_function();
+    
+    let c: Counter = Counter::new(5);
+    let z: i32 = c.get();
+    
+    return x + y + z;  // 42 + 10 + 5 = 57
+}

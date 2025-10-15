@@ -1,0 +1,11 @@
+// 字符串索引测试
+
+fn main() -> i32 {
+    let s: string = "ABC";
+    
+    let zero: i32 = 0;
+    let c: char = s[zero];
+    
+    let code: i32 = c as i32;
+    return code;  // 65 ('A')
+}

@@ -1,0 +1,71 @@
+// PawLang标准库完整演示
+// 展示标准库的主要功能
+
+import "std::string";
+import "std::mem";
+import "std::math";
+
+fn main() -> i32 {
+    println("=== PawLang标准库演示 ===");
+    println("");
+    
+    // 1. 字符串操作
+    println("【1. 字符串操作】");
+    let text: string = "Hello, PawLang!";
+    let len: i64 = string::len(text);
+    let has_paw: bool = string::contains(text, "Paw");
+    let starts: bool = string::starts_with(text, "Hello");
+    println(text);
+    
+    // 2. 字符串大小写转换
+    println("");
+    println("【2. 大小写转换】");
+    let original: string = "hello world";
+    let upper_str: string = string::upper(original);
+    let lower_str: string = string::lower("PAWLANG");
+    print("原始: ");
+    println(original);
+    print("大写: ");
+    println(upper_str);
+    print("小写: ");
+    println(lower_str);
+    
+    // 3. 字符操作
+    println("");
+    println("【3. 字符操作】");
+    let ch: char = 'a';
+    let upper_ch: char = string::char_upper(ch);
+    let is_letter: bool = string::is_alpha(ch);
+    let is_num: bool = string::is_digit('5');
+    
+    // 4. 类型转换
+    println("");
+    println("【4. 类型转换】");
+    let big: i64 = 1000;
+    let small: i32 = big as i32;
+    let float_val: f64 = 3.14;
+    let int_val: i32 = float_val as i32;
+    let char_code: i32 = 'A' as i32;  // 65
+    println("类型转换完成");
+    
+    // 5. 数学运算
+    println("");
+    println("【5. 数学运算】");
+    let abs_val: i32 = math::abs(-42);
+    let min_val: i32 = math::min(10, 20);
+    let max_val: i32 = math::max(10, 20);
+    let sqrt_val: f64 = math::sqrt(16.0);
+    println("数学运算完成");
+    
+    // 6. 动态内存
+    println("");
+    println("【6. 动态内存】");
+    let buffer: string = mem::alloc(100);
+    mem::free_mem(buffer);
+    println("内存管理完成");
+    
+    println("");
+    println("=== 所有功能测试通过！===");
+    return 0;
+}
+

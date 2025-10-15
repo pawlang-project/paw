@@ -1,0 +1,35 @@
+// Struct 测试（内联方法）
+
+type Point = struct {
+    x: i32,
+    y: i32,
+    
+    // 静态方法（工厂方法）
+    fn new(x: i32, y: i32) -> Point {
+        return Point { x: x, y: y };
+    }
+    
+    // 不可变方法（self）
+    fn get_x(self) -> i32 {
+        return self.x;
+    }
+    
+    // 可变方法（mut self）
+    fn move_x(mut self, dx: i32) {
+        self.x = self.x + dx;
+    }
+}
+
+fn main() -> i32 {
+    // 创建struct实例
+    let p: Point = Point::new(10, 20);
+    
+    // 调用方法
+    let x: i32 = p.get_x();
+    
+    // 访问字段
+    let y: i32 = p.y;
+    
+    return x + y;
+}
+

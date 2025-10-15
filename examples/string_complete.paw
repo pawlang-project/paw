@@ -1,0 +1,61 @@
+// 完整的字符串库测试
+
+import "std::string";
+
+fn main() -> i32 {
+    println("=== 基础操作 ===");
+    
+    // 长度
+    let s: string = "Hello";
+    let len: i64 = string::len(s);
+    println("Length test");
+    
+    // 判空
+    let empty: string = "";
+    let is_e: bool = string::is_empty(empty);
+    if is_e {
+        println("Empty string detected");
+    }
+    
+    // 比较
+    let eq: bool = string::equals("test", "test");
+    if eq {
+        println("Strings equal");
+    }
+    
+    println("");
+    println("=== 查找操作 ===");
+    
+    // 包含
+    let text: string = "Hello World";
+    let has_world: bool = string::contains(text, "World");
+    if has_world {
+        println("Contains 'World'");
+    }
+    
+    // 开始判断
+    let starts: bool = string::starts_with(text, "Hello");
+    if starts {
+        println("Starts with 'Hello'");
+    }
+    
+    println("");
+    println("=== 长度判断 ===");
+    
+    // 长度比较
+    let longer: bool = string::is_longer_than(text, 5);
+    let shorter: bool = string::is_shorter_than(text, 20);
+    
+    if longer {
+        println("String is longer than 5");
+    }
+    
+    if shorter {
+        println("String is shorter than 20");
+    }
+    
+    println("");
+    println("=== 所有测试通过 ===");
+    
+    return 0;
+}

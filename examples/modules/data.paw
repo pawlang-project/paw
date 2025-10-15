@@ -1,0 +1,10 @@
+// 数据模块 - 只定义数据类型，不返回自定义类型
+
+pub type Counter = struct {
+    value: i32,
+}
+
+pub fn get_initial_value() -> i32 {
+    return 100;
+}
+

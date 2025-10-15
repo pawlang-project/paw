@@ -1,0 +1,18 @@
+// Loop example
+
+fn sum_to_n(n: i32) -> i32 {
+    let mut sum: i32 = 0;
+    let mut i: i32 = 0;
+    
+    loop i <= n {
+        sum = sum + i;
+        i = i + 1;
+    }
+    
+    return sum;
+}
+
+fn main() -> i32 {
+    return sum_to_n(100);
+}
+

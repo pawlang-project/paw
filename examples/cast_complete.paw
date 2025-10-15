@@ -1,0 +1,55 @@
+// 类型转换完整演示
+
+import "std::math";
+
+fn main() -> i32 {
+    println("=== 类型转换演示 ===");
+    println("");
+    
+    // 1. 整数转换
+    println("【1. 整数转换】");
+    let small_i8: i8 = 100;
+    let medium_i32: i32 = small_i8 as i32;
+    let large_i64: i64 = medium_i32 as i64;
+    
+    // 2. 截断转换
+    println("【2. 截断转换】");
+    let big: i64 = 1000;
+    let normal: i32 = big as i32;
+    let tiny: i8 = normal as i8;
+    
+    // 3. 浮点数转换
+    println("【3. 浮点数转换】");
+    let float32: f32 = 3.14;
+    let float64: f64 = float32 as f64;
+    
+    // 4. 整数到浮点数
+    println("【4. 整数→浮点数】");
+    let int_val: i32 = 42;
+    let float_val: f64 = int_val as f64;  // 42.0
+    
+    // 5. 浮点数到整数
+    println("【5. 浮点数→整数】");
+    let pi: f64 = 3.14159;
+    let pi_int: i32 = pi as i32;  // 3
+    
+    // 6. 字符和整数转换
+    println("【6. 字符↔整数】");
+    let ch: char = 'A';
+    let ascii: i32 = ch as i32;         // 65
+    let restored: char = ascii as char;  // 'A'
+    
+    // 7. 溢出安全
+    println("【7. 溢出安全】");
+    let overflow: i32 = 300;
+    let safe_i8: i8 = overflow as i8;  // 循环映射
+    
+    // 8. 综合应用
+    println("【8. 综合应用】");
+    let celsius: i32 = 25;
+    let fahrenheit: f64 = (celsius as f64) * 1.8 + 32.0;
+    
+    println("所有类型转换完成！溢出安全！");
+    return 0;
+}
+

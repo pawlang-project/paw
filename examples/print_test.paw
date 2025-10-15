@@ -1,0 +1,12 @@
+// Test print and println
+
+fn main() -> i32 {
+    print("Hello, ");
+    print("Paw");
+    println("Lang!");
+    
+    println("This is a new line");
+    
+    return 0;
+}
+

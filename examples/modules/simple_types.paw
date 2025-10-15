@@ -1,0 +1,11 @@
+// 简单类型模块
+
+pub type Status = enum {
+    Ok(i32),
+    Error(),
+}
+
+pub fn create_ok(val: i32) -> Status {
+    return Status::Ok(val);
+}
+

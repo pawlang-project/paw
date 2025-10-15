@@ -1,0 +1,16 @@
+// 使用公共类型
+
+import "types";
+
+fn main() -> i32 {
+    // 使用跨模块的pub Struct
+    let p: Point = Point::new(3, 4);
+    let dist: i32 = p.distance();
+    
+    // 使用跨模块的pub Enum
+    let some_val: Option = Option::Some(42);
+    let result: i32 = types::unwrap_or(some_val, 0);
+    
+    return dist + result;  // 25 + 42 = 67
+}
+

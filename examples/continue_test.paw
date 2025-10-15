@@ -1,0 +1,17 @@
+// 测试continue语句
+
+fn main() -> i32 {
+    let mut sum: i32 = 0;
+    
+    // 跳过偶数
+    loop i in 0..10 {
+        let is_even: i32 = i % 2;
+        if is_even == 0 {
+            continue;  // 跳过偶数
+        }
+        sum = sum + i;
+    }
+    
+    return sum;  // 1+3+5+7+9 = 25
+}
+

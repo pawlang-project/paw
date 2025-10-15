@@ -1,0 +1,37 @@
+// 泛型测试
+
+// 泛型struct（内联方法）
+type Box<T> = struct {
+    value: T,
+    
+    fn new(value: T) -> Box<T> {
+        return Box { value: value };
+    }
+    
+    fn get(self) -> T {
+        return self.value;
+    }
+}
+
+// 泛型enum
+type Result<T, E> = enum {
+    Ok(T),
+    Err(E),
+}
+
+// 泛型函数
+fn identity<T>(x: T) -> T {
+    return x;
+}
+
+fn main() -> i32 {
+    let box: Box<i32> = Box::new(42);
+    let val: i32 = box.get();
+    
+    let result: Result<i32, i32> = Result::Ok(100);
+    
+    let x: i32 = identity(50);
+    
+    return val + x;
+}
+

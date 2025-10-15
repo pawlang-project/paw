@@ -1,0 +1,42 @@
+# Build directories
+build/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.dylib
+
+# LLVM (too large for git)
+llvm/
+
+# Executables
+pawc
+*.out
+hello
+fib
+generic_test
+multidim
+string_concat
+string_test
+test
+test_program
+test_string_concat
+test_string_test
+hello_exec
+full_demo_test
+stdlib_demo
+string_write_demo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Test outputs
+output.ll
+*.ll

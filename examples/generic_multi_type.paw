@@ -1,0 +1,12 @@
+// 保存测试文件
+
+fn identity<T>(x: T) -> T {
+    return x;
+}
+
+fn main() -> i32 {
+    let x: i32 = identity<i32>(42);
+    let y: i32 = identity<i32>(100);
+    
+    return x + y;  // 142
+}

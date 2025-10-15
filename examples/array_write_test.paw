@@ -1,0 +1,11 @@
+// 测试数组索引写入
+
+fn main() -> i32 {
+    let mut arr: [i32; 3] = [1, 2, 3];
+    
+    let zero: i32 = 0;
+    arr[zero] = 100;  // 修改第一个元素
+    
+    let val: i32 = arr[zero];
+    return val;  // 100
+}

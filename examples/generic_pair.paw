@@ -1,0 +1,12 @@
+// 测试多类型参数泛型
+
+type Pair<T, U> = struct {
+    first: T,
+    second: U,
+}
+
+fn main() -> i32 {
+    let p: Pair<i32, i32> = Pair<i32, i32> { first: 10, second: 20 };
+    return p.first + p.second;  // 应该返回30
+}
+

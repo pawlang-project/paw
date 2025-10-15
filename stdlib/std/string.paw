@@ -1,0 +1,206 @@
+// std::string - 字符串操作库
+// 提供常用字符串和字符函数（命名不超过3个单词）
+
+// ============ C标准库字符串函数声明 ============
+
+extern "C" fn strlen(s: string) -> i64;
+extern "C" fn strcmp(a: string, b: string) -> i32;
+extern "C" fn strncmp(a: string, b: string, n: i64) -> i32;
+extern "C" fn strstr(haystack: string, needle: string) -> i64;
+extern "C" fn strcpy(dest: string, src: string) -> string;
+extern "C" fn strcat(dest: string, src: string) -> string;
+extern "C" fn malloc(size: i64) -> string;
+
+// 字符操作
+extern "C" fn toupper(c: i32) -> i32;
+extern "C" fn tolower(c: i32) -> i32;
+extern "C" fn isalpha(c: i32) -> i32;
+extern "C" fn isdigit(c: i32) -> i32;
+extern "C" fn isspace(c: i32) -> i32;
+extern "C" fn isalnum(c: i32) -> i32;
+extern "C" fn isupper(c: i32) -> i32;
+extern "C" fn islower(c: i32) -> i32;
+
+// ============ PawLang字符串函数 ============
+
+// 长度
+pub fn len(s: string) -> i64 {
+    return strlen(s);
+}
+
+// 判空
+pub fn is_empty(s: string) -> bool {
+    let length: i64 = strlen(s);
+    let zero: i64 = 0;
+    return length == zero;
+}
+
+// 比较
+pub fn equals(a: string, b: string) -> bool {
+    let result: i32 = strcmp(a, b);
+    let zero: i32 = 0;
+    return result == zero;
+}
+
+pub fn compare(a: string, b: string) -> i32 {
+    return strcmp(a, b);
+}
+
+pub fn compare_n(a: string, b: string, n: i64) -> i32 {
+    return strncmp(a, b, n);
+}
+
+// 查找
+pub fn contains(text: string, sub: string) -> bool {
+    let result: i64 = strstr(text, sub);
+    let zero: i64 = 0;
+    return result != zero;
+}
+
+pub fn find(text: string, sub: string) -> i64 {
+    return strstr(text, sub);
+}
+
+// 前缀和后缀
+pub fn starts_with(s: string, prefix: string) -> bool {
+    let prefix_len: i64 = strlen(prefix);
+    let result: i32 = strncmp(s, prefix, prefix_len);
+    let zero: i32 = 0;
+    return result == zero;
+}
+
+pub fn ends_with(s: string, suffix: string) -> bool {
+    let s_len: i64 = strlen(s);
+    let suffix_len: i64 = strlen(suffix);
+    
+    if suffix_len > s_len {
+        return false;
+    }
+    
+    return contains(s, suffix);
+}
+
+// 字符串索引（获取单个字符）
+pub fn char_at(s: string, index: i64) -> char {
+    let len: i64 = strlen(s);
+    if index >= len {
+        let zero: char = 0 as char;
+        return zero;
+    }
+    
+    let idx_i32: i32 = index as i32;
+    return s[idx_i32];
+}
+
+// ============ 字符操作函数 ============
+
+// 单个字符大小写转换
+pub fn char_upper(c: char) -> char {
+    let code: i32 = c as i32;
+    let upper_code: i32 = toupper(code);
+    let result: char = upper_code as char;
+    return result;
+}
+
+pub fn char_lower(c: char) -> char {
+    let code: i32 = c as i32;
+    let lower_code: i32 = tolower(code);
+    let result: char = lower_code as char;
+    return result;
+}
+
+// 字符判断
+pub fn is_alpha(c: char) -> bool {
+    let code: i32 = c as i32;
+    let result: i32 = isalpha(code);
+    let zero: i32 = 0;
+    return result != zero;
+}
+
+pub fn is_digit(c: char) -> bool {
+    let code: i32 = c as i32;
+    let result: i32 = isdigit(code);
+    let zero: i32 = 0;
+    return result != zero;
+}
+
+pub fn is_space(c: char) -> bool {
+    let code: i32 = c as i32;
+    let result: i32 = isspace(code);
+    let zero: i32 = 0;
+    return result != zero;
+}
+
+pub fn is_alphanumeric(c: char) -> bool {
+    let code: i32 = c as i32;
+    let result: i32 = isalnum(code);
+    let zero: i32 = 0;
+    return result != zero;
+}
+
+pub fn is_upper_char(c: char) -> bool {
+    let code: i32 = c as i32;
+    let result: i32 = isupper(code);
+    let zero: i32 = 0;
+    return result != zero;
+}
+
+pub fn is_lower_char(c: char) -> bool {
+    let code: i32 = c as i32;
+    let result: i32 = islower(code);
+    let zero: i32 = 0;
+    return result != zero;
+}
+
+// 字符信息
+pub fn char_code(c: char) -> i32 {
+    return c as i32;
+}
+
+pub fn from_code(code: i32) -> char {
+    return code as char;
+}
+
+// ============ 字符串转换函数（使用malloc和索引写入）============
+
+// 字符串转大写（创建新字符串）
+pub fn upper(s: string) -> string {
+    let len_i64: i64 = strlen(s);
+    let len: i32 = len_i64 as i32;  // 转换为i32用于循环
+    let one: i64 = 1;
+    let size: i64 = len_i64 + one;
+    let mut result: string = malloc(size);
+    
+    let zero: i32 = 0;
+    loop i in zero..len {
+        let c: char = s[i];
+        let upper_c: char = char_upper(c);
+        result[i] = upper_c;
+    }
+    
+    let null_char: char = 0 as char;
+    result[len] = null_char;
+    
+    return result;
+}
+
+// 字符串转小写（创建新字符串）
+pub fn lower(s: string) -> string {
+    let len_i64: i64 = strlen(s);
+    let len: i32 = len_i64 as i32;  // 转换为i32用于循环
+    let one: i64 = 1;
+    let size: i64 = len_i64 + one;
+    let mut result: string = malloc(size);
+    
+    let zero: i32 = 0;
+    loop i in zero..len {
+        let c: char = s[i];
+        let lower_c: char = char_lower(c);
+        result[i] = lower_c;
+    }
+    
+    let null_char: char = 0 as char;
+    result[len] = null_char;
+    
+    return result;
+}

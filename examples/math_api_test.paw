@@ -1,0 +1,37 @@
+// 测试简洁的数学API（避免负浮点字面量）
+
+import "std::math";
+
+fn main() -> i32 {
+    // 整数绝对值
+    let x: i32 = -42;
+    let abs_x: i32 = math::abs(x);
+    println("abs works!");
+    
+    // 最小最大值
+    let min_val: i32 = math::min(10, 20);
+    let max_val: i32 = math::max(10, 20);
+    println("min/max work!");
+    
+    // 浮点数学
+    let pi: f64 = 3.14;
+    let abs_f: f64 = math::fabs(pi);
+    println("fabs works!");
+    
+    // 三角函数
+    let s: f64 = math::sin(pi);
+    let c: f64 = math::cos(pi);
+    println("sin/cos work!");
+    
+    // 幂运算
+    let sq: f64 = math::sqrt(16.0);
+    let pw: f64 = math::pow(2.0, 3.0);
+    println("sqrt/pow work!");
+    
+    // 取整
+    let f: f64 = math::floor(3.9);
+    let ce: f64 = math::ceil(3.1);
+    println("floor/ceil work!");
+    
+    return 42;
+}

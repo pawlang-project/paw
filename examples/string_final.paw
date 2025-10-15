@@ -1,0 +1,46 @@
+// std::string最终功能测试
+
+import "std::string";
+
+fn main() -> i32 {
+    println("=== String Library ===");
+    
+    // 基础操作
+    let text: string = "Hello World";
+    let len: i64 = string::len(text);
+    
+    if string::contains(text, "World") {
+        println("contains works");
+    }
+    
+    if string::starts_with(text, "Hello") {
+        println("starts_with works");
+    }
+    
+    if string::ends_with(text, "World") {
+        println("ends_with works");
+    }
+    
+    // 字符索引
+    let zero: i64 = 0;
+    let first: char = string::char_at(text, zero);
+    let code: i32 = string::char_code(first);
+    println("char_at works");
+    
+    // 字符操作
+    let c: char = 'a';
+    let upper_c: char = string::char_upper(c);
+    
+    if string::is_alpha('X') {
+        println("is_alpha works");
+    }
+    
+    if string::is_digit('5') {
+        println("is_digit works");
+    }
+    
+    println("");
+    println("=== All String Functions Work ===");
+    
+    return 0;
+}

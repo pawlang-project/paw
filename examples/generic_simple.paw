@@ -1,0 +1,11 @@
+// 测试简单泛型函数
+
+fn identity<T>(x: T) -> T {
+    return x;
+}
+
+fn main() -> i32 {
+    let x: i32 = identity<i32>(42);
+    return x;
+}
+

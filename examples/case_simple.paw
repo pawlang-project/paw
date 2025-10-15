@@ -1,0 +1,15 @@
+// 简单的大小写测试
+
+import "std::string";
+
+fn main() -> i32 {
+    let text: string = "hello";
+    let upper: string = string::upper(text);
+    println(upper);
+    
+    let text2: string = "WORLD";
+    let lower: string = string::lower(text2);
+    println(lower);
+    
+    return 0;
+}

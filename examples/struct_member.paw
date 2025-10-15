@@ -1,0 +1,17 @@
+// 测试struct成员访问
+
+type Point = struct {
+    x: i32,
+    y: i32,
+}
+
+fn main() -> i32 {
+    let p: Point = Point { x: 10, y: 20 };
+    
+    // 测试成员访问
+    let x_val: i32 = p.x;
+    let y_val: i32 = p.y;
+    
+    return x_val + y_val;
+}
+

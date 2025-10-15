@@ -1,0 +1,16 @@
+// 测试泛型enum - 使用显式类型参数
+
+type Option<T> = enum {
+    Some(T),
+    None(),
+}
+
+fn main() -> i32 {
+    // 使用显式类型参数
+    let opt: Option<i32> = Option<i32>::Some(42);
+    
+    return opt is {
+        Some(x) => x,
+        None() => 0,
+    };
+}

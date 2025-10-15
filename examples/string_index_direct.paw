@@ -1,0 +1,17 @@
+// 直接字符串索引测试
+
+fn main() -> i32 {
+    let s: string = "ABC";
+    
+    let zero: i32 = 0;
+    let one: i32 = 1;
+    let two: i32 = 2;
+    
+    let c0: char = s[zero];  // 'A' = 65
+    let c1: char = s[one];   // 'B' = 66
+    let c2: char = s[two];   // 'C' = 67
+    
+    let sum: i32 = (c0 as i32) + (c1 as i32) + (c2 as i32);
+    
+    return sum;  // 65 + 66 + 67 = 198
+}

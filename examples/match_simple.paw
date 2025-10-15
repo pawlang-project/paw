@@ -1,0 +1,19 @@
+// 简单的模式匹配测试
+
+type Option = enum {
+    Some(i32),
+    None(),
+}
+
+fn main() -> i32 {
+    let value: Option = Option::Some(42);
+    
+    // 使用match表达式
+    let result: i32 = value is {
+        Some(x) => x * 2,
+        None() => 0,
+    };
+    
+    return result;
+}
+

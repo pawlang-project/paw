@@ -1,0 +1,9 @@
+// 主文件 - 使用模块系统测试
+
+import "math";
+
+fn main() -> i32 {
+    let x: i32 = math::add(10, 20);
+    let y: i32 = math::multiply(x, 2);
+    return y;
+}

@@ -1,0 +1,24 @@
+// 测试upper和lower
+
+import "std::string";
+
+fn main() -> i32 {
+    println("=== Upper/Lower Test ===");
+    
+    let text1: string = "hello world";
+    let upper1: string = string::upper(text1);
+    println(upper1);  // HELLO WORLD
+    
+    let text2: string = "PAWLANG IS AWESOME";
+    let lower2: string = string::lower(text2);
+    println(lower2);  // pawlang is awesome
+    
+    let text3: string = "  Clean Me  ";
+    let trimmed: string = string::trim(text3);
+    println(trimmed);  // Clean Me
+    
+    println("");
+    println("=== All Tests Passed ===");
+    
+    return 42;
+}

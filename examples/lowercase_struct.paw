@@ -1,0 +1,16 @@
+// 测试小写类型名（符号表方案）
+
+type point = struct {
+    x: i32,
+    y: i32,
+}
+
+fn main() -> i32 {
+    // 小写类型名也可以使用struct literal
+    let p: point = point { x: 10, y: 20 };
+    
+    let sum: i32 = p.x + p.y;
+    
+    return sum;
+}
+

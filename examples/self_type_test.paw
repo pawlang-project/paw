@@ -1,0 +1,31 @@
+// 测试Self类型
+
+type Counter = struct {
+    value: i32,
+    
+    // 使用Self作为返回类型
+    fn new(init: i32) -> Self {
+        return Counter { value: init };
+    }
+    
+    // Self作为返回类型 - 支持方法链
+    fn add(mut self, delta: i32) -> Self {
+        self.value = self.value + delta;
+        return self;
+    }
+    
+    fn get(self) -> i32 {
+        return self.value;
+    }
+}
+
+fn main() -> i32 {
+    // 创建实例
+    let c: Counter = Counter::new(10);
+    
+    // 方法链调用
+    let c2: Counter = c.add(20).add(12);
+    
+    return c2.get();  // 42
+}
+

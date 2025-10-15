@@ -1,0 +1,9 @@
+// Hello World example in PawLang
+
+fn main() -> i32 {
+    println("Hello, PawLang!");
+    return 0;
+}
+
+
+

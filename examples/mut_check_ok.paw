@@ -1,0 +1,15 @@
+// 测试mut正确使用
+
+type Point = struct {
+    x: i32,
+    y: i32,
+}
+
+fn main() -> i32 {
+    // mut对象可以修改
+    let mut p1: Point = Point { x: 10, y: 20 };
+    p1.x = 30;
+    p1.y = 40;
+    
+    return p1.x + p1.y;  // 70
+}

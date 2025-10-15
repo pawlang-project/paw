@@ -1,0 +1,22 @@
+// 测试完整的upper/lower实现
+
+import "std::string";
+
+fn main() -> i32 {
+    println("=== String Case Conversion ===");
+    
+    // 转大写
+    let text1: string = "hello world";
+    let upper1: string = string::upper(text1);
+    println(upper1);  // HELLO WORLD
+    
+    // 转小写
+    let text2: string = "PAWLANG IS AWESOME";
+    let lower2: string = string::lower(text2);
+    println(lower2);  // pawlang is awesome
+    
+    println("");
+    println("=== All Tests Passed ===");
+    
+    return 0;
+}

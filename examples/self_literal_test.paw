@@ -1,0 +1,24 @@
+// 测试Self字面量
+
+type Point = struct {
+    x: i32,
+    y: i32,
+    
+    fn origin() -> Self {
+        return Self { x: 0, y: 0 };  // 使用Self字面量
+    }
+    
+    fn new(x: i32, y: i32) -> Self {
+        return Self { x: x, y: y };  // 使用Self字面量
+    }
+    
+    fn sum(self) -> i32 {
+        return self.x + self.y;
+    }
+}
+
+fn main() -> i32 {
+    let p1: Point = Point::origin();
+    let p2: Point = Point::new(10, 20);
+    return p1.sum() + p2.sum();  // 0 + 30 = 30
+}

@@ -1,0 +1,8 @@
+// 测试char类型基础功能
+
+fn main() -> i32 {
+    let c: char = 'A';
+    let d: char = 'Z';
+    
+    return 65;  // 'A'的ASCII值
+}

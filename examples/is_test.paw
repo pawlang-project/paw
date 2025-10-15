@@ -1,0 +1,18 @@
+// 测试is条件判断
+
+type Option = enum {
+    Some(i32),
+    None(),
+}
+
+fn main() -> i32 {
+    let value: Option = Option::Some(42);
+    
+    // 使用is进行条件判断
+    if value is Some(x) {
+        return x;
+    }
+    
+    return 0;
+}
+

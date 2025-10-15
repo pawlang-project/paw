@@ -1,0 +1,19 @@
+// 测试直接返回enum类型
+
+type Status = enum {
+    Ok(i32),
+    Error(),
+}
+
+fn create_status(val: i32) -> Status {
+    return Status::Ok(val);
+}
+
+fn main() -> i32 {
+    let s: Status = create_status(42);
+    return s is {
+        Ok(x) => x,
+        Error() => 0,
+    };
+}
+

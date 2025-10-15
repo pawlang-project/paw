@@ -1,0 +1,19 @@
+// 简化的enum测试
+
+type Option = enum {
+    Some(i32),
+    None(),
+}
+
+fn main() -> i32 {
+    // 测试enum变体构造
+    let value: Option = Option::Some(42);
+    
+    // 测试is条件判断
+    if value is Some(x) {
+        println("Value is Some");
+    }
+    
+    return 0;
+}
+

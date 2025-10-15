@@ -1,0 +1,19 @@
+// 测试mut成员赋值
+
+type Point = struct {
+    x: i32,
+    y: i32,
+}
+
+fn main() -> i32 {
+    // mut对象可以修改成员
+    let mut p1: Point = Point { x: 10, y: 20 };
+    p1.x = 30;
+    p1.y = 40;
+    
+    // 非mut对象不能修改成员（应该编译错误）
+    // let p2: Point = Point { x: 1, y: 2 };
+    // p2.x = 3;  // 错误！
+    
+    return p1.x + p1.y;  // 30 + 40 = 70
+}

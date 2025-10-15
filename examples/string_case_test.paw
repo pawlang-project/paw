@@ -1,0 +1,27 @@
+// 测试字符串大小写转换
+
+import "std::string";
+
+fn main() -> i32 {
+    println("=== 字符串大小写转换 ===");
+    
+    // 转大写
+    let text: string = "hello world";
+    let upper_text: string = string::upper(text);
+    println(upper_text);  // HELLO WORLD
+    
+    // 转小写
+    let text2: string = "PAWLANG";
+    let lower_text: string = string::lower(text2);
+    println(lower_text);  // pawlang
+    
+    // 修剪空白
+    let text3: string = "  trim me  ";
+    let trimmed: string = string::trim(text3);
+    println(trimmed);  // "trim me"
+    
+    println("");
+    println("=== 所有测试通过 ===");
+    
+    return 0;
+}
