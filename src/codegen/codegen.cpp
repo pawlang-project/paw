@@ -551,13 +551,14 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
         
         // 获取对象的地址（而不是值）
         llvm::Value* obj_ptr = nullptr;
+        std::string obj_name;
         
         if (member_expr->object->kind == Expr::Kind::Identifier) {
             // 从named_values_直接获取指针（alloca）
-            std::string obj_name = static_cast<const IdentifierExpr*>(member_expr->object.get())->name;
+            obj_name = static_cast<const IdentifierExpr*>(member_expr->object.get())->name;
             auto it = named_values_.find(obj_name);
             if (it != named_values_.end()) {
-                obj_ptr = it->second;  // 这已经是指针了
+                obj_ptr = it->second;  // 这已经是alloca指针
             }
         } else {
             // 其他情况（如临时值），需要生成表达式
@@ -574,7 +575,25 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
                 
                 // 构建参数列表：第一个参数是this指针
                 std::vector<llvm::Value*> args;
-                args.push_back(obj_ptr);  // this指针（指向alloca）
+                
+                // 【关键修复】：在新的struct语义下，struct变量是alloca ptr
+                // obj_ptr是alloca的地址，需要load获取实际的heap指针
+                llvm::Value* actual_obj_ptr = obj_ptr;
+                
+                // 如果有obj_name并且在variable_types_中是StructType
+                if (!obj_name.empty()) {
+                    auto type_it = variable_types_.find(obj_name);
+                    if (type_it != variable_types_.end() && type_it->second->isStructTy()) {
+                        // obj_ptr是alloca ptr，load获取heap指针
+                        actual_obj_ptr = builder_->CreateLoad(
+                            llvm::PointerType::get(*context_, 0), 
+                            obj_ptr, 
+                            obj_name + "_heap_ptr"
+                        );
+                    }
+                }
+                
+                args.push_back(actual_obj_ptr);  // this指针（heap指针）
                 
                 for (const auto& arg : expr->arguments) {
                     llvm::Value* arg_val = generateExpr(arg.get());
@@ -1038,7 +1057,80 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
         }
     } else if (stmt->initializer) {
         // 没有类型声明，从初始化器推导
-        // 先生成初始化器来获取其类型
+        // 检查是否是struct literal
+        if (stmt->initializer->kind == Expr::Kind::StructLiteral) {
+            const StructLiteralExpr* struct_lit = static_cast<const StructLiteralExpr*>(stmt->initializer.get());
+            std::string struct_type_name = struct_lit->type_name;
+            
+            // 生成struct literal（返回heap ptr）
+            llvm::Value* init_val = generateExpr(stmt->initializer.get());
+            if (!init_val) return;
+            
+            // alloca存储ptr
+            llvm::AllocaInst* alloca = builder_->CreateAlloca(
+                llvm::PointerType::get(*context_, 0), nullptr, stmt->name
+            );
+            named_values_[stmt->name] = alloca;
+            builder_->CreateStore(init_val, alloca);
+            
+            // 【关键】：记录实际的StructType，而不是ptr
+            auto struct_type = getOrCreateStructType(struct_type_name);
+            if (struct_type) {
+                variable_types_[stmt->name] = struct_type;
+            } else {
+                variable_types_[stmt->name] = llvm::PointerType::get(*context_, 0);
+            }
+            
+            return;  // 提前返回
+        }
+        
+        // 检查是否是函数调用返回struct
+        if (stmt->initializer->kind == Expr::Kind::Call) {
+            const CallExpr* call_expr = static_cast<const CallExpr*>(stmt->initializer.get());
+            
+            // 生成调用
+            llvm::Value* init_val = generateExpr(stmt->initializer.get());
+            if (!init_val) return;
+            
+            // 检查返回值是否是指针（可能是struct）
+            if (init_val->getType()->isPointerTy()) {
+                // 尝试从所有struct的方法中查找
+                std::string found_struct_name;
+                
+                if (call_expr->callee->kind == Expr::Kind::Identifier) {
+                    const IdentifierExpr* id = static_cast<const IdentifierExpr*>(call_expr->callee.get());
+                    std::string func_name = id->name;
+                    
+                    // 在所有struct_methods_中查找这个函数
+                    for (const auto& [struct_name, methods] : struct_methods_) {
+                        if (methods.find(func_name) != methods.end()) {
+                            found_struct_name = struct_name;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!found_struct_name.empty()) {
+                    // 找到了！这是struct的静态方法
+                    auto struct_type = getOrCreateStructType(found_struct_name);
+                    if (struct_type) {
+                        // alloca存储ptr
+                        llvm::AllocaInst* alloca = builder_->CreateAlloca(
+                            llvm::PointerType::get(*context_, 0), nullptr, stmt->name
+                        );
+                        named_values_[stmt->name] = alloca;
+                        builder_->CreateStore(init_val, alloca);
+                        
+                        // 记录实际的StructType
+                        variable_types_[stmt->name] = struct_type;
+                        
+                        return;  // 提前返回
+                    }
+                }
+            }
+        }
+        
+        // 其他类型的初始化器：正常推导
         llvm::Value* init_val = generateExpr(stmt->initializer.get());
         if (init_val) {
             type = init_val->getType();
@@ -1067,11 +1159,26 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
     named_values_[stmt->name] = alloca;
     
     // 【重要】：保存变量的实际类型
-    // 对于T?类型，alloc_type是ptr，但需要记录实际的Optional<T>类型
+    // 对于T?和struct类型，alloc_type是ptr，但需要记录实际的类型
     if (stmt->type && stmt->type->kind == Type::Kind::Optional) {
         // 获取实际的Optional<T>类型
         llvm::Type* optional_type = resolveGenericType(stmt->type.get());
         variable_types_[stmt->name] = optional_type;
+    } else if (stmt->type && stmt->type->kind == Type::Kind::Named) {
+        // 对于struct类型，记录实际的StructType而不是ptr
+        const NamedTypeNode* named = static_cast<const NamedTypeNode*>(stmt->type.get());
+        std::string full_type_name = named->name;
+        if (!named->generic_args.empty()) {
+            full_type_name = mangleGenericName(named->name, named->generic_args);
+        }
+        
+        auto struct_type = getOrCreateStructType(full_type_name);
+        if (struct_type) {
+            // 记录实际的StructType
+            variable_types_[stmt->name] = struct_type;
+        } else {
+            variable_types_[stmt->name] = alloc_type;
+        }
     } else {
         variable_types_[stmt->name] = alloc_type;  // 其他情况正常保存
     }

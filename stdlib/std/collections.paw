@@ -1,6 +1,33 @@
 // std::collections - 泛型集合类型
 // 提供基础泛型数据结构
 
+// ========== Pair<K, V> - 键值对 ==========
+
+pub type Pair<K, V> = struct {
+    first: K,
+    second: V,
+}
+
+// 创建Pair
+pub fn new_pair<K, V>(k: K, v: V) -> Pair<K, V> {
+    return Pair<K, V> { first: k, second: v };
+}
+
+// 获取first
+pub fn pair_first<K, V>(pair: Pair<K, V>) -> K {
+    return pair.first;
+}
+
+// 获取second
+pub fn pair_second<K, V>(pair: Pair<K, V>) -> V {
+    return pair.second;
+}
+
+// 交换first和second
+pub fn pair_swap<K, V>(pair: Pair<K, V>) -> Pair<V, K> {
+    return Pair<V, K> { first: pair.second, second: pair.first };
+}
+
 // ========== Triple<A, B, C> - 三元组 ==========
 
 pub type Triple<A, B, C> = struct {
