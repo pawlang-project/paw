@@ -1,0 +1,56 @@
+// Struct语义重构 - 综合测试
+
+type Point = struct {
+    x: i32,
+    y: i32,
+}
+
+type Pair<K, V> = struct {
+    key: K,
+    value: V,
+}
+
+fn create_point(x: i32, y: i32) -> Point {
+    return Point { x: x, y: y };
+}
+
+fn get_x(p: Point) -> i32 {
+    return p.x;
+}
+
+fn create_pair<K, V>(k: K, v: V) -> Pair<K, V> {
+    return Pair<K, V> { key: k, value: v };
+}
+
+fn get_key<K, V>(pair: Pair<K, V>) -> K {
+    return pair.key;
+}
+
+fn main() -> i32 {
+    println("=== Struct语义重构测试 ===");
+    
+    // 测试非泛型struct
+    let p1: Point = create_point(10, 20);
+    let x: i32 = get_x(p1);
+    if x == 10 {
+        println("✓ 非泛型struct");
+    }
+    
+    // 测试泛型struct
+    let v100: i64 = 100;
+    let p2 = create_pair<i32, i64>(42, v100);
+    let k: i32 = get_key<i32, i64>(p2);
+    if k == 42 {
+        println("✓ 泛型struct");
+    }
+    
+    if x == 10 {
+        if k == 42 {
+            println("\n=== Struct语义统一完成！ ===");
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+

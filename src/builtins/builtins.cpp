@@ -13,7 +13,8 @@ void Builtins::declareAll() {
     // declareStrcat();
     // declareStrcpy();
     // declareStrlen();
-    // declareMalloc();
+    declareMalloc();  // 启用malloc（用于struct堆分配）
+    declareMemcpy();  // 启用memcpy（用于struct拷贝）
     // 实现print和println
     declarePrint();
     declarePrintln();
@@ -97,7 +98,7 @@ void Builtins::declareStrlen() {
 }
 
 void Builtins::declareMalloc() {
-    // 声明 malloc: i8* malloc(i64)
+    // 声明 malloc: ptr malloc(i64)
     llvm::FunctionType* malloc_type = llvm::FunctionType::get(
         llvm::PointerType::get(context_, 0),
         {llvm::Type::getInt64Ty(context_)},
@@ -108,6 +109,24 @@ void Builtins::declareMalloc() {
         malloc_type,
         llvm::Function::ExternalLinkage,
         "malloc",
+        &module_
+    );
+}
+
+void Builtins::declareMemcpy() {
+    // 声明 memcpy: ptr memcpy(ptr dest, ptr src, i64 n)
+    llvm::FunctionType* memcpy_type = llvm::FunctionType::get(
+        llvm::PointerType::get(context_, 0),
+        {llvm::PointerType::get(context_, 0), 
+         llvm::PointerType::get(context_, 0),
+         llvm::Type::getInt64Ty(context_)},
+        false
+    );
+    
+    llvm::Function::Create(
+        memcpy_type,
+        llvm::Function::ExternalLinkage,
+        "memcpy",
         &module_
     );
 }

@@ -122,6 +122,7 @@ private:
     
     // 泛型辅助
     std::string mangleGenericName(const std::string& base_name, const std::vector<TypePtr>& type_args);
+    std::string resolveGenericStructName(const std::string& mangled_name);  // 解析泛型struct名称
     llvm::Type* resolveGenericType(const Type* type);
     bool isGenericFunction(const std::string& name);
     llvm::Function* instantiateGenericFunction(const std::string& name, const std::vector<TypePtr>& type_args);

@@ -45,6 +45,26 @@ void SymbolTable::registerType(const std::string& module, const std::string& nam
     module_symbols_[module][name] = symbol;
 }
 
+void SymbolTable::registerGenericStructInstance(const std::string& module, const std::string& mangled_name,
+                                                const std::string& base_name, bool is_public,
+                                                llvm::Type* type, const void* ast_node) {
+    // 注册泛型struct实例（如Pair_i32_string）
+    // 这样其他模块可以通过mangled_name查找到这个实例化的类型
+    Symbol symbol;
+    symbol.name = mangled_name;  // 使用mangled name作为查找键
+    symbol.module = module;
+    symbol.kind = SymbolKind::Type;
+    symbol.is_public = is_public;  // 继承基础struct的可见性
+    symbol.value = nullptr;
+    symbol.type = type;
+    symbol.ast_node = ast_node;  // 保存原始泛型struct的AST
+    
+    module_symbols_[module][mangled_name] = symbol;
+    
+    // 同时记录base_name信息（用于后续查找）
+    // 可以通过注释或调试信息记录
+}
+
 void SymbolTable::registerVariable(const std::string& module, const std::string& name,
                                    bool is_public, llvm::Value* value) {
     Symbol symbol;

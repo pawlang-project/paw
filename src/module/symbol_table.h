@@ -53,6 +53,11 @@ public:
     void registerType(const std::string& module, const std::string& name,
                      bool is_public, llvm::Type* type, const void* ast_node = nullptr);
     
+    // 注册泛型struct实例（如Pair_i32_string）
+    void registerGenericStructInstance(const std::string& module, const std::string& mangled_name,
+                                       const std::string& base_name, bool is_public, 
+                                       llvm::Type* type, const void* ast_node = nullptr);
+    
     void registerVariable(const std::string& module, const std::string& name,
                          bool is_public, llvm::Value* value);
     

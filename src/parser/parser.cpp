@@ -961,6 +961,10 @@ ExprPtr Parser::primary() {
                             case PrimitiveType::STRING: mangled_name += "string"; break;
                             default: mangled_name += "T"; break;
                         }
+                    } else if (arg->kind == Type::Kind::Generic) {
+                        // 泛型参数（K, V等）在泛型函数内部
+                        const GenericTypeNode* gen = static_cast<const GenericTypeNode*>(arg.get());
+                        mangled_name += gen->name;  // 添加参数名（K, V等）
                     }
                 }
                 

@@ -34,6 +34,7 @@ private:
     void declareStrcpy();   // 声明libc的strcpy
     void declareStrlen();   // 声明libc的strlen
     void declareMalloc();   // 声明libc的malloc
+    void declareMemcpy();   // 声明libc的memcpy
     void declarePrint();
     void declarePrintln();
     void declareEprint();

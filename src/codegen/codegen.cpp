@@ -316,27 +316,44 @@ llvm::Type* CodeGenerator::convertType(const Type* type) {
 }
 
 llvm::StructType* CodeGenerator::getOrCreateStructType(const std::string& name) {
+    // 1. 先查本地缓存
     auto it = struct_types_.find(name);
     if (it != struct_types_.end()) {
         return it->second;
     }
     
-    // 查找struct定义
+    // 2. 查找本地struct定义
     auto def_it = struct_defs_.find(name);
-    if (def_it == struct_defs_.end()) {
-        return nullptr;
+    if (def_it != struct_defs_.end()) {
+        // 创建struct类型
+        auto def = def_it->second;
+        std::vector<llvm::Type*> field_types;
+        for (const auto& field : def->fields) {
+            field_types.push_back(convertType(field.type.get()));
+        }
+        
+        auto struct_type = llvm::StructType::create(*context_, field_types, name);
+        struct_types_[name] = struct_type;
+        return struct_type;
     }
     
-    // 创建struct类型
-    auto def = def_it->second;
-    std::vector<llvm::Type*> field_types;
-    for (const auto& field : def->fields) {
-        field_types.push_back(convertType(field.type.get()));
+    // 3. 查找跨模块的泛型struct实例（通过SymbolTable）
+    if (symbol_table_) {
+        // 使用通用lookup查找跨模块类型
+        auto symbol = symbol_table_->lookup(name, module_name_);
+        if (symbol && symbol->kind == SymbolTable::SymbolKind::Type && symbol->type) {
+            // 找到了！从其他模块导入类型
+            importTypeFromModule(name, symbol->module);
+            
+            // 再次检查是否成功导入
+            auto imported_it = struct_types_.find(name);
+            if (imported_it != struct_types_.end()) {
+                return imported_it->second;
+            }
+        }
     }
     
-    auto struct_type = llvm::StructType::create(*context_, field_types, name);
-    struct_types_[name] = struct_type;
-    return struct_type;
+    return nullptr;
 }
 
 llvm::Type* CodeGenerator::getEnumType(const std::string& name) {
@@ -887,12 +904,22 @@ void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
                 param_type = llvm::PointerType::get(*context_, 0);
             }
             
+            // 【新增】：struct参数传递指针而不是值
+            if (llvm::isa<llvm::StructType>(param_type)) {
+                param_type = llvm::PointerType::get(*context_, 0);
+            }
+            
             param_types.push_back(param_type);
         }
     }
     
     llvm::Type* return_type = stmt->return_type ? 
         convertType(stmt->return_type.get()) : llvm::Type::getVoidTy(*context_);
+    
+    // 【新增】：struct返回值改为指针
+    if (return_type && llvm::isa<llvm::StructType>(return_type)) {
+        return_type = llvm::PointerType::get(*context_, 0);
+    }
     
     llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
     llvm::Function* func = llvm::Function::Create(
@@ -965,7 +992,7 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
         // 使用resolveGenericType而不是convertType，这样可以正确处理泛型类型T
         type = resolveGenericType(stmt->type.get());
         
-        // 特殊处理：如果类型是struct名称，实际存储struct值而不是指针
+        // 特殊处理：如果类型是struct名称，存储指针而不是值（新语义）
         if (stmt->type->kind == Type::Kind::Named) {
             const NamedTypeNode* named = static_cast<const NamedTypeNode*>(stmt->type.get());
             
@@ -978,7 +1005,8 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
             
             auto struct_type = getOrCreateStructType(full_type_name);
             if (struct_type) {
-                actual_type = struct_type;  // 存储struct值
+                // 【重要改动】：struct变量存储指针，不是值
+                actual_type = llvm::PointerType::get(*context_, 0);
             } else {
                 actual_type = type;
             }
@@ -1560,6 +1588,14 @@ void CodeGenerator::generateStructStmt(const StructStmt* stmt) {
     // 如果是泛型struct，保存定义但不立即生成
     if (!stmt->generic_params.empty()) {
         generic_structs_[stmt->name] = stmt;
+        
+        // 注册泛型struct定义到SymbolTable（保存AST）
+        if (symbol_table_ && stmt->is_public) {
+            symbol_table_->registerType(module_name_, stmt->name, stmt->is_public, 
+                                       nullptr,  // 泛型定义没有具体LLVM Type
+                                       static_cast<const void*>(stmt));
+        }
+        
         return;
     }
     
@@ -1820,12 +1856,34 @@ llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* exp
             // 普通变量：obj_ptr应该是alloca（指向struct值的指针）
             auto it = named_values_.find(obj_name);
             if (it != named_values_.end()) {
-                obj_ptr = it->second;  // alloca返回的是指针
-                
                 // 从variable_types_获取实际的struct值类型
                 auto type_it = variable_types_.find(obj_name);
                 if (type_it != variable_types_.end()) {
                     struct_value_type = type_it->second;
+                    
+                    // 【新逻辑】：处理不同的类型
+                    if (struct_value_type->isPointerTy()) {
+                        // struct变量现在存储ptr：需要load得到实际的struct指针
+                        obj_ptr = builder_->CreateLoad(
+                            llvm::PointerType::get(*context_, 0),
+                            it->second,
+                            obj_name + "_ptr"
+                        );
+                        // 注意：variable_types_可能存储的是StructType（参数），需要保留
+                    } else if (struct_value_type->isStructTy()) {
+                        // struct参数传递：variable_types_存储StructType，alloca存储ptr
+                        // 需要load得到实际struct指针
+                        obj_ptr = builder_->CreateLoad(
+                            llvm::PointerType::get(*context_, 0),
+                            it->second,
+                            obj_name + "_loaded"
+                        );
+                    } else {
+                        // 非指针（旧语义）：直接使用alloca
+                        obj_ptr = it->second;
+                    }
+                } else {
+                    obj_ptr = it->second;  // fallback
                 }
             }
         }
@@ -1851,21 +1909,38 @@ llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* exp
     if (!obj_ptr) return nullptr;
     
     // 尝试所有struct定义，找到匹配的字段
+    // 【优先使用精确类型】：如果struct_value_type是StructType，直接使用它
+    if (struct_value_type && struct_value_type->isStructTy()) {
+        // 直接使用精确的struct类型
+        llvm::StructType* exact_struct = llvm::cast<llvm::StructType>(struct_value_type);
+        
+        // 找到对应的struct定义
+        for (const auto& [struct_name, struct_def] : struct_defs_) {
+            auto struct_type = getOrCreateStructType(struct_name);
+            if (struct_type == exact_struct) {
+                // 找到匹配的定义
+                int field_idx = 0;
+                for (const auto& field : struct_def->fields) {
+                    if (field.name == expr->member) {
+                        // 找到字段！
+                        llvm::Value* field_ptr = builder_->CreateStructGEP(
+                            struct_type, obj_ptr, field_idx, "field_ptr"
+                        );
+                        return builder_->CreateLoad(
+                            struct_type->getElementType(field_idx), 
+                            field_ptr, 
+                            expr->member
+                        );
+                    }
+                    field_idx++;
+                }
+            }
+        }
+    }
+    
+    // Fallback：遍历所有struct（用于不明确类型的情况）
     for (const auto& [struct_name, struct_def] : struct_defs_) {
         auto struct_type = getOrCreateStructType(struct_name);
-        
-        // 改进的类型匹配：
-        // 1. 如果struct_value_type就是struct_type，直接匹配
-        // 2. 如果没有struct_value_type信息，尝试所有struct
-        // 3. 如果struct_value_type是PointerType，尝试所有struct（可能是参数传递）
-        if (struct_value_type) {
-            // 只在以下情况跳过：
-            // - struct_value_type是StructType且不等于struct_type
-            if (struct_value_type->isStructTy() && struct_type != struct_value_type) {
-                continue;
-            }
-            // 如果是PointerType或其他，继续尝试（可能匹配）
-        }
         
         int field_idx = 0;
         for (const auto& field : struct_def->fields) {
@@ -1889,27 +1964,32 @@ llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* exp
 }
 
 llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* expr) {
+    // 解析泛型struct名称（如果在泛型context中）
+    // "Pair_K_V" -> "Pair_i32_string"
+    std::string resolved_name = resolveGenericStructName(expr->type_name);
+    
     // 先从struct_types_直接查找（支持泛型实例如Box_i32）
-    auto type_it = struct_types_.find(expr->type_name);
+    auto type_it = struct_types_.find(resolved_name);
     llvm::StructType* struct_type = nullptr;
     
     if (type_it != struct_types_.end()) {
         struct_type = type_it->second;
     } else {
         // 如果直接找不到，尝试通过getOrCreateStructType
-        struct_type = getOrCreateStructType(expr->type_name);
+        struct_type = getOrCreateStructType(resolved_name);
     }
     
     if (!struct_type) {
-        std::cerr << "Unknown struct type: " << expr->type_name << std::endl;
+        std::cerr << "Unknown struct type: " << expr->type_name 
+                  << " (resolved: " << resolved_name << ")" << std::endl;
         return nullptr;
     }
     
-    // 分配struct实例
-    llvm::Value* alloca = builder_->CreateAlloca(struct_type);
+    // 1. 在栈上分配临时struct
+    llvm::Value* temp_alloca = builder_->CreateAlloca(struct_type, nullptr, "struct_temp");
     
-    // 初始化字段
-    auto def_it = struct_defs_.find(expr->type_name);
+    // 2. 初始化字段（使用resolved_name）
+    auto def_it = struct_defs_.find(resolved_name);
     if (def_it != struct_defs_.end()) {
         const StructStmt* struct_def = def_it->second;
         for (size_t i = 0; i < expr->fields.size() && i < struct_def->fields.size(); i++) {
@@ -1932,13 +2012,33 @@ llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* e
                     }
                 }
                 
-                llvm::Value* field_ptr = builder_->CreateStructGEP(struct_type, alloca, i);
+                llvm::Value* field_ptr = builder_->CreateStructGEP(struct_type, temp_alloca, i);
                 builder_->CreateStore(field_val, field_ptr);
             }
         }
     }
     
-    return alloca;
+    // 3. 分配堆内存
+    const llvm::DataLayout& data_layout = module_->getDataLayout();
+    uint64_t struct_size = data_layout.getTypeAllocSize(struct_type);
+    llvm::Value* size_val = llvm::ConstantInt::get(*context_, llvm::APInt(64, struct_size));
+    
+    llvm::Function* malloc_func = module_->getFunction("malloc");
+    if (!malloc_func) {
+        std::cerr << "malloc not found!" << std::endl;
+        return nullptr;
+    }
+    
+    llvm::Value* heap_ptr = builder_->CreateCall(malloc_func, {size_val}, "struct_heap");
+    
+    // 4. 拷贝struct到堆
+    llvm::Function* memcpy_func = module_->getFunction("memcpy");
+    if (memcpy_func) {
+        builder_->CreateCall(memcpy_func, {heap_ptr, temp_alloca, size_val});
+    }
+    
+    // 5. 返回堆指针
+    return heap_ptr;
 }
 
 llvm::Value* CodeGenerator::generateEnumVariantExpr(const EnumVariantExpr* expr) {
@@ -2442,6 +2542,70 @@ llvm::Type* CodeGenerator::resolveGenericType(const Type* type) {
     return convertType(type);
 }
 
+// 解析泛型struct名称：将"Pair_K_V"解析为"Pair_i32_string"
+std::string CodeGenerator::resolveGenericStructName(const std::string& mangled_name) {
+    // 分析mangled_name，提取base_name和类型参数占位符
+    // 例如："Pair_K_V" -> "Pair" + ["K", "V"]
+    size_t first_underscore = mangled_name.find('_');
+    if (first_underscore == std::string::npos) {
+        return mangled_name;  // 没有下划线，不是泛型实例
+    }
+    
+    std::string base_name = mangled_name.substr(0, first_underscore);
+    std::string params_part = mangled_name.substr(first_underscore + 1);
+    
+    // 解析参数部分（简化：按_分割）
+    std::vector<std::string> type_params;
+    std::string current_param;
+    for (char c : params_part) {
+        if (c == '_') {
+            if (!current_param.empty()) {
+                type_params.push_back(current_param);
+                current_param.clear();
+            }
+        } else {
+            current_param += c;
+        }
+    }
+    if (!current_param.empty()) {
+        type_params.push_back(current_param);
+    }
+    
+    // 解析每个类型参数
+    std::vector<std::string> resolved_types;
+    for (const auto& param : type_params) {
+        // 检查是否是泛型参数（单字母大写）
+        if (param.length() == 1 && std::isupper(param[0])) {
+            // 在type_param_map_中查找具体类型
+            auto it = type_param_map_.find(param);
+            if (it != type_param_map_.end() && !it->second.empty()) {
+                llvm::Type* concrete_type = it->second.begin()->second;
+                // 将LLVM Type转为字符串名称
+                std::string type_str = "unknown";
+                if (concrete_type->isIntegerTy()) {
+                    unsigned bits = concrete_type->getIntegerBitWidth();
+                    type_str = "i" + std::to_string(bits);
+                } else if (concrete_type->isPointerTy()) {
+                    type_str = "string";  // 假设指针是string
+                }
+                resolved_types.push_back(type_str);
+            } else {
+                resolved_types.push_back(param);  // 未找到，保持原样
+            }
+        } else {
+            resolved_types.push_back(param);  // 非泛型参数，保持原样
+        }
+    }
+    
+    // 重新组装
+    std::string result = base_name;
+    for (const auto& t : resolved_types) {
+        result += "_" + t;
+    }
+    
+    return result;
+}
+
 // 检查是否是泛型函数
 bool CodeGenerator::isGenericFunction(const std::string& name) {
     return generic_functions_.find(name) != generic_functions_.end();
@@ -2487,6 +2651,11 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
                 param_type = llvm::PointerType::get(*context_, 0);
             }
             
+            // 【新增】：对于struct参数，使用指针类型（struct按指针传递）
+            if (llvm::isa<llvm::StructType>(param_type)) {
+                param_type = llvm::PointerType::get(*context_, 0);
+            }
+            
             param_types.push_back(param_type);
         }
     }
@@ -2494,6 +2663,11 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
     llvm::Type* return_type = generic_func->return_type ?
         resolveGenericType(generic_func->return_type.get()) :
         llvm::Type::getVoidTy(*context_);
+    
+    // 【新增】：对于struct返回值，使用指针类型
+    if (return_type && llvm::isa<llvm::StructType>(return_type)) {
+        return_type = llvm::PointerType::get(*context_, 0);
+    }
     
     llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
     llvm::Function* func = llvm::Function::Create(
@@ -2504,6 +2678,101 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
     );
     
     functions_[mangled_name] = func;
+    
+    // 预实例化返回类型中的泛型struct（如果有）
+    if (generic_func->return_type && generic_func->return_type->kind == Type::Kind::Named) {
+        const NamedTypeNode* named_ret = static_cast<const NamedTypeNode*>(generic_func->return_type.get());
+        if (!named_ret->generic_args.empty()) {
+            // 返回类型是泛型struct实例（如Pair<K, V>或Pair<V, K>）
+            // 需要将泛型参数映射到具体类型
+            
+            std::vector<const Type*> concrete_args_raw;
+            for (const auto& arg : named_ret->generic_args) {
+                if (arg->kind == Type::Kind::Generic) {
+                    // 找到这个泛型参数在函数generic_params中的索引
+                    const GenericTypeNode* gen = static_cast<const GenericTypeNode*>(arg.get());
+                    for (size_t i = 0; i < generic_func->generic_params.size(); i++) {
+                        if (generic_func->generic_params[i].name == gen->name) {
+                            // 使用对应的具体类型（原始指针）
+                            if (i < type_args.size()) {
+                                concrete_args_raw.push_back(type_args[i].get());
+                            }
+                            break;
+                        }
+                    }
+                } else {
+                    // 非泛型参数，直接使用（原始指针）
+                    concrete_args_raw.push_back(arg.get());
+                }
+            }
+            
+            // 实例化struct（使用原始指针数组）
+            if (!concrete_args_raw.empty()) {
+                // 调用重载版本
+                std::string struct_mangled = named_ret->name;
+                for (const auto* arg_ptr : concrete_args_raw) {
+                    struct_mangled += "_";
+                    if (arg_ptr->kind == Type::Kind::Primitive) {
+                        const PrimitiveTypeNode* prim = static_cast<const PrimitiveTypeNode*>(arg_ptr);
+                        switch (prim->prim_type) {
+                            case PrimitiveType::I32: struct_mangled += "i32"; break;
+                            case PrimitiveType::I64: struct_mangled += "i64"; break;
+                            case PrimitiveType::STRING: struct_mangled += "string"; break;
+                            default: struct_mangled += "T"; break;
+                        }
+                    } else if (arg_ptr->kind == Type::Kind::Named) {
+                        const NamedTypeNode* named = static_cast<const NamedTypeNode*>(arg_ptr);
+                        struct_mangled += named->name;
+                    }
+                }
+                
+                // 检查是否已实例化
+                if (struct_types_.find(struct_mangled) == struct_types_.end()) {
+                    // 手动实例化
+                    auto gen_struct_it = generic_structs_.find(named_ret->name);
+                    if (gen_struct_it == generic_structs_.end() && symbol_table_) {
+                        auto symbol = symbol_table_->lookup(named_ret->name, module_name_);
+                        if (symbol && symbol->ast_node) {
+                            const StructStmt* struct_def = static_cast<const StructStmt*>(symbol->ast_node);
+                            if (struct_def && !struct_def->generic_params.empty()) {
+                                generic_structs_[named_ret->name] = struct_def;
+                                gen_struct_it = generic_structs_.find(named_ret->name);
+                            }
+                        }
+                    }
+                    
+                    if (gen_struct_it != generic_structs_.end()) {
+                        const StructStmt* gen_struct = gen_struct_it->second;
+                        
+                        // 建立临时type_param_map_
+                        std::map<std::string, std::map<std::string, llvm::Type*>> temp_map;
+                        for (size_t i = 0; i < concrete_args_raw.size() && i < gen_struct->generic_params.size(); i++) {
+                            llvm::Type* concrete_type = convertType(concrete_args_raw[i]);
+                            temp_map[gen_struct->generic_params[i].name][struct_mangled] = concrete_type;
+                        }
+                        
+                        // 保存旧map
+                        auto saved_map = type_param_map_;
+                        type_param_map_ = temp_map;
+                        
+                        // 创建struct
+                        llvm::StructType* st = llvm::StructType::create(*context_, struct_mangled);
+                        struct_types_[struct_mangled] = st;
+                        struct_defs_[struct_mangled] = gen_struct;
+                        
+                        std::vector<llvm::Type*> field_types;
+                        for (const auto& field : gen_struct->fields) {
+                            field_types.push_back(resolveGenericType(field.type.get()));
+                        }
+                        st->setBody(field_types);
+                        
+                        // 恢复map
+                        type_param_map_ = saved_map;
+                    }
+                }
+            }
+        }
+    }
     
     // 生成函数体
     llvm::BasicBlock* bb = llvm::BasicBlock::Create(*context_, "entry", func);
@@ -2536,8 +2805,29 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
             const ArrayTypeNode* array_type = static_cast<const ArrayTypeNode*>(param.type.get());
             llvm::Type* elem_type = resolveGenericType(array_type->element_type.get());
             array_element_types_[param.name] = elem_type;
+        } else if (param.type->kind == Type::Kind::Named) {
+            // 【新增】：struct参数也是指针
+            llvm::Type* param_type = resolveGenericType(param.type.get());
+            if (llvm::isa<llvm::StructType>(param_type)) {
+                // struct参数：arg是ptr
+                llvm::AllocaInst* alloca = builder_->CreateAlloca(
+                    llvm::PointerType::get(*context_, 0), nullptr, param.name
+                );
+                builder_->CreateStore(&arg, alloca);
+                named_values_[param.name] = alloca;
+                
+                // 【关键】：记录具体的struct类型，而不是通用ptr
+                // 这样成员访问时能找到正确的struct定义
+                variable_types_[param.name] = param_type;  // 记录StructType
+            } else {
+                // 非struct的Named类型（如enum）：正常处理
+                llvm::AllocaInst* alloca = builder_->CreateAlloca(param_type, nullptr, param.name);
+                builder_->CreateStore(&arg, alloca);
+                named_values_[param.name] = alloca;
+                variable_types_[param.name] = param_type;
+            }
         } else {
-            // 非数组参数：正常处理
+            // 其他类型参数：正常处理
             llvm::Type* param_type = resolveGenericType(param.type.get());
             llvm::AllocaInst* alloca = builder_->CreateAlloca(param_type, nullptr, param.name);
             builder_->CreateStore(&arg, alloca);
@@ -2575,12 +2865,29 @@ llvm::Type* CodeGenerator::instantiateGenericStruct(
     const std::string& name,
     const std::vector<TypePtr>& type_args) {
     
+    const StructStmt* generic_struct = nullptr;
+    
+    // 1. 先查本地generic_structs_
     auto it = generic_structs_.find(name);
-    if (it == generic_structs_.end()) {
-        return nullptr;
+    if (it != generic_structs_.end()) {
+        generic_struct = it->second;
+    } else if (symbol_table_) {
+        // 2. 查找跨模块的泛型struct定义
+        auto symbol = symbol_table_->lookup(name, module_name_);
+        if (symbol && symbol->kind == SymbolTable::SymbolKind::Type && symbol->ast_node) {
+            // 检查是否是struct定义（简化：假设有generic_params就是泛型struct）
+            const StructStmt* struct_def = static_cast<const StructStmt*>(symbol->ast_node);
+            if (struct_def && !struct_def->generic_params.empty()) {
+                generic_struct = struct_def;
+                // 添加到本地缓存
+                generic_structs_[name] = generic_struct;
+            }
+        }
     }
     
-    const StructStmt* generic_struct = it->second;
+    if (!generic_struct) {
+        return nullptr;
+    }
     
     // 生成修饰后的名称
     std::string mangled_name = mangleGenericName(name, type_args);
@@ -2588,7 +2895,7 @@ llvm::Type* CodeGenerator::instantiateGenericStruct(
     // 检查是否已经实例化
     auto type_it = struct_types_.find(mangled_name);
     if (type_it != struct_types_.end()) {
-        return llvm::PointerType::get(*context_, 0);  // struct返回指针
+        return type_it->second;  // 返回struct类型本身
     }
     
     // 建立类型参数映射
@@ -2614,7 +2921,19 @@ llvm::Type* CodeGenerator::instantiateGenericStruct(
     // 恢复
     type_param_map_ = old_map;
     
-    return llvm::PointerType::get(*context_, 0);  // struct返回指针
+    // 注册泛型struct实例到SymbolTable（如果有）
+    if (symbol_table_ && generic_struct->is_public) {
+        symbol_table_->registerGenericStructInstance(
+            module_name_,
+            mangled_name,
+            name,
+            true,  // 继承pub属性
+            struct_type,
+            static_cast<const void*>(generic_struct)
+        );
+    }
+    
+    return struct_type;  // 返回struct类型本身，不是指针
 }
 
 // 实例化泛型enum
