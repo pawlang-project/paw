@@ -107,3 +107,99 @@ pub fn unbox<T>(boxed: Box<T>) -> T {
 pub fn box_get<T>(boxed: Box<T>) -> T {
     return boxed.value;
 }
+
+// ========== Maybe<T> - 可选值包装器 ==========
+
+pub type Maybe<T> = struct {
+    has_value: bool,
+    value: T,
+}
+
+// 创建Some
+pub fn some<T>(value: T) -> Maybe<T> {
+    return Maybe<T> { has_value: true, value: value };
+}
+
+// 创建None（需要默认值）
+pub fn none<T>(default_val: T) -> Maybe<T> {
+    return Maybe<T> { has_value: false, value: default_val };
+}
+
+// 检查是否有值
+pub fn has_value<T>(maybe: Maybe<T>) -> bool {
+    return maybe.has_value;
+}
+
+// 获取值（不安全）
+pub fn get_value<T>(maybe: Maybe<T>) -> T {
+    return maybe.value;
+}
+
+// 安全获取值
+pub fn get_or<T>(maybe: Maybe<T>, default_val: T) -> T {
+    if maybe.has_value {
+        return maybe.value;
+    } else {
+        return default_val;
+    }
+}
+
+// ========== Either<L, R> - 两选一类型 ==========
+
+pub type Either<L, R> = struct {
+    is_left: bool,
+    left: L,
+    right: R,
+}
+
+// 创建Left
+pub fn left<L, R>(value: L, default_right: R) -> Either<L, R> {
+    return Either<L, R> { is_left: true, left: value, right: default_right };
+}
+
+// 创建Right
+pub fn right<L, R>(value: R, default_left: L) -> Either<L, R> {
+    return Either<L, R> { is_left: false, left: default_left, right: value };
+}
+
+// 检查是否为Left
+pub fn is_left<L, R>(either: Either<L, R>) -> bool {
+    return either.is_left;
+}
+
+// 检查是否为Right
+pub fn is_right<L, R>(either: Either<L, R>) -> bool {
+    return !either.is_left;
+}
+
+// 获取Left值
+pub fn get_left<L, R>(either: Either<L, R>) -> L {
+    return either.left;
+}
+
+// 获取Right值
+pub fn get_right<L, R>(either: Either<L, R>) -> R {
+    return either.right;
+}
+
+// ========== Tuple辅助函数 ==========
+
+// 创建Tuple2（使用Pair）
+pub fn tuple2<A, B>(a: A, b: B) -> Pair<A, B> {
+    return Pair<A, B> { key: a, value: b };
+}
+
+// 获取Tuple2第一个元素
+pub fn fst<A, B>(tuple: Pair<A, B>) -> A {
+    return tuple.key;
+}
+
+// 获取Tuple2第二个元素
+pub fn snd<A, B>(tuple: Pair<A, B>) -> B {
+    return tuple.value;
+}
+
+// 创建Tuple3（使用Triple）
+pub fn tuple3<A, B, C>(a: A, b: B, c: C) -> Triple<A, B, C> {
+    return Triple<A, B, C> { first: a, second: b, third: c };
+}
