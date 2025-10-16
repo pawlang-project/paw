@@ -1,0 +1,46 @@
+# Doxyfile for PawLang Compiler
+
+PROJECT_NAME           = "PawLang Compiler"
+PROJECT_NUMBER         = "v0.2.1"
+PROJECT_BRIEF          = "A modern systems programming language with Rust-level safety and cleaner syntax"
+
+OUTPUT_DIRECTORY       = docs
+CREATE_SUBDIRS         = NO
+
+INPUT                  = src include stdlib
+RECURSIVE              = YES
+FILE_PATTERNS          = *.cpp *.h *.paw
+EXCLUDE_PATTERNS       = */build/* */llvm/* */.git/*
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_FILE_EXTENSION    = .html
+
+GENERATE_LATEX         = NO
+
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+
+OPTIMIZE_OUTPUT_FOR_C  = NO
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = NO
+
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+GENERATE_TREEVIEW      = YES
+USE_MDFILE_AS_MAINPAGE = README.md
+
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+

@@ -1,12 +1,18 @@
 /**
- * PawLang Code Generator
+ * @file codegen.cpp
+ * @brief PawLang LLVM代码生成器实现
  * 
- * 负责将AST转换为LLVM IR，支持：
- * - 基础类型和表达式
- * - 泛型（单态化）
- * - Struct和Enum
- * - 模式匹配
- * - 类型推导
+ * 负责将AST转换为LLVM IR，支持完整的PawLang语言特性：
+ * - 泛型系统（函数、Struct、Enum）- 完整单态化
+ * - 泛型struct内部方法（静态、实例）
+ * - 模块系统和跨模块调用
+ * - 错误处理（T?类型、?操作符、ok/err）
+ * - 模式匹配（is表达式、match表达式）
+ * - 类型推导和类型转换
+ * - Struct引用语义（统一指针传递）
+ * - 数组（定长、不定长、多维）
+ * - 字符串和字符类型
+ * - 循环控制（4种loop + break/continue）
  * 
  * 文件组织：
  * - 第1部分：初始化和核心接口
@@ -14,6 +20,12 @@
  * - 第3部分：表达式生成
  * - 第4部分：语句生成
  * - 第5部分：泛型实例化
+ * 
+ * @note 文件大小：3936行（计划未来拆分）
+ * @todo 拆分为多个文件：expr、stmt、type、struct、match
+ * 
+ * @version 0.2.1
+ * @date 2025-10-16
  */
 
 #include "codegen.h"
@@ -33,6 +45,17 @@ namespace pawc {
 // 第1部分：初始化和核心接口
 // ============================================================================
 
+/**
+ * @brief 构造CodeGenerator（单文件模式）
+ * @param module_name 模块名称
+ * 
+ * 初始化LLVM组件：
+ * - LLVMContext：独立的编译上下文
+ * - Module：IR模块容器
+ * - IRBuilder：IR指令构建器
+ * - Builtins：内置函数管理器
+ * - DataLayout：目标平台数据布局（确保正确对齐）
+ */
 CodeGenerator::CodeGenerator(const std::string& module_name)
     : current_function_(nullptr), current_function_return_type_(nullptr),
       current_struct_(nullptr), current_struct_name_(""), 
@@ -63,6 +86,16 @@ CodeGenerator::CodeGenerator(const std::string& module_name)
     builtins_->declareAll();
 }
 
+/**
+ * @brief 构造CodeGenerator（多文件模式）
+ * @param module_name 模块名称
+ * @param symbol_table 符号表指针（用于跨模块查找）
+ * 
+ * 与单文件模式相同，但额外支持：
+ * - 跨模块类型查找
+ * - 跨模块函数调用
+ * - 泛型跨模块实例化
+ */
 CodeGenerator::CodeGenerator(const std::string& module_name, SymbolTable* symbol_table)
     : current_function_(nullptr), current_function_return_type_(nullptr),
       current_struct_(nullptr), current_struct_name_(""), 
@@ -93,6 +126,21 @@ CodeGenerator::CodeGenerator(const std::string& module_name, SymbolTable* symbol
     builtins_->declareAll();
 }
 
+/**
+ * @brief 生成LLVM IR代码（主入口）
+ * @param program AST程序节点
+ * @return true 成功，false 验证失败
+ * 
+ * 采用两遍编译：
+ * 1. 第一遍：注册所有类型定义（Struct和Enum）
+ *    - 允许函数签名引用这些类型
+ *    - 处理泛型定义注册
+ * 2. 第二遍：生成函数、语句等
+ *    - 类型已完全可用
+ *    - 支持前向引用
+ * 
+ * 最后使用llvm::verifyModule()验证生成的IR正确性。
+ */
 bool CodeGenerator::generate(const Program& program) {
     // 第一遍：注册所有类型定义（Struct和Enum）
     // 这样函数签名中可以引用这些类型
@@ -2851,7 +2899,23 @@ bool CodeGenerator::isGenericFunction(const std::string& name) {
     return generic_functions_.find(name) != generic_functions_.end();
 }
 
-// 实例化泛型函数
+/**
+ * @brief 实例化泛型函数（单态化）
+ * @param name 泛型函数名
+ * @param type_args 类型参数列表
+ * @return llvm::Function* 实例化的函数，失败返回nullptr
+ * 
+ * 实现泛型函数的单态化（monomorphization）：
+ * 1. 生成修饰名称（如sum_i32）
+ * 2. 检查是否已实例化（缓存）
+ * 3. 建立类型参数映射（T -> i32）
+ * 4. 解析参数类型和返回类型
+ * 5. 创建LLVM函数
+ * 6. 生成函数体（使用type_param_map_）
+ * 
+ * @note 支持跨模块泛型函数调用
+ * @note 自动处理数组参数的元素类型记录
+ */
 llvm::Function* CodeGenerator::instantiateGenericFunction(
     const std::string& name,
     const std::vector<TypePtr>& type_args) {
@@ -3784,8 +3848,31 @@ llvm::Value* CodeGenerator::generateErrExpr(const ErrExpr* expr) {
 }
 
 /**
- * 实例化泛型struct的所有方法
- * 当泛型struct被实例化时调用（如Pair<i32, i32>）
+ * @brief 实例化泛型struct的所有方法（单态化）
+ * @param generic_struct 泛型struct定义
+ * @param struct_mangled_name Struct修饰名称（如Pair_i32_string）
+ * @param struct_type Struct的LLVM类型
+ * @param type_args 类型参数列表
+ * 
+ * 当泛型struct被实例化时自动调用，生成所有方法的具体版本。
+ * 
+ * 处理流程：
+ * 1. 遍历泛型struct的所有方法定义
+ * 2. 为每个方法生成修饰名称（如new_i32_string）
+ * 3. 构造参数类型列表：
+ *    - self参数：struct指针（ptr）
+ *    - 其他参数：解析泛型类型
+ * 4. 确定返回类型（支持Self类型）
+ * 5. 创建LLVM函数并注册
+ * 6. 生成方法体：
+ *    - 设置current_struct_上下文
+ *    - 处理self参数
+ *    - 生成方法体语句
+ * 7. 恢复上下文
+ * 
+ * @note 支持静态方法和实例方法
+ * @note 自动处理Self类型解析
+ * @note 方法注册到struct_methods_映射
  */
 void CodeGenerator::instantiateGenericStructMethods(
     const StructStmt* generic_struct,
