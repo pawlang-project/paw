@@ -1010,6 +1010,11 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
             } else {
                 actual_type = type;
             }
+        } else if (stmt->type->kind == Type::Kind::Optional) {
+            // 【新增】：T?类型也存储指针（统一语义）
+            // Optional<T> = { i32 tag, T value, ptr error }
+            // 变量存储：ptr to Optional
+            actual_type = llvm::PointerType::get(*context_, 0);
         } else {
             actual_type = type;
         }
@@ -1060,7 +1065,16 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
     llvm::Type* alloc_type = actual_type ? actual_type : type;
     llvm::AllocaInst* alloca = builder_->CreateAlloca(alloc_type, nullptr, stmt->name);
     named_values_[stmt->name] = alloca;
-    variable_types_[stmt->name] = alloc_type;  // 保存变量类型
+    
+    // 【重要】：保存变量的实际类型
+    // 对于T?类型，alloc_type是ptr，但需要记录实际的Optional<T>类型
+    if (stmt->type && stmt->type->kind == Type::Kind::Optional) {
+        // 获取实际的Optional<T>类型
+        llvm::Type* optional_type = resolveGenericType(stmt->type.get());
+        variable_types_[stmt->name] = optional_type;
+    } else {
+        variable_types_[stmt->name] = alloc_type;  // 其他情况正常保存
+    }
     
     if (stmt->initializer) {
         // 特殊处理：数组字面量 - 直接在目标alloca上初始化
@@ -2268,25 +2282,68 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
                     bool is_optional = (enum_name == "Optional");
                     
                     llvm::Type* enum_type;
+                    llvm::Value* value_to_check = value;
+                    
                     if (is_optional) {
-                        // Optional类型：{i32 tag, T value, ptr error_msg}
-                        enum_type = value->getType();
-                        if (!enum_type->isStructTy()) {
-                            std::cerr << "Error: Optional type must be a struct" << std::endl;
+                        // Optional类型：T?现在统一为指针
+                        // value是ptr，需要找到它指向的Optional<T>类型
+                        if (!value->getType()->isPointerTy()) {
+                            std::cerr << "Error: T? must be a pointer" << std::endl;
                             return nullptr;
                         }
+                        
+                        // 从variable_types_获取实际Optional类型
+                        // 策略1：直接从LoadInst -> AllocaInst获取名称
+                        std::string var_name;
+                        if (auto* load_inst = llvm::dyn_cast<llvm::LoadInst>(value)) {
+                            auto* ptr_operand = load_inst->getPointerOperand();
+                            if (auto* alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(ptr_operand)) {
+                                var_name = alloca_inst->getName().str();
+                            } else if (auto* inner_load = llvm::dyn_cast<llvm::LoadInst>(ptr_operand)) {
+                                // 参数传递：r1 -> result -> load(result) -> load(load(result))
+                                if (auto* inner_alloca = llvm::dyn_cast<llvm::AllocaInst>(inner_load->getPointerOperand())) {
+                                    var_name = inner_alloca->getName().str();
+                                }
+                            }
+                        }
+                        
+                        // 如果找到变量名，尝试从variable_types_获取
+                        if (!var_name.empty() && variable_types_.count(var_name)) {
+                            enum_type = variable_types_[var_name];
+                        } else {
+                            // 策略2：枚举所有已知的Optional<T>类型，找到第一个匹配的
+                            // 这是一个fallback策略，适用于类型推断困难的情况
+                            for (const auto& [name, type] : variable_types_) {
+                                if (type->isStructTy()) {
+                                    llvm::StructType* st = llvm::cast<llvm::StructType>(type);
+                                    // 检查是否是Optional类型：{i32 tag, T value, ptr error}
+                                    if (st->getNumElements() == 3) {
+                                        // 可能是Optional<T>
+                                        enum_type = type;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (!enum_type) {
+                                std::cerr << "Error: Cannot infer Optional type for var_name=" << var_name << std::endl;
+                                return nullptr;
+                            }
+                        }
+                        
+                        // value是指向Optional的指针，需要直接使用
+                        // 注意：在泛型函数中，参数是 alloca ptr，存储了指向heap的ptr
+                        // 所以需要先load一次获取实际的heap指针
+                        value_to_check = value;
                     } else {
                         enum_type = getEnumType(enum_name);
+                        value_to_check = value;
                     }
                     
-                    // 从值中提取tag字段
-                    llvm::Value* value_to_check = value;
-                    if (!value->getType()->isPointerTy() && is_optional) {
-                        // 如果是struct值，需要先存储到临时变量
-                        llvm::AllocaInst* temp = builder_->CreateAlloca(enum_type, nullptr, "opt_temp");
-                        builder_->CreateStore(value, temp);
-                        value_to_check = temp;
-                    }
+                    // 【关键修复】：对于T?，value可能是load(alloca ptr)的结果
+                    // 这已经是heap指针了，可以直接用于GEP
+                    // 但如果函数接收的是参数，value是指向指针的指针的load结果
+                    // 无论哪种情况，value都应该是指向Optional struct的指针
                     
                     llvm::Value* tag_ptr = builder_->CreateStructGEP(
                         static_cast<llvm::StructType*>(enum_type),
@@ -2656,6 +2713,12 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
                 param_type = llvm::PointerType::get(*context_, 0);
             }
             
+            // 【新增】：对于T?参数，使用指针类型（T?按指针传递）
+            // 注意：resolveGenericType返回的已经是Optional<T> struct，我们需要指针
+            if (param.type->kind == Type::Kind::Optional) {
+                param_type = llvm::PointerType::get(*context_, 0);
+            }
+            
             param_types.push_back(param_type);
         }
     }
@@ -2805,6 +2868,19 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
             const ArrayTypeNode* array_type = static_cast<const ArrayTypeNode*>(param.type.get());
             llvm::Type* elem_type = resolveGenericType(array_type->element_type.get());
             array_element_types_[param.name] = elem_type;
+        } else if (param.type->kind == Type::Kind::Optional) {
+            // 【新增】：T?参数也是指针
+            llvm::Type* param_type = resolveGenericType(param.type.get());
+            // T?参数：arg是ptr
+            llvm::AllocaInst* alloca = builder_->CreateAlloca(
+                llvm::PointerType::get(*context_, 0), nullptr, param.name
+            );
+            builder_->CreateStore(&arg, alloca);
+            named_values_[param.name] = alloca;
+            
+            // 【关键】：记录具体的Optional<T>类型，而不是通用ptr
+            // 这样is表达式时能找到正确的Optional定义
+            variable_types_[param.name] = param_type;  // 记录Optional<T> StructType
         } else if (param.type->kind == Type::Kind::Named) {
             // 【新增】：struct参数也是指针
             llvm::Type* param_type = resolveGenericType(param.type.get());
@@ -3145,9 +3221,20 @@ llvm::Value* CodeGenerator::generateIdentifierExpr(const IdentifierExpr* expr) {
             return it->second;  // 返回数组的指针
         }
         
-        // struct类型返回指针（alloca）
+        // struct类型：需要区分两种情况
+        // 1. 本地struct变量：alloca ptr，存储heap指针，需要load
+        // 2. 函数参数struct：alloca ptr，存储heap指针，需要load
+        // 【重要】：在新语义下，所有struct都是alloca ptr，需要load来获取实际heap指针
         if (var_type && var_type->isStructTy()) {
-            return it->second;  // 返回struct的指针
+            // 检查alloca的类型：如果是ptr，说明需要load
+            llvm::Type* alloca_type = it->second->getType();
+            if (alloca_type->isPointerTy()) {
+                // alloca ptr -> load -> heap指针
+                return builder_->CreateLoad(llvm::PointerType::get(*context_, 0), it->second, expr->name);
+            } else {
+                // 旧逻辑：alloca struct -> 返回指针
+                return it->second;
+            }
         }
         
         // 加载其他类型的值
@@ -3403,23 +3490,43 @@ llvm::Value* CodeGenerator::generateOkExpr(const OkExpr* expr) {
     std::string type_name = "Optional";  // 简化：所有T?使用相同的enum名称
     ensureOptionalEnumDef(val->getType(), type_name);
     
-    // 创建alloca并初始化
-    llvm::AllocaInst* result = builder_->CreateAlloca(optional_type, nullptr, "ok_result");
+    // 1. 在栈上创建临时Optional
+    llvm::AllocaInst* temp_result = builder_->CreateAlloca(optional_type, nullptr, "ok_temp");
     
+    // 2. 初始化字段
     // 设置tag = 0 (Value)
-    llvm::Value* tag_ptr = builder_->CreateStructGEP(optional_type, result, 0, "tag_ptr");
+    llvm::Value* tag_ptr = builder_->CreateStructGEP(optional_type, temp_result, 0, "tag_ptr");
     builder_->CreateStore(llvm::ConstantInt::get(*context_, llvm::APInt(32, 0)), tag_ptr);
     
     // 设置value
-    llvm::Value* value_ptr = builder_->CreateStructGEP(optional_type, result, 1, "value_ptr");
+    llvm::Value* value_ptr = builder_->CreateStructGEP(optional_type, temp_result, 1, "value_ptr");
     builder_->CreateStore(val, value_ptr);
     
     // 设置error_msg = null
-    llvm::Value* error_ptr = builder_->CreateStructGEP(optional_type, result, 2, "error_ptr");
+    llvm::Value* error_ptr = builder_->CreateStructGEP(optional_type, temp_result, 2, "error_ptr");
     builder_->CreateStore(llvm::ConstantPointerNull::get(llvm::PointerType::get(*context_, 0)), error_ptr);
     
-    // 返回加载后的struct值（不是指针）
-    return builder_->CreateLoad(optional_type, result, "ok_val");
+    // 3. 分配堆内存
+    const llvm::DataLayout& data_layout = module_->getDataLayout();
+    uint64_t optional_size = data_layout.getTypeAllocSize(optional_type);
+    llvm::Value* size_val = llvm::ConstantInt::get(*context_, llvm::APInt(64, optional_size));
+    
+    llvm::Function* malloc_func = module_->getFunction("malloc");
+    if (!malloc_func) {
+        std::cerr << "malloc not found!" << std::endl;
+        return nullptr;
+    }
+    
+    llvm::Value* heap_ptr = builder_->CreateCall(malloc_func, {size_val}, "ok_heap");
+    
+    // 4. 拷贝到堆
+    llvm::Function* memcpy_func = module_->getFunction("memcpy");
+    if (memcpy_func) {
+        builder_->CreateCall(memcpy_func, {heap_ptr, temp_result, size_val});
+    }
+    
+    // 5. 返回堆指针（统一语义）
+    return heap_ptr;
 }
 
 /**
@@ -3450,24 +3557,44 @@ llvm::Value* CodeGenerator::generateErrExpr(const ErrExpr* expr) {
     std::string type_name = "Optional";
     ensureOptionalEnumDef(value_type, type_name);
     
-    // 创建alloca并初始化
-    llvm::AllocaInst* result = builder_->CreateAlloca(optional_type, nullptr, "err_result");
+    // 1. 在栈上创建临时Optional
+    llvm::AllocaInst* temp_result = builder_->CreateAlloca(optional_type, nullptr, "err_temp");
     
+    // 2. 初始化字段
     // 设置tag = 1 (Error)
-    llvm::Value* tag_ptr = builder_->CreateStructGEP(optional_type, result, 0, "tag_ptr");
+    llvm::Value* tag_ptr = builder_->CreateStructGEP(optional_type, temp_result, 0, "tag_ptr");
     builder_->CreateStore(llvm::ConstantInt::get(*context_, llvm::APInt(32, 1)), tag_ptr);
     
     // 设置value = 0 (零值，类型匹配T)
-    llvm::Value* value_ptr = builder_->CreateStructGEP(optional_type, result, 1, "value_ptr");
+    llvm::Value* value_ptr = builder_->CreateStructGEP(optional_type, temp_result, 1, "value_ptr");
     llvm::Value* zero_value = llvm::Constant::getNullValue(value_type);
     builder_->CreateStore(zero_value, value_ptr);
     
     // 设置error_msg
-    llvm::Value* error_ptr = builder_->CreateStructGEP(optional_type, result, 2, "error_ptr");
+    llvm::Value* error_ptr = builder_->CreateStructGEP(optional_type, temp_result, 2, "error_ptr");
     builder_->CreateStore(msg, error_ptr);
     
-    // 返回加载后的struct值（不是指针）
-    return builder_->CreateLoad(optional_type, result, "err_val");
+    // 3. 分配堆内存
+    const llvm::DataLayout& data_layout = module_->getDataLayout();
+    uint64_t optional_size = data_layout.getTypeAllocSize(optional_type);
+    llvm::Value* size_val = llvm::ConstantInt::get(*context_, llvm::APInt(64, optional_size));
+    
+    llvm::Function* malloc_func = module_->getFunction("malloc");
+    if (!malloc_func) {
+        std::cerr << "malloc not found!" << std::endl;
+        return nullptr;
+    }
+    
+    llvm::Value* heap_ptr = builder_->CreateCall(malloc_func, {size_val}, "err_heap");
+    
+    // 4. 拷贝到堆
+    llvm::Function* memcpy_func = module_->getFunction("memcpy");
+    if (memcpy_func) {
+        builder_->CreateCall(memcpy_func, {heap_ptr, temp_result, size_val});
+    }
+    
+    // 5. 返回堆指针（统一语义）
+    return heap_ptr;
 }
 
 } // namespace pawc
