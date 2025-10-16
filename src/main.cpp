@@ -3,6 +3,7 @@
 #include "codegen/codegen.h"
 #include "module/module_compiler.h"
 #include "pawc/colors.h"
+#include "pawc/error_reporter.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -82,15 +83,27 @@ int main(int argc, char* argv[]) {
     
     std::cout << pawc::Colors::info("Compiling ") << input_file << "..." << std::endl;
     
+    // 创建错误报告器
+    pawc::ErrorReporter error_reporter;
+    error_reporter.setSourceCode(input_file, source);
+    
     // Lexical analysis
     pawc::Lexer lexer(source, input_file);
     std::vector<pawc::Token> tokens = lexer.tokenize();
     std::cout << pawc::Colors::success("  ✓ Lexer: ") << tokens.size() << " tokens" << std::endl;
     
-    // Parsing
-    pawc::Parser parser(tokens);
+    // Parsing（使用ErrorReporter）
+    pawc::Parser parser(tokens, &error_reporter);
     pawc::Program program = parser.parse();
     
+    // 检查是否有解析错误
+    if (error_reporter.hasErrors()) {
+        std::cerr << std::endl;  // 空行
+        error_reporter.printSummary();
+        return 1;
+    }
+    
+    // 向后兼容：检查旧的errors
     if (!program.errors.empty()) {
         std::cerr << pawc::Colors::error("\n✗ Parse errors:\n") << std::endl;
         for (const auto& error : program.errors) {

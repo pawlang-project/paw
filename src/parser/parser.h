@@ -3,6 +3,7 @@
 
 #include "ast.h"
 #include "../lexer/lexer.h"
+#include "pawc/error_reporter.h"
 #include <vector>
 #include <set>
 
@@ -10,7 +11,7 @@ namespace pawc {
 
 class Parser {
 public:
-    explicit Parser(const std::vector<Token>& tokens);
+    explicit Parser(const std::vector<Token>& tokens, ErrorReporter* reporter = nullptr);
     
     // 解析整个程序
     Program parse();
@@ -18,7 +19,8 @@ public:
 private:
     std::vector<Token> tokens_;
     size_t current_;
-    std::vector<CompilerError> errors_;
+    ErrorReporter* error_reporter_;  // 使用ErrorReporter替代CompilerError
+    std::vector<CompilerError> errors_;  // 保留用于向后兼容
     std::set<std::string> type_names_;  // 已注册的类型名（通用）
     std::set<std::string> struct_names_;  // 已定义的Struct名
     std::set<std::string> enum_names_;  // 已定义的Enum名

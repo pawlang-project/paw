@@ -26,8 +26,8 @@ namespace pawc {
 // 第1部分：核心接口和工具函数
 // ============================================================================
 
-Parser::Parser(const std::vector<Token>& tokens)
-    : tokens_(tokens), current_(0) {}
+Parser::Parser(const std::vector<Token>& tokens, ErrorReporter* reporter)
+    : tokens_(tokens), current_(0), error_reporter_(reporter) {}
 
 Program Parser::parse() {
     Program program;
@@ -85,13 +85,34 @@ Token Parser::consume(TokenType type, const std::string& message) {
 }
 
 void Parser::error(const std::string& message) {
-    errors_.push_back(CompilerError(message, peek().location));
+    SourceLocation loc = peek().location;
     
-    // 彩色错误输出
-    std::cerr << Colors::error("Error: ") << message << std::endl;
-    std::cerr << Colors::info("  --> ") << peek().location.filename 
-              << ":" << peek().location.line 
-              << ":" << peek().location.column << std::endl;
+    // 使用ErrorReporter（如果可用）
+    if (error_reporter_) {
+        // 根据错误类型添加智能提示
+        std::vector<ErrorHint> hints;
+        
+        if (message.find("Expected ';'") != std::string::npos) {
+            hints.push_back(ErrorHint("add a semicolon at the end of the statement"));
+        } else if (message.find("Expected '{'") != std::string::npos) {
+            hints.push_back(ErrorHint("add an opening brace here"));
+        } else if (message.find("Expected '}'") != std::string::npos) {
+            hints.push_back(ErrorHint("add a closing brace to match the opening brace"));
+        } else if (message.find("Expected type") != std::string::npos) {
+            hints.push_back(ErrorHint("type annotations are required for function parameters"));
+        } else if (message.find("Expected identifier") != std::string::npos) {
+            hints.push_back(ErrorHint("identifiers must start with a letter or underscore"));
+        }
+        
+        error_reporter_->reportError(message, loc, hints);
+    } else {
+        // 回退到旧的错误处理
+        errors_.push_back(CompilerError(message, loc));
+        std::cerr << Colors::error("Error: ") << message << std::endl;
+        std::cerr << Colors::info("  --> ") << loc.filename 
+                  << ":" << loc.line 
+                  << ":" << loc.column << std::endl;
+    }
 }
 
 void Parser::synchronize() {
