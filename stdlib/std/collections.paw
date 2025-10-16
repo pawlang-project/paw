@@ -1,34 +1,30 @@
 // std::collections - 泛型集合类型
-// 提供基础泛型数据结构
+// 简洁的函数式API
 
-// ========== Pair<K, V> - 键值对 ==========
+// ========== Pair<K, V> - 泛型键值对 ==========
 
 pub type Pair<K, V> = struct {
     first: K,
     second: V,
 }
 
-// 创建Pair
-pub fn new_pair<K, V>(k: K, v: V) -> Pair<K, V> {
+pub fn new<K, V>(k: K, v: V) -> Pair<K, V> {
     return Pair<K, V> { first: k, second: v };
 }
 
-// 获取first
-pub fn pair_first<K, V>(pair: Pair<K, V>) -> K {
-    return pair.first;
+pub fn first<K, V>(p: Pair<K, V>) -> K {
+    return p.first;
 }
 
-// 获取second
-pub fn pair_second<K, V>(pair: Pair<K, V>) -> V {
-    return pair.second;
+pub fn second<K, V>(p: Pair<K, V>) -> V {
+    return p.second;
 }
 
-// 交换first和second
-pub fn pair_swap<K, V>(pair: Pair<K, V>) -> Pair<V, K> {
-    return Pair<V, K> { first: pair.second, second: pair.first };
+pub fn swap<K, V>(p: Pair<K, V>) -> Pair<V, K> {
+    return Pair<V, K> { first: p.second, second: p.first };
 }
 
-// ========== Triple<A, B, C> - 三元组 ==========
+// ========== Triple<A, B, C> - 泛型三元组 ==========
 
 pub type Triple<A, B, C> = struct {
     first: A,
@@ -36,75 +32,35 @@ pub type Triple<A, B, C> = struct {
     third: C,
 }
 
-// 创建Triple
-pub fn new_triple<A, B, C>(a: A, b: B, c: C) -> Triple<A, B, C> {
+pub fn triple<A, B, C>(a: A, b: B, c: C) -> Triple<A, B, C> {
     return Triple<A, B, C> { first: a, second: b, third: c };
 }
 
-// 获取first
-pub fn triple_first<A, B, C>(triple: Triple<A, B, C>) -> A {
-    return triple.first;
-}
-
-// 获取second
-pub fn triple_second<A, B, C>(triple: Triple<A, B, C>) -> B {
-    return triple.second;
-}
-
-// 获取third
-pub fn triple_third<A, B, C>(triple: Triple<A, B, C>) -> C {
-    return triple.third;
-}
-
-// ========== Range<T> - 范围类型 ==========
+// ========== Range<T> - 泛型范围 ==========
 
 pub type Range<T> = struct {
     start: T,
     end: T,
 }
 
-// 创建范围
-pub fn new_range<T>(start: T, end: T) -> Range<T> {
-    return Range<T> { start: start, end: end };
+pub fn range<T>(s: T, e: T) -> Range<T> {
+    return Range<T> { start: s, end: e };
 }
 
-// 获取起始值
-pub fn range_start<T>(range: Range<T>) -> T {
-    return range.start;
+pub fn contains<T>(r: Range<T>, value: T) -> bool {
+    return value >= r.start && value < r.end;
 }
 
-// 获取结束值
-pub fn range_end<T>(range: Range<T>) -> T {
-    return range.end;
-}
-
-// 计算范围大小
-pub fn range_size<T>(range: Range<T>) -> T {
-    return range.end - range.start;
-}
-
-// 检查值是否在范围内
-pub fn in_range<T>(range: Range<T>, value: T) -> bool {
-    return value >= range.start && value < range.end;
-}
-
-// ========== Box<T> - 值包装器 ==========
+// ========== Box<T> - 泛型值包装器 ==========
 
 pub type Box<T> = struct {
     value: T,
 }
 
-// 创建Box
-pub fn box<T>(value: T) -> Box<T> {
-    return Box<T> { value: value };
+pub fn box<T>(v: T) -> Box<T> {
+    return Box<T> { value: v };
 }
 
-// 解包Box
-pub fn unbox<T>(boxed: Box<T>) -> T {
-    return boxed.value;
-}
-
-// 获取Box内部值
-pub fn box_get<T>(boxed: Box<T>) -> T {
-    return boxed.value;
+pub fn unbox<T>(b: Box<T>) -> T {
+    return b.value;
 }
