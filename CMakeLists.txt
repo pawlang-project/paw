@@ -94,6 +94,7 @@ set(SOURCES
     src/module/module_compiler.cpp
     src/colors.cpp
     src/toml_parser.cpp
+    src/error_reporter.cpp
 )
 
 # Create main compiler executable
