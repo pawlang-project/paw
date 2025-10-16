@@ -1,4 +1,4 @@
-// 语句代码生成
+// Statement code generation
 
 #include "codegen.h"
 #include <iostream>
@@ -114,7 +114,7 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
         }
     } else if (stmt->initializer) {
         // 没有类型声明，从初始化器推导
-        // 检查是否是struct literal
+        // Check if it'sstruct literal
         if (stmt->initializer->kind == Expr::Kind::StructLiteral) {
             const StructLiteralExpr* struct_lit = static_cast<const StructLiteralExpr*>(stmt->initializer.get());
             std::string struct_type_name = struct_lit->type_name;
@@ -141,7 +141,7 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
             return;  // 提前返回
         }
         
-        // 检查是否是函数调用返回struct
+        // Check if it's函数调用返回struct
         if (stmt->initializer->kind == Expr::Kind::Call) {
             const CallExpr* call_expr = static_cast<const CallExpr*>(stmt->initializer.get());
             

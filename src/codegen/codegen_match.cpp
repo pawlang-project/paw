@@ -1,4 +1,4 @@
-// 模式匹配代码生成
+// Pattern matching code generation
 
 #include "codegen.h"
 #include <iostream>
@@ -6,29 +6,29 @@
 namespace pawc {
 
 /**
- * @brief Match表达式生成
- * @param expr Match表达式AST节点
- * @return 匹配结果值
+ * @brief Generate Match expression
+ * @param expr Match expression AST node
+ * @return Match result value
  * 
- * 生成完整的模式匹配表达式：
+ * Generate complete pattern matching expression:
  * value is {
  *     Some(x) => x * 2,
  *     None() => 0,
  * }
  * 
- * 实现方式：
- * 1. 根据每个pattern的条件创建基本块
- * 2. 使用条件分支实现模式检查
- * 3. 在匹配的分支中绑定变量
- * 4. 使用PHI节点合并结果
+ * Implementation:
+ * 1. Create basic blocks for each pattern condition
+ * 2. Use conditional branches for pattern checking
+ * 3. Bind variables in matched branch
+ * 4. Merge results using PHI nodes
  */
 llvm::Value* CodeGenerator::generateMatchExpr(const MatchExpr* expr) {
-    // 生成要匹配的值
-    // 对于enum类型，我们需要指针而不是值
+    // Generate value to match
+    // For enum types, we need pointer not value
     llvm::Value* value_ptr = nullptr;
     
     if (expr->value->kind == Expr::Kind::Identifier) {
-        // 直接获取alloca指针
+        // Get alloca pointer directly
         const IdentifierExpr* id_expr = 
             static_cast<const IdentifierExpr*>(expr->value.get());
         auto it = named_values_.find(id_expr->name);
@@ -42,31 +42,31 @@ llvm::Value* CodeGenerator::generateMatchExpr(const MatchExpr* expr) {
         return nullptr;
     }
     
-    // 获取当前函数
+    // Get current function
     llvm::Function* func = builder_->GetInsertBlock()->getParent();
     
-    // 推断结果类型：默认使用i32，避免在类型推断阶段访问未绑定的变量
-    // TODO: 从函数返回类型或显式类型注解推断更精确的类型
+    // Infer result type: default to i32, avoid accessing unbound variables during type inference
+    // TODO: Infer more precise type from function return type or explicit type annotation
     llvm::Type* result_type = llvm::Type::getInt32Ty(*context_);
     
-    // 创建结果变量
+    // Create result variable
     llvm::AllocaInst* result_alloca = builder_->CreateAlloca(
         result_type, nullptr, "match_result"
     );
     
-    // 创建合并块
+    // Create merge block
     llvm::BasicBlock* merge_bb = llvm::BasicBlock::Create(
         *context_, "match_end", func
     );
     
-    // 为每个arm创建基本块
+    // Create basic blocks for each arm
     std::vector<llvm::BasicBlock*> arm_blocks;
     std::vector<llvm::BasicBlock*> next_blocks;
     for (size_t i = 0; i < expr->arms.size(); i++) {
         arm_blocks.push_back(llvm::BasicBlock::Create(
             *context_, "match_arm_" + std::to_string(i), func
         ));
-        // 只为非最后一个arm创建next_block
+        // Only create next_block for non-last arm
         if (i + 1 < expr->arms.size()) {
             next_blocks.push_back(llvm::BasicBlock::Create(
                 *context_, "match_next_" + std::to_string(i), func
@@ -74,40 +74,40 @@ llvm::Value* CodeGenerator::generateMatchExpr(const MatchExpr* expr) {
         }
     }
     
-    // 默认块（如果所有模式都不匹配）
+    // Default block (if all patterns fail to match)
     llvm::BasicBlock* default_bb = llvm::BasicBlock::Create(
         *context_, "match_default", func
     );
     
-    // 生成模式检查链
+    // Generate pattern check chain
     for (size_t i = 0; i < expr->arms.size(); i++) {
         const Pattern* pattern = expr->arms[i].pattern.get();
         
-        // 设置插入点到当前检查块
+        // Set insertion point to current check block
         if (i > 0 && i - 1 < next_blocks.size()) {
             builder_->SetInsertPoint(next_blocks[i - 1]);
         }
         
-        // 生成模式检查条件
+        // Generate pattern check condition
         llvm::Value* match_cond = nullptr;
         
         if (pattern->kind == Pattern::Kind::Wildcard) {
-            // 通配符总是匹配
+            // Wildcard always matches
             match_cond = llvm::ConstantInt::get(*context_, llvm::APInt(1, 1));
         } else if (pattern->kind == Pattern::Kind::Identifier) {
-            // 标识符总是匹配
+            // Identifier always matches
             match_cond = llvm::ConstantInt::get(*context_, llvm::APInt(1, 1));
         } else if (pattern->kind == Pattern::Kind::EnumVariant) {
-            // 枚举变体：检查tag
+            // Enum variant: check tag
             const EnumVariantPattern* enum_pattern = 
                 static_cast<const EnumVariantPattern*>(pattern);
             
-            // 查找enum定义
+            // Find enum definition
             for (const auto& [enum_name, enum_def] : enum_defs_) {
                 int variant_tag = 0;
                 for (const auto& variant : enum_def->variants) {
                     if (variant.name == enum_pattern->variant_name) {
-                        // 获取enum类型
+                        // Get enum type
                         llvm::Type* enum_type = getEnumType(enum_name);
                         if (!enum_type || !enum_type->isStructTy()) {
                             break;
@@ -116,7 +116,7 @@ llvm::Value* CodeGenerator::generateMatchExpr(const MatchExpr* expr) {
                         llvm::StructType* struct_type = 
                             llvm::cast<llvm::StructType>(enum_type);
                         
-                        // 提取tag
+                        // Extract tag
                         llvm::Value* tag_ptr = builder_->CreateStructGEP(
                             struct_type, value_ptr, 0, "tag_ptr"
                         );
@@ -125,7 +125,7 @@ llvm::Value* CodeGenerator::generateMatchExpr(const MatchExpr* expr) {
                             tag_ptr, "tag"
                         );
                         
-                        // 比较tag
+                        // Compare tag
                         llvm::Value* expected_tag = llvm::ConstantInt::get(
                             *context_, llvm::APInt(32, variant_tag)
                         );
@@ -144,19 +144,19 @@ llvm::Value* CodeGenerator::generateMatchExpr(const MatchExpr* expr) {
             match_cond = llvm::ConstantInt::get(*context_, llvm::APInt(1, 0));
         }
         
-        // 条件分支：如果匹配，跳转到arm块；否则跳转到下一个检查或default
+        // Conditional branch: if matched, jump to arm block; else jump to next check or default
         llvm::BasicBlock* next_dest = (i < next_blocks.size()) ? 
             next_blocks[i] : default_bb;
         builder_->CreateCondBr(match_cond, arm_blocks[i], next_dest);
         
-        // 生成arm块代码
+        // Generate arm block code
         builder_->SetInsertPoint(arm_blocks[i]);
         
-        // 绑定变量
+        // Bind variables
         std::map<std::string, llvm::Value*> bindings;
         matchPattern(value_ptr, pattern, bindings);
         
-        // 生成arm表达式
+        // Generate arm expression
         llvm::Value* arm_value = generateExpr(
             expr->arms[i].expression.get()
         );
@@ -164,44 +164,44 @@ llvm::Value* CodeGenerator::generateMatchExpr(const MatchExpr* expr) {
             builder_->CreateStore(arm_value, result_alloca);
         }
         
-        // 跳转到合并块
+        // Jump to merge block
         builder_->CreateBr(merge_bb);
         
-        // 清理绑定（从named_values_中移除）
+        // Cleanup bindings (remove from named_values_)
         for (const auto& [name, _] : bindings) {
             named_values_.erase(name);
         }
     }
     
-    // 默认块：返回零值
+    // Default block: return zero value
     builder_->SetInsertPoint(default_bb);
     builder_->CreateStore(
         llvm::Constant::getNullValue(result_type), result_alloca
     );
     builder_->CreateBr(merge_bb);
     
-    // 合并块
+    // Merge block
     builder_->SetInsertPoint(merge_bb);
     return builder_->CreateLoad(result_type, result_alloca, "match_result");
 }
 
 /**
- * @brief Is表达式生成
- * @param expr Is表达式AST节点
- * @return 布尔比较结果
+ * @brief Generate Is expression
+ * @param expr Is expression AST node
+ * @return Boolean comparison result
  * 
- * 生成模式匹配条件表达式：
+ * Generate pattern matching conditional expression:
  * value is Some(x)
  * 
- * 用于条件判断，支持变量绑定。
- * 注意：绑定的变量在is表达式外部不可见，需要在if语句中处理。
+ * Used for conditional checks, supports variable binding.
+ * Note: Bound variables are not visible outside is expression, must be handled in if statement.
  */
 llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
-    // 对于enum匹配，我们需要指针而不是值
+    // For enum matching, we need pointer not value
     llvm::Value* value_ptr = nullptr;
     
     if (expr->value->kind == Expr::Kind::Identifier) {
-        // 直接获取alloca指针，不要load
+        // Get alloca pointer directly, don't load
         const IdentifierExpr* id_expr = 
             static_cast<const IdentifierExpr*>(expr->value.get());
         auto it = named_values_.find(id_expr->name);
@@ -209,7 +209,7 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
             value_ptr = it->second;
         }
     } else {
-        // 其他表达式，生成值
+        // Other expressions, generate value
         llvm::Value* value = generateExpr(expr->value.get());
         if (!value) return nullptr;
         value_ptr = value;
@@ -217,28 +217,28 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
     
     if (!value_ptr) return nullptr;
     
-    // 处理enum变体模式
+    // Handle enum variant pattern
     if (expr->pattern->kind == Pattern::Kind::EnumVariant) {
         const EnumVariantPattern* enum_pattern = 
             static_cast<const EnumVariantPattern*>(expr->pattern.get());
         
-        // 查找enum定义，获取variant的tag值
+        // Find enum definition and get variant's tag value
         for (const auto& [enum_name, enum_def] : enum_defs_) {
             int variant_tag = 0;
             for (const auto& variant : enum_def->variants) {
                 if (variant.name == enum_pattern->variant_name) {
-                    // 找到匹配的variant！
-                    // 判断是否是Optional类型
+                    // Found matching variant!
+                    // Check if it's Optional type
                     bool is_optional = (enum_name == "Optional");
                     
-                    // 统一的enum处理逻辑：直接从variable_types_获取类型
+                    // Unified enum handling: get type directly from variable_types_
                     llvm::Type* enum_type = getEnumType(enum_name);
                     llvm::Value* value_to_check = value_ptr;
                     
-                    // 【关键修复】：对于T?，value可能是load(alloca ptr)的结果
-                    // 这已经是heap指针了，可以直接用于GEP
-                    // 但如果函数接收的是参数，value是指向指针的指针的load结果
-                    // 无论哪种情况，value都应该是指向Optional struct的指针
+                    // [Key fix]: For T?, value might be load(alloca ptr) result
+                    // This is already heap pointer, can be used directly for GEP
+                    // But if function receives parameter, value is load result of pointer to pointer
+                    // In any case, value should be pointer to Optional struct
                     
                     llvm::Value* tag_ptr = builder_->CreateStructGEP(
                         static_cast<llvm::StructType*>(enum_type),
@@ -252,18 +252,18 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
                         "tag"
                     );
                     
-                    // 比较tag
+                    // Compare tag
                     llvm::Value* expected_tag = llvm::ConstantInt::get(
                         *context_, 
                         llvm::APInt(32, variant_tag)
                     );
                     llvm::Value* cmp = builder_->CreateICmpEQ(tag, expected_tag, "tag_match");
                     
-                    // 如果需要绑定变量且是Optional类型
+                    // If need to bind variables and is Optional type
                     if (!enum_pattern->bindings.empty() && is_optional) {
-                        // 为条件分支准备：在then块中绑定变量
-                        // 注意：这个绑定需要在if语句的then块中生效
-                        // 暂时先返回比较结果，绑定由IfStmt处理
+                        // Prepare for conditional branch: bind variables in then block
+                        // Note: This binding needs to take effect in if statement's then block
+                        // For now return comparison result, binding handled by IfStmt
                     }
                     
                     return cmp;
@@ -273,13 +273,13 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
         }
     }
     
-    // 标识符模式：总是匹配（并绑定变量）
+    // Identifier pattern: always matches (and binds variable)
     if (expr->pattern->kind == Pattern::Kind::Identifier) {
-        // TODO: 绑定值到变量
+        // TODO: bind value to variable
         return llvm::ConstantInt::get(*context_, llvm::APInt(1, 1));
     }
     
-    // 通配符模式：总是匹配
+    // Wildcard pattern: always matches
     if (expr->pattern->kind == Pattern::Kind::Wildcard) {
         return llvm::ConstantInt::get(*context_, llvm::APInt(1, 1));
     }
@@ -288,30 +288,30 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
 }
 
 /**
- * @brief 模式匹配辅助函数
- * @param value 要匹配的值
- * @param pattern 模式
- * @param bindings 绑定的变量映射
- * @return 是否匹配成功
+ * @brief Pattern matching helper function
+ * @param value Value to match
+ * @param pattern Pattern
+ * @param bindings Bound variable mapping
+ * @return Whether match succeeded
  * 
- * 支持的模式类型：
- * - Wildcard: 通配符 _，总是匹配
- * - Identifier: 标识符 x，总是匹配并绑定变量
- * - EnumVariant: 枚举变体 Some(x)，检查tag并绑定关联值
+ * Supported pattern types:
+ * - Wildcard: wildcard _, always matches
+ * - Identifier: identifier x, always matches and binds variable
+ * - EnumVariant: enum variant Some(x), check tag and bind associated value
  */
 bool CodeGenerator::matchPattern(llvm::Value* value, const Pattern* pattern,
                                  std::map<std::string, llvm::Value*>& bindings) {
     switch (pattern->kind) {
         case Pattern::Kind::Wildcard:
-            // 通配符总是匹配
+            // Wildcard always matches
             return true;
             
         case Pattern::Kind::Identifier: {
-            // 标识符模式：总是匹配并绑定变量
+            // Identifier pattern: always matches and binds variable
             const IdentifierPattern* id_pattern = 
                 static_cast<const IdentifierPattern*>(pattern);
             
-            // 创建局部变量并存储值
+            // Create local variable and store value
             llvm::Type* value_type = value->getType();
             llvm::AllocaInst* alloca = builder_->CreateAlloca(
                 value_type,
@@ -320,7 +320,7 @@ bool CodeGenerator::matchPattern(llvm::Value* value, const Pattern* pattern,
             );
             builder_->CreateStore(value, alloca);
             
-            // 添加到绑定映射
+            // Add to binding map
             bindings[id_pattern->name] = alloca;
             named_values_[id_pattern->name] = alloca;
             
@@ -328,18 +328,18 @@ bool CodeGenerator::matchPattern(llvm::Value* value, const Pattern* pattern,
         }
         
         case Pattern::Kind::EnumVariant: {
-            // 枚举变体模式：检查tag并绑定关联值
+            // Enum variant pattern: check tag and bind associated value
             const EnumVariantPattern* enum_pattern = 
                 static_cast<const EnumVariantPattern*>(pattern);
             
-            // 查找enum定义并获取variant的tag值
+            // Find enum definition and get variant's tag value
             for (const auto& [enum_name, enum_def] : enum_defs_) {
                 int variant_tag = 0;
                 for (const auto& variant : enum_def->variants) {
                     if (variant.name == enum_pattern->variant_name) {
-                        // 找到匹配的variant
+                        // Found matching variant
                         
-                        // 获取enum类型
+                        // Get enum type
                         llvm::Type* enum_type = getEnumType(enum_name);
                         if (!enum_type || !enum_type->isStructTy()) {
                             return false;
@@ -348,7 +348,7 @@ bool CodeGenerator::matchPattern(llvm::Value* value, const Pattern* pattern,
                         llvm::StructType* struct_type = 
                             llvm::cast<llvm::StructType>(enum_type);
                         
-                        // 提取tag字段
+                        // Extract tag field
                         llvm::Value* tag_ptr = builder_->CreateStructGEP(
                             struct_type, value, 0, "tag_ptr"
                         );
@@ -358,30 +358,30 @@ bool CodeGenerator::matchPattern(llvm::Value* value, const Pattern* pattern,
                             "tag"
                         );
                         
-                        // 比较tag
+                        // Compare tag
                         llvm::Value* expected_tag = llvm::ConstantInt::get(
                             *context_,
                             llvm::APInt(32, variant_tag)
                         );
                         
-                        // 比较tag（这里简化处理，实际runtime会检查）
-                        // 在matchPattern中，我们假设调用者已经通过is表达式检查了tag
+                        // Compare tag (simplified here, actual runtime will check)
+                        // In matchPattern, we assume caller already checked tag via is expression
                         
-                        // 绑定关联值
+                        // Bind associated values
                         if (!enum_pattern->bindings.empty() && 
                             !variant.associated_types.empty()) {
-                            // 提取data字段
+                            // Extract data field
                             llvm::Value* data_ptr = builder_->CreateStructGEP(
                                 struct_type, value, 1, "data_ptr"
                             );
                             
-                            // 根据关联值类型进行转换
+                            // Convert based on associated value type
                             llvm::Type* data_type = struct_type->getElementType(1);
                             llvm::Value* data = builder_->CreateLoad(
                                 data_type, data_ptr, "data"
                             );
                             
-                            // 绑定到第一个变量（简化：只支持一个关联值）
+                            // Bind to first variable (simplified: only support one associated value)
                             if (enum_pattern->bindings[0]->kind == 
                                 Pattern::Kind::Identifier) {
                                 const IdentifierPattern* id_pattern = 
@@ -389,13 +389,13 @@ bool CodeGenerator::matchPattern(llvm::Value* value, const Pattern* pattern,
                                         enum_pattern->bindings[0].get()
                                     );
                                 
-                                // 类型转换（如果需要）
+                                // Type conversion (if needed)
                                 llvm::Type* target_type = 
                                     convertType(variant.associated_types[0].get());
                                 llvm::Value* bound_val = data;
                                 
                                 if (data_type != target_type) {
-                                    // 整数类型转换
+                                    // Integer type conversion
                                     if (data_type->isIntegerTy() && 
                                         target_type->isIntegerTy()) {
                                         unsigned src_bits = 
@@ -415,7 +415,7 @@ bool CodeGenerator::matchPattern(llvm::Value* value, const Pattern* pattern,
                                     }
                                 }
                                 
-                                // 创建局部变量
+                                // Create local variable
                                 llvm::AllocaInst* alloca = 
                                     builder_->CreateAlloca(
                                         target_type,
@@ -424,7 +424,7 @@ bool CodeGenerator::matchPattern(llvm::Value* value, const Pattern* pattern,
                                     );
                                 builder_->CreateStore(bound_val, alloca);
                                 
-                                // 添加到绑定
+                                // Add to bindings
                                 bindings[id_pattern->name] = alloca;
                                 named_values_[id_pattern->name] = alloca;
                             }
@@ -440,12 +440,12 @@ bool CodeGenerator::matchPattern(llvm::Value* value, const Pattern* pattern,
         }
         
         case Pattern::Kind::Literal:
-            // Literal模式（未实现）
+            // Literal pattern (not implemented)
             std::cerr << "Literal pattern not implemented" << std::endl;
             return false;
             
         case Pattern::Kind::Struct:
-            // Struct模式（未实现）
+            // Struct pattern (not implemented)
             std::cerr << "Struct pattern not implemented" << std::endl;
             return false;
             

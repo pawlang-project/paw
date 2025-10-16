@@ -1,4 +1,4 @@
-// Struct和Enum代码生成
+// Struct and Enum code generation
 #include "codegen.h"
 #include <iostream>
 
@@ -175,7 +175,7 @@ std::string CodeGenerator::resolveGenericStructName(const std::string& mangled_n
     // 解析每个类型参数
     std::vector<std::string> resolved_types;
     for (const auto& param : type_params) {
-        // 检查是否是泛型参数（单字母大写）
+        // Check if it's泛型参数（单字母大写）
         if (param.length() == 1 && std::isupper(param[0])) {
             // 在type_param_map_中查找具体类型
             auto it = type_param_map_.find(param);
@@ -208,7 +208,7 @@ std::string CodeGenerator::resolveGenericStructName(const std::string& mangled_n
     return result;
 }
 
-// 检查是否是泛型函数
+// Check if it's泛型函数
 bool CodeGenerator::isGenericFunction(const std::string& name) {
     return generic_functions_.find(name) != generic_functions_.end();
 }
@@ -357,7 +357,7 @@ llvm::Type* CodeGenerator::instantiateGenericStruct(
         // 2. 查找跨模块的泛型struct定义
         auto symbol = symbol_table_->lookup(name, module_name_);
         if (symbol && symbol->kind == SymbolTable::SymbolKind::Type && symbol->ast_node) {
-            // 检查是否是struct定义（简化：假设有generic_params就是泛型struct）
+            // Check if it'sstruct定义（简化：假设有generic_params就是泛型struct）
             const StructStmt* struct_def = static_cast<const StructStmt*>(symbol->ast_node);
             if (struct_def && !struct_def->generic_params.empty()) {
                 generic_struct = struct_def;

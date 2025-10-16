@@ -466,7 +466,7 @@ llvm::Value* CodeGenerator::generateExpr(const Expr* expr) {
         }
         case Expr::Kind::String: {
             auto str_expr = static_cast<const StringExpr*>(expr);
-            // 创建全局字符串并返回指针
+            // Create global string and return pointer
             return builder_->CreateGlobalStringPtr(str_expr->value, "str");
         }
         case Expr::Kind::Identifier:
@@ -514,18 +514,18 @@ llvm::Value* CodeGenerator::generateBinaryExpr(const BinaryExpr* expr) {
     
     if (!left || !right) return nullptr;
     
-    // 检查是否是字符串操作
+    // Check if it's字符串操作
     bool is_ptr_left = left->getType()->isPointerTy();
     bool is_ptr_right = right->getType()->isPointerTy();
     
     if (expr->op == BinaryExpr::Op::Add && is_ptr_left && is_ptr_right) {
-        // 字符串拼接: s1 + s2
+        // String concatenation: s1 + s2
         llvm::Function* strlen_func = module_->getFunction("strlen");
         llvm::Function* malloc_func = module_->getFunction("malloc");
         llvm::Function* strcpy_func = module_->getFunction("strcpy");
         llvm::Function* strcat_func = module_->getFunction("strcat");
         
-        // 计算长度
+        // Calculate length
         llvm::Value* len1 = builder_->CreateCall(strlen_func, {left}, "len1");
         llvm::Value* len2 = builder_->CreateCall(strlen_func, {right}, "len2");
         llvm::Value* total_len = builder_->CreateAdd(len1, len2, "total_len");
@@ -535,23 +535,23 @@ llvm::Value* CodeGenerator::generateBinaryExpr(const BinaryExpr* expr) {
             "alloc_size"
         );
         
-        // 分配内存
+        // Allocate memory
         llvm::Value* result = builder_->CreateCall(malloc_func, {alloc_size}, "str_result");
         
-        // 复制并拼接
+        // Copy and concatenate
         builder_->CreateCall(strcpy_func, {result, left});
         builder_->CreateCall(strcat_func, {result, right});
         
         return result;
     }
     
-    // 类型匹配检查：整数类型需要统一位宽
+    // Type matching check: integer types need unified bit width
     if (left->getType()->isIntegerTy() && right->getType()->isIntegerTy()) {
         unsigned left_bits = left->getType()->getIntegerBitWidth();
         unsigned right_bits = right->getType()->getIntegerBitWidth();
         
         if (left_bits != right_bits) {
-            // 提升到更大的类型
+            // Promote to larger type
             if (left_bits < right_bits) {
                 left = builder_->CreateSExt(left, right->getType(), "promote_left");
             } else {
@@ -593,7 +593,7 @@ llvm::Value* CodeGenerator::generateUnaryExpr(const UnaryExpr* expr) {
 }
 
 llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
-    // 检查是否是方法调用：obj.method()
+    // Check if it's方法调用：obj.method()
     if (expr->callee->kind == Expr::Kind::MemberAccess) {
         const MemberAccessExpr* member_expr = static_cast<const MemberAccessExpr*>(expr->callee.get());
         
@@ -648,7 +648,7 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
                     if (arg_val) args.push_back(arg_val);
                 }
                 
-                // 调用方法
+                // Call method
                 if (method_func->getReturnType()->isVoidTy()) {
                     return builder_->CreateCall(method_func, args);
                 }
@@ -714,7 +714,7 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
             
             llvm::Function* method_func = func_it->second;
             
-            // 生成参数
+            // Generate arguments
             std::vector<llvm::Value*> args;
             for (const auto& arg : expr->arguments) {
                 llvm::Value* arg_val = generateExpr(arg.get());
@@ -729,9 +729,9 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
         }
     }
     
-    // 检查是否是跨模块调用 module::function()
+    // Check if it's跨模块调用 module::function()
     if (!expr->module_prefix.empty() && symbol_table_) {
-        // 检查是否是泛型调用
+        // Check if it's泛型调用
         if (!expr->type_arguments.empty()) {
             // 跨模块泛型调用：从符号表获取AST并在当前模块实例化
             auto symbol = symbol_table_->lookupInModule(expr->module_prefix, callee_name);
@@ -741,7 +741,7 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
                 return nullptr;
             }
             
-            // 检查是否是泛型函数
+            // Check if it's泛型函数
             if (symbol->kind != SymbolTable::SymbolKind::GenericFunction) {
                 std::cerr << "Function " << callee_name << " is not a generic function" << std::endl;
                 return nullptr;
@@ -764,7 +764,7 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
                 return nullptr;
             }
             
-            // 生成参数（使用辅助函数处理数组传递）
+            // Generate arguments（使用辅助函数处理数组传递）
             std::vector<llvm::Value*> args;
             for (const auto& arg : expr->arguments) {
                 llvm::Value* arg_val = generateArgumentValue(arg.get());
@@ -827,7 +827,7 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
             );
         }
         
-        // 生成参数（使用辅助函数处理数组传递）
+        // Generate arguments（使用辅助函数处理数组传递）
         std::vector<llvm::Value*> args;
         for (const auto& arg : expr->arguments) {
             llvm::Value* arg_val = generateArgumentValue(arg.get());
@@ -840,12 +840,12 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
         return builder_->CreateCall(local_func, args, "cross_module_call");
     }
     
-    // 检查是否是内置函数
+    // Check if it's内置函数
     if (builtins_->isBuiltin(callee_name)) {
         return generateBuiltinCall(callee_name, expr->arguments);
     }
     
-    // 检查是否是泛型调用
+    // Check if it's泛型调用
     llvm::Function* callee = nullptr;
     if (!expr->type_arguments.empty()) {
         // 泛型函数调用：实例化
@@ -888,24 +888,24 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
     return builder_->CreateCall(callee, args, "calltmp");
 }
 
-// 辅助函数：生成函数调用参数（处理数组传递）
+// Helper function: generate function call arguments (handle array passing)
 llvm::Value* CodeGenerator::generateArgumentValue(const Expr* arg) {
-    // 如果参数是数组变量，传递地址而不是值
+    // If argument is array variable, pass address not value
     if (arg->kind == Expr::Kind::Identifier) {
         std::string arg_name = static_cast<const IdentifierExpr*>(arg)->name;
         auto val_it = named_values_.find(arg_name);
         auto type_it = variable_types_.find(arg_name);
         
         if (val_it != named_values_.end() && type_it != variable_types_.end()) {
-            // 检查是否是数组类型
+            // Check if it's数组类型
             if (llvm::isa<llvm::ArrayType>(type_it->second)) {
-                // 数组：直接传递alloca指针
+                // Array: pass alloca pointer directly
                 return val_it->second;
             }
         }
     }
     
-    // 非数组或其他情况：正常生成
+    // Non-array or other cases: generate normally
     return generateExpr(arg);
 }
 
@@ -916,20 +916,20 @@ llvm::Value* CodeGenerator::generateBuiltinCall(const std::string& name, const s
         return nullptr;
     }
     
-    // 检查参数数量
+    // Check argument count
     if (builtin_func->arg_size() != arguments.size()) {
         std::cerr << "Incorrect number of arguments for " << name << std::endl;
         return nullptr;
     }
     
-    // 生成参数
+    // Generate arguments
     std::vector<llvm::Value*> args;
     for (const auto& arg : arguments) {
         args.push_back(generateExpr(arg.get()));
         if (!args.back()) return nullptr;
     }
     
-    // 调用内置函数
+    // Call built-in function
     if (builtin_func->getReturnType()->isVoidTy()) {
         return builder_->CreateCall(builtin_func, args);
     }
@@ -1233,7 +1233,7 @@ llvm::Value* CodeGenerator::generateAssignExpr(const AssignExpr* expr) {
         
         llvm::Type* array_type = type_it->second;
         
-        // 检查是否是字符串类型（指针）
+        // Check if it's字符串类型（指针）
         if (array_type->isPointerTy()) {
             // 字符串索引写入：s[i] = 'A'
             llvm::Value* str_ptr = builder_->CreateLoad(
@@ -1361,7 +1361,7 @@ llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* exp
     llvm::Value* obj_ptr = nullptr;
     llvm::Type* struct_value_type = nullptr;
     
-    // 检查是否是标识符（变量名）
+    // Check if it's标识符（变量名）
     if (expr->object->kind == Expr::Kind::Identifier) {
         std::string obj_name = static_cast<const IdentifierExpr*>(expr->object.get())->name;
         
@@ -1657,7 +1657,7 @@ llvm::Value* CodeGenerator::generateIndexExpr(const IndexExpr* expr) {
             array_ptr = ptr_it->second;   // alloca指针
             array_type = type_it->second; // 数组/字符串类型
             
-            // 检查是否是数组参数（在array_element_types_中有记录）
+            // Check if it's数组参数（在array_element_types_中有记录）
             auto elem_it = array_element_types_.find(array_name);
             if (elem_it != array_element_types_.end()) {
                 // 这是数组参数：arr[i] -> T
@@ -1684,7 +1684,7 @@ llvm::Value* CodeGenerator::generateIndexExpr(const IndexExpr* expr) {
                 return builder_->CreateLoad(elem_type, elem_ptr, "elemload");
             }
             
-            // 检查是否是字符串类型
+            // Check if it's字符串类型
             if (array_type->isPointerTy() && !array_type->isArrayTy()) {
                 // 这是字符串：s[i] -> char
                 llvm::Value* index_val = generateExpr(expr->index.get());
@@ -1870,7 +1870,7 @@ std::string CodeGenerator::resolveGenericStructName(const std::string& mangled_n
     // 解析每个类型参数
     std::vector<std::string> resolved_types;
     for (const auto& param : type_params) {
-        // 检查是否是泛型参数（单字母大写）
+        // Check if it's泛型参数（单字母大写）
         if (param.length() == 1 && std::isupper(param[0])) {
             // 在type_param_map_中查找具体类型
             auto it = type_param_map_.find(param);
@@ -1902,7 +1902,7 @@ std::string CodeGenerator::resolveGenericStructName(const std::string& mangled_n
     return result;
 }
 
-// 检查是否是泛型函数
+// Check if it's泛型函数
 bool CodeGenerator::isGenericFunction(const std::string& name) {
     return generic_functions_.find(name) != generic_functions_.end();
 }
@@ -2107,7 +2107,7 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
     for (auto& arg : func->args()) {
         const auto& param = generic_func->parameters[idx];
         
-        // 检查是否是数组参数
+        // Check if it's数组参数
         if (param.type->kind == Type::Kind::Array) {
             // 数组参数：arg是ptr，直接创建ptr的alloca
             llvm::AllocaInst* alloca = builder_->CreateAlloca(
@@ -2206,7 +2206,7 @@ llvm::Type* CodeGenerator::instantiateGenericStruct(
         // 2. 查找跨模块的泛型struct定义
         auto symbol = symbol_table_->lookup(name, module_name_);
         if (symbol && symbol->kind == SymbolTable::SymbolKind::Type && symbol->ast_node) {
-            // 检查是否是struct定义（简化：假设有generic_params就是泛型struct）
+            // Check if it'sstruct定义（简化：假设有generic_params就是泛型struct）
             const StructStmt* struct_def = static_cast<const StructStmt*>(symbol->ast_node);
             if (struct_def && !struct_def->generic_params.empty()) {
                 generic_struct = struct_def;

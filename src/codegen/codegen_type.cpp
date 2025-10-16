@@ -1,4 +1,4 @@
-// 类型转换和泛型实例化
+// Type conversion and generic instantiation
 #include "codegen.h"
 #include <iostream>
 
@@ -396,7 +396,7 @@ llvm::Value* CodeGenerator::generateEnumVariantExpr(const EnumVariantExpr* expr)
     for (auto& arg : func->args()) {
         const auto& param = generic_func->parameters[idx];
         
-        // 检查是否是数组参数
+        // Check if it's数组参数
         if (param.type->kind == Type::Kind::Array) {
             // 数组参数：arg是ptr，直接创建ptr的alloca
             llvm::AllocaInst* alloca = builder_->CreateAlloca(
