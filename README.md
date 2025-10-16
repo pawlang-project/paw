@@ -15,7 +15,7 @@
 
 ## ✨ 特性
 
-- ✅ **功能完整** - 基础100%，OOP100%，模式匹配100%，数组100%，**泛型100%**，**模块系统100%**，**Self系统100%**，**标准库** 🎉
+- ✅ **功能完整** - 基础100%，OOP100%，模式匹配100%，数组100%，**泛型100%**，**泛型struct方法100%**，**模块系统100%**，**Self系统100%**，**标准库** 🎉
 - ✅ **测试通过** - 50+示例全部编译成功 ⭐
 - ✅ **LLVM后端** - LLVM 21.1.3，生成优化的机器码
 - ✅ **零配置** - 自动下载LLVM，一键构建
@@ -32,6 +32,7 @@
 - ✅ **? 错误处理** - 优雅的错误传播机制 ⭐⭐⭐⭐⭐⭐ 🆕🆕🆕
 - ✅ **类型推导** - let i = 42; 自动推导类型 ⭐⭐⭐⭐⭐
 - ✅ **泛型系统** - 函数、Struct、Enum完整支持 ⭐⭐⭐⭐⭐
+- ✅ **泛型struct方法** - 内部方法、静态方法、实例方法 ⭐⭐⭐⭐⭐⭐ 🆕🆕🆕
 - ✅ **完整模块系统** - 跨文件编译、依赖解析、符号管理 ⭐⭐⭐⭐⭐
 - ✅ **可见性控制** - pub关键字，模块级可见性 ⭐⭐⭐⭐
 - ✅ **命名空间** - module::function() 跨模块调用 ⭐⭐⭐⭐
@@ -830,6 +831,48 @@ type Pair<T, U> = struct { first: T, second: U, }
 let b: Box<i32> = Box<i32> { value: 42 };
 ```
 
+**泛型struct内部方法** ⭐⭐⭐⭐⭐⭐ 🆕🆕🆕：
+```rust
+// 定义泛型struct及其方法
+pub type Pair<K, V> = struct {
+    first: K,
+    second: V,
+    
+    // 静态方法 - 构造器
+    pub fn new(k: K, v: V) -> Pair<K, V> {
+        return Pair<K, V> { first: k, second: v };
+    }
+    
+    // 实例方法 - 访问字段
+    pub fn first(self) -> K {
+        return self.first;
+    }
+    
+    pub fn second(self) -> V {
+        return self.second;
+    }
+    
+    // 实例方法 - 返回新的泛型struct
+    pub fn swap(self) -> Pair<V, K> {
+        return Pair<V, K> { first: self.second, second: self.first };
+    }
+}
+
+// 使用静态方法创建实例
+let p = Pair::new<i32, string>(42, "hello");
+
+// 使用实例方法
+let k: i32 = p.first();        // 42
+let v: string = p.second();     // "hello"
+let p2 = p.swap();              // Pair<string, i32>
+
+// 跨模块调用泛型struct方法
+import "std::collections";
+
+let box1 = collections::Box::new<i32>(100);
+let value: i32 = box1.get();   // 100
+```
+
 **泛型Enum**：
 ```rust
 type Option<T> = enum { Some(T), None(), }
@@ -1518,6 +1561,7 @@ MIT License
 - ✅ 清晰的文档
 
 **最新亮点** (2025最新):
+- 🎉🎉🎉🎉🎉 **泛型struct内部方法** - 完整实现！Pair::new<K,V>()、p.method() ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
 - 🎉🎉🎉🎉 **泛型系统深度修复** - 6个关键Bug修复，生产级质量！⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕
 - 🎉🎉🎉🎉 **跨模块泛型** - module::func<T>完整支持！⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕
 - 🎉🎉🎉 **? 错误处理** - PawLang独创！比Rust简单，比Go优雅 ⭐⭐⭐⭐⭐⭐⭐ 🆕
