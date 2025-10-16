@@ -88,6 +88,8 @@ set(SOURCES
     src/lexer/lexer.cpp
     src/parser/parser.cpp
     src/codegen/codegen.cpp
+    src/codegen/codegen_match.cpp
+    src/codegen/codegen_stmt.cpp
     src/builtins/builtins.cpp
     src/module/module_loader.cpp
     src/module/symbol_table.cpp
