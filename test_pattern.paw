@@ -1,0 +1,15 @@
+type Result = enum {
+    Ok(i32),
+    Err(string),
+}
+
+fn main() -> i32 {
+    let r: Result = Result::Ok(100);
+    
+    let final_result: i32 = r is {
+        Ok(val) => val,
+        Err(msg) => 0,
+    };
+    
+    return final_result;
+}
