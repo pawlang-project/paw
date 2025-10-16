@@ -1,7 +1,7 @@
-// std::result - Result操作辅助函数
-// 由于泛型限制，提供具体类型的实现
+// std::result - Result类型辅助函数
+// T?类型不支持作为泛型参数，提供常用类型的具体实现
 
-// ========== i32? 辅助函数 ==========
+// ========== i32? ==========
 
 pub fn is_ok_i32(result: i32?) -> bool {
     let check: bool = result is Value(v);
@@ -37,7 +37,7 @@ pub fn get_error_i32(result: i32?) -> string {
     return msg;
 }
 
-// ========== i64? 辅助函数 ==========
+// ========== i64? ==========
 
 pub fn is_ok_i64(result: i64?) -> bool {
     let check: bool = result is Value(v);
@@ -66,7 +66,15 @@ pub fn unwrap_or_i64(result: i64?, default_val: i64) -> i64 {
     return value;
 }
 
-// ========== string? 辅助函数 ==========
+pub fn get_error_i64(result: i64?) -> string {
+    let msg: string = result is {
+        Value(v) => "",
+        Error(e) => e,
+    };
+    return msg;
+}
+
+// ========== string? ==========
 
 pub fn is_ok_string(result: string?) -> bool {
     let check: bool = result is Value(v);
@@ -92,4 +100,48 @@ pub fn unwrap_or_string(result: string?, default_val: string) -> string {
         Error(e) => default_val,
     };
     return value;
+}
+
+pub fn get_error_string(result: string?) -> string {
+    let msg: string = result is {
+        Value(v) => "",
+        Error(e) => e,
+    };
+    return msg;
+}
+
+// ========== bool? ==========
+
+pub fn is_ok_bool(result: bool?) -> bool {
+    let check: bool = result is Value(v);
+    return check;
+}
+
+pub fn is_err_bool(result: bool?) -> bool {
+    let check: bool = result is Error(e);
+    return check;
+}
+
+pub fn unwrap_bool(result: bool?) -> bool {
+    let value: bool = result is {
+        Value(v) => v,
+        Error(e) => false,
+    };
+    return value;
+}
+
+pub fn unwrap_or_bool(result: bool?, default_val: bool) -> bool {
+    let value: bool = result is {
+        Value(v) => v,
+        Error(e) => default_val,
+    };
+    return value;
+}
+
+pub fn get_error_bool(result: bool?) -> string {
+    let msg: string = result is {
+        Value(v) => "",
+        Error(e) => e,
+    };
+    return msg;
 }

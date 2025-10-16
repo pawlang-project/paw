@@ -1,89 +1,109 @@
-// std::collections - 集合类型（简化版）
-// 由于泛型结构体字段访问限制，提供具体类型实现
+// std::collections - 泛型集合类型
 
-// ========== Pair<i32, string> ==========
+// ========== Pair<K, V> - 键值对 ==========
 
-type PairI32String = struct {
-    key: i32,
-    value: string,
+type Pair<K, V> = struct {
+    key: K,
+    value: V,
 }
 
-pub fn new_pair_i32_string(k: i32, v: string) -> PairI32String {
-    return PairI32String { key: k, value: v };
+// 创建Pair
+pub fn new_pair<K, V>(k: K, v: V) -> Pair<K, V> {
+    return Pair<K, V> { key: k, value: v };
 }
 
-pub fn pair_key_i32_string(pair: PairI32String) -> i32 {
+// 获取key
+pub fn pair_key<K, V>(pair: Pair<K, V>) -> K {
     return pair.key;
 }
 
-pub fn pair_value_i32_string(pair: PairI32String) -> string {
+// 获取value
+pub fn pair_value<K, V>(pair: Pair<K, V>) -> V {
     return pair.value;
 }
 
-// ========== Pair<string, i32> ==========
-
-type PairStringI32 = struct {
-    key: string,
-    value: i32,
+// 交换键值
+pub fn pair_swap<K, V>(pair: Pair<K, V>) -> Pair<V, K> {
+    return Pair<V, K> { key: pair.value, value: pair.key };
 }
 
-pub fn new_pair_string_i32(k: string, v: i32) -> PairStringI32 {
-    return PairStringI32 { key: k, value: v };
+// ========== Triple<A, B, C> - 三元组 ==========
+
+type Triple<A, B, C> = struct {
+    first: A,
+    second: B,
+    third: C,
 }
 
-pub fn pair_key_string_i32(pair: PairStringI32) -> string {
-    return pair.key;
+// 创建Triple
+pub fn new_triple<A, B, C>(a: A, b: B, c: C) -> Triple<A, B, C> {
+    return Triple<A, B, C> { first: a, second: b, third: c };
 }
 
-pub fn pair_value_string_i32(pair: PairStringI32) -> i32 {
-    return pair.value;
+// 获取first
+pub fn triple_first<A, B, C>(triple: Triple<A, B, C>) -> A {
+    return triple.first;
 }
 
-// ========== Pair<i64, string> ==========
-
-type PairI64String = struct {
-    key: i64,
-    value: string,
+// 获取second
+pub fn triple_second<A, B, C>(triple: Triple<A, B, C>) -> B {
+    return triple.second;
 }
 
-pub fn new_pair_i64_string(k: i64, v: string) -> PairI64String {
-    return PairI64String { key: k, value: v };
+// 获取third
+pub fn triple_third<A, B, C>(triple: Triple<A, B, C>) -> C {
+    return triple.third;
 }
 
-pub fn pair_key_i64_string(pair: PairI64String) -> i64 {
-    return pair.key;
+// ========== Range<T> - 范围类型 ==========
+
+type Range<T> = struct {
+    start: T,
+    end: T,
 }
 
-pub fn pair_value_i64_string(pair: PairI64String) -> string {
-    return pair.value;
+// 创建范围
+pub fn new_range<T>(start: T, end: T) -> Range<T> {
+    return Range<T> { start: start, end: end };
 }
 
-// ========== Range (泛型函数版) ==========
-
-// 创建范围（只存储起止值）
-pub fn new_range<T>(start: T, end: T) -> T {
-    // 简化实现：返回起始值
-    // 完整实现需要结构体支持
-    return start;
+// 获取起始值
+pub fn range_start<T>(range: Range<T>) -> T {
+    return range.start;
 }
 
-// 计算范围大小（泛型）
-pub fn range_size<T>(start: T, end: T) -> T {
-    return end - start;
+// 获取结束值
+pub fn range_end<T>(range: Range<T>) -> T {
+    return range.end;
 }
 
-// 检查值是否在范围内（泛型）
-pub fn in_range<T>(start: T, end: T, value: T) -> bool {
-    return value >= start && value < end;
+// 计算范围大小
+pub fn range_size<T>(range: Range<T>) -> T {
+    return range.end - range.start;
 }
 
-// ========== Box（简单的值包装） ==========
-
-// Box只是值的传递，使用泛型函数
-pub fn box<T>(value: T) -> T {
-    return value;
+// 检查值是否在范围内
+pub fn in_range<T>(range: Range<T>, value: T) -> bool {
+    return value >= range.start && value < range.end;
 }
 
-pub fn unbox<T>(boxed: T) -> T {
-    return boxed;
+// ========== Box<T> - 值包装器 ==========
+
+type Box<T> = struct {
+    value: T,
+}
+
+// 创建Box
+pub fn box<T>(value: T) -> Box<T> {
+    return Box<T> { value: value };
+}
+
+// 解包Box
+pub fn unbox<T>(boxed: Box<T>) -> T {
+    return boxed.value;
+}
+
+// 获取Box内部值的引用（返回值本身）
+pub fn box_get<T>(boxed: Box<T>) -> T {
+    return boxed.value;
 }

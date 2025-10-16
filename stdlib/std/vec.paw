@@ -1,103 +1,131 @@
-// std::vec - 动态数组Vec（简化版）
-// 由于泛型结构体字段访问限制，提供具体类型实现
+// std::vec - 泛型动态数组Vec<T>
+// 简化版：只提供类型定义和基础构造函数
 
 import "std::mem";
 
-// ========== Vec<i32> ==========
+// ========== Vec<T> 核心定义 ==========
 
-type VecI32 = struct {
+pub type Vec<T> = struct {
     data: string,
     len: i64,
     cap: i64,
+    elem_size: i64,
 }
 
-pub fn new_i32() -> VecI32 {
+// ========== 构造函数（具体类型） ==========
+
+// i32 Vec
+pub fn new_i32() -> Vec<i32> {
     let zero: i64 = 0;
     let null: string = "";
-    return VecI32 { data: null, len: zero, cap: zero };
+    let size: i64 = 4;
+    return Vec<i32> { data: null, len: zero, cap: zero, elem_size: size };
 }
 
-pub fn len_i32(vec: VecI32) -> i64 {
+pub fn with_capacity_i32(cap: i64) -> Vec<i32> {
+    let zero: i64 = 0;
+    let size: i64 = 4;
+    let total_size: i64 = cap * size;
+    let data: string = mem::alloc_zero(total_size);
+    return Vec<i32> { data: data, len: zero, cap: cap, elem_size: size };
+}
+
+pub fn len_i32(vec: Vec<i32>) -> i64 {
     return vec.len;
 }
 
-pub fn is_empty_i32(vec: VecI32) -> bool {
+pub fn capacity_i32(vec: Vec<i32>) -> i64 {
+    return vec.cap;
+}
+
+pub fn is_empty_i32(vec: Vec<i32>) -> bool {
     let zero: i64 = 0;
     return vec.len == zero;
 }
 
-pub fn capacity_i32(vec: VecI32) -> i64 {
-    return vec.cap;
-}
-
-pub fn with_capacity_i32(cap: i64) -> VecI32 {
-    let zero: i64 = 0;
-    let data: string = mem::alloc_zero(cap * 4);
-    return VecI32 { data: data, len: zero, cap: cap };
-}
-
-// ========== Vec<i64> ==========
-
-type VecI64 = struct {
-    data: string,
-    len: i64,
-    cap: i64,
-}
-
-pub fn new_i64() -> VecI64 {
+// i64 Vec
+pub fn new_i64() -> Vec<i64> {
     let zero: i64 = 0;
     let null: string = "";
-    return VecI64 { data: null, len: zero, cap: zero };
+    let size: i64 = 8;
+    return Vec<i64> { data: null, len: zero, cap: zero, elem_size: size };
 }
 
-pub fn len_i64(vec: VecI64) -> i64 {
+pub fn with_capacity_i64(cap: i64) -> Vec<i64> {
+    let zero: i64 = 0;
+    let size: i64 = 8;
+    let total_size: i64 = cap * size;
+    let data: string = mem::alloc_zero(total_size);
+    return Vec<i64> { data: data, len: zero, cap: cap, elem_size: size };
+}
+
+pub fn len_i64(vec: Vec<i64>) -> i64 {
     return vec.len;
 }
 
-pub fn is_empty_i64(vec: VecI64) -> bool {
+pub fn capacity_i64(vec: Vec<i64>) -> i64 {
+    return vec.cap;
+}
+
+pub fn is_empty_i64(vec: Vec<i64>) -> bool {
     let zero: i64 = 0;
     return vec.len == zero;
 }
 
-pub fn capacity_i64(vec: VecI64) -> i64 {
-    return vec.cap;
-}
-
-pub fn with_capacity_i64(cap: i64) -> VecI64 {
-    let zero: i64 = 0;
-    let data: string = mem::alloc_zero(cap * 8);
-    return VecI64 { data: data, len: zero, cap: cap };
-}
-
-// ========== Vec<string> ==========
-
-type VecString = struct {
-    data: string,
-    len: i64,
-    cap: i64,
-}
-
-pub fn new_string() -> VecString {
+// string Vec (指针大小)
+pub fn new_string() -> Vec<string> {
     let zero: i64 = 0;
     let null: string = "";
-    return VecString { data: null, len: zero, cap: zero };
+    let size: i64 = 8;
+    return Vec<string> { data: null, len: zero, cap: zero, elem_size: size };
 }
 
-pub fn len_string(vec: VecString) -> i64 {
+pub fn with_capacity_string(cap: i64) -> Vec<string> {
+    let zero: i64 = 0;
+    let size: i64 = 8;
+    let total_size: i64 = cap * size;
+    let data: string = mem::alloc_zero(total_size);
+    return Vec<string> { data: data, len: zero, cap: cap, elem_size: size };
+}
+
+pub fn len_string(vec: Vec<string>) -> i64 {
     return vec.len;
 }
 
-pub fn is_empty_string(vec: VecString) -> bool {
+pub fn capacity_string(vec: Vec<string>) -> i64 {
+    return vec.cap;
+}
+
+pub fn is_empty_string(vec: Vec<string>) -> bool {
     let zero: i64 = 0;
     return vec.len == zero;
 }
 
-pub fn capacity_string(vec: VecString) -> i64 {
+// bool Vec
+pub fn new_bool() -> Vec<bool> {
+    let zero: i64 = 0;
+    let null: string = "";
+    let size: i64 = 1;
+    return Vec<bool> { data: null, len: zero, cap: zero, elem_size: size };
+}
+
+pub fn with_capacity_bool(cap: i64) -> Vec<bool> {
+    let zero: i64 = 0;
+    let size: i64 = 1;
+    let total_size: i64 = cap * size;
+    let data: string = mem::alloc_zero(total_size);
+    return Vec<bool> { data: data, len: zero, cap: cap, elem_size: size };
+}
+
+pub fn len_bool(vec: Vec<bool>) -> i64 {
+    return vec.len;
+}
+
+pub fn capacity_bool(vec: Vec<bool>) -> i64 {
     return vec.cap;
 }
 
-pub fn with_capacity_string(cap: i64) -> VecString {
+pub fn is_empty_bool(vec: Vec<bool>) -> bool {
     let zero: i64 = 0;
-    let data: string = mem::alloc_zero(cap * 8);
-    return VecString { data: data, len: zero, cap: cap };
+    return vec.len == zero;
 }
