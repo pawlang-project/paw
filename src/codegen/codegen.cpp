@@ -275,7 +275,9 @@ llvm::Type* CodeGenerator::convertType(const Type* type) {
             // 内部表示为 enum { Value(T), Error(string) }
             // 简化为 {i32 tag, T value, ptr error_msg}
             auto opt_type = static_cast<const OptionalTypeNode*>(type);
-            llvm::Type* inner_type = convertType(opt_type->inner_type.get());
+            
+            // 使用resolveGenericType而不是convertType，这样T可以被正确解析
+            llvm::Type* inner_type = resolveGenericType(opt_type->inner_type.get());
             
             // 使用struct表示: { i32 tag, T value, ptr error_msg }
             std::vector<llvm::Type*> fields = {
@@ -966,7 +968,15 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
         // 特殊处理：如果类型是struct名称，实际存储struct值而不是指针
         if (stmt->type->kind == Type::Kind::Named) {
             const NamedTypeNode* named = static_cast<const NamedTypeNode*>(stmt->type.get());
-            auto struct_type = getOrCreateStructType(named->name);
+            
+            // 构造完整类型名（包含泛型参数）
+            std::string full_type_name = named->name;
+            if (!named->generic_args.empty()) {
+                // 泛型实例化类型：生成mangled name
+                full_type_name = mangleGenericName(named->name, named->generic_args);
+            }
+            
+            auto struct_type = getOrCreateStructType(full_type_name);
             if (struct_type) {
                 actual_type = struct_type;  // 存储struct值
             } else {
@@ -1905,6 +1915,23 @@ llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* e
         for (size_t i = 0; i < expr->fields.size() && i < struct_def->fields.size(); i++) {
             llvm::Value* field_val = generateExpr(expr->fields[i].value.get());
             if (field_val) {
+                // 获取字段的目标类型
+                llvm::Type* target_type = struct_type->getElementType(i);
+                
+                // 类型转换（如果需要）
+                if (field_val->getType()->isIntegerTy() && target_type->isIntegerTy()) {
+                    unsigned src_bits = field_val->getType()->getIntegerBitWidth();
+                    unsigned dst_bits = target_type->getIntegerBitWidth();
+                    
+                    if (src_bits < dst_bits) {
+                        // 扩展到更大的类型
+                        field_val = builder_->CreateSExt(field_val, target_type, "field_sext");
+                    } else if (src_bits > dst_bits) {
+                        // 截断到更小的类型
+                        field_val = builder_->CreateTrunc(field_val, target_type, "field_trunc");
+                    }
+                }
+                
                 llvm::Value* field_ptr = builder_->CreateStructGEP(struct_type, alloca, i);
                 builder_->CreateStore(field_val, field_ptr);
             }

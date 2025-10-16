@@ -1094,7 +1094,14 @@ TypePtr Parser::parseType() {
         // 只有单字母大写才是泛型参数（T, U, K, V等）
         if (std::isupper(type_name[0]) && type_name.length() == 1 && generic_args.empty()) {
             // 单字母大写是泛型: T, U
-            return std::make_unique<GenericTypeNode>(type_name, previous().location);
+            TypePtr generic_type = std::make_unique<GenericTypeNode>(type_name, previous().location);
+            
+            // 检查是否是Optional类型: T?
+            if (match({TokenType::QUESTION})) {
+                return std::make_unique<OptionalTypeNode>(std::move(generic_type), previous().location);
+            }
+            
+            return generic_type;
         }
         
         // 多字母大写或其他情况都是命名类型（Status, Point, Option等）
