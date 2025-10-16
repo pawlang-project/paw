@@ -396,64 +396,82 @@ void CodeGenerator::generateIfStmt(const IfStmt* stmt) {
     
     // 如果有变量绑定，在then块中绑定变量
     if (!binding_var_name.empty() && is_value) {
-        // 确保is_value是指针类型
-        llvm::Value* value_ptr = is_value;
-        if (!is_value->getType()->isPointerTy()) {
-            // 如果是struct值，存储到临时变量
-            llvm::AllocaInst* temp = builder_->CreateAlloca(
-                is_value->getType(), nullptr, "is_temp"
-            );
-            builder_->CreateStore(is_value, temp);
-            value_ptr = temp;
-        }
-        
-        // 获取Optional类型结构
-        llvm::StructType* opt_type = nullptr;
-        if (value_ptr->getType()->isPointerTy()) {
-            // 从variable_types_中获取实际类型，或使用is_value的类型
-            opt_type = static_cast<llvm::StructType*>(is_value->getType());
-        } else {
-            opt_type = static_cast<llvm::StructType*>(is_value->getType());
-        }
-        
-        // 根据变体类型提取值
-        if (variant_name == "Value") {
-            // 提取value字段（索引1）
-            llvm::Value* value_field_ptr = builder_->CreateStructGEP(
-                opt_type, value_ptr, 1, "value_field_ptr"
-            );
-            llvm::Type* value_type = opt_type->getElementType(1);
-            llvm::Value* extracted_value = builder_->CreateLoad(
-                value_type, value_field_ptr, "extracted_value"
-            );
-            
-            // 创建局部变量并绑定
-            llvm::AllocaInst* var_alloca = builder_->CreateAlloca(
-                value_type, nullptr, binding_var_name
-            );
-            builder_->CreateStore(extracted_value, var_alloca);
-            named_values_[binding_var_name] = var_alloca;
-            variable_types_[binding_var_name] = value_type;
-        } else if (variant_name == "Error") {
-            // 提取error_msg字段（索引2）
-            llvm::Value* error_field_ptr = builder_->CreateStructGEP(
-                opt_type, value_ptr, 2, "error_field_ptr"
-            );
-            llvm::Value* error_msg = builder_->CreateLoad(
-                llvm::PointerType::get(*context_, 0), 
-                error_field_ptr, 
-                "error_msg"
-            );
-            
-            // 创建局部变量并绑定
-            llvm::AllocaInst* var_alloca = builder_->CreateAlloca(
-                llvm::PointerType::get(*context_, 0), 
-                nullptr, 
-                binding_var_name
-            );
-            builder_->CreateStore(error_msg, var_alloca);
-            named_values_[binding_var_name] = var_alloca;
-            variable_types_[binding_var_name] = llvm::PointerType::get(*context_, 0);
+        // 从is_expr获取要匹配的值的指针
+        if (is_expr->value->kind == Expr::Kind::Identifier) {
+            const IdentifierExpr* id_expr = 
+                static_cast<const IdentifierExpr*>(is_expr->value.get());
+            auto it = named_values_.find(id_expr->name);
+            if (it != named_values_.end()) {
+                llvm::Value* value_ptr = it->second;
+                
+                // 获取enum类型
+                auto type_it = variable_types_.find(id_expr->name);
+                if (type_it != variable_types_.end() && 
+                    type_it->second->isStructTy()) {
+                    llvm::StructType* enum_type = 
+                        llvm::cast<llvm::StructType>(type_it->second);
+                    
+                    // 提取data字段（索引1）
+                    llvm::Value* data_ptr = builder_->CreateStructGEP(
+                        enum_type, value_ptr, 1, "data_ptr"
+                    );
+                    
+                    // 根据data类型加载值
+                    llvm::Type* data_type = enum_type->getElementType(1);
+                    llvm::Value* data = builder_->CreateLoad(
+                        data_type, data_ptr, "data"
+                    );
+                    
+                    // 查找enum定义以确定正确的转换类型
+                    llvm::Type* target_type = data_type;  // 默认使用data类型
+                    
+                    // 尝试从enum定义中获取正确的关联值类型
+                    const EnumVariantPattern* enum_pattern = 
+                        static_cast<const EnumVariantPattern*>(is_expr->pattern.get());
+                    
+                    for (const auto& [enum_name, enum_def] : enum_defs_) {
+                        for (const auto& variant : enum_def->variants) {
+                            if (variant.name == variant_name && 
+                                !variant.associated_types.empty()) {
+                                target_type = convertType(
+                                    variant.associated_types[0].get()
+                                );
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // 类型转换（如果需要）
+                    llvm::Value* bound_val = data;
+                    if (data_type != target_type) {
+                        if (data_type->isIntegerTy() && 
+                            target_type->isIntegerTy()) {
+                            unsigned src_bits = 
+                                data_type->getIntegerBitWidth();
+                            unsigned tgt_bits = 
+                                target_type->getIntegerBitWidth();
+                            
+                            if (src_bits > tgt_bits) {
+                                bound_val = builder_->CreateTrunc(
+                                    data, target_type, "trunc"
+                                );
+                            } else if (src_bits < tgt_bits) {
+                                bound_val = builder_->CreateSExt(
+                                    data, target_type, "sext"
+                                );
+                            }
+                        }
+                    }
+                    
+                    // 创建局部变量并绑定
+                    llvm::AllocaInst* var_alloca = builder_->CreateAlloca(
+                        target_type, nullptr, binding_var_name
+                    );
+                    builder_->CreateStore(bound_val, var_alloca);
+                    named_values_[binding_var_name] = var_alloca;
+                    variable_types_[binding_var_name] = target_type;
+                }
+            }
         }
     }
     

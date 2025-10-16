@@ -197,8 +197,25 @@ llvm::Value* CodeGenerator::generateMatchExpr(const MatchExpr* expr) {
  * 注意：绑定的变量在is表达式外部不可见，需要在if语句中处理。
  */
 llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
-    llvm::Value* value = generateExpr(expr->value.get());
-    if (!value) return nullptr;
+    // 对于enum匹配，我们需要指针而不是值
+    llvm::Value* value_ptr = nullptr;
+    
+    if (expr->value->kind == Expr::Kind::Identifier) {
+        // 直接获取alloca指针，不要load
+        const IdentifierExpr* id_expr = 
+            static_cast<const IdentifierExpr*>(expr->value.get());
+        auto it = named_values_.find(id_expr->name);
+        if (it != named_values_.end()) {
+            value_ptr = it->second;
+        }
+    } else {
+        // 其他表达式，生成值
+        llvm::Value* value = generateExpr(expr->value.get());
+        if (!value) return nullptr;
+        value_ptr = value;
+    }
+    
+    if (!value_ptr) return nullptr;
     
     // 处理enum变体模式
     if (expr->pattern->kind == Pattern::Kind::EnumVariant) {
@@ -214,64 +231,9 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
                     // 判断是否是Optional类型
                     bool is_optional = (enum_name == "Optional");
                     
-                    llvm::Type* enum_type;
-                    llvm::Value* value_to_check = value;
-                    
-                    if (is_optional) {
-                        // Optional类型：T?现在统一为指针
-                        // value是ptr，需要找到它指向的Optional<T>类型
-                        if (!value->getType()->isPointerTy()) {
-                            std::cerr << "Error: T? must be a pointer" << std::endl;
-                            return nullptr;
-                        }
-                        
-                        // 从variable_types_获取实际Optional类型
-                        // 策略1：直接从LoadInst -> AllocaInst获取名称
-                        std::string var_name;
-                        if (auto* load_inst = llvm::dyn_cast<llvm::LoadInst>(value)) {
-                            auto* ptr_operand = load_inst->getPointerOperand();
-                            if (auto* alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(ptr_operand)) {
-                                var_name = alloca_inst->getName().str();
-                            } else if (auto* inner_load = llvm::dyn_cast<llvm::LoadInst>(ptr_operand)) {
-                                // 参数传递：r1 -> result -> load(result) -> load(load(result))
-                                if (auto* inner_alloca = llvm::dyn_cast<llvm::AllocaInst>(inner_load->getPointerOperand())) {
-                                    var_name = inner_alloca->getName().str();
-                                }
-                            }
-                        }
-                        
-                        // 如果找到变量名，尝试从variable_types_获取
-                        if (!var_name.empty() && variable_types_.count(var_name)) {
-                            enum_type = variable_types_[var_name];
-                        } else {
-                            // 策略2：枚举所有已知的Optional<T>类型，找到第一个匹配的
-                            // 这是一个fallback策略，适用于类型推断困难的情况
-                            for (const auto& [name, type] : variable_types_) {
-                                if (type->isStructTy()) {
-                                    llvm::StructType* st = llvm::cast<llvm::StructType>(type);
-                                    // 检查是否是Optional类型：{i32 tag, T value, ptr error}
-                                    if (st->getNumElements() == 3) {
-                                        // 可能是Optional<T>
-                                        enum_type = type;
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            if (!enum_type) {
-                                std::cerr << "Error: Cannot infer Optional type for var_name=" << var_name << std::endl;
-                                return nullptr;
-                            }
-                        }
-                        
-                        // value是指向Optional的指针，需要直接使用
-                        // 注意：在泛型函数中，参数是 alloca ptr，存储了指向heap的ptr
-                        // 所以需要先load一次获取实际的heap指针
-                        value_to_check = value;
-                    } else {
-                        enum_type = getEnumType(enum_name);
-                        value_to_check = value;
-                    }
+                    // 统一的enum处理逻辑：直接从variable_types_获取类型
+                    llvm::Type* enum_type = getEnumType(enum_name);
+                    llvm::Value* value_to_check = value_ptr;
                     
                     // 【关键修复】：对于T?，value可能是load(alloca ptr)的结果
                     // 这已经是heap指针了，可以直接用于GEP

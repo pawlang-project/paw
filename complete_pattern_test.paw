@@ -1,0 +1,46 @@
+type Option = enum {
+    Some(i32),
+    None(),
+}
+
+fn test_match() -> i32 {
+    let val: Option = Option::Some(100);
+    let result: i32 = val is {
+        Some(x) => x,
+        None() => 0,
+    };
+    return result;  // 100
+}
+
+fn test_is_condition() -> i32 {
+    let val: Option = Option::Some(50);
+    if val is Some(x) {
+        return x;
+    }
+    return -1;  // 50
+}
+
+fn test_nested() -> i32 {
+    let opt1: Option = Option::Some(10);
+    let opt2: Option = Option::None();
+    
+    let a: i32 = opt1 is {
+        Some(x) => x,
+        None() => 0,
+    };
+    
+    let b: i32 = opt2 is {
+        Some(x) => x,
+        None() => 5,
+    };
+    
+    return a + b;  // 15
+}
+
+fn main() -> i32 {
+    let r1: i32 = test_match();
+    let r2: i32 = test_is_condition();
+    let r3: i32 = test_nested();
+    
+    return r1 + r2 + r3;  // 100 + 50 + 15 = 165
+}
