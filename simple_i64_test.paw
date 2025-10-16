@@ -1,0 +1,14 @@
+// 简单i64数组测试 - 不依赖标准库
+fn main() -> i32 {
+    let nums: [i64] = [10, 20, 30];
+    
+    let sum: i64 = nums[0] + nums[1] + nums[2];
+    
+    // 应该得到60
+    if sum == 60 {
+        return 0;  // 成功
+    }
+    
+    return 1;  // 失败
+}
+

@@ -13,6 +13,7 @@ namespace pawc {
 // 前向声明
 struct StructStmt;
 struct EnumStmt;
+struct FunctionStmt;
 
 /**
  * 符号表系统
@@ -23,7 +24,8 @@ class SymbolTable {
 public:
     enum class SymbolKind {
         Function,
-        Type,      // Struct或Enum
+        GenericFunction,  // 泛型函数
+        Type,             // Struct或Enum
         Variable
     };
     
@@ -34,7 +36,7 @@ public:
         bool is_public;             // 是否公开
         llvm::Value* value;         // LLVM值（函数、变量）
         llvm::Type* type;           // LLVM类型（类型定义）
-        const void* ast_node;       // AST节点（StructStmt* 或 EnumStmt*），用于跨模块重建类型
+        const void* ast_node;       // AST节点（StructStmt* / EnumStmt* / FunctionStmt*），用于跨模块重建
         
         Symbol() : kind(SymbolKind::Function), is_public(false), value(nullptr), type(nullptr), ast_node(nullptr) {}
     };
@@ -44,6 +46,9 @@ public:
     // 注册符号
     void registerFunction(const std::string& module, const std::string& name, 
                          bool is_public, llvm::Function* func);
+    
+    void registerGenericFunction(const std::string& module, const std::string& name,
+                                bool is_public, const FunctionStmt* ast);
     
     void registerType(const std::string& module, const std::string& name,
                      bool is_public, llvm::Type* type, const void* ast_node = nullptr);

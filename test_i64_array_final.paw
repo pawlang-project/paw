@@ -1,0 +1,16 @@
+// 最终i64数组测试
+fn main() -> i32 {
+    let nums: [i64] = [100, 200, 300];
+    let zero: i64 = 0;
+    
+    let a: i64 = nums[0];
+    let b: i64 = nums[1];
+    let c: i64 = nums[2];
+    
+    let sum: i64 = a + b + c;
+    // 期望600
+    
+    let ret: i32 = sum as i32;
+    return ret;
+}
+

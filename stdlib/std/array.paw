@@ -1,0 +1,176 @@
+// std::array - 数组辅助函数模块（泛型版本 - 优化）
+// 使用泛型来支持多种整数类型
+
+// 计算数组的和（泛型版本 - 支持i32/i64）
+pub fn sum<T>(arr: [T], size: i64) -> T {
+    let mut total: T = 0 as T;
+    let mut i: i64 = 0;
+    let zero: i64 = 0;
+    let one: i64 = 1;
+    
+    loop i < size {
+        total = total + arr[i];
+        i = i + one;
+    }
+    
+    return total;
+}
+
+// 找到数组的最大值（泛型版本）
+pub fn max<T>(arr: [T], size: i64) -> T {
+    let zero: i64 = 0;
+    let one: i64 = 1;
+    
+    if size == zero {
+        return 0 as T;
+    }
+    
+    let mut max_val: T = arr[0];
+    let mut i: i64 = one;
+    
+    loop i < size {
+        let current: T = arr[i];
+        if current > max_val {
+            max_val = current;
+        }
+        i = i + one;
+    }
+    
+    return max_val;
+}
+
+// 找到数组的最小值（泛型版本）
+pub fn min<T>(arr: [T], size: i64) -> T {
+    let zero: i64 = 0;
+    let one: i64 = 1;
+    
+    if size == zero {
+        return 0 as T;
+    }
+    
+    let mut min_val: T = arr[0];
+    let mut i: i64 = one;
+    
+    loop i < size {
+        let current: T = arr[i];
+        if current < min_val {
+            min_val = current;
+        }
+        i = i + one;
+    }
+    
+    return min_val;
+}
+
+// 检查数组是否包含某个值（泛型版本）
+pub fn contains<T>(arr: [T], size: i64, value: T) -> bool {
+    let mut i: i64 = 0;
+    let zero: i64 = 0;
+    let one: i64 = 1;
+    
+    loop i < size {
+        if arr[i] == value {
+            return true;
+        }
+        i = i + one;
+    }
+    
+    return false;
+}
+
+// 计算数组的平均值（泛型版本）
+pub fn average<T>(arr: [T], size: i64) -> T {
+    let zero: i64 = 0;
+    if size == zero {
+        return 0 as T;
+    }
+    
+    let total: T = sum<T>(arr, size);
+    let size_t: T = size as T;
+    return total / size_t;
+}
+
+// 查找数组中某个值的索引（未找到返回-1）
+pub fn index_of<T>(arr: [T], size: i64, value: T) -> i64 {
+    let mut i: i64 = 0;
+    let neg_one: i64 = -1;
+    let one: i64 = 1;
+    
+    loop i < size {
+        if arr[i] == value {
+            return i;
+        }
+        i = i + one;
+    }
+    
+    return neg_one;
+}
+
+// 统计数组中某个值出现的次数
+pub fn count<T>(arr: [T], size: i64, value: T) -> i64 {
+    let mut result: i64 = 0;
+    let mut i: i64 = 0;
+    let zero: i64 = 0;
+    let one: i64 = 1;
+    
+    loop i < size {
+        if arr[i] == value {
+            result = result + one;
+        }
+        i = i + one;
+    }
+    
+    return result;
+}
+
+// 检查数组中的所有元素是否都为正数
+pub fn all_positive<T>(arr: [T], size: i64) -> bool {
+    let mut i: i64 = 0;
+    let zero: i64 = 0;
+    let one: i64 = 1;
+    let zero_t: T = 0 as T;
+    
+    loop i < size {
+        if arr[i] <= zero_t {
+            return false;
+        }
+        i = i + one;
+    }
+    
+    return true;
+}
+
+// 检查数组中是否有任何负数
+pub fn any_negative<T>(arr: [T], size: i64) -> bool {
+    let mut i: i64 = 0;
+    let zero: i64 = 0;
+    let one: i64 = 1;
+    let zero_t: T = 0 as T;
+    
+    loop i < size {
+        if arr[i] < zero_t {
+            return true;
+        }
+        i = i + one;
+    }
+    
+    return false;
+}
+
+// 计算数组中所有元素的乘积
+pub fn product<T>(arr: [T], size: i64) -> T {
+    let mut result: T = 1 as T;
+    let mut i: i64 = 0;
+    let zero: i64 = 0;
+    let one: i64 = 1;
+    
+    loop i < size {
+        result = result * arr[i];
+        i = i + one;
+    }
+    
+    return result;
+}
+
+// 注意：由于编译器限制，浮点数数组操作暂不支持
+// 请使用循环手动处理f64数组

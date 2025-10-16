@@ -1,0 +1,38 @@
+// 测试所有整数类型的数组
+fn main() -> i32 {
+    // i8数组
+    let arr_i8: [i8] = [1, 2, 3];
+    let sum_i8: i8 = arr_i8[0] + arr_i8[1] + arr_i8[2];
+    
+    // i16数组
+    let arr_i16: [i16] = [10, 20, 30];
+    let sum_i16: i16 = arr_i16[0] + arr_i16[1] + arr_i16[2];
+    
+    // i32数组
+    let arr_i32: [i32] = [100, 200, 300];
+    let sum_i32: i32 = arr_i32[0] + arr_i32[1] + arr_i32[2];
+    
+    // i64数组
+    let arr_i64: [i64] = [1000, 2000, 3000];
+    let sum_i64: i64 = arr_i64[0] + arr_i64[1] + arr_i64[2];
+    
+    // i128数组
+    let arr_i128: [i128] = [10000, 20000, 30000];
+    let sum_i128: i128 = arr_i128[0] + arr_i128[1] + arr_i128[2];
+    
+    // 验证所有求和
+    if sum_i8 == 6 {
+        if sum_i16 == 60 {
+            if sum_i32 == 600 {
+                if sum_i64 == 6000 {
+                    if sum_i128 == 60000 {
+                        return 0;  // 全部通过
+                    }
+                }
+            }
+        }
+    }
+    
+    return 1;  // 失败
+}
+

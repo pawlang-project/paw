@@ -574,8 +574,36 @@ ExprPtr Parser::postfix() {
             // 3. Type::Variant - 枚举变体标识符
             Token name_after_colon = consume(TokenType::IDENTIFIER, "Expected name after '::'");
             
+            // 检查是否有泛型类型参数: name<T>
+            std::vector<TypePtr> type_args;
+            bool has_generic = false;
+            if (check(TokenType::LT)) {
+                size_t saved = current_;
+                advance();  // skip <
+                
+                // 预判：必须是类型
+                if (check(TokenType::IDENTIFIER) || check(TokenType::LBRACKET)) {
+                    try {
+                        do {
+                            type_args.push_back(parseType());
+                        } while (match({TokenType::COMMA}));
+                        
+                        if (match({TokenType::GT}) && match({TokenType::LPAREN})) {
+                            has_generic = true;
+                        }
+                    } catch (...) {
+                        // 不是泛型，恢复
+                        current_ = saved;
+                    }
+                }
+                
+                if (!has_generic) {
+                    current_ = saved;
+                }
+            }
+            
             // 检查是否是函数调用
-            if (match({TokenType::LPAREN})) {
+            if (!has_generic && match({TokenType::LPAREN})) {
                 std::vector<ExprPtr> arguments;
                 if (!check(TokenType::RPAREN)) {
                     do {
@@ -614,6 +642,28 @@ ExprPtr Parser::postfix() {
                             prefix, std::move(func_name), std::move(arguments), name_after_colon.location
                         );
                     }
+                }
+            } else if (has_generic) {
+                // module::func<T>(args) - 跨模块泛型调用
+                std::vector<ExprPtr> arguments;
+                if (!check(TokenType::RPAREN)) {
+                    do {
+                        arguments.push_back(expression());
+                    } while (match({TokenType::COMMA}));
+                }
+                consume(TokenType::RPAREN, "Expected ')' after arguments");
+                
+                if (expr->kind == Expr::Kind::Identifier) {
+                    std::string prefix = static_cast<IdentifierExpr*>(expr.get())->name;
+                    auto func_name = std::make_unique<IdentifierExpr>(
+                        name_after_colon.value, name_after_colon.location
+                    );
+                    
+                    // 使用新的跨模块泛型调用构造函数
+                    return std::make_unique<CallExpr>(
+                        prefix, std::move(func_name), std::move(type_args), 
+                        std::move(arguments), name_after_colon.location
+                    );
                 }
             }
             

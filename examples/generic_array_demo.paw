@@ -1,0 +1,98 @@
+// 泛型数组功能完整演示
+import "std::array";
+
+fn main() -> i32 {
+    println("=== 泛型数组功能演示 ===");
+    
+    // i32数组测试
+    println("\n[i32数组]");
+    let nums: [i32] = [10, 5, 8, 3, 12, 7];
+    let size: i64 = 6;
+    
+    let sum: i32 = array::sum<i32>(nums, size);
+    if sum != 45 {
+        println("ERROR: sum failed!");
+        return 1;
+    }
+    println("✓ sum = 45");
+    
+    let max_val: i32 = array::max<i32>(nums, size);
+    if max_val != 12 {
+        println("ERROR: max failed!");
+        return 2;
+    }
+    println("✓ max = 12");
+    
+    let min_val: i32 = array::min<i32>(nums, size);
+    if min_val != 3 {
+        println("ERROR: min failed!");
+        return 3;
+    }
+    println("✓ min = 3");
+    
+    let avg: i32 = array::average<i32>(nums, size);
+    if avg != 7 {
+        println("ERROR: average failed!");
+        return 4;
+    }
+    println("✓ average = 7");
+    
+    let has_8: bool = array::contains<i32>(nums, size, 8);
+    if !has_8 {
+        println("ERROR: contains failed!");
+        return 5;
+    }
+    println("✓ contains(8) = true");
+    
+    let idx: i64 = array::index_of<i32>(nums, size, 12);
+    let four: i64 = 4;
+    if idx != four {
+        println("ERROR: index_of failed!");
+        return 6;
+    }
+    println("✓ index_of(12) = 4");
+    
+    let count: i64 = array::count<i32>(nums, size, 5);
+    let one: i64 = 1;
+    if count != one {
+        println("ERROR: count failed!");
+        return 7;
+    }
+    println("✓ count(5) = 1");
+    
+    let prod: i32 = array::product<i32>(nums, size);
+    println("✓ product calculated");
+    
+    let all_pos: bool = array::all_positive<i32>(nums, size);
+    if !all_pos {
+        println("ERROR: all_positive failed!");
+        return 8;
+    }
+    println("✓ all_positive = true");
+    
+    // i64数组测试
+    println("\n[i64数组]");
+    let big: [i64] = [100, 200, 300, 400];
+    let big_size: i64 = 4;
+    let zero: i64 = 0;
+    
+    let big_sum: i64 = array::sum<i64>(big, big_size);
+    let expected: i64 = 1000;
+    if big_sum != expected {
+        println("ERROR: i64 sum failed!");
+        return 9;
+    }
+    println("✓ i64 sum = 1000");
+    
+    let big_max: i64 = array::max<i64>(big, big_size);
+    let exp_max: i64 = 400;
+    if big_max != exp_max {
+        println("ERROR: i64 max failed!");
+        return 10;
+    }
+    println("✓ i64 max = 400");
+    
+    println("\n=== 所有泛型数组测试通过！ ===");
+    return 0;
+}
+

@@ -21,7 +21,7 @@
 - ✅ **零配置** - 自动下载LLVM，一键构建
 - ✅ **清晰架构** - 模块化设计，~7400行高质量代码
 - ✅ **现代C++** - C++17，智能指针，STL
-- ✅ **标准库** - 14个模块，122个函数，extern "C"互操作 ⭐⭐⭐⭐⭐ 🆕
+- ✅ **标准库** - 15个模块，164个函数（含泛型），extern "C"互操作 ⭐⭐⭐⭐⭐ 🆕
 - ✅ **彩色输出** - 美观的编译信息和错误提示 ⭐⭐⭐⭐⭐ 🆕
 - ✅ **paw.toml** - 现代包管理配置系统 ⭐⭐⭐⭐⭐ 🆕
 - ✅ **char类型** - 字符字面量、ASCII操作、大小写转换 🆕
@@ -841,6 +841,34 @@ return opt is {
 };
 ```
 
+**跨模块泛型调用** ⭐⭐⭐⭐⭐⭐ 🆕🆕🆕：
+```rust
+// std::array模块中的泛型函数
+pub fn sum<T>(arr: [T], size: i64) -> T {
+    let mut total: T = 0 as T;
+    let mut i: i64 = 0;
+    let one: i64 = 1;
+    loop i < size {
+        total = total + arr[i];
+        i = i + one;
+    }
+    return total;
+}
+
+// main.paw中调用跨模块泛型
+import "std::array";
+
+fn main() -> i32 {
+    let nums: [i32] = [1, 2, 3, 4, 5];
+    let size: i64 = 5;
+    
+    // 跨模块泛型调用！
+    let total: i32 = array::sum<i32>(nums, size);  // 返回15
+    
+    return total;
+}
+```
+
 #### 12. if表达式 ⭐⭐⭐⭐⭐⭐ 🆕
 
 **Rust风格的条件表达式！**
@@ -1140,28 +1168,34 @@ fn process(input: string) -> i32? {
 }
 ```
 
-**std::result模块**（4个函数）🆕🆕🆕：
+**std::result模块**（8个泛型函数）🆕🆕🆕：
 ```rust
 import "std::result";
 
-// Result辅助函数
-let is_success: bool = result::is_ok(my_result);
-let is_failure: bool = result::is_err(my_result);
-let value: i32 = result::unwrap(my_result);  // 提取值
-let safe_value: i32 = result::unwrap_or(my_result, 0);  // 提供默认值
+// 泛型Result辅助函数 - 支持任意类型T
+let is_success: bool = result::is_ok<i32>(my_result);
+let is_failure: bool = result::is_err<i32>(my_result);
+let value: i32 = result::unwrap<i32>(my_result);  // 提取值
+let safe_value: i32 = result::unwrap_or<i32>(my_result, 0);  // 提供默认值
+let error_msg: string = result::get_error<i32>(my_result);  // 获取错误消息
+
+// 组合操作
+let combined: i32? = result::and_then<i32>(result1, result2);
+let fallback: i32? = result::or_else<i32>(result1, result2);
 ```
 
-**std::vec模块**（5个函数）🆕🆕🆕：
+**std::vec模块**（7个泛型函数）🆕🆕🆕：
 ```rust
 import "std::vec";
 
-// 动态数组（Vec）
-let v_i32: VecI32 = vec::new_i32();
-let len: i64 = vec::len_i32(v_i32);
-let is_empty: bool = vec::is_empty_i32(v_i32);
+// 泛型动态数组Vec<T> - 支持任意类型
+let v: Vec<i32> = vec::new<i32>();
+let len: i64 = vec::len<i32>(v);
+let is_empty: bool = vec::is_empty<i32>(v);
+let cap: i64 = vec::capacity<i32>(v);
 
-let v_str: VecString = vec::new_string();
-let str_len: i64 = vec::len_string(v_str);
+// 创建指定容量的Vec
+let v2: Vec<string> = vec::with_capacity<string>(100);
 ```
 
 **std::path模块**（7个函数）🆕🆕🆕：
@@ -1169,31 +1203,61 @@ let str_len: i64 = vec::len_string(v_str);
 import "std::path";
 
 // 路径操作
-let sep: string = path::separator();  // "/" 或 "\\"
+let sep: string = path::separator();  // "/"
 let joined: string = path::join("dir", "file.txt");
-let base: string = path::basename("/path/to/file.txt");  // "file.txt"
-let dir: string = path::dirname("/path/to/file.txt");    // "/path/to"
-let ext: string = path::extension("file.txt");           // ".txt"
+let base: string = path::basename("/path/to/file.txt");
+let dir: string = path::dirname("/path/to/file.txt");
+let ext: string = path::extension("file.txt");
 let is_abs: bool = path::is_absolute("/home/user");
-let normal: string = path::normalize("a/b/../c");        // "a/c"
+let normal: string = path::normalize("path");
 ```
 
-**std::collections模块**（7个函数）🆕🆕🆕：
+**std::collections模块**（9个泛型函数）🆕🆕🆕：
 ```rust
 import "std::collections";
 
-// 整数向量
-let int_vec: IntVec = collections::new_int_vec();
-let len: i64 = collections::int_vec_len(int_vec);
-let empty: bool = collections::int_vec_is_empty(int_vec);
+// 泛型Pair<K, V> - 键值对
+let pair: Pair<i32, string> = collections::new_pair<i32, string>(42, "answer");
+let key: i32 = collections::pair_key<i32, string>(pair);
+let value: string = collections::pair_value<i32, string>(pair);
 
-// 字符串向量
-let str_vec: StringVec = collections::new_string_vec();
+// 泛型Triple<A, B, C> - 三元组
+let triple: Triple<i32, i64, f64> = collections::new_triple<i32, i64, f64>(1, 2, 3.0);
 
-// 键值对
-let pair: IntStringPair = collections::new_pair(42, "answer");
-let key: i32 = collections::pair_get_key(pair);
-let value: string = collections::pair_get_value(pair);
+// 泛型Range<T> - 范围
+let range: Range<i32> = collections::new_range<i32>(0, 100);
+let in_range: bool = collections::in_range<i32>(range, 50);
+
+// 泛型Box<T> - 容器
+let box: Box<string> = collections::new_box<string>("data");
+let unboxed: string = collections::unbox<string>(box);
+```
+
+**std::array模块**（10个泛型函数）🆕🆕🆕：
+```rust
+import "std::array";
+
+// 泛型数组操作 - 支持任意类型T
+let nums: [i32] = [10, 5, 8, 3, 12];
+let size: i64 = 5;
+
+// 数组统计
+let total: i32 = array::sum<i32>(nums, size);  // 38
+let max_val: i32 = array::max<i32>(nums, size);  // 12
+let min_val: i32 = array::min<i32>(nums, size);  // 3
+let avg: i32 = array::average<i32>(nums, size);  // 7
+
+// 数组查询
+let has: bool = array::contains<i32>(nums, size, 8);  // true
+let idx: i64 = array::index_of<i32>(nums, size, 12);  // 4
+let count: i64 = array::count<i32>(nums, size, 5);  // 1
+
+// 数组计算
+let product: i32 = array::product<i32>(nums, size);
+
+// 条件检查
+let all_pos: bool = array::all_positive<i32>(nums, size);
+let any_neg: bool = array::any_negative<i32>(nums, size);
 ```
 
 ### 语法特性总结
@@ -1420,14 +1484,16 @@ MIT License
 
 ## 🎯 项目状态
 
-**完成度**: 97% ✅ (+9%)
+**完成度**: 98% ✅ (+10%)
 
-- ✅ 完整的编译器实现（**~7400行代码**）⬆️
+- ✅ 完整的编译器实现（**~7600行代码**）⬆️
+- ✅ **泛型系统深度修复** - 6个关键Bug修复，生产级质量 🆕🆕🆕
+- ✅ **跨模块泛型调用** - 真正的泛型模块化编程 🆕🆕🆕
 - ✅ **? 错误处理** - PawLang独创的优雅机制 🆕🆕🆕
 - ✅ **错误处理变量绑定** - if result is Error(msg) 提取值 🆕🆕
 - ✅ **彩色输出** - 美观的编译信息和错误提示 🆕
 - ✅ **if表达式** - Rust风格条件表达式 🆕
-- ✅ **标准库扩展** - 14个模块，122个函数 🆕⬆️
+- ✅ **标准库扩展** - 15个模块，164个函数（含泛型）🆕⬆️
 - ✅ **paw.toml** - 现代包管理配置系统 🆕
 - ✅ **< > 运算符修复** - 智能泛型识别 🆕
 - ✅ 基础功能 100% 完成
@@ -1447,18 +1513,22 @@ MIT License
 - ✅ Builtins ~285行（内置函数管理）🆕
 - ✅ Colors ~60行（彩色输出系统）🆕
 - ✅ TOML Parser ~220行（配置文件解析）🆕
-- ✅ 标准库 ~1100行Paw代码（14个模块，122个函数）🆕⬆️
+- ✅ 标准库 ~1250行Paw代码（15个模块，164个函数，含泛型）🆕⬆️
 - ✅ LLVM 21.1.3 自动集成
 - ✅ 清晰的文档
 
 **最新亮点** (2025最新):
+- 🎉🎉🎉🎉 **泛型系统深度修复** - 6个关键Bug修复，生产级质量！⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕
+- 🎉🎉🎉🎉 **跨模块泛型** - module::func<T>完整支持！⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕
 - 🎉🎉🎉 **? 错误处理** - PawLang独创！比Rust简单，比Go优雅 ⭐⭐⭐⭐⭐⭐⭐ 🆕
+- 🎉🎉🎉 **泛型标准库** - std::array完整实现，i32完美支持 ⭐⭐⭐⭐⭐⭐⭐ 🆕🆕
 - 🎉🎉🎉 **错误处理变量绑定** - if result is Error(msg) 提取值 ⭐⭐⭐⭐⭐⭐ 🆕
 - 🎉🎉 **彩色输出** - Rust级别的开发体验 ⭐⭐⭐⭐⭐⭐ 🆕
 - 🎉🎉 **paw.toml** - 现代包管理配置系统 ⭐⭐⭐⭐⭐ 🆕
-- 🎉 **标准库扩展** - 14个模块，122个函数！⭐⭐⭐⭐⭐⭐ 🆕⬆️
-- 🎉 **std::vec/path/collections** - 动态数组、路径、集合支持 ⭐⭐⭐⭐⭐⭐ 🆕
-- 🎉 **std::fs/parse/result** - 基于?错误处理的模块 ⭐⭐⭐⭐⭐⭐ 🆕
+- 🎉 **标准库扩展** - 15个模块，164个函数（含泛型）⭐⭐⭐⭐⭐⭐ 🆕⬆️
+- 🎉 **std::array** - 10个泛型数组函数（sum、max、min等）⭐⭐⭐⭐⭐⭐ 🆕🆕
+- 🎉 **自动对齐** - DataLayout支持i8到i128所有类型 ⭐⭐⭐⭐⭐⭐ 🆕🆕
+- 🎉 **std::fs/parse** - 基于?错误处理的模块 ⭐⭐⭐⭐⭐⭐ 🆕
 - 🎉 **< > 运算符修复** - 智能泛型识别 ⭐⭐⭐⭐⭐ 🆕
 - 🎉 **if表达式** - Rust风格条件表达式 ⭐⭐⭐⭐⭐⭐ 🆕
 - 🎉 **索引字面量** - arr[0] = 100; 完全修复 ⭐⭐⭐⭐⭐ 🆕

@@ -12,6 +12,21 @@ void SymbolTable::registerFunction(const std::string& module, const std::string&
     symbol.is_public = is_public;
     symbol.value = func;  // llvm::Function*自动向上转型为llvm::Value*
     symbol.type = nullptr;
+    symbol.ast_node = nullptr;
+    
+    module_symbols_[module][name] = symbol;
+}
+
+void SymbolTable::registerGenericFunction(const std::string& module, const std::string& name,
+                                          bool is_public, const FunctionStmt* ast) {
+    Symbol symbol;
+    symbol.name = name;
+    symbol.module = module;
+    symbol.kind = SymbolKind::GenericFunction;
+    symbol.is_public = is_public;
+    symbol.value = nullptr;  // 泛型函数没有具体的llvm::Function*
+    symbol.type = nullptr;
+    symbol.ast_node = static_cast<const void*>(ast);  // 保存AST定义
     
     module_symbols_[module][name] = symbol;
 }
@@ -116,6 +131,7 @@ void SymbolTable::dump() const {
                      << name << " (";
             switch (symbol.kind) {
                 case SymbolKind::Function: std::cout << "fn"; break;
+                case SymbolKind::GenericFunction: std::cout << "fn<T>"; break;
                 case SymbolKind::Type: std::cout << "type"; break;
                 case SymbolKind::Variable: std::cout << "var"; break;
             }

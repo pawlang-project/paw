@@ -1,0 +1,103 @@
+// std::vec - 动态数组Vec（简化版）
+// 由于泛型结构体字段访问限制，提供具体类型实现
+
+import "std::mem";
+
+// ========== Vec<i32> ==========
+
+type VecI32 = struct {
+    data: string,
+    len: i64,
+    cap: i64,
+}
+
+pub fn new_i32() -> VecI32 {
+    let zero: i64 = 0;
+    let null: string = "";
+    return VecI32 { data: null, len: zero, cap: zero };
+}
+
+pub fn len_i32(vec: VecI32) -> i64 {
+    return vec.len;
+}
+
+pub fn is_empty_i32(vec: VecI32) -> bool {
+    let zero: i64 = 0;
+    return vec.len == zero;
+}
+
+pub fn capacity_i32(vec: VecI32) -> i64 {
+    return vec.cap;
+}
+
+pub fn with_capacity_i32(cap: i64) -> VecI32 {
+    let zero: i64 = 0;
+    let data: string = mem::alloc_zero(cap * 4);
+    return VecI32 { data: data, len: zero, cap: cap };
+}
+
+// ========== Vec<i64> ==========
+
+type VecI64 = struct {
+    data: string,
+    len: i64,
+    cap: i64,
+}
+
+pub fn new_i64() -> VecI64 {
+    let zero: i64 = 0;
+    let null: string = "";
+    return VecI64 { data: null, len: zero, cap: zero };
+}
+
+pub fn len_i64(vec: VecI64) -> i64 {
+    return vec.len;
+}
+
+pub fn is_empty_i64(vec: VecI64) -> bool {
+    let zero: i64 = 0;
+    return vec.len == zero;
+}
+
+pub fn capacity_i64(vec: VecI64) -> i64 {
+    return vec.cap;
+}
+
+pub fn with_capacity_i64(cap: i64) -> VecI64 {
+    let zero: i64 = 0;
+    let data: string = mem::alloc_zero(cap * 8);
+    return VecI64 { data: data, len: zero, cap: cap };
+}
+
+// ========== Vec<string> ==========
+
+type VecString = struct {
+    data: string,
+    len: i64,
+    cap: i64,
+}
+
+pub fn new_string() -> VecString {
+    let zero: i64 = 0;
+    let null: string = "";
+    return VecString { data: null, len: zero, cap: zero };
+}
+
+pub fn len_string(vec: VecString) -> i64 {
+    return vec.len;
+}
+
+pub fn is_empty_string(vec: VecString) -> bool {
+    let zero: i64 = 0;
+    return vec.len == zero;
+}
+
+pub fn capacity_string(vec: VecString) -> i64 {
+    return vec.cap;
+}
+
+pub fn with_capacity_string(cap: i64) -> VecString {
+    let zero: i64 = 0;
+    let data: string = mem::alloc_zero(cap * 8);
+    return VecString { data: data, len: zero, cap: cap };
+}

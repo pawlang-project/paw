@@ -40,6 +40,7 @@ private:
     // 符号表
     std::map<std::string, llvm::Value*> named_values_;
     std::map<std::string, llvm::Type*> variable_types_;      // 变量类型映射（用于数组等）
+    std::map<std::string, llvm::Type*> array_element_types_; // 数组参数的元素类型映射（用于泛型）
     
     // 循环控制：维护循环标签栈 (continue_target, break_target)
     std::vector<std::pair<llvm::BasicBlock*, llvm::BasicBlock*>> loop_stack_;
@@ -85,6 +86,7 @@ private:
     llvm::Value* generateCallExpr(const CallExpr* expr);
     llvm::Value* generateAssignExpr(const AssignExpr* expr);
     llvm::Value* generateBuiltinCall(const std::string& name, const std::vector<ExprPtr>& args);
+    llvm::Value* generateArgumentValue(const Expr* arg);  // 处理数组参数的辅助函数
     llvm::Value* generateMemberAccessExpr(const MemberAccessExpr* expr);
     llvm::Value* generateStructLiteralExpr(const StructLiteralExpr* expr);
     llvm::Value* generateEnumVariantExpr(const EnumVariantExpr* expr);

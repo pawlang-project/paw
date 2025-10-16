@@ -1,0 +1,30 @@
+// 验证i64数组正确性
+import "std::io";
+
+fn main() -> i32 {
+    let nums: [i64] = [100, 200, 300];
+    
+    let a: i64 = nums[0];
+    let b: i64 = nums[1];
+    let c: i64 = nums[2];
+    
+    io::print("a = ");
+    io::println_i64(a);
+    io::print("b = ");
+    io::println_i64(b);
+    io::print("c = ");
+    io::println_i64(c);
+    
+    let sum: i64 = a + b + c;
+    io::print("sum = ");
+    io::println_i64(sum);
+    
+    if sum == 600 {
+        io::println("✓ i64数组测试通过！");
+        return 0;
+    }
+    
+    io::println("✗ i64数组测试失败");
+    return 1;
+}
+

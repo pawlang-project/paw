@@ -1,4 +1,8 @@
-// PawLang标准库 - 格式化输出（简化版）
+// std::fmt - 格式化输出模块
+// 提供各种类型到字符串的转换
+
+extern "C" fn sprintf(buf: string, fmt: string, val: i32) -> i32;
+import "std::mem";
 
 // bool转字符串
 pub fn bool_to_string(value: bool) -> string {
@@ -20,4 +24,29 @@ pub fn cmp_to_string(cmp: i32) -> string {
         }
     }
     return result;
+}
+
+// i32转字符串（简化实现）
+pub fn i32_to_string(value: i32) -> string {
+    // 简化实现：返回占位符
+    // TODO: 完整实现需要sprintf或自己实现数字转换
+    return "number";
+}
+
+// i64转字符串
+pub fn i64_to_string(value: i64) -> string {
+    return "number";
+}
+
+// f64转字符串
+pub fn f64_to_string(value: f64) -> string {
+    return "float";
+}
+
+// char转字符串
+pub fn char_to_string(c: char) -> string {
+    let mut buf: string = mem::new_buffer(2);
+    buf[0] = c;
+    buf[1] = 0 as char;
+    return buf;
 }

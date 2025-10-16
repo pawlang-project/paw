@@ -187,6 +187,12 @@ struct CallExpr : Expr {
     CallExpr(const std::string& module, ExprPtr c, std::vector<ExprPtr> args, const SourceLocation& loc)
         : Expr(Kind::Call, loc), callee(std::move(c)), arguments(std::move(args)), 
           module_prefix(module) {}
+    
+    // 跨模块泛型调用 math::add<i32>(1, 2)
+    CallExpr(const std::string& module, ExprPtr c, std::vector<TypePtr> type_args, 
+             std::vector<ExprPtr> args, const SourceLocation& loc)
+        : Expr(Kind::Call, loc), callee(std::move(c)), arguments(std::move(args)),
+          type_arguments(std::move(type_args)), module_prefix(module) {}
 };
 
 struct AssignExpr : Expr {

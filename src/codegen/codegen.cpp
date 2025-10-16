@@ -43,6 +43,22 @@ CodeGenerator::CodeGenerator(const std::string& module_name)
     builder_ = std::make_unique<llvm::IRBuilder<>>(*context_);
     builtins_ = std::make_unique<Builtins>(*context_, *module_);
     
+    // 设置目标平台的DataLayout（确保所有类型使用正确对齐）
+    llvm::InitializeNativeTarget();
+    llvm::Triple triple(llvm::sys::getDefaultTargetTriple());
+    module_->setTargetTriple(triple);
+    
+    std::string error;
+    auto target = llvm::TargetRegistry::lookupTarget(triple.getTriple(), error);
+    if (target) {
+        llvm::TargetOptions opt;
+        auto RM = std::optional<llvm::Reloc::Model>();
+        auto target_machine = target->createTargetMachine(triple, "generic", "", opt, RM);
+        if (target_machine) {
+            module_->setDataLayout(target_machine->createDataLayout());
+        }
+    }
+    
     // 声明所有内置函数
     builtins_->declareAll();
 }
@@ -56,6 +72,22 @@ CodeGenerator::CodeGenerator(const std::string& module_name, SymbolTable* symbol
     module_ = std::make_unique<llvm::Module>(module_name, *context_);
     builder_ = std::make_unique<llvm::IRBuilder<>>(*context_);
     builtins_ = std::make_unique<Builtins>(*context_, *module_);
+    
+    // 设置目标平台的DataLayout（确保所有类型使用正确对齐）
+    llvm::InitializeNativeTarget();
+    llvm::Triple triple(llvm::sys::getDefaultTargetTriple());
+    module_->setTargetTriple(triple);
+    
+    std::string error;
+    auto target = llvm::TargetRegistry::lookupTarget(triple.getTriple(), error);
+    if (target) {
+        llvm::TargetOptions opt;
+        auto RM = std::optional<llvm::Reloc::Model>();
+        auto target_machine = target->createTargetMachine(triple, "generic", "", opt, RM);
+        if (target_machine) {
+            module_->setDataLayout(target_machine->createDataLayout());
+        }
+    }
     
     // 声明所有内置函数
     builtins_->declareAll();
@@ -219,6 +251,18 @@ llvm::Type* CodeGenerator::convertType(const Type* type) {
         case Type::Kind::Array: {
             auto array_type = static_cast<const ArrayTypeNode*>(type);
             llvm::Type* elem_type = convertType(array_type->element_type.get());
+            
+            // 处理大小待推导的情况（size == -1）
+            // 注意：在变量声明时，size=-1应该从初始化器推导，由外层处理
+            // 只有在函数参数时才返回PointerType
+            if (array_type->size == -1 || array_type->size < 0) {
+                // 待推导大小的数组：
+                // - 如果是函数参数：返回PointerType
+                // - 如果是变量声明：外层会从初始化器推导，这里返回i32作为占位符
+                // 使用一个小的默认大小作为占位（外层会覆盖）
+                return llvm::ArrayType::get(elem_type, 1);  // 占位符，外层会重新设置
+            }
+            
             return llvm::ArrayType::get(elem_type, array_type->size);
         }
         case Type::Kind::Generic: {
@@ -390,6 +434,8 @@ llvm::Value* CodeGenerator::generateExpr(const Expr* expr) {
             return generateOkExpr(static_cast<const OkExpr*>(expr));
         case Expr::Kind::Err:
             return generateErrExpr(static_cast<const ErrExpr*>(expr));
+        case Expr::Kind::Cast:
+            return generateCastExpr(static_cast<const CastExpr*>(expr));
         default:
             return nullptr;
     }
@@ -430,6 +476,21 @@ llvm::Value* CodeGenerator::generateBinaryExpr(const BinaryExpr* expr) {
         builder_->CreateCall(strcat_func, {result, right});
         
         return result;
+    }
+    
+    // 类型匹配检查：整数类型需要统一位宽
+    if (left->getType()->isIntegerTy() && right->getType()->isIntegerTy()) {
+        unsigned left_bits = left->getType()->getIntegerBitWidth();
+        unsigned right_bits = right->getType()->getIntegerBitWidth();
+        
+        if (left_bits != right_bits) {
+            // 提升到更大的类型
+            if (left_bits < right_bits) {
+                left = builder_->CreateSExt(left, right->getType(), "promote_left");
+            } else {
+                right = builder_->CreateSExt(right, left->getType(), "promote_right");
+            }
+        }
     }
     
     switch (expr->op) {
@@ -523,6 +584,54 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
     
     // 检查是否是跨模块调用 module::function()
     if (!expr->module_prefix.empty() && symbol_table_) {
+        // 检查是否是泛型调用
+        if (!expr->type_arguments.empty()) {
+            // 跨模块泛型调用：从符号表获取AST并在当前模块实例化
+            auto symbol = symbol_table_->lookupInModule(expr->module_prefix, callee_name);
+            if (!symbol) {
+                std::cerr << "Function not found in module " << expr->module_prefix 
+                         << ": " << callee_name << std::endl;
+                return nullptr;
+            }
+            
+            // 检查是否是泛型函数
+            if (symbol->kind != SymbolTable::SymbolKind::GenericFunction) {
+                std::cerr << "Function " << callee_name << " is not a generic function" << std::endl;
+                return nullptr;
+            }
+            
+            // 从符号表获取AST定义
+            const FunctionStmt* generic_func_ast = static_cast<const FunctionStmt*>(symbol->ast_node);
+            if (!generic_func_ast) {
+                std::cerr << "Generic function AST not found: " << callee_name << std::endl;
+                return nullptr;
+            }
+            
+            // 将泛型函数临时添加到当前CodeGenerator的generic_functions_
+            generic_functions_[callee_name] = generic_func_ast;
+            
+            // 在当前模块实例化泛型函数
+            llvm::Function* inst_func = instantiateGenericFunction(callee_name, expr->type_arguments);
+            if (!inst_func) {
+                std::cerr << "Failed to instantiate cross-module generic function: " << callee_name << std::endl;
+                return nullptr;
+            }
+            
+            // 生成参数（使用辅助函数处理数组传递）
+            std::vector<llvm::Value*> args;
+            for (const auto& arg : expr->arguments) {
+                llvm::Value* arg_val = generateArgumentValue(arg.get());
+                if (arg_val) args.push_back(arg_val);
+            }
+            
+            // 调用实例化的函数
+            if (inst_func->getReturnType()->isVoidTy()) {
+                return builder_->CreateCall(inst_func, args);
+            }
+            return builder_->CreateCall(inst_func, args, "cross_module_generic_call");
+        }
+        
+        // 普通跨模块调用
         auto symbol = symbol_table_->lookupInModule(expr->module_prefix, callee_name);
         if (!symbol) {
             std::cerr << "Function not found in module " << expr->module_prefix 
@@ -571,10 +680,10 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
             );
         }
         
-        // 生成参数
+        // 生成参数（使用辅助函数处理数组传递）
         std::vector<llvm::Value*> args;
         for (const auto& arg : expr->arguments) {
-            llvm::Value* arg_val = generateExpr(arg.get());
+            llvm::Value* arg_val = generateArgumentValue(arg.get());
             if (arg_val) args.push_back(arg_val);
         }
         
@@ -620,30 +729,7 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
     
     std::vector<llvm::Value*> args;
     for (const auto& arg : expr->arguments) {
-        llvm::Value* arg_val = nullptr;
-        
-        // 如果参数是数组变量，传递地址而不是值
-        if (arg->kind == Expr::Kind::Identifier) {
-            std::string arg_name = static_cast<const IdentifierExpr*>(arg.get())->name;
-            auto val_it = named_values_.find(arg_name);
-            auto type_it = variable_types_.find(arg_name);
-            
-            if (val_it != named_values_.end() && type_it != variable_types_.end()) {
-                // 检查是否是数组类型
-                if (llvm::isa<llvm::ArrayType>(type_it->second)) {
-                    // 数组：直接传递alloca指针
-                    arg_val = val_it->second;
-                } else {
-                    // 非数组：正常生成
-                    arg_val = generateExpr(arg.get());
-                }
-            } else {
-                arg_val = generateExpr(arg.get());
-            }
-        } else {
-            arg_val = generateExpr(arg.get());
-        }
-        
+        llvm::Value* arg_val = generateArgumentValue(arg.get());
         if (!arg_val) return nullptr;
         args.push_back(arg_val);
     }
@@ -653,6 +739,27 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
         return builder_->CreateCall(callee, args);
     }
     return builder_->CreateCall(callee, args, "calltmp");
+}
+
+// 辅助函数：生成函数调用参数（处理数组传递）
+llvm::Value* CodeGenerator::generateArgumentValue(const Expr* arg) {
+    // 如果参数是数组变量，传递地址而不是值
+    if (arg->kind == Expr::Kind::Identifier) {
+        std::string arg_name = static_cast<const IdentifierExpr*>(arg)->name;
+        auto val_it = named_values_.find(arg_name);
+        auto type_it = variable_types_.find(arg_name);
+        
+        if (val_it != named_values_.end() && type_it != variable_types_.end()) {
+            // 检查是否是数组类型
+            if (llvm::isa<llvm::ArrayType>(type_it->second)) {
+                // 数组：直接传递alloca指针
+                return val_it->second;
+            }
+        }
+    }
+    
+    // 非数组或其他情况：正常生成
+    return generateExpr(arg);
 }
 
 llvm::Value* CodeGenerator::generateBuiltinCall(const std::string& name, const std::vector<ExprPtr>& arguments) {
@@ -744,9 +851,16 @@ void CodeGenerator::generateStmt(const Stmt* stmt) {
 }
 
 void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
-    // 如果是泛型函数，保存定义但不立即生成
+    // 如果是泛型函数，保存定义
     if (!stmt->generic_params.empty()) {
         generic_functions_[stmt->name] = stmt;
+        
+        // 如果是pub泛型函数，注册到符号表（保存AST定义）
+        // 这样其他模块可以访问泛型函数的AST并实例化
+        if (stmt->is_public && symbol_table_) {
+            symbol_table_->registerGenericFunction(module_name_, stmt->name, stmt->is_public, stmt);
+        }
+        
         return;
     }
     
@@ -846,7 +960,8 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
     
     // 如果有类型声明
     if (stmt->type) {
-        type = convertType(stmt->type.get());
+        // 使用resolveGenericType而不是convertType，这样可以正确处理泛型类型T
+        type = resolveGenericType(stmt->type.get());
         
         // 特殊处理：如果类型是struct名称，实际存储struct值而不是指针
         if (stmt->type->kind == Type::Kind::Named) {
@@ -870,9 +985,11 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
                     const ArrayLiteralExpr* array_lit = 
                         static_cast<const ArrayLiteralExpr*>(stmt->initializer.get());
                     
-                    // 从字面量推导大小
-                    llvm::Type* elem_type = convertType(array_type->element_type.get());
-                    type = llvm::ArrayType::get(elem_type, array_lit->elements.size());
+                    // 从字面量推导大小（使用resolveGenericType处理泛型）
+                    llvm::Type* elem_type = resolveGenericType(array_type->element_type.get());
+                    llvm::Type* inferred_type = llvm::ArrayType::get(elem_type, array_lit->elements.size());
+                    type = inferred_type;
+                    actual_type = inferred_type;  // 关键：同时更新actual_type！
                 }
             }
         }
@@ -912,11 +1029,26 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
         if (stmt->initializer->kind == Expr::Kind::ArrayLiteral && alloc_type->isArrayTy()) {
             const ArrayLiteralExpr* array_lit = static_cast<const ArrayLiteralExpr*>(stmt->initializer.get());
             llvm::ArrayType* array_type = llvm::cast<llvm::ArrayType>(alloc_type);
+            llvm::Type* elem_type = array_type->getElementType();
             
             // 直接在alloca上初始化元素
             for (size_t i = 0; i < array_lit->elements.size(); i++) {
                 llvm::Value* elem_val = generateExpr(array_lit->elements[i].get());
                 if (!elem_val) continue;
+                
+                // 类型转换：确保元素值匹配数组元素类型
+                if (elem_val->getType() != elem_type) {
+                    // 整数类型转换
+                    if (elem_val->getType()->isIntegerTy() && elem_type->isIntegerTy()) {
+                        unsigned src_bits = elem_val->getType()->getIntegerBitWidth();
+                        unsigned tgt_bits = elem_type->getIntegerBitWidth();
+                        if (src_bits < tgt_bits) {
+                            elem_val = builder_->CreateSExt(elem_val, elem_type, "elem_sext");
+                        } else if (src_bits > tgt_bits) {
+                            elem_val = builder_->CreateTrunc(elem_val, elem_type, "elem_trunc");
+                        }
+                    }
+                }
                 
                 // 获取元素指针: GEP alloca, 0, i
                 llvm::Value* elem_ptr = builder_->CreateInBoundsGEP(
@@ -952,6 +1084,23 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
                     builder_->CreateStore(init_val, temp);
                     builder_->CreateStore(temp, alloca);
                 }
+                // 如果类型不完全匹配但都是整数，需要转换
+                else if (init_type->isIntegerTy() && alloc_type->isIntegerTy()) {
+                    unsigned src_bits = init_type->getIntegerBitWidth();
+                    unsigned tgt_bits = alloc_type->getIntegerBitWidth();
+                    if (src_bits != tgt_bits) {
+                        // 需要类型转换
+                        llvm::Value* converted;
+                        if (src_bits < tgt_bits) {
+                            converted = builder_->CreateSExt(init_val, alloc_type, "sext");
+                        } else {
+                            converted = builder_->CreateTrunc(init_val, alloc_type, "trunc");
+                        }
+                        builder_->CreateStore(converted, alloca);
+                    } else {
+                        builder_->CreateStore(init_val, alloca);
+                    }
+                }
                 else {
                     builder_->CreateStore(init_val, alloca);
                 }
@@ -980,6 +1129,34 @@ void CodeGenerator::generateReturnStmt(const ReturnStmt* stmt) {
 }
 
 void CodeGenerator::generateIfStmt(const IfStmt* stmt) {
+    // 检查条件是否是IsExpr（用于变量绑定）
+    const IsExpr* is_expr = nullptr;
+    llvm::Value* is_value = nullptr;
+    std::string binding_var_name;
+    std::string variant_name;
+    
+    if (stmt->condition->kind == Expr::Kind::Is) {
+        is_expr = static_cast<const IsExpr*>(stmt->condition.get());
+        
+        // 检查是否有变量绑定
+        if (is_expr->pattern->kind == Pattern::Kind::EnumVariant) {
+            const EnumVariantPattern* pattern = 
+                static_cast<const EnumVariantPattern*>(is_expr->pattern.get());
+            
+            if (!pattern->bindings.empty() && 
+                pattern->bindings[0]->kind == Pattern::Kind::Identifier) {
+                // 有变量绑定！保存信息
+                const IdentifierPattern* id_pattern = 
+                    static_cast<const IdentifierPattern*>(pattern->bindings[0].get());
+                binding_var_name = id_pattern->name;
+                variant_name = pattern->variant_name;
+                
+                // 生成被检查的值
+                is_value = generateExpr(is_expr->value.get());
+            }
+        }
+    }
+    
     llvm::Value* cond = generateExpr(stmt->condition.get());
     if (!cond) return;
     
@@ -998,9 +1175,79 @@ void CodeGenerator::generateIfStmt(const IfStmt* stmt) {
     }
     
     builder_->SetInsertPoint(then_bb);
+    
+    // 如果有变量绑定，在then块中绑定变量
+    if (!binding_var_name.empty() && is_value) {
+        // 确保is_value是指针类型
+        llvm::Value* value_ptr = is_value;
+        if (!is_value->getType()->isPointerTy()) {
+            // 如果是struct值，存储到临时变量
+            llvm::AllocaInst* temp = builder_->CreateAlloca(
+                is_value->getType(), nullptr, "is_temp"
+            );
+            builder_->CreateStore(is_value, temp);
+            value_ptr = temp;
+        }
+        
+        // 获取Optional类型结构
+        llvm::StructType* opt_type = nullptr;
+        if (value_ptr->getType()->isPointerTy()) {
+            // 从variable_types_中获取实际类型，或使用is_value的类型
+            opt_type = static_cast<llvm::StructType*>(is_value->getType());
+        } else {
+            opt_type = static_cast<llvm::StructType*>(is_value->getType());
+        }
+        
+        // 根据变体类型提取值
+        if (variant_name == "Value") {
+            // 提取value字段（索引1）
+            llvm::Value* value_field_ptr = builder_->CreateStructGEP(
+                opt_type, value_ptr, 1, "value_field_ptr"
+            );
+            llvm::Type* value_type = opt_type->getElementType(1);
+            llvm::Value* extracted_value = builder_->CreateLoad(
+                value_type, value_field_ptr, "extracted_value"
+            );
+            
+            // 创建局部变量并绑定
+            llvm::AllocaInst* var_alloca = builder_->CreateAlloca(
+                value_type, nullptr, binding_var_name
+            );
+            builder_->CreateStore(extracted_value, var_alloca);
+            named_values_[binding_var_name] = var_alloca;
+            variable_types_[binding_var_name] = value_type;
+        } else if (variant_name == "Error") {
+            // 提取error_msg字段（索引2）
+            llvm::Value* error_field_ptr = builder_->CreateStructGEP(
+                opt_type, value_ptr, 2, "error_field_ptr"
+            );
+            llvm::Value* error_msg = builder_->CreateLoad(
+                llvm::PointerType::get(*context_, 0), 
+                error_field_ptr, 
+                "error_msg"
+            );
+            
+            // 创建局部变量并绑定
+            llvm::AllocaInst* var_alloca = builder_->CreateAlloca(
+                llvm::PointerType::get(*context_, 0), 
+                nullptr, 
+                binding_var_name
+            );
+            builder_->CreateStore(error_msg, var_alloca);
+            named_values_[binding_var_name] = var_alloca;
+            variable_types_[binding_var_name] = llvm::PointerType::get(*context_, 0);
+        }
+    }
+    
     generateStmt(stmt->then_branch.get());
     if (!builder_->GetInsertBlock()->getTerminator()) {
         builder_->CreateBr(merge_bb);
+    }
+    
+    // 清理then块中的变量绑定
+    if (!binding_var_name.empty()) {
+        named_values_.erase(binding_var_name);
+        variable_types_.erase(binding_var_name);
     }
     
     if (stmt->else_branch) {
@@ -1597,9 +1844,17 @@ llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* exp
     for (const auto& [struct_name, struct_def] : struct_defs_) {
         auto struct_type = getOrCreateStructType(struct_name);
         
-        // 检查类型是否匹配
-        if (struct_value_type && struct_type != struct_value_type) {
-            continue;
+        // 改进的类型匹配：
+        // 1. 如果struct_value_type就是struct_type，直接匹配
+        // 2. 如果没有struct_value_type信息，尝试所有struct
+        // 3. 如果struct_value_type是PointerType，尝试所有struct（可能是参数传递）
+        if (struct_value_type) {
+            // 只在以下情况跳过：
+            // - struct_value_type是StructType且不等于struct_type
+            if (struct_value_type->isStructTy() && struct_type != struct_value_type) {
+                continue;
+            }
+            // 如果是PointerType或其他，继续尝试（可能匹配）
         }
         
         int field_idx = 0;
@@ -1958,33 +2213,13 @@ llvm::Value* CodeGenerator::generateArrayLiteralExpr(const ArrayLiteralExpr* exp
         return nullptr;
     }
     
-    // 确定元素类型（使用第一个元素的类型）
-    llvm::Value* first_elem = generateExpr(expr->elements[0].get());
-    if (!first_elem) return nullptr;
+    // 注意：数组字面量应该使用变量声明中的类型，而不是从第一个元素推导
+    // generateArrayLiteralExpr不应该独立推导类型
+    // 这个函数主要在generateLetStmt中的特殊路径使用，那里已经知道目标类型
     
-    llvm::Type* elem_type = first_elem->getType();
-    llvm::ArrayType* array_type = llvm::ArrayType::get(elem_type, expr->elements.size());
-    
-    // 分配数组
-    llvm::AllocaInst* array_alloca = builder_->CreateAlloca(array_type, nullptr, "array");
-    
-    // 初始化元素
-    for (size_t i = 0; i < expr->elements.size(); i++) {
-        llvm::Value* elem_val = (i == 0) ? first_elem : generateExpr(expr->elements[i].get());
-        if (!elem_val) continue;
-        
-        // 获取元素指针: GEP array, 0, i
-        llvm::Value* indices[] = {
-            llvm::ConstantInt::get(*context_, llvm::APInt(64, 0)),
-            llvm::ConstantInt::get(*context_, llvm::APInt(64, i))
-        };
-        llvm::Value* elem_ptr = builder_->CreateInBoundsGEP(
-            array_type, array_alloca, indices, "elem_ptr"
-        );
-        builder_->CreateStore(elem_val, elem_ptr);
-    }
-    
-    return array_alloca;
+    // 简化实现：返回nullptr，让外层处理
+    // 实际的数组初始化在generateLetStmt中完成
+    return nullptr;
 }
 
 llvm::Value* CodeGenerator::generateIndexExpr(const IndexExpr* expr) {
@@ -2001,10 +2236,36 @@ llvm::Value* CodeGenerator::generateIndexExpr(const IndexExpr* expr) {
             array_ptr = ptr_it->second;   // alloca指针
             array_type = type_it->second; // 数组/字符串类型
             
-            // 检查是否是字符串类型：alloca存储的是指针，并且不是数组类型
-            // 注意：数组参数传递时，variable_types_存储的是ArrayType而不是PointerType
+            // 检查是否是数组参数（在array_element_types_中有记录）
+            auto elem_it = array_element_types_.find(array_name);
+            if (elem_it != array_element_types_.end()) {
+                // 这是数组参数：arr[i] -> T
+                llvm::Type* elem_type = elem_it->second;
+                llvm::Value* index_val = generateExpr(expr->index.get());
+                if (!index_val) return nullptr;
+                
+                // 加载数组指针
+                llvm::Value* arr_ptr = builder_->CreateLoad(
+                    llvm::PointerType::get(*context_, 0),
+                    array_ptr,
+                    "arrload"
+                );
+                
+                // GEP到指定元素
+                llvm::Value* elem_ptr = builder_->CreateGEP(
+                    elem_type,
+                    arr_ptr,
+                    index_val,
+                    "elemptr"
+                );
+                
+                // 加载元素
+                return builder_->CreateLoad(elem_type, elem_ptr, "elemload");
+            }
+            
+            // 检查是否是字符串类型
             if (array_type->isPointerTy() && !array_type->isArrayTy()) {
-                // 字符串索引：s[i] -> char
+                // 这是字符串：s[i] -> char
                 llvm::Value* index_val = generateExpr(expr->index.get());
                 if (!index_val) return nullptr;
                 
@@ -2143,6 +2404,7 @@ std::string CodeGenerator::mangleGenericName(const std::string& base_name, const
 llvm::Type* CodeGenerator::resolveGenericType(const Type* type) {
     if (type->kind == Type::Kind::Generic) {
         const GenericTypeNode* gen = static_cast<const GenericTypeNode*>(type);
+        
         // 在type_param_map_中查找当前类型参数的具体类型
         for (const auto& entry : type_param_map_) {
             if (entry.first == gen->name && !entry.second.empty()) {
@@ -2191,7 +2453,14 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
     std::vector<llvm::Type*> param_types;
     for (const auto& param : generic_func->parameters) {
         if (!param.is_self) {
-            param_types.push_back(resolveGenericType(param.type.get()));
+            llvm::Type* param_type = resolveGenericType(param.type.get());
+            
+            // 对于数组参数，使用指针类型（数组按指针传递）
+            if (llvm::isa<llvm::ArrayType>(param_type)) {
+                param_type = llvm::PointerType::get(*context_, 0);
+            }
+            
+            param_types.push_back(param_type);
         }
     }
     
@@ -2217,16 +2486,38 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
     // 保存旧的named_values
     auto old_named_values = named_values_;
     auto old_variable_types = variable_types_;
+    auto old_array_element_types = array_element_types_;
     
     // 保存参数
     size_t idx = 0;
     for (auto& arg : func->args()) {
         const auto& param = generic_func->parameters[idx];
-        llvm::Type* param_type = resolveGenericType(param.type.get());
-        llvm::AllocaInst* alloca = builder_->CreateAlloca(param_type, nullptr, param.name);
-        builder_->CreateStore(&arg, alloca);
-        named_values_[param.name] = alloca;
-        variable_types_[param.name] = param_type;
+        
+        // 检查是否是数组参数
+        if (param.type->kind == Type::Kind::Array) {
+            // 数组参数：arg是ptr，直接创建ptr的alloca
+            llvm::AllocaInst* alloca = builder_->CreateAlloca(
+                llvm::PointerType::get(*context_, 0), nullptr, param.name
+            );
+            builder_->CreateStore(&arg, alloca);
+            named_values_[param.name] = alloca;
+            
+            // 记录为指针类型（因为数组参数实际上是指针）
+            variable_types_[param.name] = llvm::PointerType::get(*context_, 0);
+            
+            // 记录元素类型
+            const ArrayTypeNode* array_type = static_cast<const ArrayTypeNode*>(param.type.get());
+            llvm::Type* elem_type = resolveGenericType(array_type->element_type.get());
+            array_element_types_[param.name] = elem_type;
+        } else {
+            // 非数组参数：正常处理
+            llvm::Type* param_type = resolveGenericType(param.type.get());
+            llvm::AllocaInst* alloca = builder_->CreateAlloca(param_type, nullptr, param.name);
+            builder_->CreateStore(&arg, alloca);
+            named_values_[param.name] = alloca;
+            variable_types_[param.name] = param_type;
+        }
+        
         idx++;
     }
     
@@ -2243,6 +2534,7 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
     // 恢复
     named_values_ = old_named_values;
     variable_types_ = old_variable_types;
+    array_element_types_ = old_array_element_types;
     type_param_map_ = old_map;
     builder_->restoreIP(old_insert_point);
     
@@ -2585,7 +2877,7 @@ llvm::Value* CodeGenerator::generateCastExpr(const CastExpr* expr) {
     llvm::Value* val = generateExpr(expr->expression.get());
     if (!val) return nullptr;
     
-    llvm::Type* target_type = convertType(expr->target_type.get());
+    llvm::Type* target_type = resolveGenericType(expr->target_type.get());
     if (!target_type) return nullptr;
     
     llvm::Type* source_type = val->getType();

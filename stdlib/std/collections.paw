@@ -1,0 +1,89 @@
+// std::collections - 集合类型（简化版）
+// 由于泛型结构体字段访问限制，提供具体类型实现
+
+// ========== Pair<i32, string> ==========
+
+type PairI32String = struct {
+    key: i32,
+    value: string,
+}
+
+pub fn new_pair_i32_string(k: i32, v: string) -> PairI32String {
+    return PairI32String { key: k, value: v };
+}
+
+pub fn pair_key_i32_string(pair: PairI32String) -> i32 {
+    return pair.key;
+}
+
+pub fn pair_value_i32_string(pair: PairI32String) -> string {
+    return pair.value;
+}
+
+// ========== Pair<string, i32> ==========
+
+type PairStringI32 = struct {
+    key: string,
+    value: i32,
+}
+
+pub fn new_pair_string_i32(k: string, v: i32) -> PairStringI32 {
+    return PairStringI32 { key: k, value: v };
+}
+
+pub fn pair_key_string_i32(pair: PairStringI32) -> string {
+    return pair.key;
+}
+
+pub fn pair_value_string_i32(pair: PairStringI32) -> i32 {
+    return pair.value;
+}
+
+// ========== Pair<i64, string> ==========
+
+type PairI64String = struct {
+    key: i64,
+    value: string,
+}
+
+pub fn new_pair_i64_string(k: i64, v: string) -> PairI64String {
+    return PairI64String { key: k, value: v };
+}
+
+pub fn pair_key_i64_string(pair: PairI64String) -> i64 {
+    return pair.key;
+}
+
+pub fn pair_value_i64_string(pair: PairI64String) -> string {
+    return pair.value;
+}
+
+// ========== Range (泛型函数版) ==========
+
+// 创建范围（只存储起止值）
+pub fn new_range<T>(start: T, end: T) -> T {
+    // 简化实现：返回起始值
+    // 完整实现需要结构体支持
+    return start;
+}
+
+// 计算范围大小（泛型）
+pub fn range_size<T>(start: T, end: T) -> T {
+    return end - start;
+}
+
+// 检查值是否在范围内（泛型）
+pub fn in_range<T>(start: T, end: T, value: T) -> bool {
+    return value >= start && value < end;
+}
+
+// ========== Box（简单的值包装） ==========
+
+// Box只是值的传递，使用泛型函数
+pub fn box<T>(value: T) -> T {
+    return value;
+}
+
+pub fn unbox<T>(boxed: T) -> T {
+    return boxed;
+}
