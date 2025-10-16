@@ -1882,11 +1882,33 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
             for (const auto& variant : enum_def->variants) {
                 if (variant.name == enum_pattern->variant_name) {
                     // 找到匹配的variant！
-                    // 从enum值中提取tag字段
-                    llvm::Type* enum_type = getEnumType(enum_name);
+                    // 判断是否是Optional类型
+                    bool is_optional = (enum_name == "Optional");
+                    
+                    llvm::Type* enum_type;
+                    if (is_optional) {
+                        // Optional类型：{i32 tag, T value, ptr error_msg}
+                        enum_type = value->getType();
+                        if (!enum_type->isStructTy()) {
+                            std::cerr << "Error: Optional type must be a struct" << std::endl;
+                            return nullptr;
+                        }
+                    } else {
+                        enum_type = getEnumType(enum_name);
+                    }
+                    
+                    // 从值中提取tag字段
+                    llvm::Value* value_to_check = value;
+                    if (!value->getType()->isPointerTy() && is_optional) {
+                        // 如果是struct值，需要先存储到临时变量
+                        llvm::AllocaInst* temp = builder_->CreateAlloca(enum_type, nullptr, "opt_temp");
+                        builder_->CreateStore(value, temp);
+                        value_to_check = temp;
+                    }
+                    
                     llvm::Value* tag_ptr = builder_->CreateStructGEP(
                         static_cast<llvm::StructType*>(enum_type),
-                        value, 
+                        value_to_check, 
                         0, 
                         "tag_ptr"
                     );
@@ -1903,10 +1925,11 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
                     );
                     llvm::Value* cmp = builder_->CreateICmpEQ(tag, expected_tag, "tag_match");
                     
-                    // 如果需要绑定变量，在这里处理
-                    if (!enum_pattern->bindings.empty()) {
-                        // TODO: 绑定关联值到变量
-                        // 这需要在条件为true的分支中进行
+                    // 如果需要绑定变量且是Optional类型
+                    if (!enum_pattern->bindings.empty() && is_optional) {
+                        // 为条件分支准备：在then块中绑定变量
+                        // 注意：这个绑定需要在if语句的then块中生效
+                        // 暂时先返回比较结果，绑定由IfStmt处理
                     }
                     
                     return cmp;
@@ -2625,6 +2648,48 @@ llvm::StructType* CodeGenerator::createOptionalType(llvm::Type* value_type) {
 }
 
 /**
+ * 确保T?类型有对应的enum定义，用于模式匹配
+ * 创建虚拟的 enum { Value(T), Error(string) }
+ */
+void CodeGenerator::ensureOptionalEnumDef(llvm::Type* value_type, const std::string& type_name) {
+    // 检查是否已经创建
+    if (enum_defs_.find(type_name) != enum_defs_.end()) {
+        return;
+    }
+    
+    // 创建variants
+    std::vector<EnumVariant> variants;
+    
+    // Value变体（泛型，关联值类型稍后处理）
+    EnumVariant value_variant;
+    value_variant.name = "Value";
+    value_variant.location = SourceLocation();
+    // 注意：不添加associated_types，模式匹配时会动态处理
+    variants.push_back(std::move(value_variant));
+    
+    // Error变体（关联string）
+    EnumVariant error_variant;
+    error_variant.name = "Error";
+    error_variant.location = SourceLocation();
+    error_variant.associated_types.push_back(
+        std::make_unique<PrimitiveTypeNode>(PrimitiveType::STRING, SourceLocation())
+    );
+    variants.push_back(std::move(error_variant));
+    
+    // 创建EnumStmt（使用构造函数）
+    EnumStmt* optional_enum = new EnumStmt(
+        type_name,
+        std::vector<GenericParam>(),  // 无泛型参数
+        std::move(variants),
+        true,  // is_public
+        SourceLocation()
+    );
+    
+    // 注册到enum_defs_
+    enum_defs_[type_name] = optional_enum;
+}
+
+/**
  * Try表达式生成: expr?
  * 如果expr是Error，立即返回Error；否则提取Value
  */
@@ -2695,6 +2760,11 @@ llvm::Value* CodeGenerator::generateOkExpr(const OkExpr* expr) {
     // 创建Optional类型
     llvm::StructType* optional_type = createOptionalType(val->getType());
     
+    // 为T?类型创建enum定义（用于模式匹配）
+    // 使用类型的字符串表示作为名称
+    std::string type_name = "Optional";  // 简化：所有T?使用相同的enum名称
+    ensureOptionalEnumDef(val->getType(), type_name);
+    
     // 创建alloca并初始化
     llvm::AllocaInst* result = builder_->CreateAlloca(optional_type, nullptr, "ok_result");
     
@@ -2737,6 +2807,10 @@ llvm::Value* CodeGenerator::generateErrExpr(const ErrExpr* expr) {
     
     // 创建Optional类型: {i32 tag, T value, ptr error_msg}
     llvm::StructType* optional_type = createOptionalType(value_type);
+    
+    // 为T?类型创建enum定义（用于模式匹配）
+    std::string type_name = "Optional";
+    ensureOptionalEnumDef(value_type, type_name);
     
     // 创建alloca并初始化
     llvm::AllocaInst* result = builder_->CreateAlloca(optional_type, nullptr, "err_result");

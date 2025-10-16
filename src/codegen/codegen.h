@@ -75,6 +75,7 @@ private:
     
     // Optional类型辅助函数
     llvm::StructType* createOptionalType(llvm::Type* value_type);
+    void ensureOptionalEnumDef(llvm::Type* value_type, const std::string& type_name);
     
     // 代码生成 - 表达式
     llvm::Value* generateExpr(const Expr* expr);
