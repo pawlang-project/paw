@@ -58,6 +58,7 @@ private:
     
     // 当前函数和类型上下文
     llvm::Function* current_function_;
+    const Type* current_function_return_type_;  // 当前函数的返回类型（用于ok/err类型推导）
     const StructStmt* current_struct_;  // 当前处理的struct（用于self）
     std::string current_struct_name_;   // 当前struct名称
     bool current_is_method_;            // 当前函数是否是实例方法（有self参数）
@@ -71,6 +72,9 @@ private:
     llvm::Type* convertPrimitiveType(PrimitiveType type);
     llvm::StructType* getOrCreateStructType(const std::string& name);
     llvm::Type* getEnumType(const std::string& name);
+    
+    // Optional类型辅助函数
+    llvm::StructType* createOptionalType(llvm::Type* value_type);
     
     // 代码生成 - 表达式
     llvm::Value* generateExpr(const Expr* expr);
@@ -87,6 +91,11 @@ private:
     llvm::Value* generateIndexExpr(const IndexExpr* expr);
     llvm::Value* generateMatchExpr(const MatchExpr* expr);
     llvm::Value* generateIsExpr(const IsExpr* expr);
+    llvm::Value* generateIfExpr(const IfExpr* expr);
+    llvm::Value* generateCastExpr(const CastExpr* expr);
+    llvm::Value* generateTryExpr(const TryExpr* expr);
+    llvm::Value* generateOkExpr(const OkExpr* expr);
+    llvm::Value* generateErrExpr(const ErrExpr* expr);
     
     // 代码生成 - 语句
     void generateStmt(const Stmt* stmt);

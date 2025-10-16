@@ -1,6 +1,0 @@
-// 简单测试 - 只import不调用
-import "math";
-
-fn main() -> i32 {
-    return 42;
-}

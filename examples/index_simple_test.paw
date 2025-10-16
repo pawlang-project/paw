@@ -1,0 +1,14 @@
+// 简单测试：不使用数组字面量初始化
+
+fn test_simple() -> i32 {
+    let mut nums: [i32; 3] = [0, 0, 0];
+    nums[0] = 10;
+    nums[1] = 20;
+    nums[2] = 30;
+    return nums[1];  // 应该返回20
+}
+
+fn main() -> i32 {
+    return test_simple();
+}
+

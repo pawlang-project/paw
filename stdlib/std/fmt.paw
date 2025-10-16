@@ -1,0 +1,23 @@
+// PawLang标准库 - 格式化输出（简化版）
+
+// bool转字符串
+pub fn bool_to_string(value: bool) -> string {
+    let result: string = if value { "true" } else { "false" };
+    return result;
+}
+
+// 比较结果转字符串
+pub fn cmp_to_string(cmp: i32) -> string {
+    let zero: i32 = 0;
+    let result: string = "equal";
+    if cmp == zero {
+        result = "equal";
+    } else {
+        if cmp > zero {
+            result = "greater";
+        } else {
+            result = "less";
+        }
+    }
+    return result;
+}

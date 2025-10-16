@@ -27,7 +27,9 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"false", TokenType::KW_FALSE},
     {"in", TokenType::KW_IN},
     {"is", TokenType::KW_IS},
-    {"as", TokenType::KW_AS}
+    {"as", TokenType::KW_AS},
+    {"ok", TokenType::KW_OK},
+    {"err", TokenType::KW_ERR}
 };
 
 Lexer::Lexer(const std::string& source, const std::string& filename)
@@ -106,6 +108,8 @@ Token Lexer::nextToken() {
             return makeToken(match('=') ? TokenType::LE : TokenType::LT, std::string(1, c));
         case '>':
             return makeToken(match('=') ? TokenType::GE : TokenType::GT, std::string(1, c));
+        case '?':
+            return makeToken(TokenType::QUESTION, "?");
         case '&':
             if (match('&')) return makeToken(TokenType::AND, "&&");
             break;
@@ -128,7 +132,6 @@ Token Lexer::nextToken() {
                 return makeToken(TokenType::DOTDOT, "..");
             }
             return makeToken(TokenType::DOT, ".");
-        case '?': return makeToken(TokenType::QUESTION, "?");
     }
     
     return makeToken(TokenType::INVALID, std::string(1, c));

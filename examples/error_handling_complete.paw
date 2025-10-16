@@ -1,0 +1,38 @@
+// 完整的错误处理机制测试
+// 展示 T?, ok(), err(), ? 操作符的所有功能
+
+// 除法函数 - 可能失败
+fn divide(a: i32, b: i32) -> i32? {
+    if b == 0 {
+        return err("Division by zero");
+    }
+    return ok(a / b);
+}
+
+// 复杂计算 - 使用?操作符传播错误
+fn calculate(a: i32, b: i32, c: i32) -> i32? {
+    let x = divide(a, b)?;  // 如果失败，立即返回error
+    let y = divide(x, c)?;  // 继续传播
+    return ok(y * 2);
+}
+
+// 字符串解析 - 演示string?类型
+fn parse_number(s: string) -> i32? {
+    // 简化示例：实际需要字符串解析逻辑
+    return ok(42);
+}
+
+fn main() -> i32 {
+    // 测试1：成功情况
+    let result1 = calculate(20, 2, 5);  // 20/2=10, 10/5=2, 2*2=4
+    
+    // 测试2：除零错误
+    let result2 = calculate(20, 0, 5);  // 应该返回Error
+    
+    // 测试3：第二次除零
+    let result3 = calculate(20, 2, 0);  // 应该返回Error
+    
+    println("Error handling test complete!");
+    return 0;
+}
+

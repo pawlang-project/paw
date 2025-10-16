@@ -1,0 +1,71 @@
+// 错误处理与模式匹配集成示例
+// 展示如何正确处理和检查Optional类型
+
+// 基础除法函数 - 返回Optional类型
+fn divide(a: i32, b: i32) -> i32? {
+    if b == 0 {
+        return err("Division by zero");
+    }
+    return ok(a / b);
+}
+
+// 使用?操作符进行错误传播
+fn safe_divide_chain(a: i32, b: i32, c: i32) -> i32? {
+    let x = divide(a, b)?;  // 如果失败，立即返回error
+    let y = divide(x, c)?;  // 继续传播错误
+    return ok(y * 2);
+}
+
+// 字符串解析示例
+fn parse_positive(s: string) -> i32? {
+    // 简化示例：检查是否为空
+    if s == "" {
+        return err("Empty string");
+    }
+    // 实际应该解析字符串，这里返回固定值
+    return ok(42);
+}
+
+// 复杂的错误处理场景
+fn process_data(input: string, divisor: i32) -> i32? {
+    let value = parse_positive(input)?;  // 解析可能失败
+    let result = divide(value, divisor)?;  // 除法可能失败
+    return ok(result + 10);
+}
+
+fn main() -> i32 {
+    println("=== PawLang Error Handling Demo ===");
+    
+    // 测试1：成功情况
+    println("\nTest 1: Success case");
+    let result1 = divide(10, 2);
+    println("divide(10, 2) executed");
+    
+    // 测试2：除零错误
+    println("\nTest 2: Division by zero");
+    let result2 = divide(10, 0);
+    println("divide(10, 0) executed");
+    
+    // 测试3：错误传播链
+    println("\nTest 3: Error propagation chain");
+    let result3 = safe_divide_chain(20, 2, 5);
+    println("safe_divide_chain(20, 2, 5) = success");
+    
+    let result4 = safe_divide_chain(20, 0, 5);
+    println("safe_divide_chain(20, 0, 5) = error propagated");
+    
+    // 测试4：多层错误传播
+    println("\nTest 4: Multi-level error handling");
+    let result5 = process_data("test", 2);
+    println("process_data('test', 2) executed");
+    
+    let result6 = process_data("", 2);
+    println("process_data('', 2) = error from parsing");
+    
+    let result7 = process_data("test", 0);
+    println("process_data('test', 0) = error from division");
+    
+    println("\n=== All tests completed! ===");
+    return 0;
+}
+

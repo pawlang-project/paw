@@ -2,6 +2,7 @@
 #include "parser/parser.h"
 #include "codegen/codegen.h"
 #include "module/module_compiler.h"
+#include "pawc/colors.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -79,28 +80,28 @@ int main(int argc, char* argv[]) {
     std::string source = buffer.str();
     file.close();
     
-    std::cout << "Compiling " << input_file << "..." << std::endl;
+    std::cout << pawc::Colors::info("Compiling ") << input_file << "..." << std::endl;
     
     // Lexical analysis
     pawc::Lexer lexer(source, input_file);
     std::vector<pawc::Token> tokens = lexer.tokenize();
-    std::cout << "  Lexer: " << tokens.size() << " tokens" << std::endl;
+    std::cout << pawc::Colors::success("  ✓ Lexer: ") << tokens.size() << " tokens" << std::endl;
     
     // Parsing
     pawc::Parser parser(tokens);
     pawc::Program program = parser.parse();
     
     if (!program.errors.empty()) {
-        std::cerr << "Parse errors:" << std::endl;
+        std::cerr << pawc::Colors::error("\n✗ Parse errors:\n") << std::endl;
         for (const auto& error : program.errors) {
-            std::cerr << "  " << error.location.filename << ":"
-                      << error.location.line << ":" << error.location.column
-                      << ": " << error.message << std::endl;
+            std::cerr << pawc::Colors::error("  error: ") << error.message << std::endl;
+            std::cerr << pawc::Colors::info("   --> ") << error.location.filename << ":"
+                      << error.location.line << ":" << error.location.column << std::endl;
         }
         return 1;
     }
     
-    std::cout << "  Parser: " << program.statements.size() << " statements" << std::endl;
+    std::cout << pawc::Colors::success("  ✓ Parser: ") << program.statements.size() << " statements" << std::endl;
     
     // 检查是否有import语句（判断是否需要模块编译）
     bool has_imports = false;
@@ -113,7 +114,7 @@ int main(int argc, char* argv[]) {
     
     // 使用模块编译器或单文件编译器
     if (has_imports) {
-        std::cout << "  Mode: Multi-module compilation" << std::endl;
+        std::cout << pawc::Colors::info("  → Mode: ") << "Multi-module compilation" << std::endl;
         
         // 获取文件所在目录
         std::filesystem::path input_path(input_file);
@@ -128,25 +129,25 @@ int main(int argc, char* argv[]) {
         // 使用模块编译器
         pawc::ModuleCompiler compiler(base_dir);
         if (!compiler.compile(input_file, output_file)) {
-            std::cerr << "Module compilation failed" << std::endl;
+            std::cerr << pawc::Colors::error("\n✗ Module compilation failed") << std::endl;
             return 1;
         }
         
-        std::cout << "\nCompilation successful!" << std::endl;
+        std::cout << pawc::Colors::success("\n✓ Compilation successful!") << std::endl;
         return 0;
     }
     
     // 单文件编译模式
-    std::cout << "  Mode: Single-file compilation" << std::endl;
+    std::cout << pawc::Colors::info("  → Mode: ") << "Single-file compilation" << std::endl;
     
     // Code generation
     pawc::CodeGenerator codegen("pawc_module");
     if (!codegen.generate(program)) {
-        std::cerr << "Code generation failed" << std::endl;
+        std::cerr << pawc::Colors::error("\n✗ Code generation failed") << std::endl;
         return 1;
     }
     
-    std::cout << "  CodeGen: Success" << std::endl;
+    std::cout << pawc::Colors::success("  ✓ CodeGen: ") << "Success" << std::endl;
     
     // Print IR if requested
     if (print_ir) {
@@ -194,21 +195,21 @@ int main(int argc, char* argv[]) {
         std::string sdk_flags = " -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk";
         std::string link_cmd = clang_path + " " + obj_file + sdk_flags + " -o " + output_file;
         
-        std::cout << "  Linking: " << output_file << std::endl;
+        std::cout << pawc::Colors::info("  → Linking: ") << output_file << std::endl;
         int ret = system(link_cmd.c_str());
         
         // 删除临时.o文件
         std::remove(obj_file.c_str());
         
         if (ret != 0) {
-            std::cerr << "Linking failed" << std::endl;
+            std::cerr << pawc::Colors::error("\n✗ Linking failed") << std::endl;
             return 1;
         }
         
-        std::cout << "Generated: " << output_file << " (executable)" << std::endl;
+        std::cout << pawc::Colors::highlight("  Generated: ") << output_file << " (executable)" << std::endl;
     }
     
-    std::cout << "\nCompilation successful!" << std::endl;
+    std::cout << pawc::Colors::success("\n✓ Compilation successful!") << std::endl;
     return 0;
 }
 

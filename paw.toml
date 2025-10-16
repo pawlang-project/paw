@@ -1,0 +1,31 @@
+# PawLang项目配置文件
+# 类似Cargo.toml，但更简洁
+
+[package]
+name = "pawc"
+version = "0.2.1"
+authors = ["PawLang Project"]
+edition = "2025"
+description = "PawLang Compiler - Modern systems programming language"
+
+[lib]
+# 是否是库项目
+type = "bin"  # bin | lib
+
+[dependencies]
+# 依赖管理（暂未实现）
+# example_lib = "1.0.0"
+
+[build]
+# 构建配置
+target = "native"  # native | wasm | x86_64-linux | aarch64-mac
+opt_level = "2"    # 0 | 1 | 2 | 3
+debug = false
+
+[features]
+# 特性开关
+default = []
+full = ["io", "net"]
+io = []
+net = []
+

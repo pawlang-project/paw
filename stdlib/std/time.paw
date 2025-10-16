@@ -1,0 +1,16 @@
+// PawLang标准库 - 时间相关函数
+
+extern "C" fn time(t: string) -> i64;
+extern "C" fn clock() -> i64;
+
+// 获取当前Unix时间戳（秒）
+pub fn now() -> i64 {
+    let null_ptr: string = "";
+    return time(null_ptr);
+}
+
+// 获取CPU时钟周期数
+pub fn cpu_time() -> i64 {
+    return clock();
+}
+

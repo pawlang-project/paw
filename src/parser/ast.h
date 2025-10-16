@@ -25,7 +25,8 @@ struct Type {
         Function,   // fn(T1, T2) -> T3
         Named,      // 自定义类型
         Generic,    // 泛型参数 T, U等
-        SelfType    // Self类型（在struct方法中使用）
+        SelfType,   // Self类型（在struct方法中使用）
+        Optional    // T? 可选类型（错误处理）
     };
     
     Kind kind;
@@ -65,6 +66,14 @@ struct SelfTypeNode : Type {
         : Type(Kind::SelfType, loc) {}
 };
 
+// Optional类型: T?（用于错误处理）
+struct OptionalTypeNode : Type {
+    TypePtr inner_type;
+    
+    OptionalTypeNode(TypePtr inner, const SourceLocation& loc)
+        : Type(Kind::Optional, loc), inner_type(std::move(inner)) {}
+};
+
 struct ArrayTypeNode : Type {
     TypePtr element_type;
     int size;  // 数组大小，-1表示不定大小
@@ -85,7 +94,11 @@ struct Expr {
         ArrayLiteral,      // [1, 2, 3]
         Match,             // value is { pattern => expr }
         Is,                // x is Some(y) - 用于条件判断
-        Cast               // x as i32 - 类型转换
+        Cast,              // x as i32 - 类型转换
+        IfExpr,            // if cond { a } else { b } - 内联if表达式
+        Try,               // expr? - 错误传播
+        Ok,                // ok(value) - 创建成功值
+        Err                // err(message) - 创建错误
     };
     
     Kind kind;
@@ -197,6 +210,41 @@ struct CastExpr : Expr {
     
     CastExpr(ExprPtr expr, TypePtr type, const SourceLocation& loc)
         : Expr(Kind::Cast, loc), expression(std::move(expr)), target_type(std::move(type)) {}
+};
+
+// If表达式: if condition { then_expr } else { else_expr }
+struct IfExpr : Expr {
+    ExprPtr condition;
+    ExprPtr then_expr;
+    ExprPtr else_expr;
+    
+    IfExpr(ExprPtr cond, ExprPtr then_e, ExprPtr else_e, const SourceLocation& loc)
+        : Expr(Kind::IfExpr, loc), condition(std::move(cond)), 
+          then_expr(std::move(then_e)), else_expr(std::move(else_e)) {}
+};
+
+// Try表达式: expr? - 错误传播
+struct TryExpr : Expr {
+    ExprPtr expression;
+    
+    TryExpr(ExprPtr expr, const SourceLocation& loc)
+        : Expr(Kind::Try, loc), expression(std::move(expr)) {}
+};
+
+// Ok表达式: ok(value) - 创建成功值
+struct OkExpr : Expr {
+    ExprPtr value;
+    
+    OkExpr(ExprPtr val, const SourceLocation& loc)
+        : Expr(Kind::Ok, loc), value(std::move(val)) {}
+};
+
+// Err表达式: err(message) - 创建错误
+struct ErrExpr : Expr {
+    ExprPtr message;
+    
+    ErrExpr(ExprPtr msg, const SourceLocation& loc)
+        : Expr(Kind::Err, loc), message(std::move(msg)) {}
 };
 
 struct IndexExpr : Expr {

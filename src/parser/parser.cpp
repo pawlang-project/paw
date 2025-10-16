@@ -16,7 +16,9 @@
  */
 
 #include "parser.h"
+#include "pawc/colors.h"
 #include <stdexcept>
+#include <iostream>
 
 namespace pawc {
 
@@ -84,6 +86,12 @@ Token Parser::consume(TokenType type, const std::string& message) {
 
 void Parser::error(const std::string& message) {
     errors_.push_back(CompilerError(message, peek().location));
+    
+    // 彩色错误输出
+    std::cerr << Colors::error("Error: ") << message << std::endl;
+    std::cerr << Colors::info("  --> ") << peek().location.filename 
+              << ":" << peek().location.line 
+              << ":" << peek().location.column << std::endl;
 }
 
 void Parser::synchronize() {
@@ -534,7 +542,13 @@ ExprPtr Parser::postfix() {
     auto expr = primary();
     
     while (true) {
-        // as类型转换（优先处理）
+        // ? 错误传播操作符（最高优先级）
+        if (match({TokenType::QUESTION})) {
+            expr = std::make_unique<TryExpr>(std::move(expr), previous().location);
+            continue;
+        }
+        
+        // as类型转换
         if (match({TokenType::KW_AS})) {
             TypePtr target_type = parseType();
             expr = std::make_unique<CastExpr>(std::move(expr), std::move(target_type), previous().location);
@@ -607,8 +621,16 @@ ExprPtr Parser::postfix() {
             expr = std::make_unique<IdentifierExpr>(name_after_colon.value, name_after_colon.location);
         } else if (check(TokenType::LT) && expr->kind == Expr::Kind::Identifier) {
             // 可能是泛型调用或泛型enum: func<T>(args) 或 Type<T>::Variant
+            // 但需要预判避免误认 x < 10 为泛型
             size_t saved_pos = current_;
-            advance();  // 消耗 <
+            advance();  // 跳过 <
+            
+            // 预判：< 后面必须是 IDENTIFIER 或 LBRACKET 才可能是泛型
+            if (!check(TokenType::IDENTIFIER) && !check(TokenType::LBRACKET)) {
+                // 不是泛型，恢复位置
+                current_ = saved_pos;
+                return expr;
+            }
             
             // 尝试解析类型参数
             std::vector<TypePtr> type_args;
@@ -754,6 +776,37 @@ ExprPtr Parser::primary() {
         return std::make_unique<IdentifierExpr>("self", previous().location);
     }
     
+    // if表达式: if condition { then_expr } else { else_expr }
+    if (match({TokenType::KW_IF})) {
+        ExprPtr condition = expression();
+        consume(TokenType::LBRACE, "Expected '{' after if condition");
+        ExprPtr then_expr = expression();
+        consume(TokenType::RBRACE, "Expected '}' after then expression");
+        consume(TokenType::KW_ELSE, "If expression must have else branch");
+        consume(TokenType::LBRACE, "Expected '{' after else");
+        ExprPtr else_expr = expression();
+        consume(TokenType::RBRACE, "Expected '}' after else expression");
+        return std::make_unique<IfExpr>(
+            std::move(condition), std::move(then_expr), std::move(else_expr), previous().location
+        );
+    }
+    
+    // ok(value) - 创建成功值
+    if (match({TokenType::KW_OK})) {
+        consume(TokenType::LPAREN, "Expected '(' after 'ok'");
+        ExprPtr value = expression();
+        consume(TokenType::RPAREN, "Expected ')' after value");
+        return std::make_unique<OkExpr>(std::move(value), previous().location);
+    }
+    
+    // err(message) - 创建错误
+    if (match({TokenType::KW_ERR})) {
+        consume(TokenType::LPAREN, "Expected '(' after 'err'");
+        ExprPtr message = expression();
+        consume(TokenType::RPAREN, "Expected ')' after message");
+        return std::make_unique<ErrExpr>(std::move(message), previous().location);
+    }
+    
     // Self 字面量: Self { x: 1, y: 2 }
     if (match({TokenType::KW_SELF_TYPE})) {
         if (!current_parsing_struct_.empty() && match({TokenType::LBRACE})) {
@@ -798,7 +851,17 @@ ExprPtr Parser::primary() {
             size_t saved_pos = current_;
             advance();  // consume <
             
+            // 预判：< 后面必须是 IDENTIFIER 或 LBRACKET 才可能是泛型
+            bool looks_like_generic = check(TokenType::IDENTIFIER) || check(TokenType::LBRACKET);
+            current_ = saved_pos; // 恢复
+            
+            if (!looks_like_generic) {
+                // 不是泛型，只是标识符
+                return std::make_unique<IdentifierExpr>(name_token.value, name_token.location);
+            }
+            
             // 尝试解析类型参数
+            advance(); // 跳过 <
             std::vector<TypePtr> type_args;
             bool is_generic_literal = false;
             
@@ -949,16 +1012,32 @@ TypePtr Parser::parseType() {
         
         auto it = primitive_types.find(type_name);
         if (it != primitive_types.end()) {
-            return std::make_unique<PrimitiveTypeNode>(it->second, previous().location);
+            TypePtr prim_type = std::make_unique<PrimitiveTypeNode>(it->second, previous().location);
+            
+            // 检查是否是Optional类型: i32?
+            if (match({TokenType::QUESTION})) {
+                return std::make_unique<OptionalTypeNode>(std::move(prim_type), previous().location);
+            }
+            
+            return prim_type;
         }
         
         // 泛型参数: <T, U>
+        // 只有当 < 后面是 IDENTIFIER 或 LBRACKET 时才认为是泛型参数
         std::vector<TypePtr> generic_args;
-        if (match({TokenType::LT})) {
-            do {
-                generic_args.push_back(parseType());
-            } while (match({TokenType::COMMA}));
-            consume(TokenType::GT, "Expected '>' after generic arguments");
+        if (check(TokenType::LT)) {
+            // 预判：peek 看下一个token是否可能是类型的开始
+            size_t saved_pos = current_;
+            advance(); // 跳过 <
+            bool is_generic = check(TokenType::IDENTIFIER) || check(TokenType::LBRACKET);
+            current_ = saved_pos; // 恢复位置
+            
+            if (is_generic && match({TokenType::LT})) {
+                do {
+                    generic_args.push_back(parseType());
+                } while (match({TokenType::COMMA}));
+                consume(TokenType::GT, "Expected '>' after generic arguments");
+            }
         }
         
         // 自定义类型或泛型类型
@@ -969,7 +1048,14 @@ TypePtr Parser::parseType() {
         }
         
         // 多字母大写或其他情况都是命名类型（Status, Point, Option等）
-        return std::make_unique<NamedTypeNode>(type_name, std::move(generic_args), previous().location);
+        TypePtr base_type = std::make_unique<NamedTypeNode>(type_name, std::move(generic_args), previous().location);
+        
+        // 检查是否是Optional类型: T?
+        if (match({TokenType::QUESTION})) {
+            return std::make_unique<OptionalTypeNode>(std::move(base_type), previous().location);
+        }
+        
+        return base_type;
     }
     
     error("Expected type");

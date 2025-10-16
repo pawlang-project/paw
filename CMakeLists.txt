@@ -92,6 +92,8 @@ set(SOURCES
     src/module/module_loader.cpp
     src/module/symbol_table.cpp
     src/module/module_compiler.cpp
+    src/colors.cpp
+    src/toml_parser.cpp
 )
 
 # Create main compiler executable

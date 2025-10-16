@@ -34,9 +34,10 @@ namespace pawc {
 // ============================================================================
 
 CodeGenerator::CodeGenerator(const std::string& module_name)
-    : module_name_(module_name), symbol_table_(nullptr),
-      current_function_(nullptr), current_struct_(nullptr), current_struct_name_(""), 
-      current_is_method_(false) {
+    : current_function_(nullptr), current_function_return_type_(nullptr),
+      current_struct_(nullptr), current_struct_name_(""), 
+      current_is_method_(false), 
+      module_name_(module_name), symbol_table_(nullptr) {
     context_ = std::make_unique<llvm::LLVMContext>();
     module_ = std::make_unique<llvm::Module>(module_name, *context_);
     builder_ = std::make_unique<llvm::IRBuilder<>>(*context_);
@@ -47,9 +48,10 @@ CodeGenerator::CodeGenerator(const std::string& module_name)
 }
 
 CodeGenerator::CodeGenerator(const std::string& module_name, SymbolTable* symbol_table)
-    : module_name_(module_name), symbol_table_(symbol_table),
-      current_function_(nullptr), current_struct_(nullptr), current_struct_name_(""), 
-      current_is_method_(false) {
+    : current_function_(nullptr), current_function_return_type_(nullptr),
+      current_struct_(nullptr), current_struct_name_(""), 
+      current_is_method_(false), 
+      module_name_(module_name), symbol_table_(symbol_table) {
     context_ = std::make_unique<llvm::LLVMContext>();
     module_ = std::make_unique<llvm::Module>(module_name, *context_);
     builder_ = std::make_unique<llvm::IRBuilder<>>(*context_);
@@ -224,6 +226,21 @@ llvm::Type* CodeGenerator::convertType(const Type* type) {
             // 这里暂时返回i32
             return llvm::Type::getInt32Ty(*context_);
         }
+        case Type::Kind::Optional: {
+            // Optional类型: T?
+            // 内部表示为 enum { Value(T), Error(string) }
+            // 简化为 {i32 tag, T value, ptr error_msg}
+            auto opt_type = static_cast<const OptionalTypeNode*>(type);
+            llvm::Type* inner_type = convertType(opt_type->inner_type.get());
+            
+            // 使用struct表示: { i32 tag, T value, ptr error_msg }
+            std::vector<llvm::Type*> fields = {
+                llvm::Type::getInt32Ty(*context_),           // tag: 0=Value, 1=Error
+                inner_type,                                   // value
+                llvm::PointerType::get(*context_, 0)         // error_msg
+            };
+            return llvm::StructType::get(*context_, fields);
+        }
         case Type::Kind::SelfType: {
             // Self类型：在struct方法中表示当前struct类型
             if (current_struct_name_.empty()) {
@@ -365,6 +382,14 @@ llvm::Value* CodeGenerator::generateExpr(const Expr* expr) {
             return generateMatchExpr(static_cast<const MatchExpr*>(expr));
         case Expr::Kind::Is:
             return generateIsExpr(static_cast<const IsExpr*>(expr));
+        case Expr::Kind::IfExpr:
+            return generateIfExpr(static_cast<const IfExpr*>(expr));
+        case Expr::Kind::Try:
+            return generateTryExpr(static_cast<const TryExpr*>(expr));
+        case Expr::Kind::Ok:
+            return generateOkExpr(static_cast<const OkExpr*>(expr));
+        case Expr::Kind::Err:
+            return generateErrExpr(static_cast<const ErrExpr*>(expr));
         default:
             return nullptr;
     }
@@ -784,6 +809,7 @@ void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
         builder_->SetInsertPoint(bb);
         
         current_function_ = func;
+        current_function_return_type_ = stmt->return_type.get();  // 保存返回类型用于ok/err
         named_values_.clear();
         
         // 创建局部变量（记录参数类型）
@@ -882,30 +908,53 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
     variable_types_[stmt->name] = alloc_type;  // 保存变量类型
     
     if (stmt->initializer) {
-        llvm::Value* init_val = generateExpr(stmt->initializer.get());
-        if (init_val) {
+        // 特殊处理：数组字面量 - 直接在目标alloca上初始化
+        if (stmt->initializer->kind == Expr::Kind::ArrayLiteral && alloc_type->isArrayTy()) {
+            const ArrayLiteralExpr* array_lit = static_cast<const ArrayLiteralExpr*>(stmt->initializer.get());
+            llvm::ArrayType* array_type = llvm::cast<llvm::ArrayType>(alloc_type);
             
-            // 检查类型匹配：如果init_val是struct值但alloca需要指针（或反之）
-            llvm::Type* init_type = init_val->getType();
-            
-            // 如果init_val是struct值，alloc_type也是struct，直接存储
-            if (init_type == alloc_type) {
-                builder_->CreateStore(init_val, alloca);
+            // 直接在alloca上初始化元素
+            for (size_t i = 0; i < array_lit->elements.size(); i++) {
+                llvm::Value* elem_val = generateExpr(array_lit->elements[i].get());
+                if (!elem_val) continue;
+                
+                // 获取元素指针: GEP alloca, 0, i
+                llvm::Value* elem_ptr = builder_->CreateInBoundsGEP(
+                    array_type,
+                    alloca,
+                    {llvm::ConstantInt::get(*context_, llvm::APInt(64, 0)),
+                     llvm::ConstantInt::get(*context_, llvm::APInt(64, i))},
+                    "elem_ptr"
+                );
+                builder_->CreateStore(elem_val, elem_ptr);
             }
-            // 如果init_val是指针，alloc_type是struct，需要load
-            else if (init_type->isPointerTy() && alloc_type->isStructTy()) {
-                llvm::Value* loaded = builder_->CreateLoad(alloc_type, init_val, "struct_val");
-                builder_->CreateStore(loaded, alloca);
-            }
-            // 如果init_val是struct值，alloc_type是指针（不应该发生）
-            else if (init_type->isStructTy() && alloc_type->isPointerTy()) {
-                // 创建临时alloca并存储值，然后使用指针
-                llvm::AllocaInst* temp = builder_->CreateAlloca(init_type, nullptr, "temp_struct");
-                builder_->CreateStore(init_val, temp);
-                builder_->CreateStore(temp, alloca);
-            }
-            else {
-                builder_->CreateStore(init_val, alloca);
+        } else {
+            // 其他情况：正常生成初始化器表达式
+            llvm::Value* init_val = generateExpr(stmt->initializer.get());
+            if (init_val) {
+                
+                // 检查类型匹配：如果init_val是struct值但alloca需要指针（或反之）
+                llvm::Type* init_type = init_val->getType();
+                
+                // 如果init_val是struct值，alloc_type也是struct，直接存储
+                if (init_type == alloc_type) {
+                    builder_->CreateStore(init_val, alloca);
+                }
+                // 如果init_val是指针，alloc_type是struct，需要load
+                else if (init_type->isPointerTy() && alloc_type->isStructTy()) {
+                    llvm::Value* loaded = builder_->CreateLoad(alloc_type, init_val, "struct_val");
+                    builder_->CreateStore(loaded, alloca);
+                }
+                // 如果init_val是struct值，alloc_type是指针（不应该发生）
+                else if (init_type->isStructTy() && alloc_type->isPointerTy()) {
+                    // 创建临时alloca并存储值，然后使用指针
+                    llvm::AllocaInst* temp = builder_->CreateAlloca(init_type, nullptr, "temp_struct");
+                    builder_->CreateStore(init_val, temp);
+                    builder_->CreateStore(temp, alloca);
+                }
+                else {
+                    builder_->CreateStore(init_val, alloca);
+                }
             }
         }
     }
@@ -1328,6 +1377,79 @@ void CodeGenerator::generateImplStmt(const ImplStmt* stmt) {
 llvm::Value* CodeGenerator::generateAssignExpr(const AssignExpr* expr) {
     llvm::Value* val = generateExpr(expr->value.get());
     if (!val) return nullptr;
+    
+    // 索引赋值：arr[i] = value 或 s[i] = value
+    if (expr->target_expr && expr->target_expr->kind == Expr::Kind::Index) {
+        const IndexExpr* index_expr = static_cast<const IndexExpr*>(expr->target_expr.get());
+        
+        // 生成索引值
+        llvm::Value* index_val = generateExpr(index_expr->index.get());
+        if (!index_val) return nullptr;
+        
+        // 获取数组/字符串的指针
+        llvm::Value* array_ptr = nullptr;
+        if (index_expr->array->kind == Expr::Kind::Identifier) {
+            std::string array_name = static_cast<const IdentifierExpr*>(index_expr->array.get())->name;
+            auto it = named_values_.find(array_name);
+            if (it != named_values_.end()) {
+                array_ptr = it->second;
+            }
+        }
+        
+        if (!array_ptr) {
+            std::cerr << "Cannot access index of unknown array/string" << std::endl;
+            return nullptr;
+        }
+        
+        // 获取数组元素类型
+        auto type_it = variable_types_.find(static_cast<const IdentifierExpr*>(index_expr->array.get())->name);
+        if (type_it == variable_types_.end()) {
+            std::cerr << "Unknown array/string type for index assignment" << std::endl;
+            return nullptr;
+        }
+        
+        llvm::Type* array_type = type_it->second;
+        
+        // 检查是否是字符串类型（指针）
+        if (array_type->isPointerTy()) {
+            // 字符串索引写入：s[i] = 'A'
+            llvm::Value* str_ptr = builder_->CreateLoad(
+                llvm::PointerType::get(*context_, 0),
+                array_ptr,
+                "strload"
+            );
+            
+            // GEP到指定字符
+            llvm::Value* char_ptr = builder_->CreateGEP(
+                llvm::Type::getInt8Ty(*context_),
+                str_ptr,
+                index_val,
+                "stridx"
+            );
+            
+            // 存储字符
+            builder_->CreateStore(val, char_ptr);
+            return val;
+        } else if (array_type->isArrayTy()) {
+            // 数组索引写入：arr[i] = value
+            llvm::ArrayType* arr_type = llvm::cast<llvm::ArrayType>(array_type);
+            
+            // GEP到指定元素
+            llvm::Value* elem_ptr = builder_->CreateGEP(
+                arr_type,
+                array_ptr,
+                {llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0), index_val},
+                "elem_ptr"
+            );
+            
+            // 存储值
+            builder_->CreateStore(val, elem_ptr);
+            return val;
+        } else {
+            std::cerr << "Invalid type for index assignment" << std::endl;
+            return nullptr;
+        }
+    }
     
     // 成员赋值：obj.field = value
     if (expr->target_expr && expr->target_expr->kind == Expr::Kind::MemberAccess) {
@@ -1856,8 +1978,9 @@ llvm::Value* CodeGenerator::generateIndexExpr(const IndexExpr* expr) {
             array_ptr = ptr_it->second;   // alloca指针
             array_type = type_it->second; // 数组/字符串类型
             
-            // 检查是否是字符串类型
-            if (array_type->isPointerTy()) {
+            // 检查是否是字符串类型：alloca存储的是指针，并且不是数组类型
+            // 注意：数组参数传递时，variable_types_存储的是ArrayType而不是PointerType
+            if (array_type->isPointerTy() && !array_type->isArrayTy()) {
                 // 字符串索引：s[i] -> char
                 llvm::Value* index_val = generateExpr(expr->index.get());
                 if (!index_val) return nullptr;
@@ -2376,6 +2499,263 @@ llvm::Value* CodeGenerator::generateIdentifierExpr(const IdentifierExpr* expr) {
     
     std::cerr << "Unknown variable: " << expr->name << std::endl;
     return nullptr;
+}
+
+/**
+ * If表达式生成
+ * 语法: if condition { then_expr } else { else_expr }
+ * 使用LLVM的select指令或PHI节点
+ */
+llvm::Value* CodeGenerator::generateIfExpr(const IfExpr* expr) {
+    // 生成条件
+    llvm::Value* cond = generateExpr(expr->condition.get());
+    if (!cond) return nullptr;
+    
+    // 创建基本块
+    llvm::Function* func = builder_->GetInsertBlock()->getParent();
+    llvm::BasicBlock* then_bb = llvm::BasicBlock::Create(*context_, "if_then", func);
+    llvm::BasicBlock* else_bb = llvm::BasicBlock::Create(*context_, "if_else", func);
+    llvm::BasicBlock* merge_bb = llvm::BasicBlock::Create(*context_, "if_merge", func);
+    
+    // 条件分支
+    builder_->CreateCondBr(cond, then_bb, else_bb);
+    
+    // Then分支
+    builder_->SetInsertPoint(then_bb);
+    llvm::Value* then_val = generateExpr(expr->then_expr.get());
+    if (!then_val) return nullptr;
+    builder_->CreateBr(merge_bb);
+    then_bb = builder_->GetInsertBlock();  // 更新（可能被表达式修改）
+    
+    // Else分支
+    builder_->SetInsertPoint(else_bb);
+    llvm::Value* else_val = generateExpr(expr->else_expr.get());
+    if (!else_val) return nullptr;
+    builder_->CreateBr(merge_bb);
+    else_bb = builder_->GetInsertBlock();  // 更新（可能被表达式修改）
+    
+    // Merge分支（使用PHI节点）
+    builder_->SetInsertPoint(merge_bb);
+    
+    // 确保两个分支的类型一致
+    llvm::Type* then_type = then_val->getType();
+    llvm::Type* else_type = else_val->getType();
+    
+    if (then_type != else_type) {
+        // 类型不匹配时报错
+        std::cerr << "Error: if expression branches must have the same type" << std::endl;
+        return nullptr;
+    }
+    
+    llvm::PHINode* phi = builder_->CreatePHI(then_type, 2, "if_result");
+    phi->addIncoming(then_val, then_bb);
+    phi->addIncoming(else_val, else_bb);
+    
+    return phi;
+}
+
+/**
+ * Cast表达式生成（类型转换）
+ * 语法: expr as target_type
+ */
+llvm::Value* CodeGenerator::generateCastExpr(const CastExpr* expr) {
+    llvm::Value* val = generateExpr(expr->expression.get());
+    if (!val) return nullptr;
+    
+    llvm::Type* target_type = convertType(expr->target_type.get());
+    if (!target_type) return nullptr;
+    
+    llvm::Type* source_type = val->getType();
+    
+    // 如果类型相同，直接返回
+    if (source_type == target_type) {
+        return val;
+    }
+    
+    // 整数 → 整数（扩展或截断）
+    if (source_type->isIntegerTy() && target_type->isIntegerTy()) {
+        unsigned src_bits = source_type->getIntegerBitWidth();
+        unsigned tgt_bits = target_type->getIntegerBitWidth();
+        
+        if (src_bits < tgt_bits) {
+            return builder_->CreateSExt(val, target_type, "sext");
+        } else if (src_bits > tgt_bits) {
+            return builder_->CreateTrunc(val, target_type, "trunc");
+        }
+        return val;
+    }
+    
+    // 整数 → 浮点
+    if (source_type->isIntegerTy() && target_type->isFloatingPointTy()) {
+        return builder_->CreateSIToFP(val, target_type, "sitofp");
+    }
+    
+    // 浮点 → 整数
+    if (source_type->isFloatingPointTy() && target_type->isIntegerTy()) {
+        return builder_->CreateFPToSI(val, target_type, "fptosi");
+    }
+    
+    // 浮点 → 浮点
+    if (source_type->isFloatingPointTy() && target_type->isFloatingPointTy()) {
+        unsigned src_bits = source_type->getScalarSizeInBits();
+        unsigned tgt_bits = target_type->getScalarSizeInBits();
+        
+        if (src_bits < tgt_bits) {
+            return builder_->CreateFPExt(val, target_type, "fpext");
+        } else if (src_bits > tgt_bits) {
+            return builder_->CreateFPTrunc(val, target_type, "fptrunc");
+        }
+        return val;
+    }
+    
+    return val;
+}
+
+/**
+ * 创建Optional类型结构: {i32 tag, T value, ptr error_msg}
+ * tag: 0 = Value, 1 = Error
+ */
+llvm::StructType* CodeGenerator::createOptionalType(llvm::Type* value_type) {
+    std::vector<llvm::Type*> fields = {
+        llvm::Type::getInt32Ty(*context_),           // tag
+        value_type,                                   // value
+        llvm::PointerType::get(*context_, 0)         // error_msg (i8*)
+    };
+    return llvm::StructType::get(*context_, fields);
+}
+
+/**
+ * Try表达式生成: expr?
+ * 如果expr是Error，立即返回Error；否则提取Value
+ */
+llvm::Value* CodeGenerator::generateTryExpr(const TryExpr* expr) {
+    llvm::Value* val = generateExpr(expr->expression.get());
+    if (!val) return nullptr;
+    
+    // 假设val是Optional类型: {i32 tag, T value, ptr error_msg}
+    llvm::Type* optional_type = val->getType();
+    if (!optional_type->isStructTy()) {
+        std::cerr << "Error: ? operator can only be used on Optional types" << std::endl;
+        return nullptr;
+    }
+    
+    llvm::StructType* struct_type = llvm::cast<llvm::StructType>(optional_type);
+    if (struct_type->getNumElements() != 3) {
+        std::cerr << "Error: Invalid Optional type structure" << std::endl;
+        return nullptr;
+    }
+    
+    // 如果val是struct值（而不是指针），先存储到alloca
+    llvm::Value* opt_ptr = val;
+    if (!val->getType()->isPointerTy()) {
+        llvm::AllocaInst* temp = builder_->CreateAlloca(struct_type, nullptr, "opt_temp");
+        builder_->CreateStore(val, temp);
+        opt_ptr = temp;
+    }
+    
+    // 创建基本块
+    llvm::Function* func = builder_->GetInsertBlock()->getParent();
+    llvm::BasicBlock* value_bb = llvm::BasicBlock::Create(*context_, "try_value", func);
+    llvm::BasicBlock* error_bb = llvm::BasicBlock::Create(*context_, "try_error", func);
+    
+    // 加载tag字段（索引0）
+    llvm::Value* tag_ptr = builder_->CreateStructGEP(struct_type, opt_ptr, 0, "tag_ptr");
+    llvm::Value* tag = builder_->CreateLoad(llvm::Type::getInt32Ty(*context_), tag_ptr, "tag");
+    
+    // 检查tag: 0=Value, 1=Error
+    llvm::Value* is_error = builder_->CreateICmpEQ(
+        tag,
+        llvm::ConstantInt::get(*context_, llvm::APInt(32, 1)),
+        "is_error"
+    );
+    builder_->CreateCondBr(is_error, error_bb, value_bb);
+    
+    // Error分支：返回Error
+    builder_->SetInsertPoint(error_bb);
+    llvm::Value* error_val = builder_->CreateLoad(struct_type, opt_ptr, "error_val");
+    builder_->CreateRet(error_val);  // 返回Optional（包含错误）
+    
+    // Value分支：提取值
+    builder_->SetInsertPoint(value_bb);
+    llvm::Value* value_ptr = builder_->CreateStructGEP(struct_type, opt_ptr, 1, "value_ptr");
+    llvm::Type* value_type = struct_type->getElementType(1);
+    llvm::Value* extracted_value = builder_->CreateLoad(value_type, value_ptr, "extracted");
+    
+    return extracted_value;
+}
+
+/**
+ * Ok表达式生成: ok(value)
+ * 创建Optional类型的Value变体，返回struct值（不是指针）
+ */
+llvm::Value* CodeGenerator::generateOkExpr(const OkExpr* expr) {
+    llvm::Value* val = generateExpr(expr->value.get());
+    if (!val) return nullptr;
+    
+    // 创建Optional类型
+    llvm::StructType* optional_type = createOptionalType(val->getType());
+    
+    // 创建alloca并初始化
+    llvm::AllocaInst* result = builder_->CreateAlloca(optional_type, nullptr, "ok_result");
+    
+    // 设置tag = 0 (Value)
+    llvm::Value* tag_ptr = builder_->CreateStructGEP(optional_type, result, 0, "tag_ptr");
+    builder_->CreateStore(llvm::ConstantInt::get(*context_, llvm::APInt(32, 0)), tag_ptr);
+    
+    // 设置value
+    llvm::Value* value_ptr = builder_->CreateStructGEP(optional_type, result, 1, "value_ptr");
+    builder_->CreateStore(val, value_ptr);
+    
+    // 设置error_msg = null
+    llvm::Value* error_ptr = builder_->CreateStructGEP(optional_type, result, 2, "error_ptr");
+    builder_->CreateStore(llvm::ConstantPointerNull::get(llvm::PointerType::get(*context_, 0)), error_ptr);
+    
+    // 返回加载后的struct值（不是指针）
+    return builder_->CreateLoad(optional_type, result, "ok_val");
+}
+
+/**
+ * Err表达式生成: err(message)
+ * 创建Optional类型的Error变体，需要从函数返回类型推导T
+ */
+llvm::Value* CodeGenerator::generateErrExpr(const ErrExpr* expr) {
+    llvm::Value* msg = generateExpr(expr->message.get());
+    if (!msg) return nullptr;
+    
+    // 从函数返回类型推导T类型
+    llvm::Type* value_type = llvm::Type::getInt32Ty(*context_);  // 默认i32
+    
+    if (current_function_return_type_) {
+        // 如果返回类型是T?，提取T
+        if (auto opt_type = dynamic_cast<const OptionalTypeNode*>(current_function_return_type_)) {
+            value_type = convertType(opt_type->inner_type.get());
+        } else {
+            // 不是Optional类型，使用函数返回类型本身
+            value_type = convertType(current_function_return_type_);
+        }
+    }
+    
+    // 创建Optional类型: {i32 tag, T value, ptr error_msg}
+    llvm::StructType* optional_type = createOptionalType(value_type);
+    
+    // 创建alloca并初始化
+    llvm::AllocaInst* result = builder_->CreateAlloca(optional_type, nullptr, "err_result");
+    
+    // 设置tag = 1 (Error)
+    llvm::Value* tag_ptr = builder_->CreateStructGEP(optional_type, result, 0, "tag_ptr");
+    builder_->CreateStore(llvm::ConstantInt::get(*context_, llvm::APInt(32, 1)), tag_ptr);
+    
+    // 设置value = 0 (零值，类型匹配T)
+    llvm::Value* value_ptr = builder_->CreateStructGEP(optional_type, result, 1, "value_ptr");
+    llvm::Value* zero_value = llvm::Constant::getNullValue(value_type);
+    builder_->CreateStore(zero_value, value_ptr);
+    
+    // 设置error_msg
+    llvm::Value* error_ptr = builder_->CreateStructGEP(optional_type, result, 2, "error_ptr");
+    builder_->CreateStore(msg, error_ptr);
+    
+    // 返回加载后的struct值（不是指针）
+    return builder_->CreateLoad(optional_type, result, "err_val");
 }
 
 } // namespace pawc

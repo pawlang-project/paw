@@ -1,0 +1,51 @@
+// PawLang错误处理机制完整演示
+// 展示T?, ok(), err(), ?操作符的所有用法
+
+fn divide(a: i32, b: i32) -> i32? {
+    if b == 0 {
+        return err("Division by zero");
+    }
+    return ok(a / b);
+}
+
+fn calculate(a: i32, b: i32, c: i32) -> i32? {
+    let x = divide(a, b)?;
+    let y = divide(x, c)?;
+    return ok(y * 2);
+}
+
+fn process_string(s: string) -> i32? {
+    if s == "" {
+        return err("Empty string");
+    }
+    return ok(42);
+}
+
+fn main() -> i32 {
+    println("=== PawLang Error Handling Demo ===");
+    
+    println("\nTest 1: Success case");
+    let r1 = divide(10, 2);
+    println("divide(10, 2) = OK");
+    
+    println("\nTest 2: Division by zero");
+    let r2 = divide(10, 0);
+    println("divide(10, 0) = ERROR");
+    
+    println("\nTest 3: Error propagation");
+    let r3 = calculate(20, 2, 5);
+    println("calculate(20, 2, 5) = OK");
+    
+    let r4 = calculate(20, 0, 5);
+    println("calculate(20, 0, 5) = ERROR propagated");
+    
+    println("\nTest 4: String processing");
+    let r5 = process_string("Hello");
+    println("process_string('Hello') = OK");
+    
+    let r6 = process_string("");
+    println("process_string('') = ERROR");
+    
+    println("\n=== All tests completed! ===");
+    return 0;
+}
