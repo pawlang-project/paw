@@ -57,6 +57,9 @@ private:
     std::map<std::string, const EnumStmt*> generic_enums_;          // 泛型enum定义
     std::map<std::string, std::map<std::string, llvm::Type*>> type_param_map_;  // 类型参数映射
     
+    // 泛型struct方法定义：key = "StructName::methodName", value = FunctionStmt*
+    std::map<std::string, const FunctionStmt*> generic_struct_methods_;
+    
     // 当前函数和类型上下文
     llvm::Function* current_function_;
     const Type* current_function_return_type_;  // 当前函数的返回类型（用于ok/err类型推导）
@@ -128,6 +131,14 @@ private:
     llvm::Function* instantiateGenericFunction(const std::string& name, const std::vector<TypePtr>& type_args);
     llvm::Type* instantiateGenericStruct(const std::string& name, const std::vector<TypePtr>& type_args);
     llvm::Type* instantiateGenericEnum(const std::string& name, const std::vector<TypePtr>& type_args);
+    
+    // 泛型struct方法实例化
+    void instantiateGenericStructMethods(
+        const StructStmt* generic_struct,
+        const std::string& struct_mangled_name,
+        llvm::StructType* struct_type,
+        const std::vector<TypePtr>& type_args
+    );
     
     // 跨模块类型转换
     llvm::Type* convertTypeToCurrentContext(llvm::Type* type);

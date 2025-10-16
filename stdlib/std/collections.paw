@@ -1,27 +1,26 @@
 // std::collections - 泛型集合类型
-// 简洁的泛型函数API
 
 // ========== Pair<K, V> - 泛型键值对 ==========
 
 pub type Pair<K, V> = struct {
     first: K,
     second: V,
-}
-
-pub fn new<K, V>(k: K, v: V) -> Pair<K, V> {
-    return Pair<K, V> { first: k, second: v };
-}
-
-pub fn first<K, V>(p: Pair<K, V>) -> K {
-    return p.first;
-}
-
-pub fn second<K, V>(p: Pair<K, V>) -> V {
-    return p.second;
-}
-
-pub fn swap<K, V>(p: Pair<K, V>) -> Pair<V, K> {
-    return Pair<V, K> { first: p.second, second: p.first };
+    
+    pub fn new(k: K, v: V) -> Pair<K, V> {
+        return Pair<K, V> { first: k, second: v };
+    }
+    
+    pub fn first(self) -> K {
+        return self.first;
+    }
+    
+    pub fn second(self) -> V {
+        return self.second;
+    }
+    
+    pub fn swap(self) -> Pair<V, K> {
+        return Pair<V, K> { first: self.second, second: self.first };
+    }
 }
 
 // ========== Triple<A, B, C> - 泛型三元组 ==========
@@ -30,10 +29,10 @@ pub type Triple<A, B, C> = struct {
     first: A,
     second: B,
     third: C,
-}
-
-pub fn triple<A, B, C>(a: A, b: B, c: C) -> Triple<A, B, C> {
-    return Triple<A, B, C> { first: a, second: b, third: c };
+    
+    pub fn new(a: A, b: B, c: C) -> Triple<A, B, C> {
+        return Triple<A, B, C> { first: a, second: b, third: c };
+    }
 }
 
 // ========== Range<T> - 泛型范围 ==========
@@ -41,26 +40,26 @@ pub fn triple<A, B, C>(a: A, b: B, c: C) -> Triple<A, B, C> {
 pub type Range<T> = struct {
     start: T,
     end: T,
-}
-
-pub fn range<T>(s: T, e: T) -> Range<T> {
-    return Range<T> { start: s, end: e };
-}
-
-pub fn contains<T>(r: Range<T>, value: T) -> bool {
-    return value >= r.start && value < r.end;
+    
+    pub fn new(s: T, e: T) -> Range<T> {
+        return Range<T> { start: s, end: e };
+    }
+    
+    pub fn contains(self, value: T) -> bool {
+        return value >= self.start && value < self.end;
+    }
 }
 
 // ========== Box<T> - 泛型值包装器 ==========
 
 pub type Box<T> = struct {
     value: T,
-}
-
-pub fn box<T>(v: T) -> Box<T> {
-    return Box<T> { value: v };
-}
-
-pub fn unbox<T>(b: Box<T>) -> T {
-    return b.value;
+    
+    pub fn new(v: T) -> Box<T> {
+        return Box<T> { value: v };
+    }
+    
+    pub fn get(self) -> T {
+        return self.value;
+    }
 }

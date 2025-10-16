@@ -620,6 +620,67 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
     
     auto callee_name = static_cast<const IdentifierExpr*>(expr->callee.get())->name;
     
+    // 【新增】检查是否是泛型struct静态方法调用：Pair::new<K,V>()
+    if (!expr->module_prefix.empty() && !expr->type_arguments.empty()) {
+        // 检查module_prefix是否是泛型struct
+        auto generic_struct_it = generic_structs_.find(expr->module_prefix);
+        const StructStmt* generic_struct = nullptr;
+        
+        if (generic_struct_it != generic_structs_.end()) {
+            generic_struct = generic_struct_it->second;
+        } else if (symbol_table_) {
+            // 跨模块查找泛型struct
+            auto symbol = symbol_table_->lookup(expr->module_prefix, module_name_);
+            if (symbol && symbol->kind == SymbolTable::SymbolKind::Type && symbol->ast_node) {
+                const StructStmt* struct_def = static_cast<const StructStmt*>(symbol->ast_node);
+                if (struct_def && !struct_def->generic_params.empty()) {
+                    generic_struct = struct_def;
+                    generic_structs_[expr->module_prefix] = generic_struct;  // 缓存
+                }
+            }
+        }
+        
+        if (generic_struct) {
+            // 确认是泛型struct，实例化struct
+            std::string struct_mangled = mangleGenericName(expr->module_prefix, expr->type_arguments);
+            
+            // 实例化struct（如果尚未实例化）
+            llvm::Type* struct_type = instantiateGenericStruct(expr->module_prefix, expr->type_arguments);
+            if (!struct_type) {
+                std::cerr << "Failed to instantiate generic struct: " << expr->module_prefix << std::endl;
+                return nullptr;
+            }
+            
+            // 构造方法的mangled name
+            // 例如：Pair::new + <i32, i32> -> new_i32_i32
+            std::string method_mangled = callee_name + "_" + 
+                struct_mangled.substr(expr->module_prefix.length() + 1);
+            
+            // 查找实例化的方法
+            auto func_it = functions_.find(method_mangled);
+            if (func_it == functions_.end()) {
+                std::cerr << "Static method not found: " << expr->module_prefix 
+                         << "::" << callee_name << std::endl;
+                return nullptr;
+            }
+            
+            llvm::Function* method_func = func_it->second;
+            
+            // 生成参数
+            std::vector<llvm::Value*> args;
+            for (const auto& arg : expr->arguments) {
+                llvm::Value* arg_val = generateExpr(arg.get());
+                if (arg_val) args.push_back(arg_val);
+            }
+            
+            // 调用静态方法
+            if (method_func->getReturnType()->isVoidTy()) {
+                return builder_->CreateCall(method_func, args);
+            }
+            return builder_->CreateCall(method_func, args, "static_method_call");
+        }
+    }
+    
     // 检查是否是跨模块调用 module::function()
     if (!expr->module_prefix.empty() && symbol_table_) {
         // 检查是否是泛型调用
@@ -1710,6 +1771,13 @@ void CodeGenerator::generateStructStmt(const StructStmt* stmt) {
     if (!stmt->generic_params.empty()) {
         generic_structs_[stmt->name] = stmt;
         
+        // 【新增】保存泛型struct的方法定义
+        // 使用 "StructName::methodName" 作为key
+        for (const auto& method : stmt->methods) {
+            std::string method_key = stmt->name + "::" + method->name;
+            generic_struct_methods_[method_key] = method.get();
+        }
+        
         // 注册泛型struct定义到SymbolTable（保存AST）
         if (symbol_table_ && stmt->is_public) {
             symbol_table_->registerType(module_name_, stmt->name, stmt->is_public, 
@@ -2693,6 +2761,14 @@ std::string CodeGenerator::mangleGenericName(const std::string& base_name, const
 
 // 解析泛型类型（替换类型参数）
 llvm::Type* CodeGenerator::resolveGenericType(const Type* type) {
+    // 处理Self类型（在泛型struct方法中）
+    if (type->kind == Type::Kind::SelfType) {
+        if (!current_struct_name_.empty()) {
+            // 返回当前struct的指针类型（统一语义）
+            return llvm::PointerType::get(*context_, 0);
+        }
+    }
+    
     if (type->kind == Type::Kind::Generic) {
         const GenericTypeNode* gen = static_cast<const GenericTypeNode*>(type);
         
@@ -3100,6 +3176,9 @@ llvm::Type* CodeGenerator::instantiateGenericStruct(
         field_types.push_back(resolveGenericType(field.type.get()));
     }
     struct_type->setBody(field_types);
+    
+    // 【新增】实例化泛型struct的所有方法
+    instantiateGenericStructMethods(generic_struct, mangled_name, struct_type, type_args);
     
     // 恢复
     type_param_map_ = old_map;
@@ -3702,6 +3781,156 @@ llvm::Value* CodeGenerator::generateErrExpr(const ErrExpr* expr) {
     
     // 5. 返回堆指针（统一语义）
     return heap_ptr;
+}
+
+/**
+ * 实例化泛型struct的所有方法
+ * 当泛型struct被实例化时调用（如Pair<i32, i32>）
+ */
+void CodeGenerator::instantiateGenericStructMethods(
+    const StructStmt* generic_struct,
+    const std::string& struct_mangled_name,
+    llvm::StructType* struct_type,
+    const std::vector<TypePtr>& type_args) {
+    
+    if (!generic_struct || generic_struct->methods.empty()) {
+        return;  // 没有方法，直接返回
+    }
+    
+    // 【关键】保存并设置当前struct上下文，用于Self类型解析
+    auto old_current_struct = current_struct_;
+    auto old_current_struct_name = current_struct_name_;
+    current_struct_ = generic_struct;
+    current_struct_name_ = struct_mangled_name;
+    
+    // 遍历所有方法并实例化
+    for (const auto& method : generic_struct->methods) {
+        // 构造方法的mangled name
+        // 例如：Pair_i32_i32 -> new_i32_i32, get_first_i32_i32
+        std::string method_mangled = method->name + "_" + 
+            struct_mangled_name.substr(generic_struct->name.length() + 1);
+        
+        // 检查是否已实例化
+        if (functions_.find(method_mangled) != functions_.end()) {
+            continue;  // 已存在，跳过
+        }
+        
+        // 构造参数类型列表
+        std::vector<llvm::Type*> param_types;
+        
+        for (const auto& param : method->parameters) {
+            llvm::Type* param_type = nullptr;
+            
+            if (param.is_self) {
+                // self参数是struct指针
+                param_type = llvm::PointerType::get(*context_, 0);
+            } else {
+                // 普通参数，使用resolveGenericType解析
+                param_type = resolveGenericType(param.type.get());
+                
+                // struct和数组参数传指针
+                if (param_type && (llvm::isa<llvm::StructType>(param_type) || 
+                    llvm::isa<llvm::ArrayType>(param_type))) {
+                    param_type = llvm::PointerType::get(*context_, 0);
+                }
+            }
+            
+            if (param_type) {
+                param_types.push_back(param_type);
+            }
+        }
+        
+        // 确定返回类型
+        llvm::Type* return_type = nullptr;
+        if (method->return_type) {
+            return_type = resolveGenericType(method->return_type.get());
+            
+            // struct返回值使用指针
+            if (return_type && llvm::isa<llvm::StructType>(return_type)) {
+                return_type = llvm::PointerType::get(*context_, 0);
+            }
+        } else {
+            return_type = llvm::Type::getVoidTy(*context_);
+        }
+        
+        // 创建函数
+        llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+        llvm::Function* func = llvm::Function::Create(
+            func_type,
+            llvm::Function::ExternalLinkage,
+            method_mangled,
+            module_.get()
+        );
+        
+        // 注册函数
+        functions_[method_mangled] = func;
+        struct_methods_[struct_mangled_name][method->name] = func;
+        
+        // 生成函数体
+        llvm::BasicBlock* entry_bb = llvm::BasicBlock::Create(*context_, "entry", func);
+        auto old_insert_point = builder_->saveIP();
+        builder_->SetInsertPoint(entry_bb);
+        
+        // 保存当前上下文
+        auto old_named_values = named_values_;
+        auto old_variable_types = variable_types_;
+        auto old_current_function = current_function_;
+        auto old_current_struct = current_struct_;
+        auto old_current_struct_name = current_struct_name_;
+        auto old_is_method = current_is_method_;
+        
+        current_function_ = func;
+        current_struct_ = generic_struct;
+        current_struct_name_ = struct_mangled_name;
+        current_is_method_ = false;
+        
+        // 设置参数
+        size_t arg_idx = 0;
+        for (auto& arg : func->args()) {
+            const auto& param = method->parameters[arg_idx];
+            
+            llvm::AllocaInst* alloca = builder_->CreateAlloca(arg.getType(), nullptr, param.name);
+            builder_->CreateStore(&arg, alloca);
+            named_values_[param.name] = alloca;
+            
+            // 对于self参数，记录实际的struct类型
+            if (param.is_self) {
+                variable_types_[param.name] = struct_type;
+                current_is_method_ = true;
+            } else {
+                variable_types_[param.name] = arg.getType();
+            }
+            
+            arg_idx++;
+        }
+        
+        // 生成方法体
+        if (method->body) {
+            generateStmt(method->body.get());
+        }
+        
+        // 如果没有终止指令，添加默认返回
+        if (!builder_->GetInsertBlock()->getTerminator()) {
+            if (func->getReturnType()->isVoidTy()) {
+                builder_->CreateRetVoid();
+            } else {
+                builder_->CreateRet(llvm::Constant::getNullValue(func->getReturnType()));
+            }
+        }
+        
+        // 恢复上下文
+        named_values_ = old_named_values;
+        variable_types_ = old_variable_types;
+        current_function_ = old_current_function;
+        current_struct_ = old_current_struct;
+        current_struct_name_ = old_current_struct_name;
+        current_is_method_ = old_is_method;
+        builder_->restoreIP(old_insert_point);
+    }
+    
+    // 恢复外层struct上下文
+    current_struct_ = old_current_struct;
+    current_struct_name_ = old_current_struct_name;
 }
 
 } // namespace pawc
