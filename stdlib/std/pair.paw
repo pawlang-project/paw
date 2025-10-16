@@ -1,4 +1,4 @@
-// std::pair - 通用泛型键值对
+// std::pair - 泛型键值对
 
 pub type Pair<K, V> = struct {
     first: K,
@@ -20,8 +20,7 @@ pub fn second<K, V>(pair: Pair<K, V>) -> V {
     return pair.second;
 }
 
-// 交换
+// 交换first和second
 pub fn swap<K, V>(pair: Pair<K, V>) -> Pair<V, K> {
     return Pair<V, K> { first: pair.second, second: pair.first };
 }
-

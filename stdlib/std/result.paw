@@ -1,147 +1,63 @@
-// std::result - Result类型辅助函数
-// T?类型不支持作为泛型参数，提供常用类型的具体实现
+// std::result - 泛型Result<T>辅助函数
+// 基于T?类型的错误处理
 
-// ========== i32? ==========
+// ========== 基础检查函数 ==========
 
-pub fn is_ok_i32(result: i32?) -> bool {
-    let check: bool = result is Value(v);
-    return check;
+// 检查是否为Ok值
+pub fn is_ok<T>(result: T?) -> bool {
+    return result is Value(v);
 }
 
-pub fn is_err_i32(result: i32?) -> bool {
-    let check: bool = result is Error(e);
-    return check;
+// 检查是否为Err值
+pub fn is_err<T>(result: T?) -> bool {
+    return result is Error(e);
 }
 
-pub fn unwrap_i32(result: i32?) -> i32 {
-    let value: i32 = result is {
-        Value(v) => v,
-        Error(e) => 0,
-    };
-    return value;
-}
+// ========== 提取函数 ==========
 
-pub fn unwrap_or_i32(result: i32?, default_val: i32) -> i32 {
-    let value: i32 = result is {
+// 安全unwrap：提供默认值
+pub fn unwrap_or<T>(result: T?, default_val: T) -> T {
+    return result is {
         Value(v) => v,
         Error(e) => default_val,
     };
-    return value;
 }
 
-pub fn get_error_i32(result: i32?) -> string {
-    let msg: string = result is {
-        Value(v) => "",
-        Error(e) => e,
+// 获取错误消息（如果是错误）
+pub fn get_error<T>(result: T?) -> string? {
+    return result is {
+        Value(v) => err("Not an error"),
+        Error(e) => ok(e),
     };
-    return msg;
 }
 
-// ========== i64? ==========
+// ========== 转换函数 ==========
 
-pub fn is_ok_i64(result: i64?) -> bool {
-    let check: bool = result is Value(v);
-    return check;
+// 将Ok值提取出来，错误时打印消息
+// 注意：当前无法真正panic，只能打印错误并返回默认值
+pub fn expect<T>(result: T?, message: string, default_val: T) -> T {
+    if is_ok<T>(result) {
+        return unwrap_or<T>(result, default_val);
+    } else {
+        println(message);
+        let err_msg: string? = get_error<T>(result);
+        if is_ok<string>(err_msg) {
+            let msg: string = unwrap_or<string>(err_msg, "");
+            println(msg);
+        }
+        return default_val;
+    }
 }
 
-pub fn is_err_i64(result: i64?) -> bool {
-    let check: bool = result is Error(e);
-    return check;
+// ========== 链式检查 ==========
+
+// 检查两个Result都是Ok
+pub fn both_ok<T, U>(r1: T?, r2: U?) -> bool {
+    return is_ok<T>(r1) && is_ok<U>(r2);
 }
 
-pub fn unwrap_i64(result: i64?) -> i64 {
-    let zero: i64 = 0;
-    let value: i64 = result is {
-        Value(v) => v,
-        Error(e) => zero,
-    };
-    return value;
+// 检查至少一个Result是Ok
+pub fn either_ok<T, U>(r1: T?, r2: U?) -> bool {
+    return is_ok<T>(r1) || is_ok<U>(r2);
 }
 
-pub fn unwrap_or_i64(result: i64?, default_val: i64) -> i64 {
-    let value: i64 = result is {
-        Value(v) => v,
-        Error(e) => default_val,
-    };
-    return value;
-}
-
-pub fn get_error_i64(result: i64?) -> string {
-    let msg: string = result is {
-        Value(v) => "",
-        Error(e) => e,
-    };
-    return msg;
-}
-
-// ========== string? ==========
-
-pub fn is_ok_string(result: string?) -> bool {
-    let check: bool = result is Value(v);
-    return check;
-}
-
-pub fn is_err_string(result: string?) -> bool {
-    let check: bool = result is Error(e);
-    return check;
-}
-
-pub fn unwrap_string(result: string?) -> string {
-    let value: string = result is {
-        Value(v) => v,
-        Error(e) => "",
-    };
-    return value;
-}
-
-pub fn unwrap_or_string(result: string?, default_val: string) -> string {
-    let value: string = result is {
-        Value(v) => v,
-        Error(e) => default_val,
-    };
-    return value;
-}
-
-pub fn get_error_string(result: string?) -> string {
-    let msg: string = result is {
-        Value(v) => "",
-        Error(e) => e,
-    };
-    return msg;
-}
-
-// ========== bool? ==========
-
-pub fn is_ok_bool(result: bool?) -> bool {
-    let check: bool = result is Value(v);
-    return check;
-}
-
-pub fn is_err_bool(result: bool?) -> bool {
-    let check: bool = result is Error(e);
-    return check;
-}
-
-pub fn unwrap_bool(result: bool?) -> bool {
-    let value: bool = result is {
-        Value(v) => v,
-        Error(e) => false,
-    };
-    return value;
-}
-
-pub fn unwrap_or_bool(result: bool?, default_val: bool) -> bool {
-    let value: bool = result is {
-        Value(v) => v,
-        Error(e) => default_val,
-    };
-    return value;
-}
-
-pub fn get_error_bool(result: bool?) -> string {
-    let msg: string = result is {
-        Value(v) => "",
-        Error(e) => e,
-    };
-    return msg;
-}
