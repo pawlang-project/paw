@@ -51,9 +51,16 @@ bool LLVMDownloader::downloadFile(const std::string& url, const std::string& out
     
     // 使用curl下载
     std::string cmd = "curl -L -# -o \"" + output_file + "\" \"" + url + "\"";
+    
+#ifdef _WIN32
+    if (!verbose) {
+        cmd += " 2>nul";
+    }
+#else
     if (!verbose) {
         cmd += " 2>/dev/null";
     }
+#endif
     
     int result = system(cmd.c_str());
     return result == 0;
@@ -63,10 +70,44 @@ bool LLVMDownloader::extractArchive(const std::string& archive_path, const std::
     std::cout << "解压到: " << dest_dir << std::endl;
     
     // 创建目录
+#ifdef _WIN32
+    std::string mkdir_cmd = "if not exist \"" + dest_dir + "\" mkdir \"" + dest_dir + "\"";
+#else
     std::string mkdir_cmd = "mkdir -p \"" + dest_dir + "\"";
+#endif
     system(mkdir_cmd.c_str());
     
     // 解压tar.gz
+#ifdef _WIN32
+    // Windows: tar命令会因为符号链接报错，但实际文件已经解压
+    // 所以我们先执行tar，然后检查关键文件是否存在
+    std::string extract_cmd = "tar -xzf \"" + archive_path + "\" -C \"" + dest_dir + "\" --strip-components=1 2>nul";
+    system(extract_cmd.c_str());  // 忽略返回值
+    
+    // 检查关键文件是否存在来判断解压是否成功
+    std::string check_file = dest_dir + "/lib/cmake/llvm/LLVMConfig.cmake";
+    struct stat buffer;
+    if (stat(check_file.c_str(), &buffer) == 0) {
+        // 关键文件存在，解压成功
+        return true;
+    }
+    
+    // 如果失败，尝试不带strip-components
+    std::cout << "  重试解压..." << std::endl;
+    extract_cmd = "tar -xzf \"" + archive_path + "\" -C \"" + dest_dir + "\" 2>nul";
+    system(extract_cmd.c_str());
+    
+    // 再次检查
+    check_file = dest_dir + "/llvm-21.1.3-windows-x86_64/lib/cmake/llvm/LLVMConfig.cmake";
+    if (stat(check_file.c_str(), &buffer) == 0) {
+        // 需要移动文件到正确位置
+        std::string move_cmd = "xcopy /E /I /Y \"" + dest_dir + "\\llvm-*\\*\" \"" + dest_dir + "\" >nul && rmdir /S /Q \"" + dest_dir + "\\llvm-*\" >nul";
+        system(move_cmd.c_str());
+        return true;
+    }
+    
+    return false;
+#else
     std::string extract_cmd = "tar -xzf \"" + archive_path + "\" -C \"" + dest_dir + "\" --strip-components=1 2>/dev/null";
     int result = system(extract_cmd.c_str());
     
@@ -77,6 +118,7 @@ bool LLVMDownloader::extractArchive(const std::string& archive_path, const std::
     }
     
     return result == 0;
+#endif
 }
 
 bool LLVMDownloader::downloadAndInstall(bool verbose) {
@@ -113,7 +155,11 @@ bool LLVMDownloader::downloadAndInstall(bool verbose) {
     // 清理
     std::cout << std::endl;
     std::cout << "[3/3] 清理..." << std::endl;
+#ifdef _WIN32
+    std::string rm_cmd = "del /F /Q \"" + filename + "\" 2>nul";
+#else
     std::string rm_cmd = "rm -f \"" + filename + "\"";
+#endif
     system(rm_cmd.c_str());
     
     std::cout << std::endl;

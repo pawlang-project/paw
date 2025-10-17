@@ -1,5 +1,12 @@
 #include "pawc/colors.h"
+
+#ifdef _WIN32
+#include <io.h>      // for _isatty
+#define isatty _isatty
+#define fileno _fileno
+#else
 #include <unistd.h>  // for isatty
+#endif
 
 namespace pawc {
 
