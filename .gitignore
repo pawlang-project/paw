@@ -10,7 +10,7 @@ cmake-build-*/
 llvm/
 
 # Executables
-pawc
+/pawc
 *.out
 hello
 fib
