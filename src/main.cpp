@@ -211,20 +211,25 @@ int main(int argc, char* argv[]) {
         // Use system C++ compiler for linking (cross-platform compatible)
         std::string compiler;
         
-        // 1. Prefer environment variable (CMake/build system setting)
-        const char* cxx_env = std::getenv("CXX");
-        if (cxx_env && strlen(cxx_env) > 0) {
+        // 1. Prefer project-local clang++ (if built)
+        std::string local_clang = std::filesystem::current_path().parent_path().string() + "/cmake-build-release/Release/bin/clang++.exe";
+        if (std::filesystem::exists(local_clang)) {
+            compiler = local_clang;
+            std::cout << pawc::Colors::info("  → Using project clang++") << std::endl;
+        }
+        // 2. Prefer environment variable (CMake/build system setting)
+        else if (const char* cxx_env = std::getenv("CXX"); cxx_env && strlen(cxx_env) > 0) {
             compiler = cxx_env;
             // Use compiler from environment variable
         }
-        // 2. Windows: Try cl.exe (MSVC) or g++ (MinGW)
+        // 3. Windows: Try cl.exe (MSVC) or g++ (MinGW)
 #if defined(_WIN32) || defined(_WIN64)
         else if (system("where cl.exe >nul 2>&1") == 0) {
             compiler = "cl.exe";
-        } else if (system("where g++ >nul 2>&1") == 0) {
-            compiler = "g++";
         } else if (system("where clang++ >nul 2>&1") == 0) {
             compiler = "clang++";
+        } else if (system("where g++ >nul 2>&1") == 0) {
+            compiler = "g++";
         }
 #else
         // 3. Unix-like systems: c++, clang++, g++

@@ -18,6 +18,23 @@ message(STATUS "")
 # Configure LLVM build options BEFORE adding subdirectory
 set(LLVM_ENABLE_PROJECTS "" CACHE STRING "")
 
+# Integrate Clang and LLD as external projects
+set(LLVM_EXTERNAL_CLANG_SOURCE_DIR "${CMAKE_SOURCE_DIR}/clang" CACHE PATH "")
+set(LLVM_EXTERNAL_LLD_SOURCE_DIR "${CMAKE_SOURCE_DIR}/lld" CACHE PATH "")
+set(LLVM_TOOL_CLANG_BUILD ON CACHE BOOL "")
+set(LLVM_TOOL_LLD_BUILD ON CACHE BOOL "")
+
+# Clang build options (minimal)
+set(CLANG_ENABLE_ARCMT OFF CACHE BOOL "")
+set(CLANG_ENABLE_STATIC_ANALYZER OFF CACHE BOOL "")
+set(CLANG_BUILD_EXAMPLES OFF CACHE BOOL "")
+set(CLANG_INCLUDE_DOCS OFF CACHE BOOL "")
+set(CLANG_INCLUDE_TESTS OFF CACHE BOOL "")
+
+# LLD build options (minimal)
+set(LLD_BUILD_TOOLS ON CACHE BOOL "")
+set(LLD_INCLUDE_TESTS OFF CACHE BOOL "")
+
 # 根据当前平台和架构自动选择LLVM目标（减少编译时间和二进制大小）
 # 参考：
 # - Windows: x86_64, aarch64, x86
@@ -98,6 +115,27 @@ set(LLVM_INCLUDE_EXAMPLES OFF CACHE BOOL "")
 set(LLVM_INCLUDE_TESTS OFF CACHE BOOL "")
 set(LLVM_INCLUDE_BENCHMARKS OFF CACHE BOOL "")
 set(LLVM_INCLUDE_DOCS OFF CACHE BOOL "")
+
+# Apply minimal patches for clang and lld (zig-bootstrap style)
+set(CLANG_CMAKE "${CMAKE_SOURCE_DIR}/clang/CMakeLists.txt")
+if(EXISTS ${CLANG_CMAKE})
+    file(READ ${CLANG_CMAKE} CLANG_CONTENT)
+    if(NOT CLANG_CONTENT MATCHES "if.*CLANG_BUILD_EXAMPLES")
+        string(REPLACE "add_subdirectory(examples)" "if(CLANG_BUILD_EXAMPLES AND EXISTS \"\${CMAKE_CURRENT_SOURCE_DIR}/examples\")\n  add_subdirectory(examples)\nendif()" CLANG_CONTENT "${CLANG_CONTENT}")
+        file(WRITE ${CLANG_CMAKE} "${CLANG_CONTENT}")
+        message(STATUS "Applied patch: Clang examples directory")
+    endif()
+endif()
+
+set(LLD_CMAKE "${CMAKE_SOURCE_DIR}/lld/CMakeLists.txt")
+if(EXISTS ${LLD_CMAKE})
+    file(READ ${LLD_CMAKE} LLD_CONTENT)
+    if(NOT LLD_CONTENT MATCHES "if.*EXISTS.*docs")
+        string(REPLACE "add_subdirectory(docs)" "if(EXISTS \"\${CMAKE_CURRENT_SOURCE_DIR}/docs\")\n  add_subdirectory(docs)\nendif()" LLD_CONTENT "${LLD_CONTENT}")
+        file(WRITE ${LLD_CMAKE} "${LLD_CONTENT}")
+        message(STATUS "Applied patch: LLD docs directory")
+    endif()
+endif()
 
 # Add LLVM as subdirectory (exclude from default build)
 add_subdirectory(llvm EXCLUDE_FROM_ALL)
@@ -256,6 +294,16 @@ add_executable(pawc ${SOURCES})
 
 # Ensure pawc depends on LLVM libraries being built
 add_dependencies(pawc ${llvm_libs})
+
+# Also depend on clang and lld if they are being built
+if(TARGET clang)
+    add_dependencies(pawc clang)
+    message(STATUS "pawc will depend on clang")
+endif()
+if(TARGET lld)
+    add_dependencies(pawc lld)
+    message(STATUS "pawc will depend on lld")
+endif()
 
 # Link LLVM libraries
 target_link_libraries(pawc ${llvm_libs})
