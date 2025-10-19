@@ -6,6 +6,17 @@ cmake-build-*/
 *.so
 *.dylib
 
+# LLVM (using source integration, ignore binaries and build artifacts)
+llvm/bin/
+llvm/lib/*.dylib
+llvm/lib/*.a
+llvm/lib/._*
+llvm/test/
+llvm/unittests/
+llvm/utils/gn/build/
+llvm/utils/lit/tests/Inputs/use-llvm-tool/build/
+third-party/benchmark/test/
+
 # Executables
 /pawc
 *.out
