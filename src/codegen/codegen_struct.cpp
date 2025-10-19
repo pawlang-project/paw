@@ -66,35 +66,6 @@ llvm::Value* CodeGenerator::generateArrayLiteralExpr(const ArrayLiteralExpr* exp
     return nullptr;
 }
 
-    if (!array_ptr || !array_type) return nullptr;
-    
-    llvm::Value* index = generateExpr(expr->index.get());
-    if (!index) return nullptr;
-    
-    // 获取元素类型
-    llvm::Type* elem_type = nullptr;
-    if (auto* arr_ty = llvm::dyn_cast<llvm::ArrayType>(array_type)) {
-        elem_type = arr_ty->getElementType();
-    } else {
-        std::cerr << "Variable is not an array type" << std::endl;
-        return nullptr;
-    }
-    
-    // 数组索引: GEP array_ptr, 0, index
-    llvm::Value* indices[] = {
-        llvm::ConstantInt::get(*context_, llvm::APInt(64, 0)),
-        index
-    };
-    
-    llvm::Value* elem_ptr = builder_->CreateInBoundsGEP(
-        array_type, array_ptr, indices, "elem_ptr"
-    );
-    
-    // 加载元素值
-    return builder_->CreateLoad(elem_type, elem_ptr, "elem");
-}
-
-
 // ====== 泛型支持 ======
 
 // 泛型名称修饰：Box<i32> → Box_i32

@@ -6,9 +6,6 @@ cmake-build-*/
 *.so
 *.dylib
 
-# LLVM (too large for git)
-llvm/
-
 # Executables
 /pawc
 *.out
