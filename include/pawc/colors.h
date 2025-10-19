@@ -29,6 +29,9 @@ public:
     static const std::string BRIGHT_MAGENTA;
     static const std::string BRIGHT_CYAN;
     
+    // 橙色
+    static const std::string ORANGE;
+    
     // 辅助函数
     static bool isTerminal();  // 检测是否是终端
     static std::string error(const std::string& msg);
@@ -36,6 +39,8 @@ public:
     static std::string success(const std::string& msg);
     static std::string info(const std::string& msg);
     static std::string highlight(const std::string& msg);
+    static std::string dimmed(const std::string& msg);
+    static std::string orange(const std::string& msg);
 };
 
 } // namespace pawc

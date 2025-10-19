@@ -10,9 +10,62 @@
 #include <sstream>
 #include <cstdlib>
 #include <filesystem>
+#include <regex>
+
+// 获取可执行文件的版本号
+std::string getVersion(const std::string& executable_path) {
+    std::string version = "unknown";
+    
+    // 构建版本查询命令
+    std::string cmd = executable_path + " --version 2>&1";
+    
+    // 执行命令并获取输出
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (pipe) {
+        char buffer[256];
+        std::string output;
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            output += buffer;
+        }
+        pclose(pipe);
+        
+        // 使用正则表达式提取版本号
+        // 支持两种格式: "version X.Y.Z" 和 "LLD X.Y.Z"
+        std::regex version_regex1(R"(version\s+(\d+\.\d+\.\d+))", std::regex_constants::icase);
+        std::regex version_regex2(R"((?:clang|lld|ld64\.lld)\s+(\d+\.\d+\.\d+))", std::regex_constants::icase);
+        
+        std::smatch match;
+        if (std::regex_search(output, match, version_regex1)) {
+            version = match[1].str();
+        } else if (std::regex_search(output, match, version_regex2)) {
+            version = match[1].str();
+        }
+    }
+    
+    return version;
+}
+
+void printLogo(const std::string& version = "0.2.1") {
+    // 显示精美的猫咪 ASCII 艺术
+    std::cout << pawc::Colors::orange(R"(                                   
+          ▓▓▓▓         ▓▓▓           
+          ▓░░░▒▓▓▓▓▓▓▓▒░░░▓          
+         ▓▒░▒░░░░░░░░░░▒▓░▓          
+         ▓▒░░░░░░░░░░░░░░░▓          
+         ▓░░░░▒▒░░░░░▒░░░░▒▓         
+        ▓▓▒▒░░░░░░▒░░░░░░▒▒▓▓        
+          ▓▒░░░░░░░░░░░░░▒▓          
+           ▓▒░░░░░░░░░░░░▓▓          
+           ▓░░▒░░░░░░░░░░░▓          
+           ▓▒▒▒▒▒▒▒▓▓▓▓▒▒▓▓ 
+           
+           PawLang v)" + version + R"(
+    )") << std::endl;
+}
 
 void printUsage(const char* program_name) {
-    std::cout << "Usage: " << program_name << " [options] <input-file>\n\n";
+    printLogo();
+    std::cout << "\nUsage: " << program_name << " [options] <input-file>\n\n";
     std::cout << "Options:\n";
     std::cout << "  -o <file>       Write output to <file> (default: executable)\n";
     std::cout << "  --emit-llvm     Emit LLVM IR instead of executable\n";
@@ -42,7 +95,6 @@ int main(int argc, char* argv[]) {
     std::string output_file;
     bool emit_llvm = false;
     bool emit_obj = false;
-    bool print_ast = false;
     bool print_ir = false;
     
     // Parse arguments
@@ -58,7 +110,8 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--emit-obj") {
             emit_obj = true;
         } else if (arg == "--print-ast") {
-            print_ast = true;
+            // TODO: Implement AST printing
+            std::cout << pawc::Colors::warning("Warning: --print-ast not yet implemented") << std::endl;
         } else if (arg == "--print-ir") {
             print_ir = true;
         } else if (arg[0] != '-') {
@@ -87,6 +140,28 @@ int main(int argc, char* argv[]) {
     std::string source = buffer.str();
     file.close();
     
+    // 获取编译器版本
+    std::string version;
+    std::string local_clang;
+    std::vector<std::string> search_paths = {
+        "llvm/bin/clang++",                    // 与 pawc 同级
+        "cmake-build-release/llvm/bin/clang++", // 完整路径
+        "build/llvm/bin/clang++",              // Debug 构建
+    };
+    
+    for (const auto& path : search_paths) {
+        if (std::filesystem::exists(path)) {
+            local_clang = std::filesystem::absolute(path).string();
+            break;
+        }
+    }
+    
+    if (!local_clang.empty()) {
+        version = getVersion(local_clang);
+    }
+    
+    // 显示 logo 和编译信息
+    printLogo();  // 显示 PawLang 版本号
     std::cout << pawc::Colors::info("Compiling ") << input_file << "..." << std::endl;
     
     // Create error reporter
@@ -212,10 +287,38 @@ int main(int argc, char* argv[]) {
         std::string compiler;
         
         // 1. Prefer project-local clang++ (if built)
-        std::string local_clang = std::filesystem::current_path().parent_path().string() + "/cmake-build-release/Release/bin/clang++.exe";
-        if (std::filesystem::exists(local_clang)) {
+        // 获取 pawc 可执行文件的位置，然后查找同级的 llvm 目录
+        std::string local_clang;
+        
+        // 获取 pawc 的目录路径
+        std::string pawc_path = std::filesystem::current_path().string();
+        if (argc > 0) {
+            // 尝试从 argv[0] 获取 pawc 的绝对路径
+            std::string argv0_path = argv[0];
+            if (std::filesystem::exists(argv0_path)) {
+                pawc_path = std::filesystem::absolute(argv0_path).parent_path().string();
+            }
+        }
+        
+        // 基于 pawc 位置查找 llvm 工具
+        std::vector<std::string> search_paths = {
+            pawc_path + "/llvm/bin/clang++",           // 与 pawc 同级
+            pawc_path + "/../llvm/bin/clang++",        // 上一级目录
+        };
+        
+        for (const auto& path : search_paths) {
+            if (std::filesystem::exists(path)) {
+                local_clang = std::filesystem::absolute(path).string();
+                break;
+            }
+        }
+        
+        if (!local_clang.empty()) {
             compiler = local_clang;
-            std::cout << pawc::Colors::info("  → Using project clang++") << std::endl;
+            std::string clang_name = std::filesystem::path(local_clang).filename().string();
+            std::string clang_version = getVersion(local_clang);
+            std::cout << pawc::Colors::info("  → Compiler: ") << pawc::Colors::highlight(clang_name) 
+                      << pawc::Colors::dimmed(" (bundled, v" + clang_version + ")") << std::endl;
         }
         // 2. Prefer environment variable (CMake/build system setting)
         else if (const char* cxx_env = std::getenv("CXX"); cxx_env && strlen(cxx_env) > 0) {
@@ -252,6 +355,32 @@ int main(int argc, char* argv[]) {
             std::cerr << "Please install a C++ compiler (gcc or clang)" << std::endl;
 #endif
             return 1;
+        }
+        
+        // ========== Linker Selection ==========
+        // 基于 pawc 位置查找 lld 链接器
+        std::string local_lld;
+        std::vector<std::string> lld_search_paths = {
+            pawc_path + "/llvm/bin/ld64.lld",           // 与 pawc 同级 (macOS)
+            pawc_path + "/llvm/bin/ld.lld",             // 与 pawc 同级 (Unix/Linux)
+            pawc_path + "/llvm/bin/lld",                // 与 pawc 同级 (通用)
+            pawc_path + "/../llvm/bin/ld64.lld",        // 上一级目录
+            pawc_path + "/../llvm/bin/ld.lld",
+            pawc_path + "/../llvm/bin/lld",
+        };
+        
+        for (const auto& path : lld_search_paths) {
+            if (std::filesystem::exists(path)) {
+                local_lld = std::filesystem::absolute(path).string();
+                break;
+            }
+        }
+        
+        if (!local_lld.empty()) {
+            std::string lld_name = std::filesystem::path(local_lld).filename().string();
+            std::string lld_version = getVersion(local_lld);
+            std::cout << pawc::Colors::info("  → Linker: ") << pawc::Colors::highlight(lld_name) 
+                      << pawc::Colors::dimmed(" (bundled, v" + lld_version + ")") << std::endl;
         }
         
         // ========== Build Link Command ==========

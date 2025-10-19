@@ -16,13 +16,31 @@ message(STATUS "========================================")
 message(STATUS "")
 
 # Configure LLVM build options BEFORE adding subdirectory
-set(LLVM_ENABLE_PROJECTS "" CACHE STRING "")
+# Enable Clang and LLD projects
+set(LLVM_ENABLE_PROJECTS "clang;lld" CACHE STRING "Semicolon-separated list of projects to build" FORCE)
 
-# Integrate Clang and LLD as external projects
-set(LLVM_EXTERNAL_CLANG_SOURCE_DIR "${CMAKE_SOURCE_DIR}/clang" CACHE PATH "")
-set(LLVM_EXTERNAL_LLD_SOURCE_DIR "${CMAKE_SOURCE_DIR}/lld" CACHE PATH "")
-set(LLVM_TOOL_CLANG_BUILD ON CACHE BOOL "")
-set(LLVM_TOOL_LLD_BUILD ON CACHE BOOL "")
+# Point to external Clang and LLD source directories
+set(LLVM_EXTERNAL_CLANG_SOURCE_DIR "${CMAKE_SOURCE_DIR}/clang" CACHE PATH "" FORCE)
+set(LLVM_EXTERNAL_LLD_SOURCE_DIR "${CMAKE_SOURCE_DIR}/lld" CACHE PATH "" FORCE)
+
+# Verify directories exist
+if(EXISTS "${CMAKE_SOURCE_DIR}/clang")
+    message(STATUS "✓ Clang source found: ${CMAKE_SOURCE_DIR}/clang")
+else()
+    message(FATAL_ERROR "✗ Clang source not found at: ${CMAKE_SOURCE_DIR}/clang")
+endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/lld")
+    message(STATUS "✓ LLD source found: ${CMAKE_SOURCE_DIR}/lld")
+else()
+    message(FATAL_ERROR "✗ LLD source not found at: ${CMAKE_SOURCE_DIR}/lld")
+endif()
+
+# Enable building tools (required for clang and lld executables)
+set(LLVM_BUILD_TOOLS ON CACHE BOOL "" FORCE)
+
+message(STATUS "LLVM_ENABLE_PROJECTS: ${LLVM_ENABLE_PROJECTS}")
+message(STATUS "LLVM_BUILD_TOOLS: ${LLVM_BUILD_TOOLS}")
 
 # Clang build options (minimal)
 set(CLANG_ENABLE_ARCMT OFF CACHE BOOL "")
@@ -97,7 +115,6 @@ else()
     message(STATUS "Building X86 and AArch64 targets for compatibility")
 endif()
 
-set(LLVM_BUILD_TOOLS OFF CACHE BOOL "")
 set(LLVM_BUILD_EXAMPLES OFF CACHE BOOL "")
 set(LLVM_BUILD_TESTS OFF CACHE BOOL "")
 set(LLVM_BUILD_BENCHMARKS OFF CACHE BOOL "")
@@ -305,6 +322,16 @@ if(TARGET lld)
     message(STATUS "pawc will depend on lld")
 endif()
 
+# Expose clang and lld paths for runtime use
+if(TARGET clang)
+    set(CLANG_EXECUTABLE "$<TARGET_FILE:clang>" CACHE INTERNAL "Path to clang executable")
+    message(STATUS "Clang executable will be available at: ${CMAKE_BINARY_DIR}/bin/clang")
+endif()
+if(TARGET lld)
+    set(LLD_EXECUTABLE "$<TARGET_FILE:lld>" CACHE INTERNAL "Path to lld executable")
+    message(STATUS "LLD executable will be available at: ${CMAKE_BINARY_DIR}/bin/lld")
+endif()
+
 # Link LLVM libraries
 target_link_libraries(pawc ${llvm_libs})
 
@@ -324,8 +351,22 @@ if (WIN32)
     add_compile_definitions(LLVM_ON_WIN32=1)
 endif ()
 
+# Copy stdlib to build directory
+file(COPY stdlib DESTINATION ${CMAKE_BINARY_DIR})
+
 # Installation
 install(TARGETS pawc DESTINATION bin)
+install(DIRECTORY stdlib DESTINATION .)
+
+# Install clang and lld if they are built
+if(TARGET clang)
+    install(TARGETS clang DESTINATION bin)
+    message(STATUS "clang will be installed to bin/")
+endif()
+if(TARGET lld)
+    install(TARGETS lld DESTINATION bin)
+    message(STATUS "lld will be installed to bin/")
+endif()
 
 # Output information
 message(STATUS "")
@@ -333,7 +374,10 @@ message(STATUS "========================================")
 message(STATUS "  PawLang Compiler - Integrated LLVM")
 message(STATUS "========================================")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "LLVM: Building from source (X86 only)")
+message(STATUS "LLVM: Building from source")
+message(STATUS "Target Architecture: ${PLATFORM_TARGET}")
+message(STATUS "Clang: Enabled (as build tool)")
+message(STATUS "LLD: Enabled (as build tool)")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "========================================")
 message(STATUS "")
