@@ -1,6 +1,7 @@
 # Build directories
 build/
 cmake-build-*/
+build.log
 *.o
 *.a
 *.so
