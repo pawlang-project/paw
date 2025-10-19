@@ -7,27 +7,11 @@ build.log
 *.so
 *.dylib
 
-# But DO track essential LLVM source utils
-!llvm/utils/TableGen/
-!llvm/cmake/
 
 # Executables
 /pawc
 *.out
-hello
-fib
-generic_test
-multidim
-string_concat
-string_test
-test
-test_program
-test_string_concat
-test_string_test
-hello_exec
-full_demo_test
-stdlib_demo
-string_write_demo
+
 
 # IDE
 .vscode/
