@@ -102,9 +102,6 @@ paw/
 │   │                         # - ASCII cat logo display
 │   │                         # - Dynamic tool path discovery
 │   │                         # - Colored output integration
-│   ├── llvm_downloader.h     # LLVM downloader interface
-│   ├── llvm_downloader.cpp   # LLVM downloader implementation
-│   ├── setup.cpp             # Setup utilities
 │   ├── colors.cpp            # Color output system (~80 lines)
 │   ├── error_reporter.cpp    # Error reporting system (~260 lines)
 │   ├── toml_parser.cpp       # TOML config parser (~220 lines)
