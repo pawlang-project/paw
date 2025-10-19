@@ -4,6 +4,7 @@
 #include "module/module_compiler.h"
 #include "pawc/colors.h"
 #include "pawc/error_reporter.h"
+#include "llvm/Support/TargetSelect.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -27,6 +28,11 @@ void printUsage(const char* program_name) {
 }
 
 int main(int argc, char* argv[]) {
+    // 初始化LLVM本地目标（必须在使用前初始化）
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmParser();
+    llvm::InitializeNativeTargetAsmPrinter();
+    
     if (argc < 2) {
         printUsage(argv[0]);
         return 1;
@@ -201,12 +207,110 @@ int main(int argc, char* argv[]) {
             output_file = "a.out";
         }
         
-        // 使用LLVM自带的clang进行链接，并显式指定SDK路径
-        std::string clang_path = "llvm/bin/clang";
+        // ========== 链接器选择和配置 ==========
+        // 使用系统C++编译器进行链接（跨平台兼容）
+        std::string compiler;
         
-        // macOS需要指定SDK路径
-        std::string sdk_flags = " -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk";
-        std::string link_cmd = clang_path + " " + obj_file + sdk_flags + " -o " + output_file;
+        // 1. 优先使用环境变量（CMake/构建系统设置）
+        const char* cxx_env = std::getenv("CXX");
+        if (cxx_env && strlen(cxx_env) > 0) {
+            compiler = cxx_env;
+            // 使用环境变量中的编译器
+        }
+        // 2. Windows: 尝试 cl.exe (MSVC) 或 g++ (MinGW)
+#if defined(_WIN32) || defined(_WIN64)
+        else if (system("where cl.exe >nul 2>&1") == 0) {
+            compiler = "cl.exe";
+        } else if (system("where g++ >nul 2>&1") == 0) {
+            compiler = "g++";
+        } else if (system("where clang++ >nul 2>&1") == 0) {
+            compiler = "clang++";
+        }
+#else
+        // 3. Unix-like系统：c++, clang++, g++
+        else if (system("command -v c++ > /dev/null 2>&1") == 0) {
+            compiler = "c++";
+        } else if (system("command -v clang++ > /dev/null 2>&1") == 0) {
+            compiler = "clang++";
+        } else if (system("command -v g++ > /dev/null 2>&1") == 0) {
+            compiler = "g++";
+        }
+#endif
+        else {
+            std::cerr << pawc::Colors::error("Error: No C++ compiler found!") << std::endl;
+            std::cerr << "Tried: ";
+#if defined(_WIN32) || defined(_WIN64)
+            std::cerr << "$CXX, cl.exe, g++, clang++" << std::endl;
+            std::cerr << "Please install Visual Studio or MinGW-w64" << std::endl;
+#else
+            std::cerr << "$CXX, c++, clang++, g++" << std::endl;
+            std::cerr << "Please install a C++ compiler (gcc or clang)" << std::endl;
+#endif
+            return 1;
+        }
+        
+        // ========== 构建链接命令 ==========
+        std::string link_cmd = compiler + " " + obj_file;
+        
+        // 平台特定的链接选项（确保兼容性）
+#ifdef __APPLE__
+        // ===== macOS (x86_64 / ARM64) =====
+        // 1. SDK路径（可选，增强兼容性）
+        if (std::filesystem::exists("/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")) {
+            link_cmd += " -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk";
+        } else if (std::filesystem::exists("/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk")) {
+            link_cmd += " -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
+        }
+        // 2. macOS会自动链接系统库，无需额外标志
+        
+#elif defined(_WIN32) || defined(_WIN64)
+        // ===== Windows (x86 / x86_64 / ARM64) =====
+        // MSVC vs MinGW需要不同的标志
+        if (compiler.find("cl.exe") != std::string::npos || compiler.find("cl ") != std::string::npos) {
+            // MSVC链接器
+            link_cmd = compiler + " /Fe:" + output_file + " " + obj_file;
+            link_cmd += " /link /SUBSYSTEM:CONSOLE";
+            // MSVC使用不同的命令格式，直接返回命令
+        } else {
+            // MinGW/GCC格式
+            link_cmd += " -static-libgcc -static-libstdc++";  // 静态链接运行时
+        }
+        
+#elif defined(__linux__)
+        // ===== Linux (多架构支持) =====
+        // x86_64, ARM64, ARM, RISC-V, PowerPC, LoongArch, s390x
+        
+        // 1. 数学库（某些架构需要）
+        link_cmd += " -lm";
+        
+        // 2. 线程库（如果使用了多线程）
+        // link_cmd += " -lpthread";
+        
+        // 3. 动态链接器（通常自动处理）
+        // Linux的libc会自动链接
+        
+#elif defined(__FreeBSD__)
+        // ===== FreeBSD =====
+        link_cmd += " -lm";
+        
+#elif defined(__OpenBSD__)
+        // ===== OpenBSD =====
+        link_cmd += " -lm";
+        
+#elif defined(__NetBSD__)
+        // ===== NetBSD =====
+        link_cmd += " -lm";
+        
+#else
+        // ===== 其他Unix-like系统 =====
+        link_cmd += " -lm";  // 保守策略：添加数学库
+        
+#endif
+        
+        // 对于非MSVC，添加输出文件参数
+        if (compiler.find("cl.exe") == std::string::npos && compiler.find("cl ") == std::string::npos) {
+            link_cmd += " -o " + output_file;
+        }
         
         std::cout << pawc::Colors::info("  → Linking: ") << output_file << std::endl;
         int ret = system(link_cmd.c_str());

@@ -495,16 +495,6 @@ llvm::Value* CodeGenerator::generateBuiltinCall(const std::string& name, const s
     return builder_->CreateCall(builtin_func, args, name + "_result");
 }
 
-// ============================================================================
-// 第4部分：语句生成（Statement Generation）
-// ============================================================================
-
-/**
- * 语句生成入口
- * 根据语句类型分发到具体的生成函数
- */
-void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
-
 llvm::Value* CodeGenerator::generateAssignExpr(const AssignExpr* expr) {
     llvm::Value* val = generateExpr(expr->value.get());
     if (!val) return nullptr;
@@ -665,6 +655,136 @@ llvm::Value* CodeGenerator::generateAssignExpr(const AssignExpr* expr) {
  * 支持：struct.field访问
  */
 llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* expr) {
+    // 获取对象指针（必须是指针，用于GEP）
+    llvm::Value* obj_ptr = nullptr;
+    llvm::Type* struct_value_type = nullptr;
+    
+    // Check if it's标识符（变量名）
+    if (expr->object->kind == Expr::Kind::Identifier) {
+        std::string obj_name = static_cast<const IdentifierExpr*>(expr->object.get())->name;
+        
+        // 如果是self，并且在方法中
+        if (obj_name == "self" && !current_struct_name_.empty()) {
+            auto self_it = named_values_.find("self");
+            if (self_it != named_values_.end()) {
+                llvm::Value* self_alloca = self_it->second;
+                
+                // self_alloca存储的是指针，需要load
+                obj_ptr = builder_->CreateLoad(
+                    llvm::PointerType::get(*context_, 0),
+                    self_alloca,
+                    "self"
+                );
+                
+                // 获取struct类型
+                auto struct_type = getOrCreateStructType(current_struct_name_);
+                struct_value_type = struct_type;
+            }
+        } else {
+            // 普通变量：obj_ptr应该是alloca（指向struct值的指针）
+            auto it = named_values_.find(obj_name);
+            if (it != named_values_.end()) {
+                // 从variable_types_获取实际的struct值类型
+                auto type_it = variable_types_.find(obj_name);
+                if (type_it != variable_types_.end()) {
+                    struct_value_type = type_it->second;
+                    
+                    // 【新逻辑】：处理不同的类型
+                    if (struct_value_type->isPointerTy()) {
+                        // struct变量现在存储ptr：需要load得到实际的struct指针
+                        obj_ptr = builder_->CreateLoad(
+                            llvm::PointerType::get(*context_, 0),
+                            it->second,
+                            obj_name + "_ptr"
+                        );
+                        // 注意：variable_types_可能存储的是StructType（参数），需要保留
+                    } else if (struct_value_type->isStructTy()) {
+                        // struct参数传递：variable_types_存储StructType，alloca存储ptr
+                        // 需要load得到实际struct指针
+                        obj_ptr = builder_->CreateLoad(
+                            llvm::PointerType::get(*context_, 0),
+                            it->second,
+                            obj_name + "_loaded"
+                        );
+                    } else {
+                        // 非指针（旧语义）：直接使用alloca
+                        obj_ptr = it->second;
+                    }
+                } else {
+                    obj_ptr = it->second;  // fallback
+                }
+            }
+        }
+    } else {
+        // 复杂表达式：生成表达式
+        llvm::Value* obj = generateExpr(expr->object.get());
+        if (!obj) return nullptr;
+        
+        // 如果是指针，直接使用；如果是值，需要创建临时alloca
+        if (obj->getType()->isPointerTy()) {
+            obj_ptr = obj;
+        } else if (obj->getType()->isStructTy()) {
+            // 创建临时alloca存储struct值
+            llvm::AllocaInst* temp = builder_->CreateAlloca(obj->getType(), nullptr, "temp_struct");
+            builder_->CreateStore(obj, temp);
+            obj_ptr = temp;
+            struct_value_type = obj->getType();
+        } else {
+            return nullptr;
+        }
+    }
+    
+    if (!obj_ptr) return nullptr;
+    
+    // 尝试所有struct定义，找到匹配的字段
+    // 【优先使用精确类型】：如果struct_value_type是StructType，直接使用它
+    if (struct_value_type && struct_value_type->isStructTy()) {
+        // 直接使用精确的struct类型
+        llvm::StructType* exact_struct = llvm::cast<llvm::StructType>(struct_value_type);
+        
+        // 找到对应的struct定义
+        for (const auto& [struct_name, struct_def] : struct_defs_) {
+            auto struct_type = getOrCreateStructType(struct_name);
+            if (struct_type == exact_struct) {
+                // 找到匹配的定义
+                int field_idx = 0;
+                for (const auto& field : struct_def->fields) {
+                    if (field.name == expr->member) {
+                        // 找到字段！
+                        llvm::Value* field_ptr = builder_->CreateStructGEP(
+                            struct_type, obj_ptr, field_idx, "field_ptr"
+                        );
+                        
+                        // 加载字段值
+                        llvm::Type* field_type = convertType(field.type.get());
+                        return builder_->CreateLoad(field_type, field_ptr, expr->member);
+                    }
+                    field_idx++;
+                }
+            }
+        }
+    }
+    
+    // 如果精确类型匹配失败，尝试所有struct定义（兜底）
+    for (const auto& [struct_name, struct_def] : struct_defs_) {
+        auto struct_type = getOrCreateStructType(struct_name);
+        
+        int field_idx = 0;
+        for (const auto& field : struct_def->fields) {
+            if (field.name == expr->member) {
+                llvm::Value* field_ptr = builder_->CreateStructGEP(
+                    struct_type, obj_ptr, field_idx, "field_ptr"
+                );
+                llvm::Type* field_type = convertType(field.type.get());
+                return builder_->CreateLoad(field_type, field_ptr, expr->member);
+            }
+            field_idx++;
+        }
+    }
+    
+    std::cerr << "Unknown field: " << expr->member << std::endl;
+    return nullptr;
+}
 
 llvm::Value* CodeGenerator::generateIndexExpr(const IndexExpr* expr) {
     // 获取数组/字符串变量名和类型
@@ -785,6 +905,28 @@ llvm::Value* CodeGenerator::generateIndexExpr(const IndexExpr* expr) {
         return nullptr;
     }
     
+    if (!array_ptr || !array_type) return nullptr;
+    
+    llvm::Value* index = generateExpr(expr->index.get());
+    if (!index) return nullptr;
+    
+    // 获取元素类型
+    llvm::Type* elem_type = nullptr;
+    if (auto* arr_ty = llvm::dyn_cast<llvm::ArrayType>(array_type)) {
+        elem_type = arr_ty->getElementType();
+        
+        // 计算GEP（数组索引）
+        llvm::Value* elem_ptr = builder_->CreateGEP(
+            array_type, array_ptr,
+            {llvm::ConstantInt::get(*context_, llvm::APInt(64, 0)), index},
+            "elemptr"
+        );
+        
+        return builder_->CreateLoad(elem_type, elem_ptr, "elemval");
+    }
+    
+    return nullptr;
+}
 
 llvm::Value* CodeGenerator::generateIdentifierExpr(const IdentifierExpr* expr) {
     auto it = named_values_.find(expr->name);
@@ -1179,5 +1321,12 @@ llvm::Value* CodeGenerator::generateErrExpr(const ErrExpr* expr) {
     
     // 4. 拷贝到堆
     llvm::Function* memcpy_func = module_->getFunction("memcpy");
+    if (memcpy_func) {
+        builder_->CreateCall(memcpy_func, {heap_ptr, temp_result, size_val});
+    }
+    
+    // 5. 返回堆指针（统一语义）
+    return heap_ptr;
+}
 
 } // namespace pawc

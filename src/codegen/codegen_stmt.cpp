@@ -1,6 +1,7 @@
 // Statement code generation
 
 #include "codegen.h"
+#include "llvm/IR/Verifier.h"
 #include <iostream>
 
 namespace pawc {
@@ -737,6 +738,223 @@ void CodeGenerator::generateBlockStmt(const BlockStmt* stmt) {
 
 void CodeGenerator::generateExprStmt(const ExprStmt* stmt) {
     generateExpr(stmt->expression.get());
+}
+
+void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
+    // 如果是泛型函数，保存定义
+    if (!stmt->generic_params.empty()) {
+        generic_functions_[stmt->name] = stmt;
+        
+        // 如果是pub泛型函数，注册到符号表（保存AST定义）
+        // 这样其他模块可以访问泛型函数的AST并实例化
+        if (stmt->is_public && symbol_table_) {
+            symbol_table_->registerGenericFunction(module_name_, stmt->name, stmt->is_public, stmt);
+        }
+        
+        return;
+    }
+    
+    // 设置当前是否为实例方法（用于Self类型解析）
+    current_is_method_ = stmt->is_method;
+    
+    std::vector<llvm::Type*> param_types;
+    
+    // 如果是方法（有self参数），第一个参数是struct指针
+    if (stmt->is_method && !current_struct_name_.empty()) {
+        llvm::Type* struct_type = getOrCreateStructType(current_struct_name_);
+        param_types.push_back(llvm::PointerType::get(*context_, 0));  // struct*
+    }
+    
+    // 其他参数
+    for (const auto& param : stmt->parameters) {
+        if (!param.is_self) {  // self已经处理过了
+            llvm::Type* param_type = convertType(param.type.get());
+            
+            // 数组参数传递指针而不是值
+            if (llvm::isa<llvm::ArrayType>(param_type)) {
+                param_type = llvm::PointerType::get(*context_, 0);
+            }
+            
+            // struct参数传递指针而不是值
+            if (llvm::isa<llvm::StructType>(param_type)) {
+                param_type = llvm::PointerType::get(*context_, 0);
+            }
+            
+            param_types.push_back(param_type);
+        }
+    }
+    
+    llvm::Type* return_type = stmt->return_type ? 
+        convertType(stmt->return_type.get()) : llvm::Type::getVoidTy(*context_);
+    
+    // struct返回值改为指针
+    if (return_type && llvm::isa<llvm::StructType>(return_type)) {
+        return_type = llvm::PointerType::get(*context_, 0);
+    }
+    
+    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, stmt->name, module_.get()
+    );
+    
+    functions_[stmt->name] = func;
+    
+    // 注册到符号表（如果有）
+    if (symbol_table_) {
+        symbol_table_->registerFunction(module_name_, stmt->name, stmt->is_public, func);
+    }
+    
+    // 设置参数名
+    size_t idx = 0;
+    if (stmt->is_method && !current_struct_name_.empty()) {
+        func->args().begin()->setName("self");
+        idx = 1;
+    }
+    
+    for (size_t i = 0; i < stmt->parameters.size(); i++) {
+        if (!stmt->parameters[i].is_self) {
+            (func->args().begin() + idx)->setName(stmt->parameters[i].name);
+            idx++;
+        }
+    }
+    
+    if (stmt->body) {
+        llvm::BasicBlock* bb = llvm::BasicBlock::Create(*context_, "entry", func);
+        builder_->SetInsertPoint(bb);
+        
+        current_function_ = func;
+        current_function_return_type_ = stmt->return_type.get();  // 保存返回类型用于ok/err
+        named_values_.clear();
+        
+        // 创建局部变量（记录参数类型）
+        idx = 0;
+        for (auto& arg : func->args()) {
+            llvm::AllocaInst* alloca = builder_->CreateAlloca(
+                arg.getType(), nullptr, arg.getName()
+            );
+            builder_->CreateStore(&arg, alloca);
+            named_values_[std::string(arg.getName())] = alloca;
+            variable_types_[std::string(arg.getName())] = arg.getType();  // 记录参数类型
+        }
+        
+        generateStmt(stmt->body.get());
+        
+        if (!builder_->GetInsertBlock()->getTerminator()) {
+            if (return_type->isVoidTy()) {
+                builder_->CreateRetVoid();
+            } else {
+                builder_->CreateRet(llvm::ConstantInt::get(return_type, 0));
+            }
+        }
+        
+        llvm::verifyFunction(*func);
+    }
+    
+    // 重置方法标志
+    current_is_method_ = false;
+}
+
+void CodeGenerator::generateExternStmt(const ExternStmt* stmt) {
+    std::vector<llvm::Type*> param_types;
+    for (const auto& param : stmt->parameters) {
+        param_types.push_back(convertType(param.type.get()));
+    }
+    
+    llvm::Type* return_type = stmt->return_type ? 
+        convertType(stmt->return_type.get()) : llvm::Type::getVoidTy(*context_);
+    
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        return_type, param_types, false  // 不支持可变参数
+    );
+    
+    llvm::Function::Create(
+        func_type, llvm::Function::ExternalLinkage, stmt->name, module_.get()
+    );
+}
+
+void CodeGenerator::generateStructStmt(const StructStmt* stmt) {
+    // 如果是泛型struct，保存定义但不立即生成
+    if (!stmt->generic_params.empty()) {
+        generic_structs_[stmt->name] = stmt;
+        
+        // 保存泛型struct的方法定义
+        for (const auto& method : stmt->methods) {
+            std::string method_key = stmt->name + "::" + method->name;
+            generic_struct_methods_[method_key] = method.get();
+        }
+        
+        // 注册泛型struct定义到SymbolTable（保存AST）
+        if (symbol_table_ && stmt->is_public) {
+            symbol_table_->registerType(module_name_, stmt->name, stmt->is_public, 
+                                       nullptr,  // 泛型定义没有具体LLVM Type
+                                       static_cast<const void*>(stmt));
+        }
+        
+        return;
+    }
+    
+    // 注册struct定义
+    struct_defs_[stmt->name] = stmt;
+    
+    // 预先创建struct类型
+    llvm::Type* struct_type = getOrCreateStructType(stmt->name);
+    
+    // 注册到符号表（如果有）
+    if (symbol_table_ && struct_type) {
+        symbol_table_->registerType(module_name_, stmt->name, stmt->is_public, struct_type, stmt);
+    }
+    
+    // 生成struct内的方法
+    current_struct_ = stmt;
+    current_struct_name_ = stmt->name;
+    
+    for (const auto& method : stmt->methods) {
+        generateFunctionStmt(method.get());
+        
+        // 注册方法到struct_methods_
+        std::string method_name = method->name;
+        llvm::Function* func = functions_[method_name];
+        if (func) {
+            struct_methods_[stmt->name][method_name] = func;
+        }
+    }
+    
+    current_struct_ = nullptr;
+    current_struct_name_ = "";
+}
+
+void CodeGenerator::generateEnumStmt(const EnumStmt* stmt) {
+    // 如果是泛型enum，保存定义但不立即生成
+    if (!stmt->generic_params.empty()) {
+        generic_enums_[stmt->name] = stmt;
+        return;
+    }
+    
+    // 注册enum定义
+    enum_defs_[stmt->name] = stmt;
+    
+    // 获取enum类型
+    llvm::Type* enum_type = getEnumType(stmt->name);
+    
+    // 注册到符号表（如果有）
+    if (symbol_table_ && enum_type) {
+        symbol_table_->registerType(module_name_, stmt->name, stmt->is_public, enum_type, stmt);
+    }
+}
+
+void CodeGenerator::generateImplStmt(const ImplStmt* stmt) {
+    // 查找对应的struct定义
+    auto struct_it = struct_defs_.find(stmt->type_name);
+    if (struct_it != struct_defs_.end()) {
+        current_struct_ = struct_it->second;
+    }
+    
+    // 生成所有方法
+    for (const auto& method : stmt->methods) {
+        generateFunctionStmt(method.get());
+    }
+    
+    current_struct_ = nullptr;
 }
 
 } // namespace pawc

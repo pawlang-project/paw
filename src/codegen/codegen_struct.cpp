@@ -1,5 +1,6 @@
 // Struct and Enum code generation
 #include "codegen.h"
+#include "llvm/IR/Verifier.h"
 #include <iostream>
 
 namespace pawc {
@@ -20,8 +21,123 @@ llvm::Type* CodeGenerator::getEnumType(const std::string& name) {
     return llvm::StructType::get(*context_, fields);
 }
 
-llvm::Type* CodeGenerator::convertPrimitiveType(PrimitiveType type) {
+llvm::Value* CodeGenerator::generateArrayLiteralExpr(const ArrayLiteralExpr* expr) {
+    if (expr->elements.empty()) {
+        return nullptr;
+    }
+    
+    // 注意：数组字面量应该使用变量声明中的类型，而不是从第一个元素推导
+    // generateArrayLiteralExpr不应该独立推导类型
+    // 这个函数主要在generateLetStmt中的特殊路径使用，那里已经知道目标类型
+    
+    // 简化实现：返回nullptr，让外层处理
+    // 实际的数组初始化在generateLetStmt中完成
+    return nullptr;
+}
 
+llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* expr) {
+    // 解析泛型struct名称（如果在泛型context中）
+    std::string resolved_name = resolveGenericStructName(expr->type_name);
+    
+    // 先从struct_types_直接查找（支持泛型实例如Box_i32）
+    auto type_it = struct_types_.find(resolved_name);
+    llvm::StructType* struct_type = nullptr;
+    
+    if (type_it != struct_types_.end()) {
+        struct_type = type_it->second;
+    } else {
+        // 如果直接找不到，尝试通过getOrCreateStructType
+        struct_type = getOrCreateStructType(resolved_name);
+    }
+    
+    if (!struct_type) {
+        std::cerr << "Unknown struct type: " << expr->type_name 
+                  << " (resolved: " << resolved_name << ")" << std::endl;
+        return nullptr;
+    }
+    
+    // 1. 在栈上分配临时struct
+    llvm::Value* temp_alloca = builder_->CreateAlloca(struct_type, nullptr, "struct_temp");
+    
+    // 2. 初始化字段（使用resolved_name）
+    auto def_it = struct_defs_.find(resolved_name);
+    if (def_it != struct_defs_.end()) {
+        const StructStmt* struct_def = def_it->second;
+        for (size_t i = 0; i < expr->fields.size() && i < struct_def->fields.size(); i++) {
+            llvm::Value* field_val = generateExpr(expr->fields[i].value.get());
+            if (field_val) {
+                // 获取字段的目标类型
+                llvm::Type* target_type = struct_type->getElementType(i);
+                
+                // 类型转换（如果需要）
+                if (field_val->getType()->isIntegerTy() && target_type->isIntegerTy()) {
+                    unsigned src_bits = field_val->getType()->getIntegerBitWidth();
+                    unsigned dst_bits = target_type->getIntegerBitWidth();
+                    
+                    if (src_bits < dst_bits) {
+                        field_val = builder_->CreateSExt(field_val, target_type, "field_sext");
+                    } else if (src_bits > dst_bits) {
+                        field_val = builder_->CreateTrunc(field_val, target_type, "field_trunc");
+                    }
+                }
+                
+                llvm::Value* field_ptr = builder_->CreateStructGEP(struct_type, temp_alloca, i);
+                builder_->CreateStore(field_val, field_ptr);
+            }
+        }
+    }
+    
+    // 3. 分配堆内存
+    const llvm::DataLayout& data_layout = module_->getDataLayout();
+    uint64_t struct_size = data_layout.getTypeAllocSize(struct_type);
+    llvm::Value* size_val = llvm::ConstantInt::get(*context_, llvm::APInt(64, struct_size));
+    
+    llvm::Function* malloc_func = module_->getFunction("malloc");
+    if (!malloc_func) {
+        std::cerr << "malloc not found!" << std::endl;
+        return nullptr;
+    }
+    
+    llvm::Value* heap_ptr = builder_->CreateCall(malloc_func, {size_val}, "struct_heap");
+    
+    // 4. 拷贝struct到堆
+    llvm::Function* memcpy_func = module_->getFunction("memcpy");
+    if (memcpy_func) {
+        builder_->CreateCall(memcpy_func, {heap_ptr, temp_alloca, size_val});
+    }
+    
+    // 5. 返回堆指针
+    return heap_ptr;
+}
+
+llvm::Value* CodeGenerator::generateEnumVariantExpr(const EnumVariantExpr* expr) {
+    // 尝试查找enum类型（可能是泛型实例化的mangled name）
+    llvm::Type* enum_type = getEnumType(expr->enum_name);
+    
+    // 如果直接找不到，可能是泛型enum，需要从enum_defs_查找
+    std::string enum_name = expr->enum_name;
+    if (!enum_type) {
+        // 检查enum_defs_中是否有这个类型
+        auto it = enum_defs_.find(expr->enum_name);
+        if (it != enum_defs_.end()) {
+            // 找到了，构造类型
+            std::vector<llvm::Type*> fields = {
+                llvm::Type::getInt32Ty(*context_),  // tag
+                llvm::Type::getInt64Ty(*context_)   // data
+            };
+            enum_type = llvm::StructType::get(*context_, fields);
+        } else {
+            std::cerr << "Unknown enum type: " << expr->enum_name << std::endl;
+            return nullptr;
+        }
+    }
+    
+    // 分配enum实例
+    llvm::Value* alloca = builder_->CreateAlloca(enum_type);
+    
+    // 设置tag（variant索引）
+    auto def_it = enum_defs_.find(expr->enum_name);
+    if (def_it != enum_defs_.end()) {
         int tag = 0;
         for (const auto& variant : def_it->second->variants) {
             if (variant.name == expr->variant_name) break;
@@ -48,22 +164,6 @@ llvm::Type* CodeGenerator::convertPrimitiveType(PrimitiveType type) {
     
     // 返回load的值而不是指针（enum是值类型）
     return builder_->CreateLoad(enum_type, alloca, "enum_val");
-}
-
-
-
-llvm::Value* CodeGenerator::generateArrayLiteralExpr(const ArrayLiteralExpr* expr) {
-    if (expr->elements.empty()) {
-        return nullptr;
-    }
-    
-    // 注意：数组字面量应该使用变量声明中的类型，而不是从第一个元素推导
-    // generateArrayLiteralExpr不应该独立推导类型
-    // 这个函数主要在generateLetStmt中的特殊路径使用，那里已经知道目标类型
-    
-    // 简化实现：返回nullptr，让外层处理
-    // 实际的数组初始化在generateLetStmt中完成
-    return nullptr;
 }
 
 // ====== 泛型支持 ======
@@ -231,7 +331,6 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
     }
     
     // 生成具体函数
-
     std::vector<llvm::Type*> param_types;
     for (const auto& param : generic_func->parameters) {
         if (!param.is_self) {
@@ -251,7 +350,69 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
             // 注意：resolveGenericType返回的已经是Optional<T> struct，我们需要指针
             if (param.type->kind == Type::Kind::Optional) {
                 param_type = llvm::PointerType::get(*context_, 0);
-
+            }
+            
+            param_types.push_back(param_type);
+        }
+    }
+    
+    llvm::Type* return_type = generic_func->return_type ?
+        resolveGenericType(generic_func->return_type.get()) :
+        llvm::Type::getVoidTy(*context_);
+    
+    // 【新增】：对于struct返回值，使用指针类型
+    if (return_type && llvm::isa<llvm::StructType>(return_type)) {
+        return_type = llvm::PointerType::get(*context_, 0);
+    }
+    
+    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, param_types, false);
+    llvm::Function* func = llvm::Function::Create(
+        func_type,
+        llvm::Function::ExternalLinkage,
+        mangled_name,
+        module_.get()
+    );
+    
+    functions_[mangled_name] = func;
+    
+    // 生成函数体
+    llvm::BasicBlock* bb = llvm::BasicBlock::Create(*context_, "entry", func);
+    auto old_insert_point = builder_->saveIP();
+    builder_->SetInsertPoint(bb);
+    
+    // 保存旧的named_values
+    auto old_named_values = named_values_;
+    auto old_variable_types = variable_types_;
+    auto old_array_element_types = array_element_types_;
+    
+    // 保存参数
+    size_t idx = 0;
+    for (auto& arg : func->args()) {
+        const auto& param = generic_func->parameters[idx];
+        
+        // Check if it's数组参数
+        if (param.type->kind == Type::Kind::Array) {
+            // 数组参数：arg是ptr，直接创建ptr的alloca
+            llvm::AllocaInst* alloca = builder_->CreateAlloca(
+                llvm::PointerType::get(*context_, 0), nullptr, param.name
+            );
+            builder_->CreateStore(&arg, alloca);
+            named_values_[param.name] = alloca;
+            
+            // 记录为指针类型（因为数组参数实际上是指针）
+            variable_types_[param.name] = llvm::PointerType::get(*context_, 0);
+            
+            // 记录元素类型
+            const ArrayTypeNode* array_type = static_cast<const ArrayTypeNode*>(param.type.get());
+            llvm::Type* elem_type = resolveGenericType(array_type->element_type.get());
+            array_element_types_[param.name] = elem_type;
+        } else if (param.type->kind == Type::Kind::Optional) {
+            // 【新增】：T?参数也是指针
+            llvm::Type* param_type = resolveGenericType(param.type.get());
+            // T?参数：arg是ptr
+            llvm::AllocaInst* alloca = builder_->CreateAlloca(
+                llvm::PointerType::get(*context_, 0), nullptr, param.name
+            );
             builder_->CreateStore(&arg, alloca);
             named_values_[param.name] = alloca;
             
@@ -543,6 +704,14 @@ void CodeGenerator::importTypeFromModule(const std::string& type_name, const std
     
     // 根据AST节点重建类型
     if (symbol->ast_node) {
-
+        // 重建struct或enum定义（根据AST节点重新生成类型）
+        const Stmt* stmt = static_cast<const Stmt*>(symbol->ast_node);
+        if (stmt->kind == Stmt::Kind::Struct) {
+            generateStructStmt(static_cast<const StructStmt*>(stmt));
+        } else if (stmt->kind == Stmt::Kind::Enum) {
+            generateEnumStmt(static_cast<const EnumStmt*>(stmt));
+        }
+    }
+}
 
 } // namespace pawc

@@ -17,7 +17,69 @@ message(STATUS "")
 
 # Configure LLVM build options BEFORE adding subdirectory
 set(LLVM_ENABLE_PROJECTS "llvm" CACHE STRING "")
-set(LLVM_TARGETS_TO_BUILD "X86" CACHE STRING "")
+
+# 根据当前平台和架构自动选择LLVM目标（减少编译时间和二进制大小）
+# 参考：
+# - Windows: x86_64, aarch64, x86
+# - macOS: x86_64, aarch64  
+# - Linux: x86_64, aarch64, arm, riscv64, powerpc64le, x86, loongarch64, s390x
+
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64|AARCH64")
+    # ARM64/AArch64 架构（Apple Silicon、服务器ARM、移动设备）
+    set(LLVM_TARGETS_TO_BUILD "AArch64" CACHE STRING "")
+    set(PLATFORM_TARGET "AArch64")
+    message(STATUS "Detected AArch64 (ARM64) - building AArch64 target only")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|x64")
+    # x86_64 架构（主流桌面和服务器）
+    set(LLVM_TARGETS_TO_BUILD "X86" CACHE STRING "")
+    set(PLATFORM_TARGET "X86")
+    message(STATUS "Detected x86_64 - building X86 target only")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "i386|i686|x86")
+    # 32位 x86 架构（旧PC、嵌入式）
+    set(LLVM_TARGETS_TO_BUILD "X86" CACHE STRING "")
+    set(PLATFORM_TARGET "X86")
+    message(STATUS "Detected x86 (32-bit) - building X86 target only")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7|arm")
+    # ARM 32位架构（嵌入式、旧移动设备）
+    set(LLVM_TARGETS_TO_BUILD "ARM" CACHE STRING "")
+    set(PLATFORM_TARGET "ARM")
+    message(STATUS "Detected ARM (32-bit) - building ARM target only")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+    # RISC-V 64位架构（新兴开源架构）
+    set(LLVM_TARGETS_TO_BUILD "RISCV" CACHE STRING "")
+    set(PLATFORM_TARGET "RISCV")
+    message(STATUS "Detected RISC-V 64-bit - building RISCV target only")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64le|powerpc64le")
+    # PowerPC 64位小端架构（IBM服务器）
+    set(LLVM_TARGETS_TO_BUILD "PowerPC" CACHE STRING "")
+    set(PLATFORM_TARGET "PowerPC")
+    message(STATUS "Detected PowerPC 64LE - building PowerPC target only")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "loongarch64")
+    # LoongArch 64位架构（中国龙芯）
+    set(LLVM_TARGETS_TO_BUILD "LoongArch" CACHE STRING "")
+    set(PLATFORM_TARGET "LoongArch")
+    message(STATUS "Detected LoongArch 64-bit - building LoongArch target only")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "s390x")
+    # IBM z/Architecture（大型机）
+    set(LLVM_TARGETS_TO_BUILD "SystemZ" CACHE STRING "")
+    set(PLATFORM_TARGET "SystemZ")
+    message(STATUS "Detected s390x - building SystemZ target only")
+    
+else()
+    # 未知平台，编译常用的两个目标（兼容性）
+    set(LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
+    set(PLATFORM_TARGET "X86;AArch64")
+    message(WARNING "Unknown platform: ${CMAKE_SYSTEM_PROCESSOR}")
+    message(STATUS "Building X86 and AArch64 targets for compatibility")
+endif()
+
 set(LLVM_BUILD_TOOLS OFF CACHE BOOL "")
 set(LLVM_BUILD_EXAMPLES OFF CACHE BOOL "")
 set(LLVM_BUILD_TESTS OFF CACHE BOOL "")
@@ -45,52 +107,148 @@ message(STATUS "")
 
 # LLVM include directories
 include_directories(
-    ${CMAKE_SOURCE_DIR}/llvm/include
-    ${CMAKE_BINARY_DIR}/llvm/include
+        ${CMAKE_SOURCE_DIR}/llvm/include
+        ${CMAKE_BINARY_DIR}/llvm/include
 )
 
 # Get LLVM components (minimal for code generation)
+# 根据平台动态添加目标库
 set(llvm_libs
-    LLVMCore
-    LLVMSupport
-    LLVMIRReader
-    LLVMX86CodeGen
-    LLVMX86AsmParser
-    LLVMX86Desc
-    LLVMX86Info
-    LLVMCodeGen
-    LLVMTarget
-    LLVMAnalysis
-    LLVMTransformUtils
-    LLVMScalarOpts
-    LLVMipo
-    LLVMAsmParser
-    LLVMAsmPrinter
-    LLVMMC
-    LLVMMCParser
-    LLVMObject
-    LLVMBitReader
-    LLVMBitWriter
+        LLVMCore
+        LLVMSupport
+        LLVMIRReader
+        LLVMTarget
+        LLVMAnalysis
+        LLVMTransformUtils
+        LLVMScalarOpts
+        LLVMipo
+        LLVMAsmParser
+        LLVMAsmPrinter
+        LLVMMC
+        LLVMMCParser
+        LLVMObject
+        LLVMBitReader
+        LLVMBitWriter
 )
+
+# 根据检测到的平台添加相应的目标库
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64|AARCH64")
+    # AArch64 (ARM 64-bit)
+    list(APPEND llvm_libs
+        LLVMAArch64CodeGen
+        LLVMAArch64AsmParser
+        LLVMAArch64Desc
+        LLVMAArch64Info
+    )
+    message(STATUS "Linking AArch64 libraries")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|x64")
+    # x86-64 (64-bit Intel/AMD)
+    list(APPEND llvm_libs
+        LLVMX86CodeGen
+        LLVMX86AsmParser
+        LLVMX86Desc
+        LLVMX86Info
+    )
+    message(STATUS "Linking X86 libraries")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "i386|i686|x86")
+    # x86 (32-bit)
+    list(APPEND llvm_libs
+        LLVMX86CodeGen
+        LLVMX86AsmParser
+        LLVMX86Desc
+        LLVMX86Info
+    )
+    message(STATUS "Linking X86 libraries (32-bit)")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7|arm")
+    # ARM (32-bit)
+    list(APPEND llvm_libs
+        LLVMARMCodeGen
+        LLVMARMAsmParser
+        LLVMARMDesc
+        LLVMARMInfo
+    )
+    message(STATUS "Linking ARM libraries (32-bit)")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+    # RISC-V (64-bit)
+    list(APPEND llvm_libs
+        LLVMRISCVCodeGen
+        LLVMRISCVAsmParser
+        LLVMRISCVDesc
+        LLVMRISCVInfo
+    )
+    message(STATUS "Linking RISC-V libraries")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64le|powerpc64le")
+    # PowerPC (64-bit little-endian)
+    list(APPEND llvm_libs
+        LLVMPowerPCCodeGen
+        LLVMPowerPCAsmParser
+        LLVMPowerPCDesc
+        LLVMPowerPCInfo
+    )
+    message(STATUS "Linking PowerPC libraries")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "loongarch64")
+    # LoongArch (64-bit)
+    list(APPEND llvm_libs
+        LLVMLoongArchCodeGen
+        LLVMLoongArchAsmParser
+        LLVMLoongArchDesc
+        LLVMLoongArchInfo
+    )
+    message(STATUS "Linking LoongArch libraries")
+    
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "s390x")
+    # IBM System z (s390x)
+    list(APPEND llvm_libs
+        LLVMSystemZCodeGen
+        LLVMSystemZAsmParser
+        LLVMSystemZDesc
+        LLVMSystemZInfo
+    )
+    message(STATUS "Linking SystemZ libraries")
+    
+else()
+    # 未知平台：编译最常用的两个目标（兼容性）
+    list(APPEND llvm_libs
+        LLVMX86CodeGen
+        LLVMX86AsmParser
+        LLVMX86Desc
+        LLVMX86Info
+        LLVMAArch64CodeGen
+        LLVMAArch64AsmParser
+        LLVMAArch64Desc
+        LLVMAArch64Info
+    )
+    message(WARNING "Unknown architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+    message(STATUS "Linking both X86 and AArch64 libraries for compatibility")
+endif()
 
 # Include directories
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
 # Source files for main compiler
 set(SOURCES
-    src/main.cpp
-    src/lexer/lexer.cpp
-    src/parser/parser.cpp
-    src/codegen/codegen.cpp
-    src/codegen/codegen_match.cpp
-    src/codegen/codegen_stmt.cpp
-    src/builtins/builtins.cpp
-    src/module/module_loader.cpp
-    src/module/symbol_table.cpp
-    src/module/module_compiler.cpp
-    src/colors.cpp
-    src/toml_parser.cpp
-    src/error_reporter.cpp
+        src/main.cpp
+        src/lexer/lexer.cpp
+        src/parser/parser.cpp
+        src/codegen/codegen.cpp
+        src/codegen/codegen_match.cpp
+        src/codegen/codegen_stmt.cpp
+        src/codegen/codegen_expr.cpp
+        src/codegen/codegen_struct.cpp
+        src/codegen/codegen_type.cpp
+        src/builtins/builtins.cpp
+        src/module/module_loader.cpp
+        src/module/symbol_table.cpp
+        src/module/module_compiler.cpp
+        src/colors.cpp
+        src/toml_parser.cpp
+        src/error_reporter.cpp
 )
 
 # Create main compiler executable
@@ -103,17 +261,17 @@ add_dependencies(pawc ${llvm_libs})
 target_link_libraries(pawc ${llvm_libs})
 
 # Compiler options
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     target_compile_options(pawc PRIVATE -Wall -Wextra -Wno-unused-parameter)
-elseif(MSVC)
+elseif (MSVC)
     target_compile_options(pawc PRIVATE /utf-8 /wd4819 /wd4624)
     target_compile_definitions(pawc PRIVATE _CRT_SECURE_NO_WARNINGS)
-endif()
+endif ()
 
 # Windows-specific LLVM definitions
-if(WIN32)
+if (WIN32)
     add_compile_definitions(LLVM_ON_WIN32=1)
-endif()
+endif ()
 
 # Installation
 install(TARGETS pawc DESTINATION bin)
