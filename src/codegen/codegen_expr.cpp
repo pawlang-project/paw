@@ -69,7 +69,7 @@ llvm::Value* CodeGenerator::generateBinaryExpr(const BinaryExpr* expr) {
     
     if (!left || !right) return nullptr;
     
-    // Check if it's字符串操作
+    // Check if it's a string operation
     bool is_ptr_left = left->getType()->isPointerTy();
     bool is_ptr_right = right->getType()->isPointerTy();
     
@@ -150,16 +150,16 @@ llvm::Value* CodeGenerator::generateUnaryExpr(const UnaryExpr* expr) {
 
 
 llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
-    // Check if it's方法调用：obj.method()
+    // Check if it's a method call: obj.method()
     if (expr->callee->kind == Expr::Kind::MemberAccess) {
         const MemberAccessExpr* member_expr = static_cast<const MemberAccessExpr*>(expr->callee.get());
         
-        // 获取对象的地址（而不是值）
+        // Get object address (not value)
         llvm::Value* obj_ptr = nullptr;
         std::string obj_name;
         
         if (member_expr->object->kind == Expr::Kind::Identifier) {
-            // 从named_values_直接获取指针（alloca）
+            // Get pointer directly from named_values_ (alloca)
             obj_name = static_cast<const IdentifierExpr*>(member_expr->object.get())->name;
             auto it = named_values_.find(obj_name);
             if (it != named_values_.end()) {

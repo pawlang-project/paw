@@ -4,10 +4,11 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <cstdint>
 
 namespace pawc {
 
-// TOML值类型
+// TOML value types
 struct TomlValue {
     enum class Type {
         String,
@@ -27,7 +28,7 @@ struct TomlValue {
     TomlValue() : type(Type::String), int_value(0), bool_value(false) {}
 };
 
-// PawLang项目配置
+// PawLang project configuration
 struct PawConfig {
     // [package]
     std::string name;
@@ -52,18 +53,18 @@ struct PawConfig {
     std::map<std::string, std::vector<std::string>> features;
 };
 
-// TOML解析器
+// TOML parser
 class TomlParser {
 public:
     TomlParser(const std::string& content);
     
-    // 解析TOML内容
+    // Parse TOML content
     bool parse();
     
-    // 获取解析后的配置
+    // Get parsed configuration
     const PawConfig& getConfig() const { return config_; }
     
-    // 获取错误信息
+    // Get error message
     const std::string& getError() const { return error_; }
     
 private:
@@ -72,7 +73,7 @@ private:
     PawConfig config_;
     std::string error_;
     
-    // 解析辅助函数
+    // Parsing helper functions
     void skipWhitespace();
     void skipComment();
     std::string parseKey();
@@ -83,13 +84,13 @@ private:
     std::vector<TomlValue> parseArray();
     std::map<std::string, TomlValue> parseTable();
     
-    // 字符检查
+    // Character checking
     bool isAtEnd() const { return pos_ >= content_.size(); }
     char peek() const { return isAtEnd() ? '\0' : content_[pos_]; }
     char advance() { return content_[pos_++]; }
 };
 
-// 加载paw.toml文件
+// Load paw.toml file
 PawConfig loadPawConfig(const std::string& project_dir);
 
 } // namespace pawc

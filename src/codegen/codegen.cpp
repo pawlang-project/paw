@@ -1,28 +1,28 @@
 /**
  * @file codegen.cpp
- * @brief PawLang LLVM代码生成器实现
+ * @brief PawLang LLVM code generator implementation
  * 
- * 负责将AST转换为LLVM IR，支持完整的PawLang语言特性：
- * - 泛型系统（函数、Struct、Enum）- 完整单态化
- * - 泛型struct内部方法（静态、实例）
- * - 模块系统和跨模块调用
- * - 错误处理（T?类型、?操作符、ok/err）
- * - 模式匹配（is表达式、match表达式）
- * - 类型推导和类型转换
- * - Struct引用语义（统一指针传递）
- * - 数组（定长、不定长、多维）
- * - 字符串和字符类型
- * - 循环控制（4种loop + break/continue）
+ * Responsible for converting AST to LLVM IR, supporting full PawLang language features:
+ * - Generic system (functions, Struct, Enum) - full monomorphization
+ * - Generic struct internal methods (static, instance)
+ * - Module system and cross-module calls
+ * - Error handling (T? type, ? operator, ok/err)
+ * - Pattern matching (is expression, match expression)
+ * - Type inference and type conversion
+ * - Struct reference semantics (unified pointer passing)
+ * - Arrays (fixed-length, variable-length, multi-dimensional)
+ * - String and character types
+ * - Loop control (4 loop types + break/continue)
  * 
- * 文件组织：
- * - 第1部分：初始化和核心接口
- * - 第2部分：类型转换系统
- * - 第3部分：表达式生成
- * - 第4部分：语句生成
- * - 第5部分：泛型实例化
+ * File organization:
+ * - Part 1: Initialization and core interface
+ * - Part 2: Type conversion system
+ * - Part 3: Expression generation
+ * - Part 4: Statement generation
+ * - Part 5: Generic instantiation
  * 
- * @note 文件大小：3936行（计划未来拆分）
- * @todo 拆分为多个文件：expr、stmt、type、struct、match
+ * @note File size: 3936 lines (planned to be split in the future)
+ * @todo Split into multiple files: expr, stmt, type, struct, match
  * 
  * @version 0.2.1
  * @date 2025-10-16
@@ -42,19 +42,19 @@
 namespace pawc {
 
 // ============================================================================
-// 第1部分：初始化和核心接口
+// Part 1: Initialization and Core Interface
 // ============================================================================
 
 /**
- * @brief 构造CodeGenerator（单文件模式）
- * @param module_name 模块名称
+ * @brief Construct CodeGenerator (single-file mode)
+ * @param module_name Module name
  * 
- * 初始化LLVM组件：
- * - LLVMContext：独立的编译上下文
- * - Module：IR模块容器
- * - IRBuilder：IR指令构建器
- * - Builtins：内置函数管理器
- * - DataLayout：目标平台数据布局（确保正确对齐）
+ * Initialize LLVM components:
+ * - LLVMContext: Independent compilation context
+ * - Module: IR module container
+ * - IRBuilder: IR instruction builder
+ * - Builtins: Built-in function manager
+ * - DataLayout: Target platform data layout (ensure proper alignment)
  */
 CodeGenerator::CodeGenerator(const std::string& module_name)
     : current_function_(nullptr), current_function_return_type_(nullptr),
@@ -66,7 +66,7 @@ CodeGenerator::CodeGenerator(const std::string& module_name)
     builder_ = std::make_unique<llvm::IRBuilder<>>(*context_);
     builtins_ = std::make_unique<Builtins>(*context_, *module_);
     
-    // 设置目标平台的DataLayout（确保所有类型使用正确对齐）
+    // Set target platform DataLayout (ensure all types use proper alignment)
     llvm::InitializeNativeTarget();
     llvm::Triple triple(llvm::sys::getDefaultTargetTriple());
     module_->setTargetTriple(triple);
@@ -82,19 +82,19 @@ CodeGenerator::CodeGenerator(const std::string& module_name)
         }
     }
     
-    // 声明所有内置函数
+    // Declare all built-in functions
     builtins_->declareAll();
 }
 
 /**
- * @brief 构造CodeGenerator（多文件模式）
- * @param module_name 模块名称
- * @param symbol_table 符号表指针（用于跨模块查找）
+ * @brief Construct CodeGenerator (multi-file mode)
+ * @param module_name Module name
+ * @param symbol_table Symbol table pointer (for cross-module lookup)
  * 
- * 与单文件模式相同，但额外支持：
- * - 跨模块类型查找
- * - 跨模块函数调用
- * - 泛型跨模块实例化
+ * Same as single-file mode, but with additional support for:
+ * - Cross-module type lookup
+ * - Cross-module function calls
+ * - Cross-module generic instantiation
  */
 CodeGenerator::CodeGenerator(const std::string& module_name, SymbolTable* symbol_table)
     : current_function_(nullptr), current_function_return_type_(nullptr),
@@ -106,7 +106,7 @@ CodeGenerator::CodeGenerator(const std::string& module_name, SymbolTable* symbol
     builder_ = std::make_unique<llvm::IRBuilder<>>(*context_);
     builtins_ = std::make_unique<Builtins>(*context_, *module_);
     
-    // 设置目标平台的DataLayout（确保所有类型使用正确对齐）
+    // Set target platform DataLayout (ensure all types use proper alignment)
     llvm::InitializeNativeTarget();
     llvm::Triple triple(llvm::sys::getDefaultTargetTriple());
     module_->setTargetTriple(triple);
@@ -122,28 +122,28 @@ CodeGenerator::CodeGenerator(const std::string& module_name, SymbolTable* symbol
         }
     }
     
-    // 声明所有内置函数
+    // Declare all built-in functions
     builtins_->declareAll();
 }
 
 /**
- * @brief 生成LLVM IR代码（主入口）
- * @param program AST程序节点
- * @return true 成功，false 验证失败
+ * @brief Generate LLVM IR code (main entry point)
+ * @param program AST program node
+ * @return true on success, false on verification failure
  * 
- * 采用两遍编译：
- * 1. 第一遍：注册所有类型定义（Struct和Enum）
- *    - 允许函数签名引用这些类型
- *    - 处理泛型定义注册
- * 2. 第二遍：生成函数、语句等
- *    - 类型已完全可用
- *    - 支持前向引用
+ * Uses two-pass compilation:
+ * 1. First pass: Register all type definitions (Struct and Enum)
+ *    - Allow function signatures to reference these types
+ *    - Handle generic definition registration
+ * 2. Second pass: Generate functions, statements, etc.
+ *    - Types are fully available
+ *    - Support forward references
  * 
- * 最后使用llvm::verifyModule()验证生成的IR正确性。
+ * Finally uses llvm::verifyModule() to verify the correctness of generated IR.
  */
 bool CodeGenerator::generate(const Program& program) {
-    // 第一遍：注册所有类型定义（Struct和Enum）
-    // 这样函数签名中可以引用这些类型
+    // First pass: Register all type definitions (Struct and Enum)
+    // This allows function signatures to reference these types
     for (const auto& stmt : program.statements) {
         if (stmt->kind == Stmt::Kind::Struct) {
             generateStructStmt(static_cast<const StructStmt*>(stmt.get()));
@@ -152,15 +152,15 @@ bool CodeGenerator::generate(const Program& program) {
         }
     }
     
-    // 第二遍：生成其他语句（函数等）
+    // Second pass: Generate other statements (functions, etc.)
     for (const auto& stmt : program.statements) {
-        // 跳过已经处理的类型定义
+        // Skip already processed type definitions
         if (stmt->kind != Stmt::Kind::Struct && stmt->kind != Stmt::Kind::Enum) {
             generateStmt(stmt.get());
         }
     }
     
-    // 验证模块
+    // Verify module
     std::string error_str;
     llvm::raw_string_ostream error_stream(error_str);
     if (llvm::verifyModule(*module_, &error_stream)) {
@@ -186,12 +186,12 @@ void CodeGenerator::saveIR(const std::string& filename) {
 }
 
 bool CodeGenerator::compileToObject(const std::string& filename) {
-    // 只初始化本地目标（不是All）
+    // Only initialize native target (not All)
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmParser();
     llvm::InitializeNativeTargetAsmPrinter();
     
-    // 使用 Triple 对象 (LLVM 21+)
+    // Use Triple object (LLVM 21+)
     llvm::Triple triple(llvm::sys::getDefaultTargetTriple());
     module_->setTargetTriple(triple);
     
@@ -206,7 +206,7 @@ bool CodeGenerator::compileToObject(const std::string& filename) {
     auto features = "";
     llvm::TargetOptions opt;
     auto RM = std::optional<llvm::Reloc::Model>();
-    // 使用新API (LLVM 21+)
+    // Use new API (LLVM 21+)
     auto target_machine = target->createTargetMachine(triple, CPU, features, opt, RM);
     
     module_->setDataLayout(target_machine->createDataLayout());

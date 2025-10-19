@@ -42,7 +42,7 @@ void CodeGenerator::generateStmt(const Stmt* stmt) {
             generateEnumStmt(static_cast<const EnumStmt*>(stmt));
             break;
         case Stmt::Kind::TypeAlias:
-            // type别名只是包装，实际生成在内部的struct/enum
+            // type alias is just a wrapper, actual generation is in internal struct/enum
             if (auto alias = static_cast<const TypeAliasStmt*>(stmt)) {
                 generateStmt(alias->definition.get());
             }
@@ -51,7 +51,7 @@ void CodeGenerator::generateStmt(const Stmt* stmt) {
             generateImplStmt(static_cast<const ImplStmt*>(stmt));
             break;
         case Stmt::Kind::Import:
-            // import语句：跳过（将来实现跨文件模块系统）
+            // import statement: skip (cross-file module system to be implemented)
             break;
         case Stmt::Kind::Extern:
             generateExternStmt(static_cast<const ExternStmt*>(stmt));
@@ -62,11 +62,11 @@ void CodeGenerator::generateStmt(const Stmt* stmt) {
 
 void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
     llvm::Type* type = nullptr;
-    llvm::Type* actual_type = nullptr;  // 实际存储类型（可能是struct值）
+    llvm::Type* actual_type = nullptr;  // Actual storage type (may be struct value)
     
-    // 如果有类型声明
+    // If there is a type declaration
     if (stmt->type) {
-        // 使用resolveGenericType而不是convertType，这样可以正确处理泛型类型T
+        // Use resolveGenericType instead of convertType to properly handle generic type T
         type = resolveGenericType(stmt->type.get());
         
         // 特殊处理：如果类型是struct名称，存储指针而不是值（新语义）

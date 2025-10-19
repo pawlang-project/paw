@@ -17,24 +17,24 @@ llvm::Type* CodeGenerator::convertType(const Type* type) {
         case Type::Kind::Named: {
             auto named_type = static_cast<const NamedTypeNode*>(type);
             
-            // 检查是否有泛型参数
+            // Check for generic parameters
             if (!named_type->generic_args.empty()) {
-                // 泛型struct: Box<i32>
+                // Generic struct: Box<i32>
                 auto it = generic_structs_.find(named_type->name);
                 if (it != generic_structs_.end()) {
                     return instantiateGenericStruct(named_type->name, named_type->generic_args);
                 }
-                // 泛型enum: Option<i32>
+                // Generic enum: Option<i32>
                 auto enum_it = generic_enums_.find(named_type->name);
                 if (enum_it != generic_enums_.end()) {
                     return instantiateGenericEnum(named_type->name, named_type->generic_args);
                 }
             }
             
-            // 先尝试查找enum类型（enum作为值类型，优先检查）
+            // First try to find enum type (enum as value type, check first)
             auto enum_type = getEnumType(named_type->name);
             if (enum_type) {
-                return enum_type;  // enum作为值类型 {i32, i64}
+                return enum_type;  // enum as value type {i32, i64}
             }
             
             // 如果没找到enum，尝试从符号表导入（跨模块类型）

@@ -10,8 +10,8 @@ TomlParser::TomlParser(const std::string& content)
     : content_(content), pos_(0) {}
 
 bool TomlParser::parse() {
-    // 简化的TOML解析器
-    // 只支持基本的key = value格式和[section]
+    // Simplified TOML parser
+    // Only supports basic key = value format and [section]
     
     std::string current_section;
     
@@ -53,7 +53,7 @@ bool TomlParser::parse() {
             
             TomlValue value = parseValue();
             
-            // 根据section和key设置配置
+            // Set configuration based on section and key
             if (current_section == "package") {
                 if (key == "name") config_.name = value.string_value;
                 else if (key == "version") config_.version = value.string_value;
@@ -103,28 +103,28 @@ TomlValue TomlParser::parseValue() {
     
     TomlValue value;
     
-    // 字符串: "value"
+    // String: "value"
     if (peek() == '"') {
         value.type = TomlValue::Type::String;
         value.string_value = parseString();
     }
-    // 布尔值: true/false
+    // Boolean: true/false
     else if (peek() == 't' || peek() == 'f') {
         value.type = TomlValue::Type::Boolean;
         value.bool_value = parseBool();
     }
-    // 数字
+    // Number
     else if (std::isdigit(peek()) || peek() == '-') {
         value.type = TomlValue::Type::Integer;
         value.int_value = parseInt();
     }
-    // 数组: [...]
+    // Array: [...]
     else if (peek() == '[') {
         value.type = TomlValue::Type::Array;
         value.array_value = parseArray();
     }
     
-    // 跳过行尾
+    // Skip end of line
     while (!isAtEnd() && peek() != '\n') {
         if (peek() == '#') {
             skipComment();
@@ -183,17 +183,17 @@ std::vector<TomlValue> TomlParser::parseArray() {
 }
 
 std::map<std::string, TomlValue> TomlParser::parseTable() {
-    // TODO: 实现嵌套表
+    // TODO: Implement nested tables
     return {};
 }
 
-// 加载paw.toml文件
+// Load paw.toml file
 PawConfig loadPawConfig(const std::string& project_dir) {
     std::string toml_path = project_dir + "/paw.toml";
     
     std::ifstream file(toml_path);
     if (!file.is_open()) {
-        // 返回默认配置
+        // Return default configuration
         PawConfig config;
         config.name = "unnamed";
         config.version = "0.1.0";
@@ -211,7 +211,7 @@ PawConfig loadPawConfig(const std::string& project_dir) {
     
     TomlParser parser(content);
     if (!parser.parse()) {
-        // 解析失败，返回默认配置
+        // Parse failed, return default configuration
         PawConfig config;
         config.name = "unnamed";
         config.version = "0.1.0";

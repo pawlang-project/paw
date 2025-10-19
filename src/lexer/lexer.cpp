@@ -11,7 +11,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"type", TokenType::KW_TYPE},
     {"struct", TokenType::KW_STRUCT},
     {"enum", TokenType::KW_ENUM},
-    // {"impl", TokenType::KW_IMPL},  // 已废弃：现在方法直接在struct内定义
+    // {"impl", TokenType::KW_IMPL},  // Deprecated: methods are now defined directly in struct
     {"if", TokenType::KW_IF},
     {"else", TokenType::KW_ELSE},
     {"loop", TokenType::KW_LOOP},
@@ -58,31 +58,31 @@ Token Lexer::nextToken() {
     
     char c = advance();
     
-    // 标识符或关键字
+    // Identifier or keyword
     if (std::isalpha(c) || c == '_') {
         current_--;
         column_--;
         return identifier();
     }
     
-    // 数字
+    // Number
     if (std::isdigit(c)) {
         current_--;
         column_--;
         return number();
     }
     
-    // 字符串
+    // String
     if (c == '"') {
         return string();
     }
     
-    // 字符
+    // Character
     if (c == '\'') {
         return charLiteral();
     }
     
-    // 运算符和分隔符
+    // Operators and delimiters
     switch (c) {
         case '+':
             return makeToken(match('=') ? TokenType::PLUS_EQ : TokenType::PLUS, std::string(1, c));

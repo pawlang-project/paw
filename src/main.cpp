@@ -21,14 +21,14 @@ void printUsage(const char* program_name) {
     std::cout << "  --print-ir      Print LLVM IR to stdout\n";
     std::cout << "  -h, --help      Show this help message\n";
     std::cout << "\nExamples:\n";
-    std::cout << "  " << program_name << " program.paw              # 生成可执行文件 ./a.out\n";
-    std::cout << "  " << program_name << " program.paw -o hello    # 生成可执行文件 ./hello\n";
-    std::cout << "  " << program_name << " program.paw --emit-obj  # 生成目标文件 output.o\n";
-    std::cout << "  " << program_name << " program.paw --emit-llvm # 生成LLVM IR output.ll\n";
+    std::cout << "  " << program_name << " program.paw              # Generate executable ./a.out\n";
+    std::cout << "  " << program_name << " program.paw -o hello    # Generate executable ./hello\n";
+    std::cout << "  " << program_name << " program.paw --emit-obj  # Generate object file output.o\n";
+    std::cout << "  " << program_name << " program.paw --emit-llvm # Generate LLVM IR output.ll\n";
 }
 
 int main(int argc, char* argv[]) {
-    // 初始化LLVM本地目标（必须在使用前初始化）
+    // Initialize LLVM native target (must be initialized before use)
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmParser();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
     
     std::cout << pawc::Colors::info("Compiling ") << input_file << "..." << std::endl;
     
-    // 创建错误报告器
+    // Create error reporter
     pawc::ErrorReporter error_reporter;
     error_reporter.setSourceCode(input_file, source);
     
@@ -98,18 +98,18 @@ int main(int argc, char* argv[]) {
     std::vector<pawc::Token> tokens = lexer.tokenize();
     std::cout << pawc::Colors::success("  ✓ Lexer: ") << tokens.size() << " tokens" << std::endl;
     
-    // Parsing（使用ErrorReporter）
+    // Parsing (using ErrorReporter)
     pawc::Parser parser(tokens, &error_reporter);
     pawc::Program program = parser.parse();
     
-    // 检查是否有解析错误
+    // Check for parse errors
     if (error_reporter.hasErrors()) {
         std::cerr << std::endl;  // 空行
         error_reporter.printSummary();
         return 1;
     }
     
-    // 向后兼容：检查旧的errors
+    // Backward compatibility: check old errors
     if (!program.errors.empty()) {
         std::cerr << pawc::Colors::error("\n✗ Parse errors:\n") << std::endl;
         for (const auto& error : program.errors) {
@@ -122,7 +122,7 @@ int main(int argc, char* argv[]) {
     
     std::cout << pawc::Colors::success("  ✓ Parser: ") << program.statements.size() << " statements" << std::endl;
     
-    // 检查是否有import语句（判断是否需要模块编译）
+    // Check for import statements (determine if module compilation is needed)
     bool has_imports = false;
     for (const auto& stmt : program.statements) {
         if (stmt->kind == pawc::Stmt::Kind::Import) {
@@ -131,21 +131,21 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // 使用模块编译器或单文件编译器
+    // Use module compiler or single-file compiler
     if (has_imports) {
         std::cout << pawc::Colors::info("  → Mode: ") << "Multi-module compilation" << std::endl;
         
-        // 获取文件所在目录
+        // Get file directory
         std::filesystem::path input_path(input_file);
         std::string base_dir = input_path.parent_path().string();
         if (base_dir.empty()) base_dir = ".";
         
-        // 确定输出文件名
+        // Determine output filename
         if (output_file.empty()) {
             output_file = "a.out";
         }
         
-        // 使用模块编译器
+        // Use module compiler
         pawc::ModuleCompiler compiler(base_dir);
         if (!compiler.compile(input_file, output_file)) {
             std::cerr << pawc::Colors::error("\n✗ Module compilation failed") << std::endl;
@@ -156,7 +156,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     
-    // 单文件编译模式
+    // Single-file compilation mode
     std::cout << pawc::Colors::info("  → Mode: ") << "Single-file compilation" << std::endl;
     
     // Code generation
@@ -177,14 +177,14 @@ int main(int argc, char* argv[]) {
     
     // Generate output
     if (emit_llvm) {
-        // 生成LLVM IR
+        // Generate LLVM IR
         if (output_file.empty()) {
             output_file = "output.ll";
         }
         codegen.saveIR(output_file);
         std::cout << "Generated: " << output_file << std::endl;
     } else if (emit_obj) {
-        // 生成目标文件
+        // Generate object file
         if (output_file.empty()) {
             output_file = "output.o";
         }
@@ -195,29 +195,29 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     } else {
-        // 生成可执行文件（默认）
+        // Generate executable (default)
         std::string obj_file = "temp_output.o";
         if (!codegen.compileToObject(obj_file)) {
             std::cerr << "Failed to generate object file" << std::endl;
             return 1;
         }
         
-        // 确定可执行文件名
+        // Determine executable filename
         if (output_file.empty()) {
             output_file = "a.out";
         }
         
-        // ========== 链接器选择和配置 ==========
-        // 使用系统C++编译器进行链接（跨平台兼容）
+        // ========== Linker Selection and Configuration ==========
+        // Use system C++ compiler for linking (cross-platform compatible)
         std::string compiler;
         
-        // 1. 优先使用环境变量（CMake/构建系统设置）
+        // 1. Prefer environment variable (CMake/build system setting)
         const char* cxx_env = std::getenv("CXX");
         if (cxx_env && strlen(cxx_env) > 0) {
             compiler = cxx_env;
-            // 使用环境变量中的编译器
+            // Use compiler from environment variable
         }
-        // 2. Windows: 尝试 cl.exe (MSVC) 或 g++ (MinGW)
+        // 2. Windows: Try cl.exe (MSVC) or g++ (MinGW)
 #if defined(_WIN32) || defined(_WIN64)
         else if (system("where cl.exe >nul 2>&1") == 0) {
             compiler = "cl.exe";
@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
             compiler = "clang++";
         }
 #else
-        // 3. Unix-like系统：c++, clang++, g++
+        // 3. Unix-like systems: c++, clang++, g++
         else if (system("command -v c++ > /dev/null 2>&1") == 0) {
             compiler = "c++";
         } else if (system("command -v clang++ > /dev/null 2>&1") == 0) {
@@ -249,45 +249,45 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
-        // ========== 构建链接命令 ==========
+        // ========== Build Link Command ==========
         std::string link_cmd = compiler + " " + obj_file;
         
-        // 平台特定的链接选项（确保兼容性）
+        // Platform-specific link options (ensure compatibility)
 #ifdef __APPLE__
         // ===== macOS (x86_64 / ARM64) =====
-        // 1. SDK路径（可选，增强兼容性）
+        // 1. SDK path (optional, enhanced compatibility)
         if (std::filesystem::exists("/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")) {
             link_cmd += " -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk";
         } else if (std::filesystem::exists("/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk")) {
             link_cmd += " -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk";
         }
-        // 2. macOS会自动链接系统库，无需额外标志
+        // 2. macOS automatically links system libraries, no extra flags needed
         
 #elif defined(_WIN32) || defined(_WIN64)
         // ===== Windows (x86 / x86_64 / ARM64) =====
-        // MSVC vs MinGW需要不同的标志
+        // MSVC vs MinGW need different flags
         if (compiler.find("cl.exe") != std::string::npos || compiler.find("cl ") != std::string::npos) {
-            // MSVC链接器
+            // MSVC linker
             link_cmd = compiler + " /Fe:" + output_file + " " + obj_file;
             link_cmd += " /link /SUBSYSTEM:CONSOLE";
-            // MSVC使用不同的命令格式，直接返回命令
+            // MSVC uses different command format, return command directly
         } else {
-            // MinGW/GCC格式
-            link_cmd += " -static-libgcc -static-libstdc++";  // 静态链接运行时
+            // MinGW/GCC format
+            link_cmd += " -static-libgcc -static-libstdc++";  // Statically link runtime
         }
         
 #elif defined(__linux__)
-        // ===== Linux (多架构支持) =====
+        // ===== Linux (multi-architecture support) =====
         // x86_64, ARM64, ARM, RISC-V, PowerPC, LoongArch, s390x
         
-        // 1. 数学库（某些架构需要）
+        // 1. Math library (needed for some architectures)
         link_cmd += " -lm";
         
-        // 2. 线程库（如果使用了多线程）
+        // 2. Thread library (if multithreading is used)
         // link_cmd += " -lpthread";
         
-        // 3. 动态链接器（通常自动处理）
-        // Linux的libc会自动链接
+        // 3. Dynamic linker (usually handled automatically)
+        // Linux libc is automatically linked
         
 #elif defined(__FreeBSD__)
         // ===== FreeBSD =====
@@ -302,12 +302,12 @@ int main(int argc, char* argv[]) {
         link_cmd += " -lm";
         
 #else
-        // ===== 其他Unix-like系统 =====
-        link_cmd += " -lm";  // 保守策略：添加数学库
+        // ===== Other Unix-like systems =====
+        link_cmd += " -lm";  // Conservative strategy: add math library
         
 #endif
         
-        // 对于非MSVC，添加输出文件参数
+        // For non-MSVC, add output file parameter
         if (compiler.find("cl.exe") == std::string::npos && compiler.find("cl ") == std::string::npos) {
             link_cmd += " -o " + output_file;
         }
@@ -315,7 +315,7 @@ int main(int argc, char* argv[]) {
         std::cout << pawc::Colors::info("  → Linking: ") << output_file << std::endl;
         int ret = system(link_cmd.c_str());
         
-        // 删除临时.o文件
+        // Delete temporary .o file
         std::remove(obj_file.c_str());
         
         if (ret != 0) {

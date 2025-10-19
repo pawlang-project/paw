@@ -6,14 +6,14 @@
 namespace pawc {
 
 llvm::Type* CodeGenerator::getEnumType(const std::string& name) {
-    // Enum表示为tagged union: { i32 tag, [max_size] data }
+    // Enum represented as tagged union: { i32 tag, [max_size] data }
     auto it = enum_defs_.find(name);
     if (it == enum_defs_.end()) {
         return nullptr;
     }
     
-    // 简化: 使用 {i32, i64} 表示enum
-    // tag = variant索引, data = 关联值（简化为i64）
+    // Simplified: use {i32, i64} to represent enum
+    // tag = variant index, data = associated value (simplified to i64)
     std::vector<llvm::Type*> fields = {
         llvm::Type::getInt32Ty(*context_),  // tag
         llvm::Type::getInt64Ty(*context_)   // data
@@ -26,27 +26,27 @@ llvm::Value* CodeGenerator::generateArrayLiteralExpr(const ArrayLiteralExpr* exp
         return nullptr;
     }
     
-    // 注意：数组字面量应该使用变量声明中的类型，而不是从第一个元素推导
-    // generateArrayLiteralExpr不应该独立推导类型
-    // 这个函数主要在generateLetStmt中的特殊路径使用，那里已经知道目标类型
+    // Note: Array literals should use type from variable declaration, not infer from first element
+    // generateArrayLiteralExpr should not independently infer types
+    // This function is mainly used in special paths in generateLetStmt, where target type is known
     
-    // 简化实现：返回nullptr，让外层处理
-    // 实际的数组初始化在generateLetStmt中完成
+    // Simplified implementation: return nullptr, let outer layer handle
+    // Actual array initialization is done in generateLetStmt
     return nullptr;
 }
 
 llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* expr) {
-    // 解析泛型struct名称（如果在泛型context中）
+    // Resolve generic struct name (if in generic context)
     std::string resolved_name = resolveGenericStructName(expr->type_name);
     
-    // 先从struct_types_直接查找（支持泛型实例如Box_i32）
+    // First look up directly from struct_types_ (support generic instances like Box_i32)
     auto type_it = struct_types_.find(resolved_name);
     llvm::StructType* struct_type = nullptr;
     
     if (type_it != struct_types_.end()) {
         struct_type = type_it->second;
     } else {
-        // 如果直接找不到，尝试通过getOrCreateStructType
+        // If not found directly, try through getOrCreateStructType
         struct_type = getOrCreateStructType(resolved_name);
     }
     
@@ -56,20 +56,20 @@ llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* e
         return nullptr;
     }
     
-    // 1. 在栈上分配临时struct
+    // 1. Allocate temporary struct on stack
     llvm::Value* temp_alloca = builder_->CreateAlloca(struct_type, nullptr, "struct_temp");
     
-    // 2. 初始化字段（使用resolved_name）
+    // 2. Initialize fields (using resolved_name)
     auto def_it = struct_defs_.find(resolved_name);
     if (def_it != struct_defs_.end()) {
         const StructStmt* struct_def = def_it->second;
         for (size_t i = 0; i < expr->fields.size() && i < struct_def->fields.size(); i++) {
             llvm::Value* field_val = generateExpr(expr->fields[i].value.get());
             if (field_val) {
-                // 获取字段的目标类型
+                // Get target type of field
                 llvm::Type* target_type = struct_type->getElementType(i);
                 
-                // 类型转换（如果需要）
+                // Type conversion (if needed)
                 if (field_val->getType()->isIntegerTy() && target_type->isIntegerTy()) {
                     unsigned src_bits = field_val->getType()->getIntegerBitWidth();
                     unsigned dst_bits = target_type->getIntegerBitWidth();
@@ -87,7 +87,7 @@ llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* e
         }
     }
     
-    // 3. 分配堆内存
+    // 3. Allocate heap memory
     const llvm::DataLayout& data_layout = module_->getDataLayout();
     uint64_t struct_size = data_layout.getTypeAllocSize(struct_type);
     llvm::Value* size_val = llvm::ConstantInt::get(*context_, llvm::APInt(64, struct_size));
@@ -100,13 +100,13 @@ llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* e
     
     llvm::Value* heap_ptr = builder_->CreateCall(malloc_func, {size_val}, "struct_heap");
     
-    // 4. 拷贝struct到堆
+    // 4. Copy struct to heap
     llvm::Function* memcpy_func = module_->getFunction("memcpy");
     if (memcpy_func) {
         builder_->CreateCall(memcpy_func, {heap_ptr, temp_alloca, size_val});
     }
     
-    // 5. 返回堆指针
+    // 5. Return heap pointer
     return heap_ptr;
 }
 

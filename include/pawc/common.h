@@ -10,7 +10,7 @@
 
 namespace pawc {
 
-// 源代码位置信息
+// Source code location information
 struct SourceLocation {
     std::string filename;
     int line;
@@ -20,9 +20,9 @@ struct SourceLocation {
         : filename(file), line(l), column(c) {}
 };
 
-// Token类型
+// Token types
 enum class TokenType {
-    // 关键字
+    // Keywords
     KW_FN,          // fn
     KW_LET,         // let
     KW_MUT,         // mut
@@ -44,19 +44,19 @@ enum class TokenType {
     KW_TRUE,        // true
     KW_FALSE,       // false
     KW_IN,          // in
-    KW_IS,          // is (用于模式匹配)
+    KW_IS,          // is (for pattern matching)
     KW_AS,          // as
-    KW_OK,          // ok (错误处理)
-    KW_ERR,         // err (错误处理)
+    KW_OK,          // ok (error handling)
+    KW_ERR,         // err (error handling)
     
-    // 标识符和字面量
+    // Identifiers and literals
     IDENTIFIER,
     INTEGER,
     FLOAT,
     STRING,
     CHAR,
     
-    // 运算符
+    // Operators
     PLUS,           // +
     MINUS,          // -
     STAR,           // *
@@ -76,9 +76,9 @@ enum class TokenType {
     MINUS_EQ,       // -=
     ARROW,          // ->
     FAT_ARROW,      // =>
-    QUESTION,       // ? (错误处理)
+    QUESTION,       // ? (error handling)
     
-    // 分隔符
+    // Delimiters
     LPAREN,         // (
     RPAREN,         // )
     LBRACE,         // {
@@ -92,7 +92,7 @@ enum class TokenType {
     DOTDOT,         // ..
     DOUBLE_COLON,   // ::
     
-    // 特殊
+    // Special
     END_OF_FILE,
     INVALID
 };
@@ -107,16 +107,16 @@ struct Token {
         : type(t), value(v), location(loc) {}
 };
 
-// 基本类型
+// Primitive types
 enum class PrimitiveType {
     I8, I16, I32, I64, I128,
     U8, U16, U32, U64, U128,
     F32, F64,
     BOOL, CHAR, STRING, VOID
-    // 注意：不暴露size类型给用户，stdlib直接使用i64
+    // Note: size type is not exposed to users, stdlib uses i64 directly
 };
 
-// 错误报告
+// Compiler error
 struct CompilerError {
     std::string message;
     SourceLocation location;
