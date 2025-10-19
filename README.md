@@ -23,6 +23,8 @@
 - ✅ **Modern C++** - C++17, smart pointers, STL
 - ✅ **Standard Library** - 15 modules, 164 functions (with generics), extern "C" interop ⭐⭐⭐⭐⭐ 🆕
 - ✅ **Colored Output** - Beautiful compile messages and error hints ⭐⭐⭐⭐⭐ 🆕
+- ✅ **ASCII Cat Logo** - Adorable orange cat logo displayed on every run ⭐⭐⭐⭐⭐ 🆕
+- ✅ **Dynamic Versioning** - Automatic version display for PawLang and bundled tools 🆕
 - ✅ **paw.toml** - Modern package management config system ⭐⭐⭐⭐⭐ 🆕
 - ✅ **char Type** - Character literals, ASCII operations, case conversion 🆕
 - ✅ **Type Conversion** - `as` operator, overflow-safe 🆕
@@ -64,12 +66,21 @@ mkdir build && cd build
 cmake ..        # Auto-detect and download LLVM
 make
 
-# Compile and run
+# Compile and run (with beautiful cat logo! 🐱)
 ./build/pawc examples/hello.paw -o hello
 ./hello         # Run directly! ⭐
 
 # View IR
 ./build/pawc examples/hello.paw --print-ir
+```
+
+**Beautiful Developer Experience** ⭐⭐⭐⭐⭐:
+- 🐱 **Orange Cat Logo** - Adorable ASCII art displayed on every compilation
+- 🎨 **Colored Output** - Clear, professional compilation messages
+- 📊 **Progress Indicators** - Token count, statement count, build stages
+- 🔧 **Tool Information** - Displays bundled clang++ and lld versions dynamically
+- ✅ **Success Feedback** - Clear success/error messages
+
 ```
 
 **Fully Automated**:
@@ -1149,7 +1160,10 @@ MIT License
 - 🎉🎉🎉 **? Error handling** - PawLang's unique! Simpler than Rust, more elegant than Go ⭐⭐⭐⭐⭐⭐⭐ 🆕
 - 🎉🎉🎉 **Generic standard library** - std::array complete, i32 perfect support ⭐⭐⭐⭐⭐⭐⭐ 🆕🆕
 - 🎉🎉🎉 **Error handling variable binding** - `if result is Error(msg)` extract values ⭐⭐⭐⭐⭐⭐ 🆕
+- 🎉🎉 **ASCII Cat Logo** - Beautiful orange cat displayed on every run! ⭐⭐⭐⭐⭐⭐ 🆕🆕
+- 🎉🎉 **Dynamic Versioning** - Auto-display PawLang v0.2.1 and tool versions ⭐⭐⭐⭐⭐ 🆕🆕
 - 🎉🎉 **Colored output** - Rust-level developer experience ⭐⭐⭐⭐⭐⭐ 🆕
+- 🎉🎉 **Unified Tool Paths** - Dynamic clang/lld discovery, works everywhere ⭐⭐⭐⭐⭐ 🆕🆕
 - 🎉🎉 **paw.toml** - Modern package management config system ⭐⭐⭐⭐⭐ 🆕
 - 🎉 **Standard library expansion** - 15 modules, 164 functions (with generics) ⭐⭐⭐⭐⭐⭐ 🆕⬆️
 - 🎉 **std::array** - 10 generic array functions (sum, max, min, etc.) ⭐⭐⭐⭐⭐⭐ 🆕🆕
