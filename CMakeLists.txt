@@ -16,7 +16,7 @@ message(STATUS "========================================")
 message(STATUS "")
 
 # Configure LLVM build options BEFORE adding subdirectory
-set(LLVM_ENABLE_PROJECTS "llvm" CACHE STRING "")
+set(LLVM_ENABLE_PROJECTS "" CACHE STRING "")
 
 # 根据当前平台和架构自动选择LLVM目标（减少编译时间和二进制大小）
 # 参考：
@@ -259,6 +259,9 @@ add_dependencies(pawc ${llvm_libs})
 
 # Link LLVM libraries
 target_link_libraries(pawc ${llvm_libs})
+
+# Note: Using dynamic linking with MinGW
+# Required DLLs will be copied to the output directory
 
 # Compiler options
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
