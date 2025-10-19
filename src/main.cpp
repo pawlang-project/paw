@@ -220,8 +220,37 @@ int main(int argc, char* argv[]) {
             output_file = "a.out";
         }
         
+        // 查找 clang 路径（与单文件编译相同的逻辑）
+        std::string local_clang;
+        std::string pawc_path = std::filesystem::current_path().string();
+        if (argc > 0) {
+            std::string argv0_path = argv[0];
+            if (std::filesystem::exists(argv0_path)) {
+                pawc_path = std::filesystem::absolute(argv0_path).parent_path().string();
+            }
+        }
+        
+        std::vector<std::string> search_paths = {
+            pawc_path + "/llvm/bin/clang++",
+            pawc_path + "/../llvm/bin/clang++",
+        };
+        
+        for (const auto& path : search_paths) {
+            if (std::filesystem::exists(path)) {
+                local_clang = std::filesystem::absolute(path).string();
+                break;
+            }
+        }
+        
+        if (local_clang.empty()) {
+            std::cerr << pawc::Colors::error("Error: clang++ not found") << std::endl;
+            return 1;
+        }
+        
         // Use module compiler
         pawc::ModuleCompiler compiler(base_dir);
+        compiler.setClangPath(local_clang);
+        
         if (!compiler.compile(input_file, output_file)) {
             std::cerr << pawc::Colors::error("\n✗ Module compilation failed") << std::endl;
             return 1;

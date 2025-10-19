@@ -8,9 +8,13 @@ using pawc::ModuleInfo;  // Forward declaration from module_loader.h
 namespace pawc {
 
 ModuleCompiler::ModuleCompiler(const std::string& base_dir)
-    : base_directory_(base_dir) {
+    : base_directory_(base_dir), clang_path_("") {
     loader_ = std::make_unique<ModuleLoader>(base_dir);
     symbol_table_ = std::make_unique<SymbolTable>();
+}
+
+void ModuleCompiler::setClangPath(const std::string& clang_path) {
+    clang_path_ = clang_path;
 }
 
 bool ModuleCompiler::compile(const std::string& main_file, const std::string& output_file) {
@@ -112,10 +116,9 @@ bool ModuleCompiler::linkModules(const std::string& output_file) {
         obj_files.push_back(obj_file);
     }
     
-    // 使用llvm/bin/clang链接所有.o文件为可执行文件
-    std::string clang_path = "llvm/bin/clang";
-    if (!std::filesystem::exists(clang_path)) {
-        std::cerr << "Error: Clang not found at: " << clang_path << std::endl;
+    // 使用 clang 链接所有.o文件为可执行文件
+    if (clang_path_.empty()) {
+        std::cerr << "Error: Clang path not set. Please call setClangPath() before compile()" << std::endl;
         // 清理
         for (const auto& f : obj_files) {
             std::filesystem::remove(f);
@@ -125,7 +128,7 @@ bool ModuleCompiler::linkModules(const std::string& output_file) {
     
     // 构建链接命令：clang file1.o file2.o ... -o output
     std::string sdk_flags = " -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk";
-    std::string link_cmd = clang_path;
+    std::string link_cmd = clang_path_;
     for (const auto& obj : obj_files) {
         link_cmd += " " + obj;
     }
