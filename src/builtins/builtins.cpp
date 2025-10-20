@@ -198,35 +198,50 @@ void Builtins::declareEprint() {
     llvm::BasicBlock* entry = llvm::BasicBlock::Create(context_, "entry", eprint_func);
     llvm::IRBuilder<> builder(entry);
     
-    // 声明fprintf: i32 fprintf(FILE*, const char*, ...)
-    llvm::FunctionType* fprintf_type = llvm::FunctionType::get(
-        llvm::Type::getInt32Ty(context_),
-        {llvm::PointerType::get(context_, 0), llvm::PointerType::get(context_, 0)},
-        true
-    );
-    llvm::Function* fprintf_func = llvm::Function::Create(
-        fprintf_type,
-        llvm::Function::ExternalLinkage,
-        "fprintf",
-        &module_
-    );
+    // 跨平台 stderr 输出的最佳方案：
+    // 使用 write(2, buf, len) - 文件描述符 2 就是 stderr
+    // Windows: _write(2, ...)
+    // Unix/Linux/macOS: write(2, ...)
     
-    // 声明stderr: extern FILE* stderr
-    llvm::GlobalVariable* stderr_var = new llvm::GlobalVariable(
-        module_,
-        llvm::PointerType::get(context_, 0),
-        false,  // not constant
-        llvm::GlobalValue::ExternalLinkage,
-        nullptr,
-        "__stderrp"  // macOS上stderr的符号名
+    // 声明 strlen: i64 strlen(const char*)
+    llvm::FunctionType* strlen_type = llvm::FunctionType::get(
+        llvm::Type::getInt64Ty(context_),
+        {llvm::PointerType::get(context_, 0)},
+        false
     );
+    llvm::Function* strlen_func = module_.getFunction("strlen");
+    if (!strlen_func) {
+        strlen_func = llvm::Function::Create(
+            strlen_type,
+            llvm::Function::ExternalLinkage,
+            "strlen",
+            &module_
+        );
+    }
     
-    // 调用fprintf(stderr, str)
-    llvm::Value* stderr_ptr = builder.CreateLoad(
-        llvm::PointerType::get(context_, 0), stderr_var, "stderr"
+    // 声明 write: i64 write(i32 fd, const char* buf, i64 count)
+    llvm::FunctionType* write_type = llvm::FunctionType::get(
+        llvm::Type::getInt64Ty(context_),
+        {llvm::Type::getInt32Ty(context_), llvm::PointerType::get(context_, 0), llvm::Type::getInt64Ty(context_)},
+        false
     );
+    llvm::Function* write_func = module_.getFunction("write");
+    if (!write_func) {
+        write_func = llvm::Function::Create(
+            write_type,
+            llvm::Function::ExternalLinkage,
+            "write",
+            &module_
+        );
+    }
+    
+    // 获取字符串长度
     llvm::Value* str_arg = eprint_func->arg_begin();
-    builder.CreateCall(fprintf_func, {stderr_ptr, str_arg});
+    llvm::Value* len = builder.CreateCall(strlen_func, {str_arg});
+    
+    // 调用 write(2, str, len) - 2 是 stderr 的文件描述符
+    llvm::Value* stderr_fd = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_), 2);
+    builder.CreateCall(write_func, {stderr_fd, str_arg, len});
     builder.CreateRetVoid();
     
     builtins_["eprint"] = eprint_func;
@@ -246,44 +261,25 @@ void Builtins::declareEprintln() {
     llvm::BasicBlock* entry = llvm::BasicBlock::Create(context_, "entry", eprintln_func);
     llvm::IRBuilder<> builder(entry);
     
-    // 获取fprintf函数
-    llvm::Function* fprintf_func = module_.getFunction("fprintf");
-    if (!fprintf_func) {
-        llvm::FunctionType* fprintf_type = llvm::FunctionType::get(
-            llvm::Type::getInt32Ty(context_),
-            {llvm::PointerType::get(context_, 0), llvm::PointerType::get(context_, 0)},
-            true
-        );
-        fprintf_func = llvm::Function::Create(
-            fprintf_type,
-            llvm::Function::ExternalLinkage,
-            "fprintf",
-            &module_
-        );
-    }
+    // 同样使用 write(2, ...) 输出到 stderr
     
-    // 获取stderr
-    llvm::GlobalVariable* stderr_var = module_.getGlobalVariable("__stderrp");
-    if (!stderr_var) {
-        stderr_var = new llvm::GlobalVariable(
-            module_,
-            llvm::PointerType::get(context_, 0),
-            false,
-            llvm::GlobalValue::ExternalLinkage,
-            nullptr,
-            "__stderrp"
-        );
-    }
+    // 获取 strlen 和 write 函数
+    llvm::Function* strlen_func = module_.getFunction("strlen");
+    llvm::Function* write_func = module_.getFunction("write");
     
-    // 创建格式字符串 "%s\n"
-    llvm::Value* format_str = builder.CreateGlobalString("%s\n", "eprintln_fmt");
-    
-    // 调用fprintf(stderr, format, str)
-    llvm::Value* stderr_ptr = builder.CreateLoad(
-        llvm::PointerType::get(context_, 0), stderr_var, "stderr"
-    );
+    // 获取字符串长度
     llvm::Value* str_arg = eprintln_func->arg_begin();
-    builder.CreateCall(fprintf_func, {stderr_ptr, format_str, str_arg});
+    llvm::Value* len = builder.CreateCall(strlen_func, {str_arg});
+    
+    // 调用 write(2, str, len) 输出字符串
+    llvm::Value* stderr_fd = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_), 2);
+    builder.CreateCall(write_func, {stderr_fd, str_arg, len});
+    
+    // 输出换行符 '\n'
+    llvm::Value* newline = builder.CreateGlobalString("\n", "newline");
+    llvm::Value* newline_len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context_), 1);
+    builder.CreateCall(write_func, {stderr_fd, newline, newline_len});
+    
     builder.CreateRetVoid();
     
     builtins_["eprintln"] = eprintln_func;

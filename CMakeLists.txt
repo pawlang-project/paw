@@ -11,7 +11,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 message(STATUS "")
 message(STATUS "========================================")
-message(STATUS "  Building LLVM from source (minimal)")
+message(STATUS "  Building LLVM from source")
 message(STATUS "========================================")
 message(STATUS "")
 
@@ -25,15 +25,15 @@ set(LLVM_EXTERNAL_LLD_SOURCE_DIR "${CMAKE_SOURCE_DIR}/lld" CACHE PATH "" FORCE)
 
 # Verify directories exist
 if(EXISTS "${CMAKE_SOURCE_DIR}/clang")
-    message(STATUS "✓ Clang source found: ${CMAKE_SOURCE_DIR}/clang")
+    message(STATUS "[OK] Clang source found: ${CMAKE_SOURCE_DIR}/clang")
 else()
-    message(FATAL_ERROR "✗ Clang source not found at: ${CMAKE_SOURCE_DIR}/clang")
+    message(FATAL_ERROR "[ERROR] Clang source not found at: ${CMAKE_SOURCE_DIR}/clang")
 endif()
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/lld")
-    message(STATUS "✓ LLD source found: ${CMAKE_SOURCE_DIR}/lld")
+    message(STATUS "[OK] LLD source found: ${CMAKE_SOURCE_DIR}/lld")
 else()
-    message(FATAL_ERROR "✗ LLD source not found at: ${CMAKE_SOURCE_DIR}/lld")
+    message(FATAL_ERROR "[ERROR] LLD source not found at: ${CMAKE_SOURCE_DIR}/lld")
 endif()
 
 # Enable building tools (required for clang and lld executables)
@@ -133,7 +133,7 @@ set(LLVM_INCLUDE_TESTS OFF CACHE BOOL "")
 set(LLVM_INCLUDE_BENCHMARKS OFF CACHE BOOL "")
 set(LLVM_INCLUDE_DOCS OFF CACHE BOOL "")
 
-# Apply minimal patches for clang and lld (zig-bootstrap style)
+# Apply minimal patches for clang and lld
 set(CLANG_CMAKE "${CMAKE_SOURCE_DIR}/clang/CMakeLists.txt")
 if(EXISTS ${CLANG_CMAKE})
     file(READ ${CLANG_CMAKE} CLANG_CONTENT)
@@ -371,7 +371,7 @@ endif()
 # Output information
 message(STATUS "")
 message(STATUS "========================================")
-message(STATUS "  PawLang Compiler - Integrated LLVM")
+message(STATUS "  PawLang Compiler")
 message(STATUS "========================================")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "LLVM: Building from source")

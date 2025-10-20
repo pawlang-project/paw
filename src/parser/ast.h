@@ -4,6 +4,7 @@
 #include "pawc/common.h"
 #include <memory>
 #include <vector>
+#include <cstdint>
 
 namespace pawc {
 

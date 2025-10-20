@@ -12,6 +12,10 @@
 #include <filesystem>
 #include <regex>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 // 获取可执行文件的版本号
 std::string getVersion(const std::string& executable_path) {
     std::string version = "unknown";
@@ -81,6 +85,23 @@ void printUsage(const char* program_name) {
 }
 
 int main(int argc, char* argv[]) {
+    // Windows UTF-8 和 ANSI 颜色支持
+#ifdef _WIN32
+    // 设置控制台代码页为 UTF-8
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    
+    // 启用虚拟终端处理以支持 ANSI 转义序列（颜色）
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hOut, &dwMode)) {
+            dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+            SetConsoleMode(hOut, dwMode);
+        }
+    }
+#endif
+    
     // Initialize LLVM native target (must be initialized before use)
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmParser();
@@ -428,12 +449,16 @@ int main(int argc, char* argv[]) {
         
 #elif defined(_WIN32) || defined(_WIN64)
         // ===== Windows (x86 / x86_64 / ARM64) =====
-        // MSVC vs MinGW need different flags
+        // MSVC vs Clang vs MinGW need different flags
         if (compiler.find("cl.exe") != std::string::npos || compiler.find("cl ") != std::string::npos) {
             // MSVC linker
             link_cmd = compiler + " /Fe:" + output_file + " " + obj_file;
             link_cmd += " /link /SUBSYSTEM:CONSOLE";
-            // MSVC uses different command format, return command directly
+        } else if (compiler.find("clang") != std::string::npos) {
+            // Clang on Windows: use --target and -fuse-ld flags
+            link_cmd += " --target=x86_64-w64-windows-gnu";
+            link_cmd += " -fuse-ld=lld";
+            link_cmd += " -static-libgcc -static-libstdc++";
         } else {
             // MinGW/GCC format
             link_cmd += " -static-libgcc -static-libstdc++";  // Statically link runtime
