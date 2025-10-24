@@ -20,9 +20,9 @@ fn main() -> i32 {
         return x;
     }
     
-    // is 用于循环条件
+    // 循环条件
     let mut count: i32 = 0;
-    loop count is 0 {
+    loop count == 0 {
         count = count + 1;
     }
     

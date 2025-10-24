@@ -835,6 +835,16 @@ void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
             builder_->CreateStore(&arg, alloca);
             named_values_[std::string(arg.getName())] = alloca;
             variable_types_[std::string(arg.getName())] = arg.getType();  // 记录参数类型
+            idx++;
+        }
+        
+        // 单独处理数组参数元素类型记录
+        for (const auto& param : stmt->parameters) {
+            if (!param.is_self && param.type && param.type->kind == Type::Kind::Array) {
+                const ArrayTypeNode* array_type = static_cast<const ArrayTypeNode*>(param.type.get());
+                llvm::Type* elem_type = convertType(array_type->element_type.get());
+                array_element_types_[param.name] = elem_type;
+            }
         }
         
         generateStmt(stmt->body.get());
@@ -855,6 +865,14 @@ void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
 }
 
 void CodeGenerator::generateExternStmt(const ExternStmt* stmt) {
+    // 检查函数是否已经被声明（避免与Builtins冲突）
+    llvm::Function* existing_func = module_->getFunction(stmt->name);
+    if (existing_func) {
+        // 函数已存在（可能来自Builtins），直接使用
+        functions_[stmt->name] = existing_func;
+        return;
+    }
+    
     std::vector<llvm::Type*> param_types;
     for (const auto& param : stmt->parameters) {
         param_types.push_back(convertType(param.type.get()));
@@ -867,9 +885,15 @@ void CodeGenerator::generateExternStmt(const ExternStmt* stmt) {
         return_type, param_types, false  // 不支持可变参数
     );
     
-    llvm::Function::Create(
+    llvm::Function* func = llvm::Function::Create(
         func_type, llvm::Function::ExternalLinkage, stmt->name, module_.get()
     );
+    
+    // 保存到函数映射中，使其可被查找
+    functions_[stmt->name] = func;
+    
+    // 注意：不注册到符号表，因为extern函数是C标准库函数，
+    // 应该在每个需要它的模块中分别声明
 }
 
 void CodeGenerator::generateStructStmt(const StructStmt* stmt) {

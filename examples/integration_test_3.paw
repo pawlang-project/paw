@@ -1,0 +1,39 @@
+// 集成测试3: 浮点数+类型转换+数学
+
+import "std::math";
+
+fn compute(x: i32, y: f64) -> i32 {
+    // 整数转浮点
+    let x_float: f64 = x as f64;
+    
+    // 浮点数运算
+    let sum: f64 = x_float + y;
+    let product: f64 = x_float * y;
+    
+    // 使用数学函数
+    let abs_sum: f64 = math::fabs(sum);
+    let sqrt_val: f64 = math::sqrt(abs_sum);
+    
+    // 浮点转整数
+    let result: i32 = sqrt_val as i32;
+    
+    return result;
+}
+
+fn main() -> i32 {
+    // 测试负浮点数
+    let neg: f64 = -3.14;
+    let pos: f64 = 3.14;
+    
+    // 浮点数运算
+    let sum: f64 = neg + pos;
+    let diff: f64 = pos - neg;
+    
+    // 整数和浮点混合
+    let int_val: i32 = 100;
+    let result: i32 = compute(int_val, 25.0);
+    
+    println("Integration test 3 passed!");
+    return result;
+}
+

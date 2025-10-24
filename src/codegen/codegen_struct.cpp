@@ -162,8 +162,9 @@ llvm::Value* CodeGenerator::generateEnumVariantExpr(const EnumVariantExpr* expr)
         }
     }
     
-    // 返回load的值而不是指针（enum是值类型）
-    return builder_->CreateLoad(enum_type, alloca, "enum_val");
+    // 返回alloca指针（与struct行为一致）
+    // 实际使用时会根据需要load值
+    return alloca;
 }
 
 // ====== 泛型支持 ======

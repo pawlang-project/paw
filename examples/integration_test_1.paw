@@ -1,0 +1,39 @@
+// 集成测试1: 基础功能组合
+
+fn factorial(n: i32) -> i32 {
+    if n <= 1 {
+        return 1;
+    } else {
+        return n * factorial(n - 1);
+    }
+}
+
+fn sum_array(arr: [i32; 5]) -> i32 {
+    let mut sum: i32 = 0;
+    let zero: i32 = 0;
+    let five: i32 = 5;
+    
+    loop i in zero..five {
+        sum = sum + arr[i];
+    }
+    
+    return sum;
+}
+
+fn main() -> i32 {
+    // 测试递归
+    let f5: i32 = factorial(5);  // 120
+    
+    // 测试数组和循环
+    let numbers: [i32; 5] = [1, 2, 3, 4, 5];
+    let total: i32 = sum_array(numbers);  // 15
+    
+    // 测试字符串
+    let s1: string = "Hello, ";
+    let s2: string = "World!";
+    let s3: string = s1 + s2;
+    println(s3);
+    
+    return f5 + total;  // 135
+}
+

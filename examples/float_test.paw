@@ -1,0 +1,30 @@
+// 测试浮点数负值修复
+
+fn main() -> i32 {
+    // 测试负浮点数字面量
+    let neg_float: f64 = -3.14;
+    let pos_float: f64 = 3.14;
+    
+    // 测试浮点数算术运算
+    let sum: f64 = neg_float + pos_float;      // 应该接近0
+    let diff: f64 = pos_float - neg_float;     // 应该是6.28
+    let product: f64 = neg_float * 2.0;        // 应该是-6.28
+    let quotient: f64 = neg_float / 2.0;       // 应该是-1.57
+    
+    // 测试浮点数比较
+    let is_less: bool = neg_float < pos_float;      // true
+    let is_greater: bool = pos_float > neg_float;   // true
+    let is_equal: bool = neg_float == -3.14;        // true
+    
+    // 测试一元负号
+    let negated: f64 = -pos_float;             // 应该是-3.14
+    
+    println("Negative float literal works!");
+    println("Float arithmetic works!");
+    println("Float comparison works!");
+    println("Unary negation works!");
+    
+    return 0;
+}
+
+

@@ -204,3 +204,68 @@ pub fn lower(s: string) -> string {
     
     return result;
 }
+
+// 去除字符串首尾空白字符
+pub fn trim(s: string) -> string {
+    let len_i64: i64 = strlen(s);
+    let len: i32 = len_i64 as i32;
+    
+    // 如果字符串为空，返回空字符串
+    let zero: i32 = 0;
+    if len == zero {
+        return s;
+    }
+    
+    // 查找第一个非空白字符
+    let mut start: i32 = 0;
+    loop start < len {
+        let c: char = s[start];
+        if is_space(c) {
+            start = start + 1;
+        } else {
+            break;
+        }
+    }
+    
+    // 如果全是空白，返回空字符串
+    if start >= len {
+        let one: i64 = 1;
+        let mut empty: string = malloc(one);
+        let null_char: char = 0 as char;
+        empty[0] = null_char;
+        return empty;
+    }
+    
+    // 查找最后一个非空白字符
+    let mut end: i32 = len - 1;
+    loop end > start {
+        let c: char = s[end];
+        if is_space(c) {
+            end = end - 1;
+        } else {
+            break;
+        }
+    }
+    
+    // 计算结果长度
+    let result_len: i32 = end - start + 1;
+    let result_len_i64: i64 = result_len as i64;
+    let one: i64 = 1;
+    let alloc_size: i64 = result_len_i64 + one;
+    
+    // 分配新字符串
+    let mut result: string = malloc(alloc_size);
+    
+    // 复制字符
+    loop i in zero..result_len {
+        let src_idx: i32 = start + i;
+        let c: char = s[src_idx];
+        result[i] = c;
+    }
+    
+    // 添加null结尾
+    let null_char: char = 0 as char;
+    result[result_len] = null_char;
+    
+    return result;
+}

@@ -170,10 +170,22 @@ llvm::StructType* CodeGenerator::getOrCreateStructType(const std::string& name) 
 
 llvm::Type* CodeGenerator::convertPrimitiveType(PrimitiveType type) {
     switch (type) {
+        // 有符号整数类型
+        case PrimitiveType::I8: return llvm::Type::getInt8Ty(*context_);
+        case PrimitiveType::I16: return llvm::Type::getInt16Ty(*context_);
         case PrimitiveType::I32: return llvm::Type::getInt32Ty(*context_);
         case PrimitiveType::I64: return llvm::Type::getInt64Ty(*context_);
+        case PrimitiveType::I128: return llvm::Type::getInt128Ty(*context_);
+        // 无符号整数类型
+        case PrimitiveType::U8: return llvm::Type::getInt8Ty(*context_);
+        case PrimitiveType::U16: return llvm::Type::getInt16Ty(*context_);
+        case PrimitiveType::U32: return llvm::Type::getInt32Ty(*context_);
+        case PrimitiveType::U64: return llvm::Type::getInt64Ty(*context_);
+        case PrimitiveType::U128: return llvm::Type::getInt128Ty(*context_);
+        // 浮点数类型
         case PrimitiveType::F32: return llvm::Type::getFloatTy(*context_);
         case PrimitiveType::F64: return llvm::Type::getDoubleTy(*context_);
+        // 其他类型
         case PrimitiveType::BOOL: return llvm::Type::getInt1Ty(*context_);
         case PrimitiveType::CHAR: return llvm::Type::getInt8Ty(*context_);
         case PrimitiveType::STRING: return llvm::PointerType::get(*context_, 0);

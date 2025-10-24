@@ -1,0 +1,44 @@
+// 集成测试2: 结构体+枚举+模式匹配
+
+type Point = struct {
+    x: i32,
+    y: i32,
+    
+    fn new(x: i32, y: i32) -> Point {
+        return Point { x: x, y: y };
+    }
+    
+    fn distance_sq(self) -> i32 {
+        return self.x * self.x + self.y * self.y;
+    }
+}
+
+type Option = enum {
+    Some(i32),
+    None(),
+}
+
+fn find_max(a: i32, b: i32) -> Option {
+    if a > b {
+        return Option::Some(a);
+    } else if b > a {
+        return Option::Some(b);
+    } else {
+        return Option::None();
+    }
+}
+
+fn main() -> i32 {
+    let p: Point = Point::new(3, 4);
+    let dist: i32 = p.distance_sq();  // 25
+    
+    let opt: Option = find_max(10, 20);
+    let result: i32 = opt is {
+        Some(val) => val,
+        None() => 0,
+    };  // 20
+    
+    println("Integration test 2 passed!");
+    return dist + result;  // 45
+}
+

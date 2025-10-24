@@ -1,0 +1,17 @@
+// 测试跨模块char调用
+
+import "std::string";
+
+fn main() -> i32 {
+    // 测试is_alpha函数
+    let result: bool = string::is_alpha('A');
+    
+    if result {
+        println("is_alpha works!");
+        return 0;
+    }
+    
+    return 1;
+}
+
+

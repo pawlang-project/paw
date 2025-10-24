@@ -80,6 +80,12 @@ llvm::Value* CodeGenerator::generateBinaryExpr(const BinaryExpr* expr) {
         llvm::Function* strcpy_func = module_->getFunction("strcpy");
         llvm::Function* strcat_func = module_->getFunction("strcat");
         
+        // 检查函数是否存在
+        if (!strlen_func || !malloc_func || !strcpy_func || !strcat_func) {
+            std::cerr << "Error: String functions not declared" << std::endl;
+            return nullptr;
+        }
+        
         // Calculate length
         llvm::Value* len1 = builder_->CreateCall(strlen_func, {left}, "len1");
         llvm::Value* len2 = builder_->CreateCall(strlen_func, {right}, "len2");
@@ -115,21 +121,49 @@ llvm::Value* CodeGenerator::generateBinaryExpr(const BinaryExpr* expr) {
         }
     }
     
+    // 检查操作数类型，区分整数和浮点数运算
+    bool is_float = left->getType()->isFloatingPointTy() || right->getType()->isFloatingPointTy();
+    
     switch (expr->op) {
-        case BinaryExpr::Op::Add: return builder_->CreateAdd(left, right, "addtmp");
-        case BinaryExpr::Op::Sub: return builder_->CreateSub(left, right, "subtmp");
-        case BinaryExpr::Op::Mul: return builder_->CreateMul(left, right, "multmp");
-        case BinaryExpr::Op::Div: return builder_->CreateSDiv(left, right, "divtmp");
-        case BinaryExpr::Op::Mod: return builder_->CreateSRem(left, right, "modtmp");
-        case BinaryExpr::Op::Eq: return builder_->CreateICmpEQ(left, right, "eqtmp");
-        case BinaryExpr::Op::Ne: return builder_->CreateICmpNE(left, right, "netmp");
-        case BinaryExpr::Op::Lt: return builder_->CreateICmpSLT(left, right, "lttmp");
-        case BinaryExpr::Op::Le: return builder_->CreateICmpSLE(left, right, "letmp");
-        case BinaryExpr::Op::Gt: return builder_->CreateICmpSGT(left, right, "gttmp");
-        case BinaryExpr::Op::Ge: return builder_->CreateICmpSGE(left, right, "getmp");
-        case BinaryExpr::Op::And: return builder_->CreateAnd(left, right, "andtmp");
-        case BinaryExpr::Op::Or: return builder_->CreateOr(left, right, "ortmp");
-        default: return nullptr;
+        case BinaryExpr::Op::Add:
+            return is_float ? builder_->CreateFAdd(left, right, "faddtmp") 
+                           : builder_->CreateAdd(left, right, "addtmp");
+        case BinaryExpr::Op::Sub:
+            return is_float ? builder_->CreateFSub(left, right, "fsubtmp")
+                           : builder_->CreateSub(left, right, "subtmp");
+        case BinaryExpr::Op::Mul:
+            return is_float ? builder_->CreateFMul(left, right, "fmultmp")
+                           : builder_->CreateMul(left, right, "multmp");
+        case BinaryExpr::Op::Div:
+            return is_float ? builder_->CreateFDiv(left, right, "fdivtmp")
+                           : builder_->CreateSDiv(left, right, "divtmp");
+        case BinaryExpr::Op::Mod:
+            return is_float ? builder_->CreateFRem(left, right, "fremtmp")
+                           : builder_->CreateSRem(left, right, "modtmp");
+        case BinaryExpr::Op::Eq:
+            return is_float ? builder_->CreateFCmpOEQ(left, right, "feqtmp")
+                           : builder_->CreateICmpEQ(left, right, "eqtmp");
+        case BinaryExpr::Op::Ne:
+            return is_float ? builder_->CreateFCmpONE(left, right, "fnetmp")
+                           : builder_->CreateICmpNE(left, right, "netmp");
+        case BinaryExpr::Op::Lt:
+            return is_float ? builder_->CreateFCmpOLT(left, right, "flttmp")
+                           : builder_->CreateICmpSLT(left, right, "lttmp");
+        case BinaryExpr::Op::Le:
+            return is_float ? builder_->CreateFCmpOLE(left, right, "fletmp")
+                           : builder_->CreateICmpSLE(left, right, "letmp");
+        case BinaryExpr::Op::Gt:
+            return is_float ? builder_->CreateFCmpOGT(left, right, "fgttmp")
+                           : builder_->CreateICmpSGT(left, right, "gttmp");
+        case BinaryExpr::Op::Ge:
+            return is_float ? builder_->CreateFCmpOGE(left, right, "fgetmp")
+                           : builder_->CreateICmpSGE(left, right, "getmp");
+        case BinaryExpr::Op::And:
+            return builder_->CreateAnd(left, right, "andtmp");
+        case BinaryExpr::Op::Or:
+            return builder_->CreateOr(left, right, "ortmp");
+        default:
+            return nullptr;
     }
 }
 
@@ -140,7 +174,12 @@ llvm::Value* CodeGenerator::generateUnaryExpr(const UnaryExpr* expr) {
     
     switch (expr->op) {
         case UnaryExpr::Op::Neg:
-            return builder_->CreateNeg(operand, "negtmp");
+            // 对于浮点数使用FNeg，对于整数使用Neg
+            if (operand->getType()->isFloatingPointTy()) {
+                return builder_->CreateFNeg(operand, "fnegtmp");
+            } else {
+                return builder_->CreateNeg(operand, "negtmp");
+            }
         case UnaryExpr::Op::Not:
             return builder_->CreateNot(operand, "nottmp");
         default:
@@ -386,9 +425,34 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
         
         // Generate arguments（使用辅助函数处理数组传递）
         std::vector<llvm::Value*> args;
-        for (const auto& arg : expr->arguments) {
-            llvm::Value* arg_val = generateArgumentValue(arg.get());
-            if (arg_val) args.push_back(arg_val);
+        for (size_t i = 0; i < expr->arguments.size(); i++) {
+            llvm::Value* arg_val = generateArgumentValue(expr->arguments[i].get());
+            if (!arg_val) continue;
+            
+            // 检查参数类型是否匹配，如果不匹配则进行类型转换
+            if (i < local_func->getFunctionType()->getNumParams()) {
+                llvm::Type* expected_type = local_func->getFunctionType()->getParamType(i);
+                llvm::Type* actual_type = arg_val->getType();
+                
+                // 如果类型不匹配，尝试转换
+                if (expected_type != actual_type) {
+                    // 整数类型之间的转换（如i32 -> i8）
+                    if (expected_type->isIntegerTy() && actual_type->isIntegerTy()) {
+                        unsigned expected_bits = expected_type->getIntegerBitWidth();
+                        unsigned actual_bits = actual_type->getIntegerBitWidth();
+                        
+                        if (expected_bits < actual_bits) {
+                            // 截断：i32 -> i8
+                            arg_val = builder_->CreateTrunc(arg_val, expected_type, "trunc");
+                        } else if (expected_bits > actual_bits) {
+                            // 扩展：i8 -> i32
+                            arg_val = builder_->CreateSExt(arg_val, expected_type, "sext");
+                        }
+                    }
+                }
+            }
+            
+            args.push_back(arg_val);
         }
         
         if (local_func->getReturnType()->isVoidTy()) {

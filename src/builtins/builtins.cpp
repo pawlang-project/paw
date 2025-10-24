@@ -9,11 +9,12 @@ Builtins::Builtins(llvm::LLVMContext& context, llvm::Module& module)
 void Builtins::declareAll() {
     // 声明libc函数
     declarePrintf();
-    // strlen, strcmp等由用户通过extern声明（支持size类型）
-    // declareStrcat();
-    // declareStrcpy();
-    // declareStrlen();
-    declareMalloc();  // 启用malloc（用于struct堆分配）
+    // 字符串函数(strlen, strcmp等)由用户通过extern声明
+    // 但为了支持字符串拼接，我们声明这些常用函数
+    declareStrlen();
+    declareStrcpy();
+    declareStrcat();
+    declareMalloc();  // 启用malloc（用于struct堆分配和字符串拼接）
     declareMemcpy();  // 启用memcpy（用于struct拷贝）
     // 实现print和println
     declarePrint();
@@ -92,9 +93,19 @@ void Builtins::declareStrcpy() {
 }
 
 void Builtins::declareStrlen() {
-    // 不在这里声明strlen了，让用户通过extern声明
-    // 这样可以使用正确的size类型
-    // Builtins只声明print/println/eprint/eprintln
+    // 声明 strlen: i64 strlen(i8*)
+    llvm::FunctionType* strlen_type = llvm::FunctionType::get(
+        llvm::Type::getInt64Ty(context_),
+        {llvm::PointerType::get(context_, 0)},
+        false
+    );
+    
+    llvm::Function::Create(
+        strlen_type,
+        llvm::Function::ExternalLinkage,
+        "strlen",
+        &module_
+    );
 }
 
 void Builtins::declareMalloc() {
