@@ -315,7 +315,7 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
                 args.push_back(actual_obj_ptr);  // this指针（heap指针）
                 
                 for (const auto& arg : expr->arguments) {
-                    llvm::Value* arg_val = generateExpr(arg.get());
+                    llvm::Value* arg_val = generateArgumentValue(arg.get());
                     if (arg_val) args.push_back(arg_val);
                 }
                 
@@ -601,7 +601,7 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
             // Generate arguments
             std::vector<llvm::Value*> args;
             for (const auto& arg : expr->arguments) {
-                llvm::Value* arg_val = generateExpr(arg.get());
+                llvm::Value* arg_val = generateArgumentValue(arg.get());
                 if (arg_val) args.push_back(arg_val);
             }
             

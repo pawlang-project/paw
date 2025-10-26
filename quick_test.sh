@@ -60,7 +60,7 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 3. 元组系统 (v0.2.2) 🆕"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-# test_compile "examples/tuple_test.paw" "元组基本"  # 跳过：元组按值传递问题
+test_compile "examples/tuple_test.paw" "元组基本"
 test_compile "examples/tuple_field_access_test.paw" "元组访问"
 test_compile "examples/tuple_destructure_test.paw" "元组解构"
 

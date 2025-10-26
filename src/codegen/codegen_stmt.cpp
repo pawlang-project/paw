@@ -1156,15 +1156,18 @@ void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
             }
             
             // 切片参数按值传递（已经是{ ptr, len }结构）
-            // struct参数传递指针而不是值（但切片除外）
+            // struct参数传递指针而不是值（但切片、enum、元组除外）
             if (llvm::isa<llvm::StructType>(param_type)) {
                 // 检查是否是切片类型：struct中有2个字段且第一个是ptr，第二个是i64
                 llvm::StructType* st = llvm::cast<llvm::StructType>(param_type);
                 bool is_slice = (st->getNumElements() == 2 && 
-                st->getElementType(0)->isPointerTy() &&
-                st->getElementType(1)->isIntegerTy(64));
+                                st->getElementType(0)->isPointerTy() &&
+                                st->getElementType(1)->isIntegerTy(64));
                 
-                if (!is_slice) {
+                // 检查是否是元组类型（参数类型是TupleTypeNode）
+                bool is_tuple = (param.type->kind == Type::Kind::Tuple);
+                
+                if (!is_slice && !is_tuple) {
                     // 检查是否是enum类型
                     bool is_enum = false;
                     for (const auto& [enum_name, _] : enum_defs_) {
@@ -1175,14 +1178,14 @@ void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
                         }
                     }
                     
-                    // Enum和小struct按值传递，大struct传递指针
-                    // 简化：所有enum都按值传递
+                    // Enum、元组和小struct按值传递，大struct传递指针
+                    // 简化：所有enum和tuple都按值传递
                     if (!is_enum) {
                         // 普通struct传递指针
                         param_type = llvm::PointerType::get(*context_, 0);
                     }
                 }
-                // 切片和enum保持struct类型，按值传递
+                // 切片、enum和tuple保持struct类型，按值传递
             }
             
             param_types.push_back(param_type);
