@@ -274,6 +274,11 @@ StmtPtr Parser::letDeclaration() {
     ExprPtr initializer = nullptr;
     if (match({TokenType::ASSIGN})) {
         initializer = expression();
+        
+        // 【类型推断】：如果没有显式类型，从initializer推断
+        if (!type && initializer) {
+            type = inferTypeFromExpr(initializer.get());
+        }
     }
     
     consume(TokenType::SEMICOLON, "Expected ';' after variable declaration");
@@ -1715,6 +1720,226 @@ void Parser::registerType(const std::string& name) {
 
 bool Parser::isRegisteredType(const std::string& name) const {
     return type_names_.count(name) > 0;
+}
+
+/**
+ * 克隆类型节点
+ */
+TypePtr Parser::cloneType(const Type* type) {
+    if (!type) return nullptr;
+    
+    switch (type->kind) {
+        case Type::Kind::Primitive: {
+            const PrimitiveTypeNode* prim = static_cast<const PrimitiveTypeNode*>(type);
+            return std::make_unique<PrimitiveTypeNode>(prim->prim_type, type->location);
+        }
+        case Type::Kind::Named: {
+            const NamedTypeNode* named = static_cast<const NamedTypeNode*>(type);
+            std::vector<TypePtr> cloned_args;
+            for (const auto& arg : named->generic_args) {
+                cloned_args.push_back(cloneType(arg.get()));
+            }
+            return std::make_unique<NamedTypeNode>(named->name, std::move(cloned_args), type->location);
+        }
+        case Type::Kind::Array: {
+            const ArrayTypeNode* array = static_cast<const ArrayTypeNode*>(type);
+            return std::make_unique<ArrayTypeNode>(
+                cloneType(array->element_type.get()), array->size, type->location
+            );
+        }
+        case Type::Kind::Slice: {
+            const SliceTypeNode* slice = static_cast<const SliceTypeNode*>(type);
+            return std::make_unique<SliceTypeNode>(
+                cloneType(slice->element_type.get()), type->location
+            );
+        }
+        case Type::Kind::Tuple: {
+            const TupleTypeNode* tuple = static_cast<const TupleTypeNode*>(type);
+            std::vector<TypePtr> cloned_types;
+            for (const auto& elem : tuple->element_types) {
+                cloned_types.push_back(cloneType(elem.get()));
+            }
+            return std::make_unique<TupleTypeNode>(std::move(cloned_types), type->location);
+        }
+        case Type::Kind::Reference: {
+            const ReferenceTypeNode* ref = static_cast<const ReferenceTypeNode*>(type);
+            return std::make_unique<ReferenceTypeNode>(
+                cloneType(ref->inner_type.get()), ref->is_mutable, type->location
+            );
+        }
+        case Type::Kind::Optional: {
+            const OptionalTypeNode* opt = static_cast<const OptionalTypeNode*>(type);
+            return std::make_unique<OptionalTypeNode>(
+                cloneType(opt->inner_type.get()), type->location
+            );
+        }
+        default:
+            return nullptr;
+    }
+}
+
+/**
+ * 从表达式推断类型
+ * 支持：引用、字面量、标识符（有限）
+ */
+TypePtr Parser::inferTypeFromExpr(const Expr* expr) {
+    if (!expr) return nullptr;
+    
+    switch (expr->kind) {
+        case Expr::Kind::Unary: {
+            const UnaryExpr* unary = static_cast<const UnaryExpr*>(expr);
+            
+            // 引用类型推断：&x 或 &mut x
+            if (unary->op == UnaryExpr::Op::Ref || unary->op == UnaryExpr::Op::RefMut) {
+                // 推断operand的类型
+                TypePtr inner_type = inferTypeFromExpr(unary->operand.get());
+                
+                if (!inner_type) {
+                    // 如果无法推断，尝试从标识符查找
+                    if (unary->operand->kind == Expr::Kind::Identifier) {
+                        const IdentifierExpr* id = static_cast<const IdentifierExpr*>(unary->operand.get());
+                        // 暂时返回nullptr，后续由codegen处理
+                        // TODO: 维护变量类型表以支持更好的推断
+                        return nullptr;
+                    }
+                    return nullptr;
+                }
+                
+                bool is_mutable = (unary->op == UnaryExpr::Op::RefMut);
+                return std::make_unique<ReferenceTypeNode>(
+                    std::move(inner_type), is_mutable, expr->location
+                );
+            }
+            break;
+        }
+        
+        case Expr::Kind::Integer:
+            // 整数字面量 → i32
+            return std::make_unique<PrimitiveTypeNode>(PrimitiveType::I32, expr->location);
+        
+        case Expr::Kind::Float:
+            // 浮点数字面量 → f64
+            return std::make_unique<PrimitiveTypeNode>(PrimitiveType::F64, expr->location);
+        
+        case Expr::Kind::Boolean:
+            // 布尔字面量 → bool
+            return std::make_unique<PrimitiveTypeNode>(PrimitiveType::BOOL, expr->location);
+        
+        case Expr::Kind::String:
+            // 字符串字面量 → string
+            return std::make_unique<PrimitiveTypeNode>(PrimitiveType::STRING, expr->location);
+        
+        case Expr::Kind::ArrayLiteral: {
+            // 数组字面量 → [T; N]
+            const ArrayLiteralExpr* array = static_cast<const ArrayLiteralExpr*>(expr);
+            if (!array->elements.empty()) {
+                TypePtr elem_type = inferTypeFromExpr(array->elements[0].get());
+                if (elem_type) {
+                    return std::make_unique<ArrayTypeNode>(
+                        std::move(elem_type), array->elements.size(), expr->location
+                    );
+                }
+            }
+            break;
+        }
+        
+        case Expr::Kind::TupleLiteral: {
+            // 元组字面量 → (T, U, V)
+            const TupleLiteralExpr* tuple = static_cast<const TupleLiteralExpr*>(expr);
+            std::vector<TypePtr> elem_types;
+            for (const auto& elem : tuple->elements) {
+                TypePtr elem_type = inferTypeFromExpr(elem.get());
+                if (elem_type) {
+                    elem_types.push_back(std::move(elem_type));
+                } else {
+                    return nullptr;  // 无法推断某个元素
+                }
+            }
+            return std::make_unique<TupleTypeNode>(std::move(elem_types), expr->location);
+        }
+        
+        case Expr::Kind::StructLiteral: {
+            // Struct字面量 → StructType
+            const StructLiteralExpr* struct_lit = static_cast<const StructLiteralExpr*>(expr);
+            std::vector<TypePtr> empty_generic_args;
+            return std::make_unique<NamedTypeNode>(
+                struct_lit->type_name, std::move(empty_generic_args), expr->location
+            );
+        }
+        
+        case Expr::Kind::Binary: {
+            // 二元表达式：推断结果类型
+            const BinaryExpr* binary = static_cast<const BinaryExpr*>(expr);
+            
+            // 比较操作符 → bool
+            if (binary->op == BinaryExpr::Op::Eq || binary->op == BinaryExpr::Op::Ne ||
+                binary->op == BinaryExpr::Op::Lt || binary->op == BinaryExpr::Op::Le ||
+                binary->op == BinaryExpr::Op::Gt || binary->op == BinaryExpr::Op::Ge) {
+                return std::make_unique<PrimitiveTypeNode>(PrimitiveType::BOOL, expr->location);
+            }
+            
+            // 逻辑操作符 → bool
+            if (binary->op == BinaryExpr::Op::And || binary->op == BinaryExpr::Op::Or) {
+                return std::make_unique<PrimitiveTypeNode>(PrimitiveType::BOOL, expr->location);
+            }
+            
+            // 算术操作符：从左操作数推断
+            return inferTypeFromExpr(binary->left.get());
+        }
+        
+        case Expr::Kind::MemberAccess: {
+            // 成员访问：tuple.0 或 obj.field
+            const MemberAccessExpr* member = static_cast<const MemberAccessExpr*>(expr);
+            
+            // 元组字段访问
+            if (member->is_tuple_index) {
+                TypePtr tuple_type = inferTypeFromExpr(member->object.get());
+                if (tuple_type && tuple_type->kind == Type::Kind::Tuple) {
+                    const TupleTypeNode* tuple = static_cast<const TupleTypeNode*>(tuple_type.get());
+                    if (member->tuple_index < tuple->element_types.size()) {
+                        // 克隆元素类型
+                        return cloneType(tuple->element_types[member->tuple_index].get());
+                    }
+                }
+            }
+            // Struct成员访问：暂时无法推断（需要struct定义信息）
+            return nullptr;
+        }
+        
+        case Expr::Kind::Index: {
+            // 数组/切片索引：推断元素类型
+            const IndexExpr* index = static_cast<const IndexExpr*>(expr);
+            TypePtr array_type = inferTypeFromExpr(index->array.get());
+            
+            if (array_type) {
+                if (array_type->kind == Type::Kind::Array) {
+                    const ArrayTypeNode* arr = static_cast<const ArrayTypeNode*>(array_type.get());
+                    return cloneType(arr->element_type.get());
+                } else if (array_type->kind == Type::Kind::Slice) {
+                    const SliceTypeNode* slice = static_cast<const SliceTypeNode*>(array_type.get());
+                    return cloneType(slice->element_type.get());
+                }
+            }
+            break;
+        }
+        
+        case Expr::Kind::Cast: {
+            // 类型转换：目标类型
+            const CastExpr* cast = static_cast<const CastExpr*>(expr);
+            return cloneType(cast->target_type.get());
+        }
+        
+        case Expr::Kind::IfExpr: {
+            // if表达式：从then分支推断
+            const IfExpr* if_expr = static_cast<const IfExpr*>(expr);
+            return inferTypeFromExpr(if_expr->then_expr.get());
+        }
+        
+        default:
+            break;
+    }
+    
+    return nullptr;
 }
 
 } // namespace pawc

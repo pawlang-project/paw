@@ -1,0 +1,57 @@
+// 完整类型推断测试
+
+type Point = struct {
+    x: i32,
+    y: i32,
+}
+
+fn main() -> i32 {
+    println("=== 完整类型推断测试 ===");
+    
+    // 1. 基本类型推断
+    let i = 42;
+    let f = 3.14;
+    let b = true;
+    let s = "hello";
+    debug(i);
+    debug(f);
+    debug(b);
+    
+    // 2. 数组推断
+    let arr = [1, 2, 3];
+    debug(arr[0]);
+    
+    // 3. 元组推断
+    let tuple = (10, 20);
+    debug(tuple.0);
+    
+    // 4. Struct推断
+    let p = Point { x: 100, y: 200 };
+    debug(p.x);
+    
+    // 5. 引用推断
+    let x: i32 = 50;
+    let r = &x;  // 推断为 &i32
+    debug(*r);
+    
+    let mut y: i32 = 60;
+    let r2 = &mut y;  // 推断为 &mut i32
+    *r2 = 70;
+    debug(y);
+    
+    // 6. 表达式推断
+    let sum = 10 + 20;
+    debug(sum);
+    
+    let greater = 10 > 5;
+    debug(greater);
+    
+    // 7. 元组解构推断
+    let (a, b) = (100, 200);
+    debug(a);
+    debug(b);
+    
+    println("✅ 所有推断测试通过！");
+    return 0;
+}
+

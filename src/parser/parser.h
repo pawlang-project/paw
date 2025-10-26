@@ -87,6 +87,8 @@ private:
     ExprPtr primary();
     
     TypePtr parseType(bool allow_slice = false);  // allow_slice: 是否允许[T]为切片（函数参数）
+    TypePtr inferTypeFromExpr(const Expr* expr);  // 类型推断辅助函数
+    TypePtr cloneType(const Type* type);  // 克隆类型节点
     std::vector<GenericParam> parseGenericParams();
     Parameter parseParameter();
     PatternPtr parsePattern();
