@@ -625,6 +625,15 @@ ExprPtr Parser::unary() {
         if (op.type == TokenType::AMPERSAND && check(TokenType::KW_MUT)) {
             advance();  // 消费 mut
             auto operand = unary();
+            
+            // 【类型检查】：&mut x 要求 x 必须是可变的
+            if (operand->kind == Expr::Kind::Identifier) {
+                std::string var_name = static_cast<IdentifierExpr*>(operand.get())->name;
+                if (mutable_vars_.find(var_name) == mutable_vars_.end()) {
+                    error("Cannot take mutable reference of immutable variable '" + var_name + "'. Use 'let mut' to make it mutable.");
+                }
+            }
+            
             return std::make_unique<UnaryExpr>(
                 UnaryExpr::Op::RefMut, std::move(operand), op.location
             );

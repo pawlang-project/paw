@@ -943,6 +943,10 @@ fn main() -> i32 {
     debug(x);  // 20
     debug(y);  // 10
     
+    // Type safety: &mut requires mutable variable
+    let z: i32 = 5;
+    // let r: &mut i32 = &mut z;  // ERROR: z is not mutable!
+    
     // Unsafe blocks for advanced control
     unsafe {
         let r1: &mut i32 = &mut x;

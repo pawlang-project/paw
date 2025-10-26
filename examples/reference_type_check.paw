@@ -1,0 +1,30 @@
+// 引用类型检查测试
+
+fn main() -> i32 {
+    println("=== 引用类型检查测试 ===");
+    
+    // ✅ 正确：可变变量的可变引用
+    let mut x: i32 = 10;
+    let ref_x: &mut i32 = &mut x;
+    *ref_x = 20;
+    print("x after &mut = ");
+    debug(x);  // 20
+    
+    // ✅ 正确：不可变变量的不可变引用
+    let y: i32 = 30;
+    let ref_y: &i32 = &y;
+    let val: i32 = *ref_y;
+    print("*ref_y = ");
+    debug(val);  // 30
+    
+    // ✅ 正确：可变变量的不可变引用也可以
+    let mut z: i32 = 40;
+    let ref_z: &i32 = &z;
+    let val2: i32 = *ref_z;
+    print("*ref_z = ");
+    debug(val2);  // 40
+    
+    println("✅ 所有类型检查测试通过！");
+    return 0;
+}
+
