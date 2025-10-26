@@ -14,8 +14,8 @@ echo "║    🧪 PawLang v0.2.2 快速测试                               ║"
 echo "╚═══════════════════════════════════════════════════════════════╝"
 echo ""
 
-# 简单测试函数：只检查编译
-test_compile() {
+# 完整测试函数：编译+运行
+test_full() {
     local file=$1
     local desc=$2
     
@@ -27,100 +27,118 @@ test_compile() {
         return 1
     fi
     
-    if $COMPILER "$file" > /dev/null 2>&1; then
+    # 编译
+    if ! $COMPILER "$file" > /tmp/paw_compile.log 2>&1; then
+        echo "❌ (编译失败)"
+        FAILED=$((FAILED + 1))
+        return 1
+    fi
+    
+    # 运行
+    if ! ./a.out > /tmp/paw_run.log 2>&1; then
+        local exit_code=$?
+        # 允许非零退出码（如果程序是正常退出）
+        if [ $exit_code -lt 100 ]; then
+            echo "✅"
+            PASSED=$((PASSED + 1))
+            rm -f a.out
+            return 0
+        else
+            echo "❌ (运行失败: exit $exit_code)"
+            FAILED=$((FAILED + 1))
+            rm -f a.out
+            return 1
+        fi
+    else
         echo "✅"
         PASSED=$((PASSED + 1))
         rm -f a.out
         return 0
-    else
-        echo "❌"
-        FAILED=$((FAILED + 1))
-        return 1
     fi
 }
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 1. 基本功能"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/hello.paw" "Hello World"
-test_compile "examples/arithmetic.paw" "算术运算"
-test_compile "examples/fibonacci.paw" "斐波那契"
-test_compile "examples/char_basic.paw" "字符类型"
+test_full "examples/hello.paw" "Hello World"
+test_full "examples/arithmetic.paw" "算术运算"
+test_full "examples/fibonacci.paw" "斐波那契"
+test_full "examples/char_basic.paw" "字符类型"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 2. 数组和切片"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/array_test.paw" "数组操作"
-test_compile "examples/slice_test.paw" "切片操作"
-test_compile "examples/slice_enum_test.paw" "切片枚举"
-test_compile "examples/range_slice_test.paw" "范围切片"
+test_full "examples/array_test.paw" "数组操作"
+test_full "examples/slice_test.paw" "切片操作"
+test_full "examples/slice_enum_test.paw" "切片枚举"
+test_full "examples/range_slice_test.paw" "范围切片"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 3. 元组系统 (v0.2.2) 🆕"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/tuple_test.paw" "元组基本"
-test_compile "examples/tuple_field_access_test.paw" "元组访问"
-test_compile "examples/tuple_destructure_test.paw" "元组解构"
+test_full "examples/tuple_test.paw" "元组基本"
+test_full "examples/tuple_field_access_test.paw" "元组访问"
+test_full "examples/tuple_destructure_test.paw" "元组解构"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 4. Struct"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/struct_test.paw" "Struct操作"
-test_compile "examples/nested_struct_test.paw" "嵌套Struct"
-test_compile "examples/self_simple.paw" "Self类型"
-test_compile "examples/struct_pass_by_value.paw" "Struct按值传递"
+test_full "examples/struct_test.paw" "Struct操作"
+test_full "examples/nested_struct_test.paw" "嵌套Struct"
+test_full "examples/self_simple.paw" "Self类型"
+test_full "examples/struct_pass_by_value.paw" "Struct按值传递"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 5. 枚举"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/enum_test.paw" "枚举操作"
-test_compile "examples/return_enum_test.paw" "返回枚举"
-test_compile "examples/match_simple.paw" "模式匹配"
+test_full "examples/enum_test.paw" "枚举操作"
+test_full "examples/return_enum_test.paw" "返回枚举"
+test_full "examples/match_simple.paw" "模式匹配"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 6. 引用系统 (v0.2.2) 🆕"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/reference_type_check.paw" "引用检查"
-test_compile "examples/struct_ref_final.paw" "Struct引用"
+test_full "examples/reference_type_check.paw" "引用检查"
+test_full "examples/struct_ref_final.paw" "Struct引用"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 7. 类型推断 (v0.2.2) 🆕"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/infer_complete_test.paw" "完整推断"
-test_compile "examples/infer_enum_complete.paw" "枚举推断"
+test_full "examples/infer_complete_test.paw" "完整推断"
+test_full "examples/infer_enum_complete.paw" "枚举推断"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 8. 泛型"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/generic_test.paw" "泛型函数"
-test_compile "examples/generic_box.paw" "泛型Struct"
-test_compile "examples/generic_swap.paw" "泛型Swap"
+test_full "examples/generic_test.paw" "泛型函数"
+test_full "examples/generic_box.paw" "泛型Struct"
+test_full "examples/generic_swap.paw" "泛型Swap"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 9. 错误处理"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/error_handling_complete.paw" "错误处理"
+test_full "examples/error_handling_complete.paw" "错误处理"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 10. 标准库"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/math_api_test.paw" "数学API"
-test_compile "examples/string_test.paw" "字符串库"
+test_full "examples/math_api_test.paw" "数学API"
+test_full "examples/string_test.paw" "字符串库"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📦 11. 内置函数"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-test_compile "examples/builtin_demo.paw" "内置函数"
+test_full "examples/builtin_demo.paw" "内置函数"
 
 echo ""
 echo "╔═══════════════════════════════════════════════════════════════╗"
