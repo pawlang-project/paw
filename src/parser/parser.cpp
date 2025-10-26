@@ -1867,6 +1867,15 @@ TypePtr Parser::inferTypeFromExpr(const Expr* expr) {
             );
         }
         
+        case Expr::Kind::EnumVariant: {
+            // 枚举变体 → EnumType
+            const EnumVariantExpr* enum_variant = static_cast<const EnumVariantExpr*>(expr);
+            std::vector<TypePtr> empty_generic_args;
+            return std::make_unique<NamedTypeNode>(
+                enum_variant->enum_name, std::move(empty_generic_args), expr->location
+            );
+        }
+        
         case Expr::Kind::Binary: {
             // 二元表达式：推断结果类型
             const BinaryExpr* binary = static_cast<const BinaryExpr*>(expr);

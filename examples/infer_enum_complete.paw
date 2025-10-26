@@ -1,0 +1,41 @@
+// 完整枚举推断测试
+
+type Option = enum {
+    Some(i32),
+    None(),
+}
+
+type Result = enum {
+    Ok(string),
+    Err(string),
+}
+
+fn test_enum() -> i32 {
+    // 枚举推断
+    let opt1 = Option::Some(42);  // 推断为 Option
+    let opt2 = Option::None();    // 推断为 Option
+    
+    let r1 = Result::Ok("success");  // 推断为 Result
+    let r2 = Result::Err("failed");  // 推断为 Result
+    
+    // 使用枚举
+    let val: i32 = opt1 is {
+        Some(x) => x,
+        None() => 0,
+    };
+    
+    debug(val);  // 42
+    
+    return val;
+}
+
+fn main() -> i32 {
+    println("=== 枚举推断测试 ===");
+    
+    let result: i32 = test_enum();
+    debug(result);
+    
+    println("✅ 枚举推断完全工作！");
+    return 0;
+}
+

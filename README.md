@@ -938,6 +938,7 @@ fn main() -> i32 {
 - ✅ **Arrays** - Auto-infer element type and size
 - ✅ **Tuples** - Auto-infer all element types
 - ✅ **Structs** - Auto-infer from literals
+- ✅ **Enums** - Auto-infer from variants (Option::Some(42)) 🆕🆕🆕
 - ✅ **References** - Auto-infer &T and &mut T 🆕🆕🆕
 - ✅ **Expressions** - Arithmetic, comparison, logical
 - ✅ **Tuple destructuring** - Auto-bind types
