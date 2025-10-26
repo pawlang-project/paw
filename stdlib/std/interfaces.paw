@@ -1,0 +1,124 @@
+// PawLang标准接口库
+// std::interfaces
+//
+// 提供常用接口定义，用于统一类型行为
+
+// ============================================================
+// 基础接口
+// ============================================================
+
+// Display接口 - 用于字符串表示
+pub type Display = interface {
+    fn to_string(self) -> string;
+    fn show(self);
+}
+
+// Clone接口 - 用于值复制
+pub type Clone = interface {
+    fn clone(self) -> Self;
+}
+
+// Eq接口 - 用于相等性比较
+pub type Eq = interface {
+    fn equals(self, other: Self) -> bool;
+}
+
+// Ord接口 - 用于排序比较
+pub type Ord = interface {
+    fn compare(self, other: Self) -> i32;  // <0: less, 0: equal, >0: greater
+}
+
+// Hash接口 - 用于哈希计算
+pub type Hash = interface {
+    fn hash(self) -> i64;
+}
+
+// ============================================================
+// 迭代器接口
+// ============================================================
+
+// Iterator接口 - 用于迭代
+pub type Iterator<T> = interface {
+    fn next(mut self) -> T?;
+    fn has_next(self) -> bool;
+}
+
+// ============================================================
+// 转换接口
+// ============================================================
+
+// From接口 - 类型转换
+pub type From<T> = interface {
+    fn from(value: T) -> Self;
+}
+
+// Into接口 - 类型转换（反向）
+pub type Into<T> = interface {
+    fn into(self) -> T;
+}
+
+// ============================================================
+// 数学接口
+// ============================================================
+
+// Add接口 - 加法
+pub type Add = interface {
+    fn add(self, other: Self) -> Self;
+}
+
+// Sub接口 - 减法
+pub type Sub = interface {
+    fn sub(self, other: Self) -> Self;
+}
+
+// Mul接口 - 乘法
+pub type Mul = interface {
+    fn mul(self, other: Self) -> Self;
+}
+
+// Div接口 - 除法
+pub type Div = interface {
+    fn div(self, other: Self) -> Self;
+}
+
+// ============================================================
+// 容器接口
+// ============================================================
+
+// Index接口 - 索引访问
+pub type Index<T> = interface {
+    fn get(self, index: i64) -> T?;
+    fn set(mut self, index: i64, value: T);
+}
+
+// Len接口 - 长度
+pub type Len = interface {
+    fn len(self) -> i64;
+    fn is_empty(self) -> bool;
+}
+
+// ============================================================
+// 使用说明
+// ============================================================
+
+// 导入示例：
+// import "std/interfaces";
+//
+// 使用示例：
+// type Point = struct(Display, Clone) {
+//     x: i32,
+//     y: i32,
+//     
+//     fn to_string(self) -> string {
+//         return "Point(" + self.x + ", " + self.y + ")";
+//     }
+//     
+//     fn show(self) {
+//         println(self.to_string());
+//     }
+//     
+//     fn clone(self) -> Self {
+//         return Self { x: self.x, y: self.y };
+//     }
+// }
+

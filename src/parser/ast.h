@@ -445,7 +445,7 @@ struct TuplePattern : Pattern {
 struct Stmt {
     enum class Kind {
         Expression, Let, Return, If, Loop, Block, Function,
-        Struct, Enum, TypeAlias, Impl, Break, Continue, Import, Extern, Unsafe
+        Struct, Enum, Interface, TypeAlias, Impl, Support, Break, Continue, Import, Extern, Unsafe
     };
     
     Kind kind;
@@ -595,6 +595,7 @@ struct ExternStmt : Stmt {
 
 struct GenericParam {
     std::string name;  // T, U等
+    std::vector<std::string> interface_constraints;  // 接口约束: T: Display + Clone
     SourceLocation location;
 };
 
@@ -637,16 +638,18 @@ struct StructField : StructMember {
 struct StructStmt : Stmt {
     std::string name;
     std::vector<GenericParam> generic_params;
+    std::vector<std::string> interfaces;  // 实现的接口列表（内联）
     std::vector<StructField> fields;
     std::vector<std::unique_ptr<FunctionStmt>> methods;  // struct内的方法
     bool is_public;
     
     StructStmt(const std::string& n, std::vector<GenericParam> gen_params,
+               std::vector<std::string> ifaces,
                std::vector<StructField> flds, 
                std::vector<std::unique_ptr<FunctionStmt>> meths,
                bool pub, const SourceLocation& loc)
         : Stmt(Kind::Struct, loc), name(n), generic_params(std::move(gen_params)),
-          fields(std::move(flds)), methods(std::move(meths)), is_public(pub) {}
+          interfaces(std::move(ifaces)), fields(std::move(flds)), methods(std::move(meths)), is_public(pub) {}
 };
 
 // Enum变体
@@ -666,6 +669,42 @@ struct EnumStmt : Stmt {
              std::vector<EnumVariant> vars, bool pub, const SourceLocation& loc)
         : Stmt(Kind::Enum, loc), name(n), generic_params(std::move(gen_params)),
           variants(std::move(vars)), is_public(pub) {}
+};
+
+// 方法签名（用于接口定义）
+struct MethodSignature {
+    std::string name;
+    std::vector<Parameter> parameters;
+    TypePtr return_type;
+    StmtPtr default_body;  // 默认实现（可选）
+    SourceLocation location;
+};
+
+// Interface声明: type Display = interface { ... }
+struct InterfaceStmt : Stmt {
+    std::string name;
+    std::vector<GenericParam> generic_params;
+    std::vector<MethodSignature> methods;  // 方法签名列表
+    bool is_public;
+    
+    InterfaceStmt(const std::string& n, std::vector<GenericParam> gen_params,
+                  std::vector<MethodSignature> meths, bool pub, const SourceLocation& loc)
+        : Stmt(Kind::Interface, loc), name(n), generic_params(std::move(gen_params)),
+          methods(std::move(meths)), is_public(pub) {}
+};
+
+// Support声明: support I for T { ... }
+struct SupportStmt : Stmt {
+    std::string interface_name;
+    std::string type_name;
+    std::vector<TypePtr> type_generic_args;  // T的泛型参数（如果有）
+    std::vector<std::unique_ptr<FunctionStmt>> methods;  // 方法实现
+    
+    SupportStmt(const std::string& iface, const std::string& type_n,
+                std::vector<TypePtr> type_args,
+                std::vector<std::unique_ptr<FunctionStmt>> meths, const SourceLocation& loc)
+        : Stmt(Kind::Support, loc), interface_name(iface), type_name(type_n),
+          type_generic_args(std::move(type_args)), methods(std::move(meths)) {}
 };
 
 // Type别名: type Result = enum { ... }

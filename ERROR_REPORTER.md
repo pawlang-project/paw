@@ -153,6 +153,6 @@ cmake --build build
 
 ---
 
-**版本**: PawLang v0.2.1  
+**版本**: PawLang v0.2.2  
 **状态**: 基础设施完成，等待集成
 

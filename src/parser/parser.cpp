@@ -140,6 +140,9 @@ StmtPtr Parser::statement() {
     // extern声明
     if (match({TokenType::KW_EXTERN})) return externDeclaration();
     
+    // support声明（不支持pub）
+    if (match({TokenType::KW_SUPPORT})) return supportDeclaration();
+    
     // pub修饰符
     bool is_public = false;
     if (match({TokenType::KW_PUB})) {
@@ -175,18 +178,8 @@ StmtPtr Parser::statement() {
 StmtPtr Parser::functionDeclaration(bool is_public) {
     Token name = consume(TokenType::IDENTIFIER, "Expected function name");
     
-    // 解析泛型参数 <T, U>
-    std::vector<GenericParam> generic_params;
-    if (match({TokenType::LT})) {
-        do {
-            Token type_param = consume(TokenType::IDENTIFIER, "Expected type parameter name");
-            GenericParam param;
-            param.name = type_param.value;
-            param.location = type_param.location;
-            generic_params.push_back(param);
-        } while (match({TokenType::COMMA}));
-        consume(TokenType::GT, "Expected '>' after generic parameters");
-    }
+    // 解析泛型参数 <T, U> 或 <T: Display>
+    auto generic_params = parseGenericParams();
     
     consume(TokenType::LPAREN, "Expected '(' after function name");
     
@@ -1417,6 +1410,15 @@ std::vector<GenericParam> Parser::parseGenericParams() {
         GenericParam param;
         param.name = name.value;
         param.location = name.location;
+        
+        // 解析接口约束: T: Display + Clone
+        if (match({TokenType::COLON})) {
+            do {
+                Token interface_name = consume(TokenType::IDENTIFIER, "Expected interface name");
+                param.interface_constraints.push_back(interface_name.value);
+            } while (match({TokenType::PLUS}));
+        }
+        
         params.push_back(param);
     } while (match({TokenType::COMMA}));
     
@@ -1438,9 +1440,11 @@ StmtPtr Parser::typeAliasDeclaration(bool is_public) {
         return structDeclaration(name, std::move(generic_params), is_public);
     } else if (match({TokenType::KW_ENUM})) {
         return enumDeclaration(name, std::move(generic_params), is_public);
+    } else if (match({TokenType::KW_INTERFACE})) {
+        return interfaceDeclaration(name, std::move(generic_params), is_public);
     }
     
-    error("Expected 'struct' or 'enum' after '='");
+    error("Expected 'struct', 'enum', or 'interface' after '='");
     return nullptr;
 }
 
@@ -1508,6 +1512,18 @@ StmtPtr Parser::structDeclaration(Token name_token, std::vector<GenericParam> ge
     // 设置当前解析的struct名（用于Self literal）
     current_parsing_struct_ = name_token.value;
     
+    // 解析接口列表: struct(I1, I2, I3)
+    std::vector<std::string> interfaces;
+    if (match({TokenType::LPAREN})) {
+        if (!check(TokenType::RPAREN)) {
+            do {
+                Token iface_name = consume(TokenType::IDENTIFIER, "Expected interface name");
+                interfaces.push_back(iface_name.value);
+            } while (match({TokenType::COMMA}));
+        }
+        consume(TokenType::RPAREN, "Expected ')' after interfaces");
+    }
+    
     consume(TokenType::LBRACE, "Expected '{' after struct");
     
     std::vector<StructField> fields;
@@ -1544,7 +1560,7 @@ StmtPtr Parser::structDeclaration(Token name_token, std::vector<GenericParam> ge
     consume(TokenType::RBRACE, "Expected '}' after struct");
     
     return std::make_unique<StructStmt>(
-        name_token.value, std::move(generic_params), 
+        name_token.value, std::move(generic_params), std::move(interfaces),
         std::move(fields), std::move(methods), is_public, name_token.location
     );
 }
@@ -1584,6 +1600,137 @@ StmtPtr Parser::enumDeclaration(Token name_token, std::vector<GenericParam> gene
     return std::make_unique<EnumStmt>(
         name_token.value, std::move(generic_params), 
         std::move(variants), is_public, name_token.location
+    );
+}
+
+// 解析 interface 定义: type Display = interface { ... }
+StmtPtr Parser::interfaceDeclaration(Token name_token, std::vector<GenericParam> generic_params, bool is_public) {
+    consume(TokenType::LBRACE, "Expected '{' after interface");
+    
+    std::vector<MethodSignature> methods;
+    
+    while (!check(TokenType::RBRACE) && !isAtEnd()) {
+        // 解析方法签名: fn method_name(self, params) -> ReturnType;
+        consume(TokenType::KW_FN, "Expected 'fn' in interface");
+        
+        Token method_name = consume(TokenType::IDENTIFIER, "Expected method name");
+        consume(TokenType::LPAREN, "Expected '(' after method name");
+        
+        // 解析参数
+        std::vector<Parameter> params;
+        if (!check(TokenType::RPAREN)) {
+            do {
+                params.push_back(parseParameter());
+            } while (match({TokenType::COMMA}));
+        }
+        
+        consume(TokenType::RPAREN, "Expected ')' after parameters");
+        
+        // 解析返回类型
+        TypePtr return_type = nullptr;
+        if (match({TokenType::ARROW})) {
+            return_type = parseType();
+        }
+        
+        // 解析方法体（默认实现）或分号
+        StmtPtr default_body = nullptr;
+        if (match({TokenType::LBRACE})) {
+            // 有默认实现
+            default_body = blockStatement();
+        } else {
+            // 没有默认实现，必须由实现者提供
+            consume(TokenType::SEMICOLON, "Expected ';' after method signature");
+        }
+        
+        MethodSignature sig;
+        sig.name = method_name.value;
+        sig.parameters = std::move(params);
+        sig.return_type = std::move(return_type);
+        sig.default_body = std::move(default_body);
+        sig.location = method_name.location;
+        
+        methods.push_back(std::move(sig));
+    }
+    
+    consume(TokenType::RBRACE, "Expected '}' after interface methods");
+    
+    return std::make_unique<InterfaceStmt>(
+        name_token.value, std::move(generic_params),
+        std::move(methods), is_public, name_token.location
+    );
+}
+
+// 解析 support 块: support I for T { ... }
+StmtPtr Parser::supportDeclaration() {
+    // support InterfaceName for TypeName { methods }
+    Token interface_name = consume(TokenType::IDENTIFIER, "Expected interface name after 'support'");
+    consume(TokenType::KW_FOR, "Expected 'for' after interface name");
+    Token type_name = consume(TokenType::IDENTIFIER, "Expected type name after 'for'");
+    
+    // 可选：泛型参数 support I for Vec<T>
+    std::vector<TypePtr> type_generic_args;
+    if (match({TokenType::LT})) {
+        do {
+            type_generic_args.push_back(parseType());
+        } while (match({TokenType::COMMA}));
+        consume(TokenType::GT, "Expected '>' after generic arguments");
+    }
+    
+    consume(TokenType::LBRACE, "Expected '{' after support declaration");
+    
+    // 设置当前struct上下文（支持self参数）
+    std::string old_struct = current_parsing_struct_;
+    current_parsing_struct_ = type_name.value;
+    
+    // 解析方法实现
+    std::vector<std::unique_ptr<FunctionStmt>> methods;
+    while (!check(TokenType::RBRACE) && !isAtEnd()) {
+        if (match({TokenType::KW_FN})) {
+            // fn已被消费，现在解析函数
+            Token method_name = consume(TokenType::IDENTIFIER, "Expected method name");
+            consume(TokenType::LPAREN, "Expected '(' after method name");
+            
+            // 解析参数
+            std::vector<Parameter> params;
+            if (!check(TokenType::RPAREN)) {
+                do {
+                    params.push_back(parseParameter());
+                } while (match({TokenType::COMMA}));
+            }
+            
+            consume(TokenType::RPAREN, "Expected ')' after parameters");
+            
+            // 解析返回类型
+            TypePtr return_type = nullptr;
+            if (match({TokenType::ARROW})) {
+                return_type = parseType();
+            }
+            
+            // 解析函数体
+            consume(TokenType::LBRACE, "Expected '{' before function body");
+            auto body = blockStatement();
+            
+            // 创建FunctionStmt
+            auto func = std::make_unique<FunctionStmt>(
+                method_name.value, std::vector<GenericParam>{}, std::move(params),
+                std::move(return_type), std::move(body), false, method_name.location
+            );
+            
+            methods.push_back(std::move(func));
+        } else {
+            error("Expected method definition in support block");
+            break;
+        }
+    }
+    
+    consume(TokenType::RBRACE, "Expected '}' after support methods");
+    
+    // 恢复上下文
+    current_parsing_struct_ = old_struct;
+    
+    return std::make_unique<SupportStmt>(
+        interface_name.value, type_name.value,
+        std::move(type_generic_args), std::move(methods), interface_name.location
     );
 }
 

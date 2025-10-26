@@ -3,7 +3,7 @@
 
 [package]
 name = "pawc"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["PawLang Project"]
 edition = "2025"
 description = "PawLang Compiler - Modern systems programming language"

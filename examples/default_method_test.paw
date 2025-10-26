@@ -1,0 +1,48 @@
+// 测试默认方法实现
+
+type Display = interface {
+    fn to_string(self) -> string;
+    
+    // 默认实现
+    fn show(self) {
+        println(self.to_string());
+    }
+}
+
+// 测试1：只实现必须的方法（使用默认show）
+type Point = struct(Display) {
+    x: i32,
+    y: i32,
+    
+    fn to_string(self) -> string {
+        return "Point";
+    }
+    // show()使用默认实现
+}
+
+// 测试2：覆盖默认实现
+type Circle = struct(Display) {
+    radius: f64,
+    
+    fn to_string(self) -> string {
+        return "Circle";
+    }
+    
+    // 覆盖默认实现
+    fn show(self) {
+        println("Custom show: " + self.to_string());
+    }
+}
+
+fn main() -> i32 {
+    let p = Point { x: 10, y: 20 };
+    println("Point created");
+    
+    let c = Circle { radius: 5.0 };
+    println("Circle created");
+    
+    println("✅ Default method test passed");
+    
+    return 0;
+}
+

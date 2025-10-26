@@ -8,7 +8,8 @@ PawLang的标准库采用分层模块化设计，提供丰富的功能和清晰�
 std/
 ├── collections/           # 集合类型和操作
 │   ├── collections.paw   # 数组和切片的统一操作库
-│   └── types.paw         # 泛型数据结构（Pair, Triple, Range, Box）
+│   └── types.paw         # 泛型数据结构（Range, Box）
+├── interfaces.paw        # 标准接口定义（14个接口）🆕
 ├── string.paw            # 字符串操作
 ├── math.paw              # 数学函数和常量
 └── mem.paw               # 内存管理
@@ -27,6 +28,9 @@ import std::collections::collections;
 // 导入泛型类型
 import std::collections::types;
 
+// 导入标准接口
+import std::interfaces;
+
 // 导入字符串工具
 import std::string;
 
@@ -41,7 +45,71 @@ import std::mem;
 
 ## 📚 模块详情
 
-### 1️⃣ std::collections::collections
+### 1️⃣ std::interfaces 🆕🆕🆕
+
+**标准接口库 - 14个常用接口定义**
+
+#### 基础接口（5个）
+- `Display` - 字符串表示和显示
+  - `fn to_string(self) -> string`
+  - `fn show(self)`
+- `Clone` - 值复制
+  - `fn clone(self) -> Self`
+- `Eq` - 相等性比较
+  - `fn equals(self, other: Self) -> bool`
+- `Ord` - 排序比较
+  - `fn compare(self, other: Self) -> i32`
+- `Hash` - 哈希计算
+  - `fn hash(self) -> i64`
+
+#### 迭代器接口（1个）
+- `Iterator<T>` - 迭代支持
+  - `fn next(mut self) -> T?`
+  - `fn has_next(self) -> bool`
+
+#### 转换接口（2个）
+- `From<T>` - 类型转换
+  - `fn from(value: T) -> Self`
+- `Into<T>` - 类型转换（反向）
+  - `fn into(self) -> T`
+
+#### 数学接口（4个）
+- `Add/Sub/Mul/Div` - 算术运算
+  - `fn add/sub/mul/div(self, other: Self) -> Self`
+
+#### 容器接口（2个）
+- `Index<T>` - 索引访问
+  - `fn get(self, index: i64) -> T?`
+  - `fn set(mut self, index: i64, value: T)`
+- `Len` - 长度查询
+  - `fn len(self) -> i64`
+  - `fn is_empty(self) -> bool`
+
+**使用示例**：
+```paw
+import std::interfaces;
+
+type Point = struct(Display, Clone) {
+    x: i32,
+    y: i32,
+    
+    fn to_string(self) -> string {
+        return "Point(" + self.x + ", " + self.y + ")";
+    }
+    
+    fn show(self) {
+        println(self.to_string());
+    }
+    
+    fn clone(self) -> Self {
+        return Self { x: self.x, y: self.y };
+    }
+}
+```
+
+---
+
+### 2️⃣ std::collections::collections
 
 **统一的数组和切片操作库 - 完全泛型设计**
 
@@ -103,7 +171,7 @@ fn main() -> i32 {
 
 ---
 
-### 2️⃣ std::collections::types
+### 3️⃣ std::collections::types
 
 **泛型数据结构**
 
@@ -128,7 +196,7 @@ let value: i32 = b.get();
 
 ---
 
-### 3️⃣ std::string
+### 4️⃣ std::string
 
 **字符串操作工具**
 
@@ -149,7 +217,7 @@ let trimmed: string = trim(s);  // "hello"
 
 ---
 
-### 4️⃣ std::math
+### 5️⃣ std::math
 
 **数学函数和常量**
 
@@ -183,7 +251,7 @@ let trimmed: string = trim(s);  // "hello"
 
 ---
 
-### 5️⃣ std::mem
+### 6️⃣ std::mem
 
 **内存管理**
 
@@ -293,5 +361,5 @@ fn main() -> i32 {
 
 ---
 
-**PawLang v0.2.1** - 优雅、强大、易用的标准库 ✨
+**PawLang v0.2.2** - 优雅、强大、易用的标准库 ✨
 

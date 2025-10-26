@@ -1,5 +1,6 @@
 #include "symbol_table.h"
 #include <iostream>
+#include <algorithm>
 
 namespace pawc {
 
@@ -78,6 +79,45 @@ void SymbolTable::registerVariable(const std::string& module, const std::string&
     module_symbols_[module][name] = symbol;
 }
 
+void SymbolTable::registerInterface(const std::string& module, const std::string& name,
+                                    bool is_public, const InterfaceStmt* ast) {
+    Symbol symbol;
+    symbol.name = name;
+    symbol.module = module;
+    symbol.kind = SymbolKind::Interface;
+    symbol.is_public = is_public;
+    symbol.value = nullptr;
+    symbol.type = nullptr;
+    symbol.ast_node = static_cast<const void*>(ast);  // 保存AST定义
+    
+    module_symbols_[module][name] = symbol;
+}
+
+void SymbolTable::registerInterfaceImpl(const std::string& module, const std::string& type_name,
+                                        const std::string& interface_name) {
+    // 记录类型实现了某个接口
+    type_interfaces_[type_name].push_back(interface_name);
+}
+
+bool SymbolTable::typeImplementsInterface(const std::string& type_name,
+                                          const std::string& interface_name) const {
+    auto it = type_interfaces_.find(type_name);
+    if (it == type_interfaces_.end()) {
+        return false;
+    }
+    
+    const auto& interfaces = it->second;
+    return std::find(interfaces.begin(), interfaces.end(), interface_name) != interfaces.end();
+}
+
+std::vector<std::string> SymbolTable::getImplementedInterfaces(const std::string& type_name) const {
+    auto it = type_interfaces_.find(type_name);
+    if (it == type_interfaces_.end()) {
+        return {};
+    }
+    return it->second;
+}
+
 SymbolTable::Symbol* SymbolTable::lookup(const std::string& name, const std::string& current_module) {
     // 1. 先在当前模块查找
     auto module_it = module_symbols_.find(current_module);
@@ -153,6 +193,7 @@ void SymbolTable::dump() const {
                 case SymbolKind::Function: std::cout << "fn"; break;
                 case SymbolKind::GenericFunction: std::cout << "fn<T>"; break;
                 case SymbolKind::Type: std::cout << "type"; break;
+                case SymbolKind::Interface: std::cout << "interface"; break;
                 case SymbolKind::Variable: std::cout << "var"; break;
             }
             std::cout << ")\n";

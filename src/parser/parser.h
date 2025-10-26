@@ -60,6 +60,8 @@ private:
     StmtPtr functionDeclaration(bool is_public = false);
     StmtPtr structDeclaration(Token name_token, std::vector<GenericParam> generic_params, bool is_public = false);
     StmtPtr enumDeclaration(Token name_token, std::vector<GenericParam> generic_params, bool is_public = false);
+    StmtPtr interfaceDeclaration(Token name_token, std::vector<GenericParam> generic_params, bool is_public = false);
+    StmtPtr supportDeclaration();
     StmtPtr typeAliasDeclaration(bool is_public = false);
     StmtPtr implDeclaration();
     StmtPtr letDeclaration();

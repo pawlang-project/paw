@@ -29,7 +29,10 @@ enum class TokenType {
     KW_TYPE,        // type
     KW_STRUCT,      // struct
     KW_ENUM,        // enum
+    KW_INTERFACE,   // interface
     KW_IMPL,        // impl
+    KW_SUPPORT,     // support
+    KW_FOR,         // for
     KW_IF,          // if
     KW_ELSE,        // else
     KW_LOOP,        // loop

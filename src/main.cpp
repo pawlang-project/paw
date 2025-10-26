@@ -49,7 +49,7 @@ std::string getVersion(const std::string& executable_path) {
     return version;
 }
 
-void printLogo(const std::string& version = "0.2.1") {
+void printLogo(const std::string& version = "0.2.2") {
     // 显示精美的猫咪 ASCII 艺术
     std::cout << pawc::Colors::orange(R"(                                   
           ▓▓▓▓         ▓▓▓           

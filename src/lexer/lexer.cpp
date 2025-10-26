@@ -11,7 +11,10 @@ namespace pawc
         {"type", TokenType::KW_TYPE},
         {"struct", TokenType::KW_STRUCT},
         {"enum", TokenType::KW_ENUM},
-        // {"impl", TokenType::KW_IMPL},  // Deprecated: methods are now defined directly in struct
+        {"interface", TokenType::KW_INTERFACE},
+        {"impl", TokenType::KW_IMPL},
+        {"support", TokenType::KW_SUPPORT},
+        {"for", TokenType::KW_FOR},
         {"if", TokenType::KW_IF},
         {"else", TokenType::KW_ELSE},
         {"loop", TokenType::KW_LOOP},

@@ -1,0 +1,69 @@
+// 测试PawLang接口系统
+
+// 定义接口
+type Display = interface {
+    fn to_string(self) -> string;
+}
+
+type Clone = interface {
+    fn clone(self) -> Self;
+}
+
+// 内联单个接口
+type Circle = struct(Display) {
+    radius: f64,
+    
+    fn to_string(self) -> string {
+        return "Circle";
+    }
+}
+
+// 内联多个接口
+type Point = struct(Display, Clone) {
+    x: i32,
+    y: i32,
+    
+    fn to_string(self) -> string {
+        return "Point";
+    }
+    
+    fn clone(self) -> Self {
+        return Self { x: self.x, y: self.y };
+    }
+}
+
+// 定义struct后外联实现
+type Rectangle = struct {
+    width: f64,
+    height: f64,
+}
+
+support Display for Rectangle {
+    fn to_string(self) -> string {
+        return "Rectangle";
+    }
+}
+
+support Clone for Rectangle {
+    fn clone(self) -> Self {
+        return Self { width: self.width, height: self.height };
+    }
+}
+
+fn main() -> i32 {
+    println("=== 接口系统测试 ===");
+    
+    let c = Circle { radius: 5.0 };
+    println("Circle created");
+    
+    let p = Point { x: 1, y: 2 };
+    println("Point created");
+    
+    let r = Rectangle { width: 10.0, height: 20.0 };
+    println("Rectangle created");
+    
+    println("✅ Parser测试通过");
+    
+    return 0;
+}
+

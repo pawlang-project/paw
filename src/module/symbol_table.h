@@ -14,6 +14,8 @@ namespace pawc {
 struct StructStmt;
 struct EnumStmt;
 struct FunctionStmt;
+struct InterfaceStmt;
+struct SupportStmt;
 
 /**
  * 符号表系统
@@ -26,6 +28,7 @@ public:
         Function,
         GenericFunction,  // 泛型函数
         Type,             // Struct或Enum
+        Interface,        // Interface定义
         Variable
     };
     
@@ -61,6 +64,21 @@ public:
     void registerVariable(const std::string& module, const std::string& name,
                          bool is_public, llvm::Value* value);
     
+    // 注册接口
+    void registerInterface(const std::string& module, const std::string& name,
+                          bool is_public, const InterfaceStmt* ast);
+    
+    // 注册接口实现: type_name 实现了 interface_name
+    void registerInterfaceImpl(const std::string& module, const std::string& type_name,
+                              const std::string& interface_name);
+    
+    // 查询类型是否实现了接口
+    bool typeImplementsInterface(const std::string& type_name, 
+                                const std::string& interface_name) const;
+    
+    // 获取类型实现的所有接口
+    std::vector<std::string> getImplementedInterfaces(const std::string& type_name) const;
+    
     // 查找符号
     Symbol* lookup(const std::string& name, const std::string& current_module);
     Symbol* lookupInModule(const std::string& module, const std::string& name);
@@ -77,6 +95,9 @@ public:
 private:
     // module_name -> symbol_name -> Symbol
     std::map<std::string, std::map<std::string, Symbol>> module_symbols_;
+    
+    // 接口实现关系: type_name -> [interface_names]
+    std::map<std::string, std::vector<std::string>> type_interfaces_;
 };
 
 } // namespace pawc

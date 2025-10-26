@@ -105,6 +105,7 @@ private:
     std::map<std::string, llvm::StructType*> struct_types_;                         ///< Struct类型映射
     std::map<std::string, const StructStmt*> struct_defs_;                          ///< Struct定义
     std::map<std::string, const EnumStmt*> enum_defs_;                              ///< Enum定义
+    std::map<std::string, const InterfaceStmt*> interface_defs_;                    ///< Interface定义
     std::map<std::string, std::map<std::string, llvm::Function*>> struct_methods_;  ///< Struct方法映射
     
     // ========== 泛型系统 ==========
@@ -387,6 +388,18 @@ private:
     void generateImplStmt(const ImplStmt* stmt);
     
     /**
+     * @brief 生成Interface定义
+     * @param stmt Interface语句节点
+     */
+    void generateInterfaceStmt(const InterfaceStmt* stmt);
+    
+    /**
+     * @brief 生成Support块（外联接口实现）
+     * @param stmt Support语句节点
+     */
+    void generateSupportStmt(const SupportStmt* stmt);
+    
+    /**
      * @brief 生成变量声明（let/let mut）
      * @param stmt Let语句节点
      * 
@@ -463,6 +476,35 @@ private:
      */
     bool matchPattern(llvm::Value* value, const Pattern* pattern, 
                      std::map<std::string, llvm::Value*>& bindings);
+    
+    // ========== 接口验证 ==========
+    
+    /**
+     * @brief 验证接口实现的完整性
+     * @param type_name 类型名
+     * @param interface_name 接口名
+     * @param methods 已实现的方法列表
+     * @param location 错误定位
+     */
+    void validateInterfaceImpl(const std::string& type_name, 
+                               const std::string& interface_name,
+                               const std::vector<std::unique_ptr<FunctionStmt>>& methods,
+                               const SourceLocation& location);
+    
+    /**
+     * @brief 比较两个类型是否相同
+     * @param a 类型A
+     * @param b 类型B
+     * @return true if types match
+     */
+    bool compareTypes(const Type* a, const Type* b);
+    
+    /**
+     * @brief 获取类型的字符串表示（用于错误信息）
+     * @param type 类型节点
+     * @return 类型字符串
+     */
+    std::string typeToString(const Type* type);
     
     // ========== 泛型系统 ==========
     

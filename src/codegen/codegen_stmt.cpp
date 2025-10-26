@@ -44,6 +44,12 @@ void CodeGenerator::generateStmt(const Stmt* stmt) {
         case Stmt::Kind::Enum:
             generateEnumStmt(static_cast<const EnumStmt*>(stmt));
             break;
+        case Stmt::Kind::Interface:
+            generateInterfaceStmt(static_cast<const InterfaceStmt*>(stmt));
+            break;
+        case Stmt::Kind::Support:
+            generateSupportStmt(static_cast<const SupportStmt*>(stmt));
+            break;
         case Stmt::Kind::TypeAlias:
             // type alias is just a wrapper, actual generation is in internal struct/enum
             if (auto alias = static_cast<const TypeAliasStmt*>(stmt)) {
@@ -1374,6 +1380,17 @@ void CodeGenerator::generateStructStmt(const StructStmt* stmt) {
         }
     }
     
+    // 验证并注册接口实现（内联）
+    if (symbol_table_) {
+        for (const auto& interface_name : stmt->interfaces) {
+            // 验证接口实现
+            validateInterfaceImpl(stmt->name, interface_name, stmt->methods, stmt->location);
+            
+            // 注册实现关系
+            symbol_table_->registerInterfaceImpl(module_name_, stmt->name, interface_name);
+        }
+    }
+    
     current_struct_ = nullptr;
     current_struct_name_ = "";
 }
@@ -1410,6 +1427,295 @@ void CodeGenerator::generateImplStmt(const ImplStmt* stmt) {
     }
     
     current_struct_ = nullptr;
+}
+
+void CodeGenerator::generateInterfaceStmt(const InterfaceStmt* stmt) {
+    // 保存接口定义
+    interface_defs_[stmt->name] = stmt;
+    
+    // 注册到SymbolTable
+    if (symbol_table_) {
+        symbol_table_->registerInterface(module_name_, stmt->name, stmt->is_public, stmt);
+    }
+}
+
+void CodeGenerator::generateSupportStmt(const SupportStmt* stmt) {
+    // 验证接口实现
+    validateInterfaceImpl(stmt->type_name, stmt->interface_name, 
+                         stmt->methods, stmt->location);
+    
+    // 注册接口实现（外联）
+    if (symbol_table_) {
+        symbol_table_->registerInterfaceImpl(module_name_, stmt->type_name, stmt->interface_name);
+    }
+    
+    // 查找对应的struct定义，设置当前上下文
+    auto struct_it = struct_defs_.find(stmt->type_name);
+    if (struct_it != struct_defs_.end()) {
+        current_struct_ = struct_it->second;
+        current_struct_name_ = stmt->type_name;
+    }
+    
+    // 生成所有方法
+    for (const auto& method : stmt->methods) {
+        generateFunctionStmt(method.get());
+        
+        // 注册方法到struct_methods_
+        std::string method_name = method->name;
+        llvm::Function* func = functions_[method_name];
+        if (func) {
+            struct_methods_[stmt->type_name][method_name] = func;
+        }
+    }
+    
+    current_struct_ = nullptr;
+    current_struct_name_ = "";
+}
+
+void CodeGenerator::validateInterfaceImpl(const std::string& type_name,
+                                          const std::string& interface_name,
+                                          const std::vector<std::unique_ptr<FunctionStmt>>& methods,
+                                          const SourceLocation& location) {
+    // 查找接口定义
+    auto interface_it = interface_defs_.find(interface_name);
+    if (interface_it == interface_defs_.end()) {
+        std::cerr << "\033[31m\033[1merror: \033[0m\033[1mInterface '\033[0m" 
+                  << interface_name << "\033[1m' not found\033[0m" << std::endl;
+        std::cerr << "  \033[34m-->\033[0m " << location.filename << ":" 
+                  << location.line << ":" << location.column << std::endl;
+        return;
+    }
+    
+    const InterfaceStmt* interface = interface_it->second;
+    
+    // 创建已实现方法的集合
+    std::map<std::string, const FunctionStmt*> impl_methods;
+    for (const auto& method : methods) {
+        impl_methods[method->name] = method.get();
+    }
+    
+    // 检查所有接口方法是否都已实现
+    for (const auto& interface_method : interface->methods) {
+        auto impl_it = impl_methods.find(interface_method.name);
+        
+        // 检查方法是否存在
+        if (impl_it == impl_methods.end()) {
+            // 如果接口提供了默认实现，则不要求必须实现
+            if (interface_method.default_body != nullptr) {
+                continue;  // 有默认实现，跳过检查
+            }
+            
+            std::cerr << "\033[31m\033[1merror: \033[0m\033[1mType '\033[0m" << type_name 
+                      << "\033[1m' does not implement method '\033[0m" << interface_method.name 
+                      << "\033[1m' from interface '\033[0m" << interface_name << "\033[1m'\033[0m" << std::endl;
+            std::cerr << "  \033[34m-->\033[0m " << location.filename << ":" 
+                      << location.line << ":" << location.column << std::endl;
+            std::cerr << "  \033[32m=\033[0m \033[1mhelp:\033[0m add method \033[2mfn " 
+                      << interface_method.name << "(";
+            
+            // 显示方法签名提示
+            for (size_t i = 0; i < interface_method.parameters.size(); ++i) {
+                if (i > 0) std::cerr << ", ";
+                std::cerr << interface_method.parameters[i].name;
+            }
+            std::cerr << ")\033[0m" << std::endl;
+            continue;
+        }
+        
+        const FunctionStmt* impl_method = impl_it->second;
+        
+        // 检查参数数量
+        if (impl_method->parameters.size() != interface_method.parameters.size()) {
+            std::cerr << "\033[31m\033[1merror: \033[0m\033[1mMethod '\033[0m" << interface_method.name 
+                      << "\033[1m' has wrong number of parameters\033[0m" << std::endl;
+            std::cerr << "  Expected " << interface_method.parameters.size() 
+                      << ", got " << impl_method->parameters.size() << std::endl;
+            std::cerr << "  \033[34m-->\033[0m " << impl_method->location.filename << ":" 
+                      << impl_method->location.line << ":" << impl_method->location.column << std::endl;
+            continue;
+        }
+        
+        // 检查参数类型
+        for (size_t i = 0; i < interface_method.parameters.size(); ++i) {
+            const Type* expected_type = interface_method.parameters[i].type.get();
+            const Type* actual_type = impl_method->parameters[i].type.get();
+            
+            if (!compareTypes(expected_type, actual_type)) {
+                std::cerr << "\033[31m\033[1merror: \033[0m\033[1mParameter '" 
+                          << interface_method.parameters[i].name 
+                          << "' has wrong type in method '\033[0m" << interface_method.name 
+                          << "\033[1m'\033[0m" << std::endl;
+                std::cerr << "  Expected: \033[32m" << typeToString(expected_type) << "\033[0m" << std::endl;
+                std::cerr << "  Got:      \033[31m" << typeToString(actual_type) << "\033[0m" << std::endl;
+                std::cerr << "  \033[34m-->\033[0m " << impl_method->location.filename << ":" 
+                          << impl_method->location.line << ":" << impl_method->location.column << std::endl;
+            }
+        }
+        
+        // 检查返回类型
+        const Type* expected_return = interface_method.return_type.get();
+        const Type* actual_return = impl_method->return_type.get();
+        
+        if (!compareTypes(expected_return, actual_return)) {
+            std::cerr << "\033[31m\033[1merror: \033[0m\033[1mMethod '\033[0m" << interface_method.name 
+                      << "\033[1m' has wrong return type\033[0m" << std::endl;
+            std::cerr << "  Expected: \033[32m" << typeToString(expected_return) << "\033[0m" << std::endl;
+            std::cerr << "  Got:      \033[31m" << typeToString(actual_return) << "\033[0m" << std::endl;
+            std::cerr << "  \033[34m-->\033[0m " << impl_method->location.filename << ":" 
+                      << impl_method->location.line << ":" << impl_method->location.column << std::endl;
+        }
+    }
+}
+
+bool CodeGenerator::compareTypes(const Type* a, const Type* b) {
+    // 处理nullptr（void类型）
+    if (a == nullptr && b == nullptr) return true;
+    if (a == nullptr || b == nullptr) return false;
+    
+    // 检查类型种类
+    if (a->kind != b->kind) return false;
+    
+    switch (a->kind) {
+        case Type::Kind::Primitive: {
+            auto prim_a = static_cast<const PrimitiveTypeNode*>(a);
+            auto prim_b = static_cast<const PrimitiveTypeNode*>(b);
+            return prim_a->prim_type == prim_b->prim_type;
+        }
+        
+        case Type::Kind::Named: {
+            auto named_a = static_cast<const NamedTypeNode*>(a);
+            auto named_b = static_cast<const NamedTypeNode*>(b);
+            return named_a->name == named_b->name;
+        }
+        
+        case Type::Kind::Array: {
+            auto array_a = static_cast<const ArrayTypeNode*>(a);
+            auto array_b = static_cast<const ArrayTypeNode*>(b);
+            return array_a->size == array_b->size && 
+                   compareTypes(array_a->element_type.get(), array_b->element_type.get());
+        }
+        
+        case Type::Kind::Slice: {
+            auto slice_a = static_cast<const SliceTypeNode*>(a);
+            auto slice_b = static_cast<const SliceTypeNode*>(b);
+            return compareTypes(slice_a->element_type.get(), slice_b->element_type.get());
+        }
+        
+        case Type::Kind::Reference: {
+            auto ref_a = static_cast<const ReferenceTypeNode*>(a);
+            auto ref_b = static_cast<const ReferenceTypeNode*>(b);
+            return ref_a->is_mutable == ref_b->is_mutable &&
+                   compareTypes(ref_a->inner_type.get(), ref_b->inner_type.get());
+        }
+        
+        case Type::Kind::SelfType:
+            return true;  // Self总是匹配Self
+        
+        case Type::Kind::Generic: {
+            auto gen_a = static_cast<const GenericTypeNode*>(a);
+            auto gen_b = static_cast<const GenericTypeNode*>(b);
+            return gen_a->name == gen_b->name;
+        }
+        
+        case Type::Kind::Optional: {
+            auto opt_a = static_cast<const OptionalTypeNode*>(a);
+            auto opt_b = static_cast<const OptionalTypeNode*>(b);
+            return compareTypes(opt_a->inner_type.get(), opt_b->inner_type.get());
+        }
+        
+        case Type::Kind::Tuple: {
+            auto tuple_a = static_cast<const TupleTypeNode*>(a);
+            auto tuple_b = static_cast<const TupleTypeNode*>(b);
+            if (tuple_a->element_types.size() != tuple_b->element_types.size()) return false;
+            for (size_t i = 0; i < tuple_a->element_types.size(); ++i) {
+                if (!compareTypes(tuple_a->element_types[i].get(), tuple_b->element_types[i].get())) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        
+        default:
+            return false;
+    }
+}
+
+std::string CodeGenerator::typeToString(const Type* type) {
+    if (type == nullptr) return "void";
+    
+    switch (type->kind) {
+        case Type::Kind::Primitive: {
+            auto prim = static_cast<const PrimitiveTypeNode*>(type);
+            switch (prim->prim_type) {
+                case PrimitiveType::I8: return "i8";
+                case PrimitiveType::I16: return "i16";
+                case PrimitiveType::I32: return "i32";
+                case PrimitiveType::I64: return "i64";
+                case PrimitiveType::I128: return "i128";
+                case PrimitiveType::U8: return "u8";
+                case PrimitiveType::U16: return "u16";
+                case PrimitiveType::U32: return "u32";
+                case PrimitiveType::U64: return "u64";
+                case PrimitiveType::U128: return "u128";
+                case PrimitiveType::F32: return "f32";
+                case PrimitiveType::F64: return "f64";
+                case PrimitiveType::BOOL: return "bool";
+                case PrimitiveType::CHAR: return "char";
+                case PrimitiveType::STRING: return "string";
+                case PrimitiveType::VOID: return "void";
+                default: return "unknown";
+            }
+        }
+        
+        case Type::Kind::Named: {
+            auto named = static_cast<const NamedTypeNode*>(type);
+            return named->name;
+        }
+        
+        case Type::Kind::Array: {
+            auto array = static_cast<const ArrayTypeNode*>(type);
+            return "[" + typeToString(array->element_type.get()) + "; " + 
+                   std::to_string(array->size) + "]";
+        }
+        
+        case Type::Kind::Slice: {
+            auto slice = static_cast<const SliceTypeNode*>(type);
+            return "[" + typeToString(slice->element_type.get()) + "]";
+        }
+        
+        case Type::Kind::Reference: {
+            auto ref = static_cast<const ReferenceTypeNode*>(type);
+            return std::string("&") + (ref->is_mutable ? "mut " : "") + 
+                   typeToString(ref->inner_type.get());
+        }
+        
+        case Type::Kind::SelfType:
+            return "Self";
+        
+        case Type::Kind::Generic: {
+            auto gen = static_cast<const GenericTypeNode*>(type);
+            return gen->name;
+        }
+        
+        case Type::Kind::Optional: {
+            auto opt = static_cast<const OptionalTypeNode*>(type);
+            return typeToString(opt->inner_type.get()) + "?";
+        }
+        
+        case Type::Kind::Tuple: {
+            auto tuple = static_cast<const TupleTypeNode*>(type);
+            std::string result = "(";
+            for (size_t i = 0; i < tuple->element_types.size(); ++i) {
+                if (i > 0) result += ", ";
+                result += typeToString(tuple->element_types[i].get());
+            }
+            result += ")";
+            return result;
+        }
+        
+        default:
+            return "unknown";
+    }
 }
 
 } // namespace pawc
