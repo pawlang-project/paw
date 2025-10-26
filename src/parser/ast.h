@@ -24,6 +24,7 @@ struct Type {
         Primitive,  // i32, f64, bool等
         Array,      // [T; N] 固定大小数组
         Slice,      // [T] 动态切片
+        Tuple,      // (T, U, V) 元组类型
         Function,   // fn(T1, T2) -> T3
         Named,      // 自定义类型
         Generic,    // 泛型参数 T, U等
@@ -92,6 +93,14 @@ struct SliceTypeNode : Type {
         : Type(Kind::Slice, loc), element_type(std::move(elem_type)) {}
 };
 
+// 元组类型: (T, U, V)
+struct TupleTypeNode : Type {
+    std::vector<TypePtr> element_types;
+    
+    TupleTypeNode(std::vector<TypePtr> elem_types, const SourceLocation& loc)
+        : Type(Kind::Tuple, loc), element_types(std::move(elem_types)) {}
+};
+
 // ====== 表达式 ======
 
 struct Expr {
@@ -102,6 +111,8 @@ struct Expr {
         StructLiteral,     // Counter { value: 10 }
         EnumVariant,       // Result::Ok(42)
         ArrayLiteral,      // [1, 2, 3]
+        TupleLiteral,      // (1, 2, 3) - 元组字面量
+        Range,             // a..b - 范围表达式
         Match,             // value is { pattern => expr }
         Is,                // x is Some(y) - 用于条件判断
         Cast,              // x as i32 - 类型转换
@@ -278,6 +289,23 @@ struct ArrayLiteralExpr : Expr {
         : Expr(Kind::ArrayLiteral, loc), elements(std::move(elems)) {}
 };
 
+// 元组字面量: (1, 2, 3)
+struct TupleLiteralExpr : Expr {
+    std::vector<ExprPtr> elements;
+    
+    TupleLiteralExpr(std::vector<ExprPtr> elems, const SourceLocation& loc)
+        : Expr(Kind::TupleLiteral, loc), elements(std::move(elems)) {}
+};
+
+// 范围表达式: start..end
+struct RangeExpr : Expr {
+    ExprPtr start;  // nullptr 表示从头开始 (..end)
+    ExprPtr end;    // nullptr 表示到末尾 (start..)
+    
+    RangeExpr(ExprPtr s, ExprPtr e, const SourceLocation& loc)
+        : Expr(Kind::Range, loc), start(std::move(s)), end(std::move(e)) {}
+};
+
 struct MemberAccessExpr : Expr {
     ExprPtr object;
     std::string member;
@@ -343,7 +371,8 @@ struct Pattern {
         Identifier,     // x
         Literal,        // 42, "hello"
         EnumVariant,    // Some(x), Ok(value)
-        Struct          // Point { x, y }
+        Struct,         // Point { x, y }
+        Tuple           // (x, y, z) - 元组解构
     };
     
     Kind kind;
@@ -376,6 +405,14 @@ struct EnumVariantPattern : Pattern {
                       std::vector<PatternPtr> binds, const SourceLocation& loc)
         : Pattern(Kind::EnumVariant, loc), enum_name(en), variant_name(vn),
           bindings(std::move(binds)) {}
+};
+
+// 元组模式: (x, y, z) - 用于解构
+struct TuplePattern : Pattern {
+    std::vector<PatternPtr> elements;
+    
+    TuplePattern(std::vector<PatternPtr> elems, const SourceLocation& loc)
+        : Pattern(Kind::Tuple, loc), elements(std::move(elems)) {}
 };
 
 // ====== 语句 ======

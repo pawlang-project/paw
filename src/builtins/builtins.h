@@ -67,11 +67,11 @@ private:
     
     // 辅助函数：创建函数类型
     llvm::FunctionType* createPrintFunctionType();
-    
-    // 辅助函数：检查是否是切片类型
-    bool isSliceType(llvm::Type* type) const;
+
 
 public:
+    // 辅助函数：检查是否是切片类型
+    bool isSliceType(llvm::Type* type) const;
     // ========== Intrinsic统一接口 ==========
     
     /**

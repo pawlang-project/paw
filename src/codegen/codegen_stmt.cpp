@@ -92,6 +92,14 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
             // Optional<T> = { i32 tag, T value, ptr error }
             // 变量存储：ptr to Optional
             actual_type = llvm::PointerType::get(*context_, 0);
+        } else if (stmt->type->kind == Type::Kind::Slice) {
+            // 【新增】：切片类型 [T] 存储为结构值
+            // Slice = { ptr, i64 len }
+            actual_type = type;  // type 已经是 {ptr, i64} 结构
+        } else if (stmt->type->kind == Type::Kind::Tuple) {
+            // 【新增】：元组类型存储为结构值
+            // Tuple = { T1, T2, ... }
+            actual_type = type;  // type 已经是结构
         } else {
             actual_type = type;
         }
@@ -110,6 +118,22 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
                     llvm::Type* inferred_type = llvm::ArrayType::get(elem_type, array_lit->elements.size());
                     type = inferred_type;
                     actual_type = inferred_type;  // 关键：同时更新actual_type！
+                } else if (stmt->initializer->kind == Expr::Kind::Index) {
+                    // 【关键修复】：检查是否是范围切片表达式
+                    const IndexExpr* idx_expr = static_cast<const IndexExpr*>(stmt->initializer.get());
+                    if (idx_expr->index->kind == Expr::Kind::Range) {
+                        // 这是范围切片！将type改为切片类型
+                        llvm::Type* elem_type = resolveGenericType(array_type->element_type.get());
+                        llvm::Type* slice_type = llvm::StructType::get(*context_, {
+                            llvm::PointerType::get(*context_, 0),
+                            llvm::Type::getInt64Ty(*context_)
+                        });
+                        type = slice_type;
+                        actual_type = slice_type;
+                        
+                        // 【关键】：记录切片的元素类型，用于迭代
+                        array_element_types_[stmt->name] = elem_type;
+                    }
                 }
             }
         }

@@ -88,6 +88,18 @@ llvm::Type* CodeGenerator::convertType(const Type* type) {
             };
             return llvm::StructType::get(*context_, fields);
         }
+        case Type::Kind::Tuple: {
+            // 元组类型: (T, U, V)
+            // 内部表示为 struct { T, U, V }
+            auto tuple_type = static_cast<const TupleTypeNode*>(type);
+            std::vector<llvm::Type*> element_llvm_types;
+            
+            for (const auto& elem_type : tuple_type->element_types) {
+                element_llvm_types.push_back(convertType(elem_type.get()));
+            }
+            
+            return llvm::StructType::get(*context_, element_llvm_types);
+        }
         case Type::Kind::Generic: {
             // 泛型参数在单态化后应该被替换
             // 这里暂时返回i32

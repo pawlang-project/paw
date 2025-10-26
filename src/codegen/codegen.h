@@ -265,7 +265,28 @@ private:
     llvm::Value* generateArrayLiteralExpr(const ArrayLiteralExpr* expr);
     
     /**
-     * @brief 生成数组索引（arr[i]）
+     * @brief 生成元组字面量 (a, b, c)
+     * @param expr 元组字面量节点
+     * @return llvm::Value* 元组结构
+     */
+    llvm::Value* generateTupleLiteralExpr(const TupleLiteralExpr* expr);
+    
+    /**
+     * @brief 生成范围表达式 (start..end)
+     * @param expr 范围表达式节点
+     * @return llvm::Value* 范围结构 (暂时返回nullptr，由IndexExpr处理)
+     */
+    llvm::Value* generateRangeExpr(const RangeExpr* expr);
+    
+    /**
+     * @brief 生成范围切片 arr[start..end]
+     * @param expr 索引表达式（其中index是RangeExpr）
+     * @return llvm::Value* 子切片结构
+     */
+    llvm::Value* generateRangeSlice(const IndexExpr* expr);
+    
+    /**
+     * @brief 生成数组索引（arr[i]）或范围切片（arr[1..5]）
      * @param expr 索引表达式节点
      * @return llvm::Value* 元素值
      */

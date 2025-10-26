@@ -582,12 +582,40 @@ ExprPtr Parser::postfix() {
                 std::move(expr), member.value, member.location
             );
         } else if (match({TokenType::LBRACKET})) {
-            // 数组索引访问: arr[index]
-            auto index = expression();
-            Token bracket = consume(TokenType::RBRACKET, "Expected ']' after index");
-            expr = std::make_unique<IndexExpr>(
-                std::move(expr), std::move(index), bracket.location
-            );
+            // 数组索引访问或范围切片: arr[index] 或 arr[start..end]
+            Token lbracket = previous();
+            
+            // 检查是否是 ..end (从开始到end)
+            if (check(TokenType::DOTDOT)) {
+                advance();  // 消费 ..
+                ExprPtr end = expression();
+                Token bracket = consume(TokenType::RBRACKET, "Expected ']' after range");
+                
+                // 创建范围表达式 ..end
+                auto range = std::make_unique<RangeExpr>(nullptr, std::move(end), lbracket.location);
+                expr = std::make_unique<IndexExpr>(std::move(expr), std::move(range), bracket.location);
+            } else {
+                // 解析第一个表达式
+                auto first_expr = expression();
+                
+                // 检查是否有 ..
+                if (match({TokenType::DOTDOT})) {
+                    // 这是范围: start..end 或 start..
+                    ExprPtr end = nullptr;
+                    if (!check(TokenType::RBRACKET)) {
+                        end = expression();
+                    }
+                    Token bracket = consume(TokenType::RBRACKET, "Expected ']' after range");
+                    
+                    // 创建范围表达式
+                    auto range = std::make_unique<RangeExpr>(std::move(first_expr), std::move(end), lbracket.location);
+                    expr = std::make_unique<IndexExpr>(std::move(expr), std::move(range), bracket.location);
+                } else {
+                    // 普通索引: arr[index]
+                    Token bracket = consume(TokenType::RBRACKET, "Expected ']' after index");
+                    expr = std::make_unique<IndexExpr>(std::move(expr), std::move(first_expr), bracket.location);
+                }
+            }
         } else if (match({TokenType::DOUBLE_COLON})) {
             // 支持三种情况：
             // 1. module::function() - 模块函数调用
@@ -1027,9 +1055,37 @@ ExprPtr Parser::primary() {
     }
     
     if (match({TokenType::LPAREN})) {
-        auto expr = expression();
-        consume(TokenType::RPAREN, "Expected ')' after expression");
-        return expr;
+        Token lparen = previous();
+        
+        // 空元组 ()
+        if (check(TokenType::RPAREN)) {
+            advance();
+            return std::make_unique<TupleLiteralExpr>(std::vector<ExprPtr>(), lparen.location);
+        }
+        
+        // 解析第一个表达式
+        auto first_expr = expression();
+        
+        // 检查是否有逗号（确认是元组）
+        if (match({TokenType::COMMA})) {
+            // 这是元组字面量
+            std::vector<ExprPtr> elements;
+            elements.push_back(std::move(first_expr));
+            
+            // 解析剩余元素
+            if (!check(TokenType::RPAREN)) {
+                do {
+                    elements.push_back(expression());
+                } while (match({TokenType::COMMA}));
+            }
+            
+            consume(TokenType::RPAREN, "Expected ')' after tuple elements");
+            return std::make_unique<TupleLiteralExpr>(std::move(elements), lparen.location);
+        } else {
+            // 只有一个元素且没有逗号，这是括号分组表达式
+            consume(TokenType::RPAREN, "Expected ')' after expression");
+            return first_expr;
+        }
     }
     
     error("Expected expression");
@@ -1049,6 +1105,39 @@ TypePtr Parser::parseType(bool allow_slice) {
     // Self类型（在struct方法中使用）
     if (match({TokenType::KW_SELF_TYPE})) {
         return std::make_unique<SelfTypeNode>(previous().location);
+    }
+    
+    // 元组类型: (T, U, V)
+    if (check(TokenType::LPAREN)) {
+        Token lparen = advance();
+        std::vector<TypePtr> element_types;
+        
+        // 解析第一个类型
+        if (!check(TokenType::RPAREN)) {
+            element_types.push_back(parseType(allow_slice));
+            
+            // 检查是否有逗号（确认是元组，不是括号分组）
+            if (match({TokenType::COMMA})) {
+                // 这是元组类型
+                while (!check(TokenType::RPAREN) && !isAtEnd()) {
+                    element_types.push_back(parseType(allow_slice));
+                    if (!match({TokenType::COMMA})) {
+                        break;
+                    }
+                }
+                
+                consume(TokenType::RPAREN, "Expected ')' after tuple type");
+                return std::make_unique<TupleTypeNode>(std::move(element_types), lparen.location);
+            } else {
+                // 只有一个元素且没有逗号，这是括号分组，返回内部类型
+                consume(TokenType::RPAREN, "Expected ')' after type");
+                return std::move(element_types[0]);
+            }
+        }
+        
+        // 空元组 ()
+        consume(TokenType::RPAREN, "Expected ')' after tuple type");
+        return std::make_unique<TupleTypeNode>(std::move(element_types), lparen.location);
     }
     
     // 数组/切片类型: [element_type; size] 或 [element_type]
@@ -1382,6 +1471,32 @@ StmtPtr Parser::implDeclaration() {
 
 // 解析模式
 PatternPtr Parser::parsePattern() {
+    // 元组模式: (x, y, z)
+    if (match({TokenType::LPAREN})) {
+        Token lparen = previous();
+        std::vector<PatternPtr> elements;
+        
+        // 空元组 ()
+        if (check(TokenType::RPAREN)) {
+            advance();
+            return std::make_unique<TuplePattern>(std::move(elements), lparen.location);
+        }
+        
+        // 解析元组元素
+        do {
+            elements.push_back(parsePattern());
+        } while (match({TokenType::COMMA}));
+        
+        consume(TokenType::RPAREN, "Expected ')' after tuple pattern");
+        
+        // 只有一个元素的情况，去掉括号
+        if (elements.size() == 1) {
+            return std::move(elements[0]);
+        }
+        
+        return std::make_unique<TuplePattern>(std::move(elements), lparen.location);
+    }
+    
     // _通配符
     if (match({TokenType::IDENTIFIER})) {
         std::string name = previous().value;

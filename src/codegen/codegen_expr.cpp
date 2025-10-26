@@ -35,6 +35,10 @@ llvm::Value* CodeGenerator::generateExpr(const Expr* expr) {
             return generateAssignExpr(static_cast<const AssignExpr*>(expr));
         case Expr::Kind::ArrayLiteral:
             return generateArrayLiteralExpr(static_cast<const ArrayLiteralExpr*>(expr));
+        case Expr::Kind::TupleLiteral:
+            return generateTupleLiteralExpr(static_cast<const TupleLiteralExpr*>(expr));
+        case Expr::Kind::Range:
+            return generateRangeExpr(static_cast<const RangeExpr*>(expr));
         case Expr::Kind::Index:
             return generateIndexExpr(static_cast<const IndexExpr*>(expr));
         case Expr::Kind::MemberAccess:
@@ -812,6 +816,11 @@ llvm::Value* CodeGenerator::generateArgumentValue(const Expr* arg) {
             if (llvm::isa<llvm::StructType>(type_it->second)) {
                 llvm::StructType* st = llvm::cast<llvm::StructType>(type_it->second);
                 
+                // 检查是否是切片类型（切片按值传递）
+                if (builtins_->isSliceType(st)) {
+                    return builder_->CreateLoad(type_it->second, val_it->second, arg_name + "_slice_val");
+                }
+                
                 // 检查是否是enum
                 bool is_enum = false;
                 for (const auto& [enum_name, _] : enum_defs_) {
@@ -827,8 +836,10 @@ llvm::Value* CodeGenerator::generateArgumentValue(const Expr* arg) {
                     return builder_->CreateLoad(type_it->second, val_it->second, arg_name + "_val");
                 }
                 
-                // 其他struct类型（按指针传递）
-                return val_it->second;
+                // 检查是否是元组类型（元组按值传递）
+                // 元组是匿名struct，没有特殊标记，但一般不会在named struct types中
+                // 暂时按值传递
+                return builder_->CreateLoad(type_it->second, val_it->second, arg_name + "_tuple_val");
             }
         }
     }
@@ -1198,7 +1209,138 @@ llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* exp
     return nullptr;
 }
 
+/**
+ * 生成范围表达式: start..end
+ * 范围表达式本身不生成代码，由使用它的上下文处理
+ */
+llvm::Value* CodeGenerator::generateRangeExpr(const RangeExpr* expr) {
+    // 范围表达式单独不生成代码
+    // 只在 arr[start..end] 这种上下文中使用
+    return nullptr;
+}
+
+/**
+ * 生成范围切片: arr[start..end]
+ * 返回新的切片 { ptr, len }
+ */
+llvm::Value* CodeGenerator::generateRangeSlice(const IndexExpr* expr) {
+    const RangeExpr* range = static_cast<const RangeExpr*>(expr->index.get());
+    
+    // 获取源数组/切片
+    llvm::Value* source_val = nullptr;
+    llvm::Type* source_type = nullptr;
+    llvm::Value* source_ptr = nullptr;
+    llvm::Value* source_len = nullptr;
+    llvm::Type* elem_type = nullptr;
+    
+    // 获取源数组信息
+    if (expr->array->kind == Expr::Kind::Identifier) {
+        std::string array_name = static_cast<const IdentifierExpr*>(expr->array.get())->name;
+        auto ptr_it = named_values_.find(array_name);
+        auto type_it = variable_types_.find(array_name);
+        
+        if (ptr_it != named_values_.end() && type_it != variable_types_.end()) {
+            llvm::Value* array_alloca = ptr_it->second;
+            source_type = type_it->second;
+            
+            // 检查是否是切片类型
+            if (source_type->isStructTy() && builtins_->isSliceType(source_type)) {
+                // 源是切片: { ptr, len }
+                llvm::Value* slice_val = builder_->CreateLoad(source_type, array_alloca, "slice_load");
+                source_ptr = builder_->CreateExtractValue(slice_val, {0}, "slice_ptr");
+                source_len = builder_->CreateExtractValue(slice_val, {1}, "slice_len");
+                
+                // 获取元素类型（从array_element_types_）
+                auto elem_it = array_element_types_.find(array_name);
+                if (elem_it != array_element_types_.end()) {
+                    elem_type = elem_it->second;
+                } else {
+                    elem_type = llvm::Type::getInt32Ty(*context_);  // 默认
+                }
+            } else if (source_type->isArrayTy()) {
+                // 源是数组: [T; N]
+                llvm::ArrayType* arr_type = llvm::cast<llvm::ArrayType>(source_type);
+                elem_type = arr_type->getElementType();
+                
+                // 获取数组指针
+                llvm::Value* zero = llvm::ConstantInt::get(*context_, llvm::APInt(64, 0));
+                source_ptr = builder_->CreateGEP(source_type, array_alloca, {zero, zero}, "arr_ptr");
+                
+                // 数组长度
+                source_len = llvm::ConstantInt::get(*context_, llvm::APInt(64, arr_type->getNumElements()));
+            } else {
+                std::cerr << "Range slice requires array or slice type" << std::endl;
+                return nullptr;
+            }
+        } else {
+            return nullptr;
+        }
+    } else {
+        std::cerr << "Range slice on non-identifier not supported yet" << std::endl;
+        return nullptr;
+    }
+    
+    // 解析 start 和 end
+    llvm::Value* start_idx = nullptr;
+    llvm::Value* end_idx = nullptr;
+    
+    if (range->start) {
+        start_idx = generateExpr(range->start.get());
+        if (!start_idx) return nullptr;
+        
+        // 转换为 i64
+        if (start_idx->getType()->isIntegerTy() && start_idx->getType()->getIntegerBitWidth() != 64) {
+            start_idx = builder_->CreateSExt(start_idx, llvm::Type::getInt64Ty(*context_), "start_i64");
+        }
+    } else {
+        // 没有 start，从 0 开始
+        start_idx = llvm::ConstantInt::get(*context_, llvm::APInt(64, 0));
+    }
+    
+    if (range->end) {
+        end_idx = generateExpr(range->end.get());
+        if (!end_idx) return nullptr;
+        
+        // 转换为 i64
+        if (end_idx->getType()->isIntegerTy() && end_idx->getType()->getIntegerBitWidth() != 64) {
+            end_idx = builder_->CreateSExt(end_idx, llvm::Type::getInt64Ty(*context_), "end_i64");
+        }
+    } else {
+        // 没有 end，到末尾
+        end_idx = source_len;
+    }
+    
+    // 计算子切片长度: end - start
+    llvm::Value* slice_len = builder_->CreateSub(end_idx, start_idx, "slice_len");
+    
+    // 计算子切片起始指针: source_ptr + start
+    llvm::Value* slice_ptr = builder_->CreateGEP(
+        elem_type,
+        source_ptr,
+        start_idx,
+        "slice_start_ptr"
+    );
+    
+    // 创建切片结构: { ptr, len }
+    llvm::Type* slice_type = llvm::StructType::get(*context_, {
+        llvm::PointerType::get(*context_, 0),
+        llvm::Type::getInt64Ty(*context_)
+    });
+    
+    llvm::Value* undef = llvm::UndefValue::get(slice_type);
+    llvm::Value* slice_val = builder_->CreateInsertValue(undef, slice_ptr, {0}, "insert_ptr");
+    slice_val = builder_->CreateInsertValue(slice_val, slice_len, {1}, "insert_len");
+    
+    return slice_val;
+}
+
 llvm::Value* CodeGenerator::generateIndexExpr(const IndexExpr* expr) {
+    // 检查是否是范围切片: arr[1..5]
+    if (expr->index->kind == Expr::Kind::Range) {
+        return generateRangeSlice(expr);
+    }
+    
+    // 普通索引访问
     // 获取数组/字符串变量名和类型
     llvm::Value* array_ptr = nullptr;
     llvm::Type* array_type = nullptr;

@@ -64,6 +64,38 @@ llvm::Value* CodeGenerator::generateArrayLiteralExpr(const ArrayLiteralExpr* exp
     return nullptr;
 }
 
+/**
+ * 生成元组字面量: (a, b, c)
+ * 返回元组struct值
+ */
+llvm::Value* CodeGenerator::generateTupleLiteralExpr(const TupleLiteralExpr* expr) {
+    // 生成每个元素的值
+    std::vector<llvm::Value*> element_values;
+    std::vector<llvm::Type*> element_types;
+    
+    for (const auto& elem : expr->elements) {
+        llvm::Value* val = generateExpr(elem.get());
+        if (!val) return nullptr;
+        element_values.push_back(val);
+        element_types.push_back(val->getType());
+    }
+    
+    // 创建元组类型（struct）
+    llvm::StructType* tuple_type = llvm::StructType::get(*context_, element_types);
+    
+    // 创建临时alloca存储元组
+    llvm::AllocaInst* tuple_alloca = builder_->CreateAlloca(tuple_type, nullptr, "tuple_temp");
+    
+    // 初始化每个字段
+    for (size_t i = 0; i < element_values.size(); i++) {
+        llvm::Value* field_ptr = builder_->CreateStructGEP(tuple_type, tuple_alloca, i, "field_ptr");
+        builder_->CreateStore(element_values[i], field_ptr);
+    }
+    
+    // 加载并返回元组值
+    return builder_->CreateLoad(tuple_type, tuple_alloca, "tuple");
+}
+
 llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* expr) {
     // Resolve generic struct name (if in generic context)
     std::string resolved_name = resolveGenericStructName(expr->type_name);

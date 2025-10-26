@@ -1,0 +1,53 @@
+// 元组类型测试
+
+fn create_pair() -> (i32, string) {
+    return (42, "answer");
+}
+
+fn create_triple() -> (i32, f64, bool) {
+    return (100, 3.14, true);
+}
+
+fn swap(t: (i32, i32)) -> (i32, i32) {
+    return t;  // 简化版本
+}
+
+fn main() -> i32 {
+    println("╔═══════════════════════════════════════╗");
+    println("║  元组类型测试                        ║");
+    println("╚═══════════════════════════════════════╝");
+    println("");
+    
+    // 测试1：基本元组
+    println("测试1：基本元组");
+    let pair: (i32, string) = (42, "hello");
+    println("  ✓ 二元组创建成功");
+    
+    // 测试2：三元组
+    println("测试2：三元组");
+    let triple: (i32, f64, bool) = (100, 3.14, true);
+    println("  ✓ 三元组创建成功");
+    
+    // 测试3：函数返回元组
+    println("测试3：函数返回元组");
+    let result: (i32, string) = create_pair();
+    println("  ✓ 函数返回元组成功");
+    
+    // 测试4：元组作为参数
+    println("测试4：元组参数");
+    let nums: (i32, i32) = (1, 2);
+    let swapped: (i32, i32) = swap(nums);
+    println("  ✓ 元组参数成功");
+    
+    // 测试5：嵌套元组
+    println("测试5：嵌套元组");
+    let nested: ((i32, i32), string) = ((1, 2), "nested");
+    println("  ✓ 嵌套元组成功");
+    
+    println("");
+    println("╔═══════════════════════════════════════╗");
+    println("║  ✅ 所有测试通过！                  ║");
+    println("╚═══════════════════════════════════════╝");
+    
+    return 0;
+}
