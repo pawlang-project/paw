@@ -223,7 +223,22 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
             static_cast<const EnumVariantPattern*>(expr->pattern.get());
         
         // Find enum definition and get variant's tag value
-        for (const auto& [enum_name, enum_def] : enum_defs_) {
+        // 如果pattern指定了enum_name，优先使用它
+        std::vector<std::pair<std::string, const EnumStmt*>> enums_to_check;
+        if (!enum_pattern->enum_name.empty()) {
+            // 优先检查指定的enum
+            auto it = enum_defs_.find(enum_pattern->enum_name);
+            if (it != enum_defs_.end()) {
+                enums_to_check.push_back(*it);
+            }
+        } else {
+            // 没有指定，遍历所有enum
+            for (const auto& pair : enum_defs_) {
+                enums_to_check.push_back(pair);
+            }
+        }
+        
+        for (const auto& [enum_name, enum_def] : enums_to_check) {
             int variant_tag = 0;
             for (const auto& variant : enum_def->variants) {
                 if (variant.name == enum_pattern->variant_name) {
@@ -235,10 +250,25 @@ llvm::Value* CodeGenerator::generateIsExpr(const IsExpr* expr) {
                     llvm::Type* enum_type = getEnumType(enum_name);
                     llvm::Value* value_to_check = value_ptr;
                     
-                    // [Key fix]: For T?, value might be load(alloca ptr) result
-                    // This is already heap pointer, can be used directly for GEP
-                    // But if function receives parameter, value is load result of pointer to pointer
-                    // In any case, value should be pointer to Optional struct
+                    // 【关键修复】：检查value_to_check是值、指针还是指向指针的指针
+                    if (value_to_check->getType() == enum_type) {
+                        // 这是struct值，需要存储到临时alloca
+                        llvm::AllocaInst* temp_alloca = builder_->CreateAlloca(
+                            enum_type, nullptr, "enum_temp"
+                        );
+                        builder_->CreateStore(value_to_check, temp_alloca);
+                        value_to_check = temp_alloca;
+                    } else if (value_to_check->getType()->isPointerTy() && is_optional) {
+                        // 【关键修复】：对于Optional类型，value_to_check可能是alloca（存储heap ptr）
+                        // 需要load出heap指针
+                        llvm::Value* heap_ptr = builder_->CreateLoad(
+                            llvm::PointerType::get(*context_, 0),
+                            value_to_check,
+                            "optional_heap_ptr"
+                        );
+                        value_to_check = heap_ptr;
+                    }
+                    // 否则value_to_check已经是指针，可以直接使用
                     
                     llvm::Value* tag_ptr = builder_->CreateStructGEP(
                         static_cast<llvm::StructType*>(enum_type),

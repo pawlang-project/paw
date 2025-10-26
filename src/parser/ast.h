@@ -22,7 +22,8 @@ using TypePtr = std::unique_ptr<Type>;
 struct Type {
     enum class Kind {
         Primitive,  // i32, f64, bool等
-        Array,      // [T]
+        Array,      // [T; N] 固定大小数组
+        Slice,      // [T] 动态切片
         Function,   // fn(T1, T2) -> T3
         Named,      // 自定义类型
         Generic,    // 泛型参数 T, U等
@@ -77,10 +78,18 @@ struct OptionalTypeNode : Type {
 
 struct ArrayTypeNode : Type {
     TypePtr element_type;
-    int size;  // 数组大小，-1表示不定大小
+    int size;  // 数组大小，-1表示待推导（仅用于变量声明）
     
     ArrayTypeNode(TypePtr elem_type, int sz, const SourceLocation& loc)
         : Type(Kind::Array, loc), element_type(std::move(elem_type)), size(sz) {}
+};
+
+// 切片类型: [T] （运行时动态大小）
+struct SliceTypeNode : Type {
+    TypePtr element_type;
+    
+    SliceTypeNode(TypePtr elem_type, const SourceLocation& loc)
+        : Type(Kind::Slice, loc), element_type(std::move(elem_type)) {}
 };
 
 // ====== 表达式 ======

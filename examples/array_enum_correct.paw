@@ -1,0 +1,33 @@
+// 正确的枚举数组测试
+
+type Color = enum {
+    Red,
+    Green,
+    Blue,
+}
+
+fn main() -> i32 {
+    let c1: Color = Color::Red;
+    let c2: Color = Color::Green;
+    let c3: Color = Color::Blue;
+    
+    let colors: [Color; 3] = [c1, c2, c3];
+    
+    let mut count: i32 = 0;
+    
+    // 正确写法：使用完整路径 Color::Red
+    if colors[0] is Color::Red {
+        count = count + 1;
+    }
+    
+    if colors[1] is Color::Green {
+        count = count + 1;
+    }
+    
+    if colors[2] is Color::Blue {
+        count = count + 1;
+    }
+    
+    return count;  // 应该返回 3
+}
+

@@ -1042,31 +1042,42 @@ ExprPtr Parser::primary() {
 
 /**
  * 类型解析
- * 支持：基础类型、数组、泛型参数
+ * 支持：基础类型、数组、切片、泛型参数
+ * @param allow_slice 是否允许[T]解析为切片（函数参数中为true）
  */
-TypePtr Parser::parseType() {
+TypePtr Parser::parseType(bool allow_slice) {
     // Self类型（在struct方法中使用）
     if (match({TokenType::KW_SELF_TYPE})) {
         return std::make_unique<SelfTypeNode>(previous().location);
     }
     
-    // 数组类型: [element_type; size] 或 [element_type]
+    // 数组/切片类型: [element_type; size] 或 [element_type]
     if (match({TokenType::LBRACKET})) {
-        auto elem_type = parseType();
+        auto elem_type = parseType(allow_slice);
         
-        int size = -1;  // -1表示大小待推导
         SourceLocation loc = elem_type->location;
         
-        // 检查是否有显式大小
+        // 检查是否有显式大小: [T; N]
         if (match({TokenType::SEMICOLON})) {
             Token size_token = consume(TokenType::INTEGER, "Expected array size");
-            size = std::stoi(size_token.value);
+            int size = std::stoi(size_token.value);
             loc = size_token.location;
+            consume(TokenType::RBRACKET, "Expected ']' after array type");
+            
+            // [T; N] 始终是固定大小数组
+            return std::make_unique<ArrayTypeNode>(std::move(elem_type), size, loc);
         }
         
         consume(TokenType::RBRACKET, "Expected ']' after array type");
         
-        return std::make_unique<ArrayTypeNode>(std::move(elem_type), size, loc);
+        // [T] 的语义取决于上下文
+        if (allow_slice) {
+            // 函数参数中：[T] 是切片
+            return std::make_unique<SliceTypeNode>(std::move(elem_type), loc);
+        } else {
+            // 变量声明中：[T] 是待推导大小的数组
+            return std::make_unique<ArrayTypeNode>(std::move(elem_type), -1, loc);
+        }
     }
     
     if (match({TokenType::IDENTIFIER})) {
@@ -1175,7 +1186,7 @@ Parameter Parser::parseParameter() {
     param.is_mut_self = false;
     
     consume(TokenType::COLON, "Expected ':' after parameter name");
-    param.type = parseType();
+    param.type = parseType(true);  // 函数参数允许切片类型
     
     return param;
 }

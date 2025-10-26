@@ -93,6 +93,7 @@ private:
     std::map<std::string, llvm::Value*> named_values_;      ///< 变量名 -> LLVM值
     std::map<std::string, llvm::Type*> variable_types_;     ///< 变量名 -> LLVM类型（用于GEP等）
     std::map<std::string, llvm::Type*> array_element_types_;///< 数组参数 -> 元素类型（泛型）
+    std::map<std::string, int64_t> array_param_sizes_;      ///< 数组参数 -> 数组大小
     
     // ========== 循环控制 ==========
     /// 循环标签栈：(continue_target, break_target)
@@ -457,6 +458,20 @@ private:
      * @return llvm::Type* 解析后的LLVM类型
      */
     llvm::Type* resolveGenericType(const Type* type);
+    
+    /**
+     * @brief 将LLVM类型转换回AST类型节点
+     * @param llvm_type LLVM类型
+     * @return TypePtr AST类型节点
+     */
+    TypePtr llvmTypeToASTType(llvm::Type* llvm_type);
+    
+    /**
+     * @brief 克隆AST类型节点
+     * @param type 要克隆的类型
+     * @return TypePtr 克隆后的类型节点
+     */
+    TypePtr cloneType(const Type* type);
     
     /**
      * @brief 检查是否是泛型函数

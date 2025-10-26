@@ -66,16 +66,27 @@ llvm::Type* CodeGenerator::convertType(const Type* type) {
             
             // 处理大小待推导的情况（size == -1）
             // 注意：在变量声明时，size=-1应该从初始化器推导，由外层处理
-            // 只有在函数参数时才返回PointerType
             if (array_type->size == -1 || array_type->size < 0) {
                 // 待推导大小的数组：
-                // - 如果是函数参数：返回PointerType
-                // - 如果是变量声明：外层会从初始化器推导，这里返回i32作为占位符
+                // - 变量声明：外层会从初始化器推导
                 // 使用一个小的默认大小作为占位（外层会覆盖）
                 return llvm::ArrayType::get(elem_type, 1);  // 占位符，外层会重新设置
             }
             
             return llvm::ArrayType::get(elem_type, array_type->size);
+        }
+        case Type::Kind::Slice: {
+            // 切片类型: [T]
+            // 内部表示为 { ptr, i64 len }
+            auto slice_type = static_cast<const SliceTypeNode*>(type);
+            llvm::Type* elem_type = convertType(slice_type->element_type.get());
+            
+            // 切片结构: { ptr, len }
+            std::vector<llvm::Type*> fields = {
+                llvm::PointerType::get(*context_, 0),   // ptr: 指向数据的指针
+                llvm::Type::getInt64Ty(*context_)      // len: 元素数量
+            };
+            return llvm::StructType::get(*context_, fields);
         }
         case Type::Kind::Generic: {
             // 泛型参数在单态化后应该被替换
@@ -237,6 +248,14 @@ void CodeGenerator::instantiateGenericStructMethods(
     current_struct_ = generic_struct;
     current_struct_name_ = struct_mangled_name;
     
+    // 【关键】建立类型参数映射，用于解析方法签名中的泛型类型
+    auto old_type_param_map = type_param_map_;
+    for (size_t i = 0; i < generic_struct->generic_params.size() && i < type_args.size(); i++) {
+        const std::string& param_name = generic_struct->generic_params[i].name;
+        llvm::Type* concrete_type = convertType(type_args[i].get());
+        type_param_map_[param_name][struct_mangled_name] = concrete_type;
+    }
+    
     // 遍历所有方法并实例化
     for (const auto& method : generic_struct->methods) {
         // 构造方法的mangled name
@@ -362,7 +381,8 @@ void CodeGenerator::instantiateGenericStructMethods(
         builder_->restoreIP(old_insert_point);
     }
     
-    // 恢复外层struct上下文
+    // 恢复外层struct上下文和类型参数映射
+    type_param_map_ = old_type_param_map;
     current_struct_ = old_current_struct;
     current_struct_name_ = old_current_struct_name;
 }

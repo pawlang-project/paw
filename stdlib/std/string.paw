@@ -1,5 +1,9 @@
 // std::string - 字符串操作库
-// 提供常用字符串和字符函数（命名不超过3个单词）
+// 提供常用字符串和字符函数
+
+// 注意：len()和is_empty()现在是内置函数，可以直接使用
+//   let size: i64 = len(str);
+//   let empty: bool = is_empty(str);
 
 // ============ C标准库字符串函数声明 ============
 
@@ -22,18 +26,6 @@ extern "C" fn isupper(c: i32) -> i32;
 extern "C" fn islower(c: i32) -> i32;
 
 // ============ PawLang字符串函数 ============
-
-// 长度
-pub fn len(s: string) -> i64 {
-    return strlen(s);
-}
-
-// 判空
-pub fn is_empty(s: string) -> bool {
-    let length: i64 = strlen(s);
-    let zero: i64 = 0;
-    return length == zero;
-}
 
 // 比较
 pub fn equals(a: string, b: string) -> bool {

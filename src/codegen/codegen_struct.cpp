@@ -12,11 +12,40 @@ llvm::Type* CodeGenerator::getEnumType(const std::string& name) {
         return nullptr;
     }
     
-    // Simplified: use {i32, i64} to represent enum
-    // tag = variant index, data = associated value (simplified to i64)
+    const EnumStmt* enum_def = it->second;
+    
+    // 计算所有变体的最大类型大小（union表示）
+    llvm::Type* max_type = nullptr;
+    uint64_t max_size = 0;
+    
+    for (const auto& variant : enum_def->variants) {
+        if (variant.associated_types.empty()) {
+            // 无关联值的变体不占额外空间
+            continue;
+        }
+        
+        // 转换第一个关联值的类型
+        llvm::Type* variant_type = convertType(variant.associated_types[0].get());
+        if (!variant_type) continue;
+        
+        // 获取类型的分配大小
+        uint64_t size = module_->getDataLayout().getTypeAllocSize(variant_type);
+        
+        if (size > max_size) {
+            max_size = size;
+            max_type = variant_type;
+        }
+    }
+    
+    // 如果所有变体都没有关联值，使用i32作为占位
+    if (!max_type) {
+        max_type = llvm::Type::getInt32Ty(*context_);
+    }
+    
+    // 构建enum类型：{ i32 tag, T max_data }
     std::vector<llvm::Type*> fields = {
         llvm::Type::getInt32Ty(*context_),  // tag
-        llvm::Type::getInt64Ty(*context_)   // data
+        max_type                             // union data (最大类型)
     };
     return llvm::StructType::get(*context_, fields);
 }
@@ -69,8 +98,14 @@ llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* e
                 // Get target type of field
                 llvm::Type* target_type = struct_type->getElementType(i);
                 
-                // Type conversion (if needed)
-                if (field_val->getType()->isIntegerTy() && target_type->isIntegerTy()) {
+                // 【全面修复】：处理struct类型字段
+                if (target_type->isStructTy() && field_val->getType()->isPointerTy()) {
+                    // struct字段：field_val是指针，需要load struct值
+                    llvm::Value* struct_val = builder_->CreateLoad(target_type, field_val, "struct_field_val");
+                    llvm::Value* field_ptr = builder_->CreateStructGEP(struct_type, temp_alloca, i);
+                    builder_->CreateStore(struct_val, field_ptr);
+                } else if (field_val->getType()->isIntegerTy() && target_type->isIntegerTy()) {
+                    // Type conversion for integers
                     unsigned src_bits = field_val->getType()->getIntegerBitWidth();
                     unsigned dst_bits = target_type->getIntegerBitWidth();
                     
@@ -79,10 +114,14 @@ llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* e
                     } else if (src_bits > dst_bits) {
                         field_val = builder_->CreateTrunc(field_val, target_type, "field_trunc");
                     }
+                    
+                    llvm::Value* field_ptr = builder_->CreateStructGEP(struct_type, temp_alloca, i);
+                    builder_->CreateStore(field_val, field_ptr);
+                } else {
+                    // Other types: direct store
+                    llvm::Value* field_ptr = builder_->CreateStructGEP(struct_type, temp_alloca, i);
+                    builder_->CreateStore(field_val, field_ptr);
                 }
-                
-                llvm::Value* field_ptr = builder_->CreateStructGEP(struct_type, temp_alloca, i);
-                builder_->CreateStore(field_val, field_ptr);
             }
         }
     }
@@ -114,19 +153,14 @@ llvm::Value* CodeGenerator::generateEnumVariantExpr(const EnumVariantExpr* expr)
     // 尝试查找enum类型（可能是泛型实例化的mangled name）
     llvm::Type* enum_type = getEnumType(expr->enum_name);
     
-    // 如果直接找不到，可能是泛型enum，需要从enum_defs_查找
+    // 如果直接找不到，尝试重新调用getEnumType()
+    // （可能enum_defs_刚刚更新）
     std::string enum_name = expr->enum_name;
     if (!enum_type) {
-        // 检查enum_defs_中是否有这个类型
-        auto it = enum_defs_.find(expr->enum_name);
-        if (it != enum_defs_.end()) {
-            // 找到了，构造类型
-            std::vector<llvm::Type*> fields = {
-                llvm::Type::getInt32Ty(*context_),  // tag
-                llvm::Type::getInt64Ty(*context_)   // data
-            };
-            enum_type = llvm::StructType::get(*context_, fields);
-        } else {
+        // 再次尝试，这次会使用新的union计算逻辑
+        enum_type = getEnumType(expr->enum_name);
+        
+        if (!enum_type) {
             std::cerr << "Unknown enum type: " << expr->enum_name << std::endl;
             return nullptr;
         }
@@ -149,15 +183,51 @@ llvm::Value* CodeGenerator::generateEnumVariantExpr(const EnumVariantExpr* expr)
         );
         builder_->CreateStore(llvm::ConstantInt::get(*context_, llvm::APInt(32, tag)), tag_ptr);
         
-        // 设置data（简化: 只支持一个i32值）
+        // 设置data（支持任意类型的关联值）
         if (!expr->values.empty()) {
             llvm::Value* val = generateExpr(expr->values[0].get());
             if (val) {
                 llvm::Value* data_ptr = builder_->CreateStructGEP(
                     static_cast<llvm::StructType*>(enum_type), alloca, 1
                 );
-                llvm::Value* extended = builder_->CreateSExtOrTrunc(val, llvm::Type::getInt64Ty(*context_));
-                builder_->CreateStore(extended, data_ptr);
+                
+                // 获取目标data字段的类型
+                llvm::Type* data_field_type = static_cast<llvm::StructType*>(enum_type)->getElementType(1);
+                
+                // 根据源类型和目标类型进行转换
+                llvm::Value* converted_val = val;
+                llvm::Type* src_type = val->getType();
+                
+                if (src_type != data_field_type) {
+                    // 类型转换
+                    if (src_type->isIntegerTy() && data_field_type->isIntegerTy()) {
+                        // 整数 → 整数（扩展或截断）
+                        converted_val = builder_->CreateIntCast(val, data_field_type, true, "int_cast");
+                    } else if (src_type->isPointerTy() && data_field_type->isIntegerTy()) {
+                        // 指针 → 整数
+                        converted_val = builder_->CreatePtrToInt(val, data_field_type, "ptr_to_int");
+                    } else if (src_type->isIntegerTy() && data_field_type->isPointerTy()) {
+                        // 整数 → 指针
+                        converted_val = builder_->CreateIntToPtr(val, data_field_type, "int_to_ptr");
+                    } else if (src_type->isPointerTy() && data_field_type->isPointerTy()) {
+                        // 指针 → 指针（不同类型）
+                        // 直接存储，LLVM的opaque pointer会处理
+                        converted_val = val;
+                    } else if (src_type->isFloatingPointTy() && data_field_type->isIntegerTy()) {
+                        // 浮点 → 整数（bitcast）
+                        converted_val = builder_->CreateBitCast(val, data_field_type, "float_to_int");
+                    } else {
+                        // 其他情况：尝试bitcast
+                        if (module_->getDataLayout().getTypeAllocSize(src_type) == 
+                            module_->getDataLayout().getTypeAllocSize(data_field_type)) {
+                            converted_val = builder_->CreateBitCast(val, data_field_type, "bitcast");
+                        } else {
+                            std::cerr << "Warning: Incompatible enum data type, using original value" << std::endl;
+                        }
+                    }
+                }
+                
+                builder_->CreateStore(converted_val, data_ptr);
             }
         }
     }
@@ -191,6 +261,98 @@ std::string CodeGenerator::mangleGenericName(const std::string& base_name, const
     return mangled;
 }
 
+// 克隆AST类型节点（深拷贝）
+TypePtr CodeGenerator::cloneType(const Type* type) {
+    if (!type) return nullptr;
+    
+    switch (type->kind) {
+        case Type::Kind::Primitive: {
+            const PrimitiveTypeNode* prim = static_cast<const PrimitiveTypeNode*>(type);
+            return std::make_unique<PrimitiveTypeNode>(prim->prim_type, prim->location);
+        }
+        case Type::Kind::Named: {
+            const NamedTypeNode* named = static_cast<const NamedTypeNode*>(type);
+            // 递归克隆泛型参数
+            std::vector<TypePtr> cloned_args;
+            for (const auto& arg : named->generic_args) {
+                cloned_args.push_back(cloneType(arg.get()));
+            }
+            return std::make_unique<NamedTypeNode>(named->name, std::move(cloned_args), named->location);
+        }
+        case Type::Kind::Generic: {
+            const GenericTypeNode* gen = static_cast<const GenericTypeNode*>(type);
+            return std::make_unique<GenericTypeNode>(gen->name, gen->location);
+        }
+        case Type::Kind::Array: {
+            const ArrayTypeNode* arr = static_cast<const ArrayTypeNode*>(type);
+            return std::make_unique<ArrayTypeNode>(cloneType(arr->element_type.get()), arr->size, arr->location);
+        }
+        case Type::Kind::Slice: {
+            const SliceTypeNode* slice = static_cast<const SliceTypeNode*>(type);
+            return std::make_unique<SliceTypeNode>(cloneType(slice->element_type.get()), slice->location);
+        }
+        case Type::Kind::Optional: {
+            const OptionalTypeNode* opt = static_cast<const OptionalTypeNode*>(type);
+            return std::make_unique<OptionalTypeNode>(cloneType(opt->inner_type.get()), opt->location);
+        }
+        default:
+            // 其他类型暂不支持，返回i32
+            return std::make_unique<PrimitiveTypeNode>(PrimitiveType::I32, type->location);
+    }
+}
+
+// 将LLVM类型转换回AST类型节点（辅助函数）
+TypePtr CodeGenerator::llvmTypeToASTType(llvm::Type* llvm_type) {
+    SourceLocation loc;  // 默认位置
+    
+    if (!llvm_type) {
+        return std::make_unique<PrimitiveTypeNode>(PrimitiveType::I32, loc);
+    }
+    
+    // 整数类型
+    if (llvm_type->isIntegerTy()) {
+        unsigned bits = llvm_type->getIntegerBitWidth();
+        if (bits == 32) {
+            return std::make_unique<PrimitiveTypeNode>(PrimitiveType::I32, loc);
+        } else if (bits == 64) {
+            return std::make_unique<PrimitiveTypeNode>(PrimitiveType::I64, loc);
+        } else if (bits == 8) {
+            return std::make_unique<PrimitiveTypeNode>(PrimitiveType::I8, loc);
+        } else if (bits == 16) {
+            return std::make_unique<PrimitiveTypeNode>(PrimitiveType::I16, loc);
+        } else if (bits == 1) {
+            return std::make_unique<PrimitiveTypeNode>(PrimitiveType::BOOL, loc);
+        }
+        return std::make_unique<PrimitiveTypeNode>(PrimitiveType::I32, loc);
+    }
+    
+    // 浮点类型
+    if (llvm_type->isFloatTy()) {
+        return std::make_unique<PrimitiveTypeNode>(PrimitiveType::F32, loc);
+    }
+    if (llvm_type->isDoubleTy()) {
+        return std::make_unique<PrimitiveTypeNode>(PrimitiveType::F64, loc);
+    }
+    
+    // 指针类型（可能是string）
+    if (llvm_type->isPointerTy()) {
+        return std::make_unique<PrimitiveTypeNode>(PrimitiveType::STRING, loc);
+    }
+    
+    // 结构体类型（尝试从名称反推）
+    if (llvm::StructType* struct_type = llvm::dyn_cast<llvm::StructType>(llvm_type)) {
+        if (struct_type->hasName()) {
+            std::string name = struct_type->getName().str();
+            // 简单情况：返回NamedType（没有泛型参数）
+            std::vector<TypePtr> empty_args;
+            return std::make_unique<NamedTypeNode>(name, std::move(empty_args), loc);
+        }
+    }
+    
+    // 默认返回i32
+    return std::make_unique<PrimitiveTypeNode>(PrimitiveType::I32, loc);
+}
+
 // 解析泛型类型（替换类型参数）
 llvm::Type* CodeGenerator::resolveGenericType(const Type* type) {
     // 处理Self类型（在泛型struct方法中）
@@ -211,6 +373,60 @@ llvm::Type* CodeGenerator::resolveGenericType(const Type* type) {
             }
         }
     }
+    
+    // 处理Named类型（可能包含泛型参数）
+    if (type->kind == Type::Kind::Named) {
+        const NamedTypeNode* named = static_cast<const NamedTypeNode*>(type);
+        
+        // 如果Named类型有泛型参数，需要递归解析这些参数
+        if (!named->generic_args.empty()) {
+            // 创建新的泛型参数列表，解析每个参数
+            std::vector<TypePtr> resolved_args;
+            for (const auto& arg : named->generic_args) {
+                // 如果参数是泛型类型（如T），需要从type_param_map_中解析
+                if (arg->kind == Type::Kind::Generic) {
+                    const GenericTypeNode* gen_arg = static_cast<const GenericTypeNode*>(arg.get());
+                    llvm::Type* concrete_type = nullptr;
+                    
+                    // 在type_param_map_中查找
+                    for (const auto& entry : type_param_map_) {
+                        if (entry.first == gen_arg->name && !entry.second.empty()) {
+                            concrete_type = entry.second.begin()->second;
+                            break;
+                        }
+                    }
+                    
+                    if (concrete_type) {
+                        // 将LLVM类型转换回AST类型节点
+                        TypePtr resolved = llvmTypeToASTType(concrete_type);
+                        resolved_args.push_back(std::move(resolved));
+                    } else {
+                        // 未找到映射，克隆原参数
+                        resolved_args.push_back(cloneType(arg.get()));
+                    }
+                } else {
+                    // 非泛型参数，克隆后保持原样
+                    resolved_args.push_back(cloneType(arg.get()));
+                }
+            }
+            
+            // Debug: 打印解析后的参数信息
+            #ifdef DEBUG_NESTED_GENERIC
+            std::cerr << "Resolved nested generic: " << named->name << " with " << resolved_args.size() << " args" << std::endl;
+            #endif
+            
+            // 使用解析后的参数实例化泛型struct
+            if (auto it = generic_structs_.find(named->name); it != generic_structs_.end()) {
+                return instantiateGenericStruct(named->name, resolved_args);
+            }
+            
+            // 尝试泛型enum
+            if (auto enum_it = generic_enums_.find(named->name); enum_it != generic_enums_.end()) {
+                return instantiateGenericEnum(named->name, resolved_args);
+            }
+        }
+    }
+    
     return convertType(type);
 }
 
@@ -385,6 +601,7 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
     auto old_named_values = named_values_;
     auto old_variable_types = variable_types_;
     auto old_array_element_types = array_element_types_;
+    auto old_array_param_sizes = array_param_sizes_;
     
     // 保存参数
     size_t idx = 0;
@@ -403,10 +620,15 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
             // 记录为指针类型（因为数组参数实际上是指针）
             variable_types_[param.name] = llvm::PointerType::get(*context_, 0);
             
-            // 记录元素类型
+            // 记录元素类型和数组大小
             const ArrayTypeNode* array_type = static_cast<const ArrayTypeNode*>(param.type.get());
             llvm::Type* elem_type = resolveGenericType(array_type->element_type.get());
             array_element_types_[param.name] = elem_type;
+            
+            // 【关键修复】：记录数组大小
+            if (array_type->size >= 0) {
+                array_param_sizes_[param.name] = array_type->size;
+            }
         } else if (param.type->kind == Type::Kind::Optional) {
             // 【新增】：T?参数也是指针
             llvm::Type* param_type = resolveGenericType(param.type.get());
@@ -467,6 +689,7 @@ llvm::Function* CodeGenerator::instantiateGenericFunction(
     named_values_ = old_named_values;
     variable_types_ = old_variable_types;
     array_element_types_ = old_array_element_types;
+    array_param_sizes_ = old_array_param_sizes;
     type_param_map_ = old_map;
     builder_->restoreIP(old_insert_point);
     

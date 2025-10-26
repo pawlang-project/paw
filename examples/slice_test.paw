@@ -1,0 +1,46 @@
+// 测试切片功能
+
+// 接受切片的函数
+fn sum_slice(numbers: [i32]) -> i32 {
+    let mut total: i32 = 0;
+    loop item in numbers {
+        total = total + item;
+    }
+    return total;
+}
+
+// 接受切片并返回第一个元素
+fn get_first(arr: [i32]) -> i32 {
+    return arr[0];
+}
+
+// 接受切片并返回最后一个元素
+fn get_last(arr: [i32]) -> i32 {
+    let mut last: i32 = 0;
+    let mut count: i32 = 0;
+    loop item in arr {
+        last = item;
+        count = count + 1;
+    }
+    return last;
+}
+
+fn main() -> i32 {
+    // 不同大小的数组
+    let arr3: [i32] = [1, 2, 3];
+    let arr5: [i32] = [10, 20, 30, 40, 50];
+    let arr10: [i32; 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    
+    // 所有数组都可以传给切片参数
+    let s1: i32 = sum_slice(arr3);    // 6
+    let s2: i32 = sum_slice(arr5);    // 150
+    let s3: i32 = sum_slice(arr10);   // 55
+    
+    // 测试索引
+    let first: i32 = get_first(arr5);  // 10
+    let last: i32 = get_last(arr5);    // 50
+    
+    // 总和应该是：6 + 150 + 55 + 10 + 50 = 271
+    return s1 + s2 + s3 + first + last;
+}
+

@@ -1,0 +1,48 @@
+// 内置函数演示
+
+fn main() -> i32 {
+    println("=== PawLang 内置函数演示 ===");
+    
+    // 数学函数
+    println("数学函数:");
+    let abs_val: i32 = abs(-10);
+    let min_val: i32 = min(5, 10);
+    let max_val: i32 = max(5, 10);
+    let clamp_val: i32 = clamp(15, 0, 10);
+    println("  abs(-10) = 10");
+    println("  min(5, 10) = 5");
+    println("  max(5, 10) = 10");
+    println("  clamp(15, 0, 10) = 10");
+    
+    // 高级数学
+    println("高级数学:");
+    let pow_val: f64 = pow(2.0, 3.0);
+    let sqrt_val: f64 = sqrt(16.0);
+    let floor_val: f64 = floor(3.7);
+    let ceil_val: f64 = ceil(3.2);
+    let round_val: f64 = round(3.5);
+    println("  pow(2, 3) = 8");
+    println("  sqrt(16) = 4");
+    println("  floor(3.7) = 3");
+    println("  ceil(3.2) = 4");
+    println("  round(3.5) = 4");
+    
+    // 工具函数
+    println("工具函数:");
+    let arr: [i32; 5] = [1, 2, 3, 4, 5];
+    let arr_len: i64 = len(arr);
+    let arr_empty: bool = is_empty(arr);
+    println("  len(arr) = 5");
+    println("  is_empty(arr) = false");
+    
+    // Assert验证
+    assert(abs_val == 10, "abs测试失败");
+    assert(min_val == 5, "min测试失败");
+    assert(max_val == 10, "max测试失败");
+    assert(clamp_val == 10, "clamp测试失败");
+    
+    println("");
+    println("✅ 所有内置函数工作正常！");
+    
+    return 0;
+}

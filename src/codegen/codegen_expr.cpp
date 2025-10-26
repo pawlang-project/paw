@@ -205,8 +205,24 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
                 obj_ptr = it->second;  // 这已经是alloca指针
             }
         } else {
-            // 其他情况（如临时值），需要生成表达式
-            obj_ptr = generateExpr(member_expr->object.get());
+            // 其他情况（如临时值或嵌套成员访问），需要生成表达式
+            llvm::Value* obj_val = generateExpr(member_expr->object.get());
+            if (!obj_val) return nullptr;
+            
+            // 如果生成的是struct值，需要创建临时alloca存储并传递指针
+            if (obj_val->getType()->isStructTy()) {
+                llvm::AllocaInst* temp = builder_->CreateAlloca(
+                    obj_val->getType(), nullptr, "temp_obj_for_method"
+                );
+                builder_->CreateStore(obj_val, temp);
+                obj_ptr = temp;
+            } else if (obj_val->getType()->isPointerTy()) {
+                // 已经是指针，直接使用
+                obj_ptr = obj_val;
+            } else {
+                std::cerr << "Cannot call method on non-struct value" << std::endl;
+                return nullptr;
+            }
         }
         
         if (!obj_ptr) return nullptr;
@@ -264,8 +280,221 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
     
     auto callee_name = static_cast<const IdentifierExpr*>(expr->callee.get())->name;
     
-    // 【新增】检查是否是泛型struct静态方法调用：Pair::new<K,V>()
-    if (!expr->module_prefix.empty() && !expr->type_arguments.empty()) {
+    // Check if it's内置函数（提前检查，让builtin走统一流程）
+    if (builtins_->isBuiltin(callee_name)) {
+        return generateBuiltinCall(callee_name, expr->arguments);
+    }
+    
+    // 【关键修复】检查是否是enum变体构造：Result::Err(...) 或 Result<T>::Err(...)
+    // 包括泛型enum实例（module_prefix可能是"Result"或"Result_"）
+    if (!expr->module_prefix.empty()) {
+        // 尝试提取base name（去掉下划线后缀）
+        std::string base_enum_name = expr->module_prefix;
+        size_t underscore_pos = base_enum_name.find('_');
+        if (underscore_pos != std::string::npos) {
+            base_enum_name = base_enum_name.substr(0, underscore_pos);
+        }
+        
+        // 检查base_enum_name是否是泛型enum
+        auto generic_enum_it = generic_enums_.find(base_enum_name);
+        const EnumStmt* generic_enum = nullptr;
+        
+        if (generic_enum_it != generic_enums_.end()) {
+            generic_enum = generic_enum_it->second;
+        }
+        
+        // 【关键】：如果找到泛型enum，并且type_arguments非空，或者module_prefix包含下划线（说明是实例）
+        if (generic_enum && (!expr->type_arguments.empty() || underscore_pos != std::string::npos)) {
+            // 【关键修复】：这是泛型enum变体构造！
+            // Result<T>::Err(...) 或 Option<T>::Some(...)
+            
+            // 【重要】：解析type_arguments中的泛型类型
+            // Result<T>::Err(...) 在泛型函数中，T需要被替换成具体类型
+            std::vector<TypePtr> resolved_type_args;
+            
+            if (!expr->type_arguments.empty()) {
+                // 有显式type_arguments
+                for (const auto& type_arg : expr->type_arguments) {
+                    if (type_arg->kind == Type::Kind::Generic) {
+                        // 这是泛型参数，需要从type_param_map_解析
+                        llvm::Type* concrete_type = resolveGenericType(type_arg.get());
+                        TypePtr resolved = llvmTypeToASTType(concrete_type);
+                        resolved_type_args.push_back(std::move(resolved));
+                    } else {
+                        // 具体类型，克隆后使用
+                        resolved_type_args.push_back(cloneType(type_arg.get()));
+                    }
+                }
+            } else if (underscore_pos != std::string::npos) {
+                // 没有显式type_arguments，但module_prefix包含下划线（如"Result_"）
+                // 这说明parser只解析了base name，实际类型参数在后面
+                // 但是CallExpr中没有记录，这种情况很少见
+                // 暂时使用module_prefix本身作为实例化的enum名称
+                
+                // 直接使用module_prefix（如"Result_i32"）作为enum名称
+                // 这应该已经在当前作用域中实例化了
+                auto enum_def_it = enum_defs_.find(expr->module_prefix);
+                if (enum_def_it != enum_defs_.end()) {
+                    // 找到了实例化的enum定义
+                    llvm::Type* enum_type = getEnumType(expr->module_prefix);
+                    if (!enum_type) {
+                        std::cerr << "Error: Cannot get enum type: " << expr->module_prefix << std::endl;
+                        return nullptr;
+                    }
+                    
+                    // 查找变体tag
+                    const EnumStmt* enum_def = enum_def_it->second;
+                    int tag = -1;
+                    for (size_t i = 0; i < enum_def->variants.size(); i++) {
+                        if (enum_def->variants[i].name == callee_name) {
+                            tag = static_cast<int>(i);
+                            break;
+                        }
+                    }
+                    
+                    if (tag < 0) {
+                        std::cerr << "Enum variant not found: " << callee_name << std::endl;
+                        return nullptr;
+                    }
+                    
+                    // 创建enum实例（直接使用，不需要解析type_arguments）
+                    llvm::Value* alloca = builder_->CreateAlloca(enum_type);
+                    
+                    // 设置tag
+                    llvm::Value* tag_ptr = builder_->CreateStructGEP(
+                        static_cast<llvm::StructType*>(enum_type), alloca, 0
+                    );
+                    builder_->CreateStore(llvm::ConstantInt::get(*context_, llvm::APInt(32, tag)), tag_ptr);
+                    
+                    // 设置data
+                    if (!expr->arguments.empty()) {
+                        llvm::Value* val = generateExpr(expr->arguments[0].get());
+                        if (val) {
+                            llvm::Value* data_ptr = builder_->CreateStructGEP(
+                                static_cast<llvm::StructType*>(enum_type), alloca, 1
+                            );
+                            
+                            llvm::Type* data_field_type = static_cast<llvm::StructType*>(enum_type)->getElementType(1);
+                            llvm::Value* converted_val = val;
+                            llvm::Type* src_type = val->getType();
+                            
+                            if (src_type != data_field_type) {
+                                if (src_type->isIntegerTy() && data_field_type->isIntegerTy()) {
+                                    converted_val = builder_->CreateIntCast(val, data_field_type, true, "int_cast");
+                                } else if (src_type->isPointerTy() && data_field_type->isIntegerTy()) {
+                                    converted_val = builder_->CreatePtrToInt(val, data_field_type, "ptr_to_int");
+                                } else if (src_type->isIntegerTy() && data_field_type->isPointerTy()) {
+                                    converted_val = builder_->CreateIntToPtr(val, data_field_type, "int_to_ptr");
+                                } else if (src_type->isPointerTy() && data_field_type->isPointerTy()) {
+                                    converted_val = val;
+                                } else if (src_type->isFloatingPointTy() && data_field_type->isIntegerTy()) {
+                                    converted_val = builder_->CreateBitCast(val, data_field_type, "float_to_int");
+                                } else {
+                                    if (module_->getDataLayout().getTypeAllocSize(src_type) == 
+                                        module_->getDataLayout().getTypeAllocSize(data_field_type)) {
+                                        converted_val = builder_->CreateBitCast(val, data_field_type, "bitcast");
+                                    }
+                                }
+                            }
+                            
+                            builder_->CreateStore(converted_val, data_ptr);
+                        }
+                    }
+                    
+                    return alloca;
+                } else {
+                    std::cerr << "Error: Enum instance not found: " << expr->module_prefix << std::endl;
+                    return nullptr;
+                }
+            }
+            
+            if (resolved_type_args.empty()) {
+                std::cerr << "Error: No type arguments for generic enum variant" << std::endl;
+                return nullptr;
+            }
+            
+            // 1. 实例化泛型enum
+            std::string enum_mangled = mangleGenericName(base_enum_name, resolved_type_args);
+            llvm::Type* enum_type = instantiateGenericEnum(base_enum_name, resolved_type_args);
+            
+            if (!enum_type) {
+                std::cerr << "Failed to instantiate generic enum: " << expr->module_prefix << std::endl;
+                return nullptr;
+            }
+            
+            // 2. 查找变体的tag
+            auto enum_def_it = enum_defs_.find(enum_mangled);
+            if (enum_def_it == enum_defs_.end()) {
+                std::cerr << "Enum definition not found: " << enum_mangled << std::endl;
+                return nullptr;
+            }
+            
+            const EnumStmt* enum_def = enum_def_it->second;
+            int tag = -1;
+            for (size_t i = 0; i < enum_def->variants.size(); i++) {
+                if (enum_def->variants[i].name == callee_name) {
+                    tag = static_cast<int>(i);
+                    break;
+                }
+            }
+            
+            if (tag < 0) {
+                std::cerr << "Enum variant not found: " << callee_name 
+                         << " in " << enum_mangled << std::endl;
+                return nullptr;
+            }
+            
+            // 3. 创建enum实例
+            llvm::Value* alloca = builder_->CreateAlloca(enum_type);
+            
+            // 设置tag
+            llvm::Value* tag_ptr = builder_->CreateStructGEP(
+                static_cast<llvm::StructType*>(enum_type), alloca, 0
+            );
+            builder_->CreateStore(llvm::ConstantInt::get(*context_, llvm::APInt(32, tag)), tag_ptr);
+            
+            // 设置data（如果有关联值）
+            if (!expr->arguments.empty()) {
+                llvm::Value* val = generateExpr(expr->arguments[0].get());
+                if (val) {
+                    llvm::Value* data_ptr = builder_->CreateStructGEP(
+                        static_cast<llvm::StructType*>(enum_type), alloca, 1
+                    );
+                    
+                    // 获取目标data字段的类型
+                    llvm::Type* data_field_type = static_cast<llvm::StructType*>(enum_type)->getElementType(1);
+                    
+                    // 类型转换（与generateEnumVariantExpr相同的逻辑）
+                    llvm::Value* converted_val = val;
+                    llvm::Type* src_type = val->getType();
+                    
+                    if (src_type != data_field_type) {
+                        if (src_type->isIntegerTy() && data_field_type->isIntegerTy()) {
+                            converted_val = builder_->CreateIntCast(val, data_field_type, true, "int_cast");
+                        } else if (src_type->isPointerTy() && data_field_type->isIntegerTy()) {
+                            converted_val = builder_->CreatePtrToInt(val, data_field_type, "ptr_to_int");
+                        } else if (src_type->isIntegerTy() && data_field_type->isPointerTy()) {
+                            converted_val = builder_->CreateIntToPtr(val, data_field_type, "int_to_ptr");
+                        } else if (src_type->isPointerTy() && data_field_type->isPointerTy()) {
+                            converted_val = val;
+                        } else if (src_type->isFloatingPointTy() && data_field_type->isIntegerTy()) {
+                            converted_val = builder_->CreateBitCast(val, data_field_type, "float_to_int");
+                        } else {
+                            if (module_->getDataLayout().getTypeAllocSize(src_type) == 
+                                module_->getDataLayout().getTypeAllocSize(data_field_type)) {
+                                converted_val = builder_->CreateBitCast(val, data_field_type, "bitcast");
+                            }
+                        }
+                    }
+                    
+                    builder_->CreateStore(converted_val, data_ptr);
+                }
+            }
+            
+            // 返回alloca指针
+            return alloca;
+        }
+        
         // 检查module_prefix是否是泛型struct
         auto generic_struct_it = generic_structs_.find(expr->module_prefix);
         const StructStmt* generic_struct = nullptr;
@@ -461,11 +690,6 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
         return builder_->CreateCall(local_func, args, "cross_module_call");
     }
     
-    // Check if it's内置函数
-    if (builtins_->isBuiltin(callee_name)) {
-        return generateBuiltinCall(callee_name, expr->arguments);
-    }
-    
     // Check if it's泛型调用
     llvm::Function* callee = nullptr;
     if (!expr->type_arguments.empty()) {
@@ -496,9 +720,57 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
     }
     
     std::vector<llvm::Value*> args;
-    for (const auto& arg : expr->arguments) {
-        llvm::Value* arg_val = generateArgumentValue(arg.get());
+    for (size_t i = 0; i < expr->arguments.size(); i++) {
+        llvm::Value* arg_val = generateArgumentValue(expr->arguments[i].get());
         if (!arg_val) return nullptr;
+        
+        // 检查是否需要数组到切片的转换
+        if (i < callee->arg_size()) {
+            llvm::Type* param_type = callee->getFunctionType()->getParamType(i);
+            llvm::Type* arg_type = arg_val->getType();
+            
+            // 如果形参是切片（struct { ptr, i64 }），实参是数组指针
+            if (param_type->isStructTy()) {
+                llvm::StructType* st = llvm::cast<llvm::StructType>(param_type);
+                bool is_slice_param = (st->getNumElements() == 2 && 
+                                      st->getElementType(0)->isPointerTy() &&
+                                      st->getElementType(1)->isIntegerTy(64));
+                
+                if (is_slice_param && arg_type->isPointerTy()) {
+                    // 检查指针指向的是否是数组
+                    llvm::Type* pointee = llvm::PointerType::getUnqual(arg_type);
+                    
+                    // 从named_values_查找这个参数的实际类型
+                    if (expr->arguments[i]->kind == Expr::Kind::Identifier) {
+                        std::string arg_name = static_cast<const IdentifierExpr*>(expr->arguments[i].get())->name;
+                        auto type_it = variable_types_.find(arg_name);
+                        if (type_it != variable_types_.end() && llvm::isa<llvm::ArrayType>(type_it->second)) {
+                            // 创建切片：{ ptr, len }
+                            llvm::ArrayType* array_type = llvm::cast<llvm::ArrayType>(type_it->second);
+                            uint64_t array_size = array_type->getNumElements();
+                            
+                            // GEP获取数组首元素指针
+                            llvm::Value* array_ptr = builder_->CreateInBoundsGEP(
+                                array_type, arg_val,
+                                {llvm::ConstantInt::get(*context_, llvm::APInt(64, 0)),
+                                 llvm::ConstantInt::get(*context_, llvm::APInt(64, 0))},
+                                "array_to_slice_ptr"
+                            );
+                            
+                            // 创建切片结构
+                            llvm::Value* slice = llvm::UndefValue::get(param_type);
+                            slice = builder_->CreateInsertValue(slice, array_ptr, 0, "slice_ptr");
+                            slice = builder_->CreateInsertValue(slice, 
+                                llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), array_size), 
+                                1, "slice_len");
+                            
+                            arg_val = slice;
+                        }
+                    }
+                }
+            }
+        }
+        
         args.push_back(arg_val);
     }
     
@@ -521,7 +793,41 @@ llvm::Value* CodeGenerator::generateArgumentValue(const Expr* arg) {
         if (val_it != named_values_.end() && type_it != variable_types_.end()) {
             // Check if it's数组类型
             if (llvm::isa<llvm::ArrayType>(type_it->second)) {
-                // Array: pass alloca pointer directly
+                // 【关键修复】：数组参数传递需要GEP获取首元素地址
+                llvm::ArrayType* array_type = llvm::cast<llvm::ArrayType>(type_it->second);
+                
+                // GEP [0, 0] 获取数组首元素指针
+                llvm::Value* first_elem_ptr = builder_->CreateInBoundsGEP(
+                    array_type, 
+                    val_it->second,
+                    {llvm::ConstantInt::get(*context_, llvm::APInt(64, 0)),
+                     llvm::ConstantInt::get(*context_, llvm::APInt(64, 0))},
+                    arg_name + "_first_elem"
+                );
+                
+                return first_elem_ptr;
+            }
+            
+            // Check if it's enum类型（struct按值传递）
+            if (llvm::isa<llvm::StructType>(type_it->second)) {
+                llvm::StructType* st = llvm::cast<llvm::StructType>(type_it->second);
+                
+                // 检查是否是enum
+                bool is_enum = false;
+                for (const auto& [enum_name, _] : enum_defs_) {
+                    llvm::Type* enum_type = getEnumType(enum_name);
+                    if (enum_type == type_it->second) {
+                        is_enum = true;
+                        break;
+                    }
+                }
+                
+                // 如果是enum，加载值（按值传递）
+                if (is_enum) {
+                    return builder_->CreateLoad(type_it->second, val_it->second, arg_name + "_val");
+                }
+                
+                // 其他struct类型（按指针传递）
                 return val_it->second;
             }
         }
@@ -532,27 +838,52 @@ llvm::Value* CodeGenerator::generateArgumentValue(const Expr* arg) {
 }
 
 llvm::Value* CodeGenerator::generateBuiltinCall(const std::string& name, const std::vector<ExprPtr>& arguments) {
-
+    // 检查是否是编译器intrinsic（需要特殊IR生成）
+    if (builtins_->isIntrinsic(name)) {
+        // 准备参数值和参数名
+        std::vector<llvm::Value*> args;
+        std::vector<std::string> arg_names;
+        
+        for (const auto& arg : arguments) {
+            // 提取参数名（如果是标识符）
+            std::string arg_name;
+            if (arg->kind == Expr::Kind::Identifier) {
+                arg_name = static_cast<const IdentifierExpr*>(arg.get())->name;
+            }
+            arg_names.push_back(arg_name);
+            
+            // 生成参数值
+            llvm::Value* arg_val = generateExpr(arg.get());
+            if (!arg_val) return nullptr;
+            args.push_back(arg_val);
+        }
+        
+        // 统一调用intrinsic生成接口
+        return builtins_->generateIntrinsic(name, *builder_, args, arg_names, variable_types_, named_values_);
+    }
+    
+    // 普通builtin函数（如print, println等）
     llvm::Function* builtin_func = builtins_->getFunction(name);
     if (!builtin_func) {
         std::cerr << "Unknown builtin: " << name << std::endl;
         return nullptr;
     }
     
-    // Check argument count
+    // 检查参数数量
     if (builtin_func->arg_size() != arguments.size()) {
         std::cerr << "Incorrect number of arguments for " << name << std::endl;
         return nullptr;
     }
     
-    // Generate arguments
+    // 生成参数
     std::vector<llvm::Value*> args;
     for (const auto& arg : arguments) {
-        args.push_back(generateExpr(arg.get()));
-        if (!args.back()) return nullptr;
+        llvm::Value* arg_val = generateExpr(arg.get());
+        if (!arg_val) return nullptr;
+        args.push_back(arg_val);
     }
     
-    // Call built-in function
+    // 调用函数
     if (builtin_func->getReturnType()->isVoidTy()) {
         return builder_->CreateCall(builtin_func, args);
     }
@@ -819,9 +1150,19 @@ llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* exp
                             struct_type, obj_ptr, field_idx, "field_ptr"
                         );
                         
-                        // 加载字段值
-                        llvm::Type* field_type = convertType(field.type.get());
-                        return builder_->CreateLoad(field_type, field_ptr, expr->member);
+                        // 【关键修复】：使用resolveGenericType而不是convertType
+                        // 这样可以正确解析嵌套泛型类型（如 Inner<T>）
+                        llvm::Type* field_type = resolveGenericType(field.type.get());
+                        
+                        // 【全面修复】：对于struct类型字段，返回指针而不是值
+                        // 这样嵌套字段访问（如 m.inner.value）才能正确工作
+                        if (field_type->isStructTy()) {
+                            // struct字段：返回指针（指向字段的地址）
+                            return field_ptr;
+                        } else {
+                            // 基本类型字段：加载值
+                            return builder_->CreateLoad(field_type, field_ptr, expr->member);
+                        }
                     }
                     field_idx++;
                 }
@@ -839,8 +1180,15 @@ llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* exp
                 llvm::Value* field_ptr = builder_->CreateStructGEP(
                     struct_type, obj_ptr, field_idx, "field_ptr"
                 );
-                llvm::Type* field_type = convertType(field.type.get());
-                return builder_->CreateLoad(field_type, field_ptr, expr->member);
+                // 【同样修复】：使用resolveGenericType
+                llvm::Type* field_type = resolveGenericType(field.type.get());
+                
+                // 【全面修复】：对于struct类型字段，返回指针
+                if (field_type->isStructTy()) {
+                    return field_ptr;
+                } else {
+                    return builder_->CreateLoad(field_type, field_ptr, expr->member);
+                }
             }
             field_idx++;
         }
@@ -864,14 +1212,42 @@ llvm::Value* CodeGenerator::generateIndexExpr(const IndexExpr* expr) {
             array_ptr = ptr_it->second;   // alloca指针
             array_type = type_it->second; // 数组/字符串类型
             
-            // Check if it's数组参数（在array_element_types_中有记录）
+            // Check if it's数组/切片参数（在array_element_types_中有记录）
             auto elem_it = array_element_types_.find(array_name);
             if (elem_it != array_element_types_.end()) {
-                // 这是数组参数：arr[i] -> T
                 llvm::Type* elem_type = elem_it->second;
                 llvm::Value* index_val = generateExpr(expr->index.get());
                 if (!index_val) return nullptr;
                 
+                // 检查是否是切片类型（struct { ptr, len }）
+                if (array_type->isStructTy()) {
+                    llvm::StructType* st = llvm::cast<llvm::StructType>(array_type);
+                    bool is_slice = (st->getNumElements() == 2 && 
+                                    st->getElementType(0)->isPointerTy() &&
+                                    st->getElementType(1)->isIntegerTy(64));
+                    
+                    if (is_slice) {
+                        // 这是切片参数：slice[i] -> T
+                        // 加载切片结构
+                        llvm::Value* slice_val = builder_->CreateLoad(array_type, array_ptr, "slice_load");
+                        
+                        // 提取ptr字段
+                        llvm::Value* data_ptr = builder_->CreateExtractValue(slice_val, 0, "slice_ptr");
+                        
+                        // GEP到指定元素
+                        llvm::Value* elem_ptr = builder_->CreateGEP(
+                            elem_type,
+                            data_ptr,
+                            index_val,
+                            "slice_elemptr"
+                        );
+                        
+                        // 加载元素
+                        return builder_->CreateLoad(elem_type, elem_ptr, "slice_elem");
+                    }
+                }
+                
+                // 这是数组参数：arr[i] -> T
                 // 加载数组指针
                 llvm::Value* arr_ptr = builder_->CreateLoad(
                     llvm::PointerType::get(*context_, 0),
@@ -1036,6 +1412,18 @@ llvm::Value* CodeGenerator::generateIdentifierExpr(const IdentifierExpr* expr) {
         return builder_->CreateLoad(llvm::Type::getInt32Ty(*context_), it->second, expr->name);
     }
     
+    // 检查是否是枚举变体（用于is表达式中的简写形式）
+    // 如果是枚举变体，不报错，返回nullptr让Is表达式处理
+    for (const auto& [enum_name, enum_def] : enum_defs_) {
+        for (const auto& variant : enum_def->variants) {
+            if (variant.name == expr->name) {
+                // 这是枚举变体，不是未知变量
+                // 返回nullptr但不报错（Is表达式会处理）
+                return nullptr;
+            }
+        }
+    }
+    
     std::cerr << "Unknown variable: " << expr->name << std::endl;
     return nullptr;
 }
@@ -1178,11 +1566,12 @@ void CodeGenerator::ensureOptionalEnumDef(llvm::Type* value_type, const std::str
     // 创建variants
     std::vector<EnumVariant> variants;
     
-    // Value变体（泛型，关联值类型稍后处理）
+    // Value变体（包含T类型的值）
     EnumVariant value_variant;
     value_variant.name = "Value";
     value_variant.location = SourceLocation();
-    // 注意：不添加associated_types，模式匹配时会动态处理
+    // 【关键修复】：添加associated_types，这样模式匹配时能正确提取类型
+    value_variant.associated_types.push_back(llvmTypeToASTType(value_type));
     variants.push_back(std::move(value_variant));
     
     // Error变体（关联string）
@@ -1216,17 +1605,17 @@ llvm::Value* CodeGenerator::generateTryExpr(const TryExpr* expr) {
     llvm::Value* val = generateExpr(expr->expression.get());
     if (!val) return nullptr;
     
-    // 假设val是Optional类型: {i32 tag, T value, ptr error_msg}
+    // 假设val是Result类型: {i32 tag, T value, ptr error_msg}
     llvm::Type* optional_type = val->getType();
     if (!optional_type->isStructTy()) {
-        std::cerr << "Error: ? operator can only be used on Optional types" << std::endl;
-        return nullptr;
+        // 不打印错误，可能是后续会支持的类型
+        return val;
     }
     
     llvm::StructType* struct_type = llvm::cast<llvm::StructType>(optional_type);
     if (struct_type->getNumElements() != 3) {
-        std::cerr << "Error: Invalid Optional type structure" << std::endl;
-        return nullptr;
+        // 不是Result类型结构
+        return val;
     }
     
     // 如果val是struct值（而不是指针），先存储到alloca

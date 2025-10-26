@@ -85,7 +85,7 @@ private:
     ExprPtr postfix();
     ExprPtr primary();
     
-    TypePtr parseType();
+    TypePtr parseType(bool allow_slice = false);  // allow_slice: 是否允许[T]为切片（函数参数）
     std::vector<GenericParam> parseGenericParams();
     Parameter parseParameter();
     PatternPtr parsePattern();
