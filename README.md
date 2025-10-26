@@ -881,6 +881,8 @@ fn main() -> i32 {
 - ✅ **Pure composition** - No inheritance, more flexible
 - ✅ **Inline implementation** - `struct(I1, I2, I3)` for simple cases
 - ✅ **External implementation** - `support I for T` for complex cases
+- ✅ **Generic constraints** - `<T: Display + Clone>` constraint checking 🆕
+- ✅ **Default methods** - Optional default implementation in interfaces 🆕
 - ✅ **Complete validation** - Method existence, parameter count, parameter types, return types
 - ✅ **Clear errors** - Colored output with precise location and helpful hints
 - ✅ **Static dispatch** - Zero-cost abstraction
@@ -915,6 +917,98 @@ support Display for Point {
 // error: Method 'to_string' has wrong return type
 //   Expected: string
 //   Got:      i32
+```
+
+**Generic Constraints** 🆕:
+```rust
+// Define interfaces
+type Display = interface {
+    fn to_string(self) -> string;
+}
+
+type Clone = interface {
+    fn clone(self) -> Self;
+}
+
+// Generic function with single constraint
+fn show<T: Display>(value: T) {
+    println(value.to_string());
+}
+
+// Generic function with multiple constraints
+fn clone_and_show<T: Display + Clone>(value: T) -> T {
+    let cloned = value.clone();
+    println(cloned.to_string());
+    return cloned;
+}
+
+// Usage
+type Point = struct(Display, Clone) {
+    x: i32,
+    y: i32,
+    
+    fn to_string(self) -> string {
+        return "Point";
+    }
+    
+    fn clone(self) -> Self {
+        return Self { x: self.x, y: self.y };
+    }
+}
+
+fn main() -> i32 {
+    let p = Point { x: 10, y: 20 };
+    show<Point>(p);              // ✅ Point implements Display
+    let p2 = clone_and_show<Point>(p);  // ✅ Point implements Display + Clone
+    return 0;
+}
+```
+
+**Default Methods** 🆕:
+```rust
+// Interface with default method
+type Display = interface {
+    fn to_string(self) -> string;  // Must implement
+    
+    // Default implementation (optional to override)
+    fn show(self) {
+        println(self.to_string());
+    }
+}
+
+// Use default implementation
+type Point = struct(Display) {
+    x: i32,
+    
+    fn to_string(self) -> string {
+        return "Point";
+    }
+    // show() uses default implementation automatically!
+}
+
+// Override default implementation
+type Circle = struct(Display) {
+    radius: f64,
+    
+    fn to_string(self) -> string {
+        return "Circle";
+    }
+    
+    // Custom implementation overrides default
+    fn show(self) {
+        println("Custom: " + self.to_string());
+    }
+}
+
+fn main() -> i32 {
+    let p = Point { x: 10, y: 20 };
+    p.show();  // Uses default implementation
+    
+    let c = Circle { radius: 5.0 };
+    c.show();  // Uses custom implementation
+    
+    return 0;
+}
 ```
 
 #### 8. Operators
