@@ -251,13 +251,9 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
             named_values_[stmt->name] = alloca;
             builder_->CreateStore(init_val, alloca);
             
-            // 【关键】：记录实际的StructType，而不是ptr
-            auto struct_type = getOrCreateStructType(struct_type_name);
-            if (struct_type) {
-                variable_types_[stmt->name] = struct_type;
-            } else {
-                variable_types_[stmt->name] = llvm::PointerType::get(*context_, 0);
-            }
+            // 【关键修复】：variable_types_应该记录alloca的类型（ptr），而不是struct类型
+            // 这样在&x时能正确判断是指针类型
+            variable_types_[stmt->name] = llvm::PointerType::get(*context_, 0);
             
             return;  // 提前返回
         }
@@ -299,8 +295,8 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
                         named_values_[stmt->name] = alloca;
                         builder_->CreateStore(init_val, alloca);
                         
-                        // 记录实际的StructType
-                        variable_types_[stmt->name] = struct_type;
+                        // 记录alloca的类型（ptr），而不是struct类型
+                        variable_types_[stmt->name] = llvm::PointerType::get(*context_, 0);
                         
                         return;  // 提前返回
                     }
@@ -352,8 +348,8 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
         
         auto struct_type = getOrCreateStructType(full_type_name);
         if (struct_type) {
-            // 记录实际的StructType
-            variable_types_[stmt->name] = struct_type;
+            // 记录alloca的类型（ptr），而不是struct类型
+            variable_types_[stmt->name] = llvm::PointerType::get(*context_, 0);
         } else {
             variable_types_[stmt->name] = alloc_type;
         }
