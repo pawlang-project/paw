@@ -101,8 +101,8 @@ pub type Len = interface {
 // 使用说明
 // ============================================================
 
-// 导入示例：
-// import "std/interfaces";
+// 导入示例（从其他文件导入本模块）：
+// import "std::interfaces";
 //
 // 使用示例：
 // type Point = struct(Display, Clone) {
