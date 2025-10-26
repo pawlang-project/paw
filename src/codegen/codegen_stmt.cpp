@@ -1178,14 +1178,20 @@ void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
                         }
                     }
                     
-                    // Enum、元组和小struct按值传递，大struct传递指针
-                    // 简化：所有enum和tuple都按值传递
                     if (!is_enum) {
-                        // 普通struct传递指针
-                        param_type = llvm::PointerType::get(*context_, 0);
+                        // 【优化】小struct按值传递，大struct传递指针
+                        // 阈值：16字节（通常可以放在寄存器中）
+                        const uint64_t SIZE_THRESHOLD = 16;
+                        uint64_t struct_size = module_->getDataLayout().getTypeAllocSize(param_type);
+                        
+                        if (struct_size > SIZE_THRESHOLD) {
+                            // 大struct传递指针（性能优化）
+                            param_type = llvm::PointerType::get(*context_, 0);
+                        }
+                        // 小struct保持值类型，按值传递
                     }
                 }
-                // 切片、enum和tuple保持struct类型，按值传递
+                // 切片、enum、tuple和小struct保持struct类型，按值传递
             }
             
             param_types.push_back(param_type);

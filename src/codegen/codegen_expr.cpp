@@ -867,8 +867,9 @@ llvm::Value* CodeGenerator::generateArgumentValue(const Expr* arg) {
                 return first_elem_ptr;
             }
             
-            // Check if it's enum类型（struct按值传递）
+            // Check if it's struct/enum类型
             if (llvm::isa<llvm::StructType>(type_it->second)) {
+                // variable_types_存储的就是StructType（元组、enum、切片）
                 llvm::StructType* st = llvm::cast<llvm::StructType>(type_it->second);
                 
                 // 检查是否是切片类型（切片按值传递）
@@ -891,10 +892,29 @@ llvm::Value* CodeGenerator::generateArgumentValue(const Expr* arg) {
                     return builder_->CreateLoad(type_it->second, val_it->second, arg_name + "_val");
                 }
                 
-                // 检查是否是元组类型（元组按值传递）
-                // 元组是匿名struct，没有特殊标记，但一般不会在named struct types中
-                // 暂时按值传递
-                return builder_->CreateLoad(type_it->second, val_it->second, arg_name + "_tuple_val");
+                // 【优化】小struct/元组按值传递
+                const uint64_t SIZE_THRESHOLD = 16;
+                uint64_t struct_size = module_->getDataLayout().getTypeAllocSize(type_it->second);
+                
+                if (struct_size <= SIZE_THRESHOLD) {
+                    // 小struct或元组：按值传递（load值）
+                    return builder_->CreateLoad(type_it->second, val_it->second, arg_name + "_val");
+                }
+                // 大struct：继续下面的逻辑（检查是否是heap struct）
+            }
+            
+            // Check if it's heap struct (variable_types_ stores PointerType)
+            if (type_it->second->isPointerTy()) {
+                // 这是heap-allocated struct
+                // variable_types_存储的是PointerType，alloca存储的是heap指针
+                
+                // 先获取实际的struct类型（需要从struct_types_查找）
+                // 简化：直接load指针传递（大struct默认传指针）
+                return builder_->CreateLoad(
+                    llvm::PointerType::get(*context_, 0),
+                    val_it->second,
+                    arg_name + "_ptr"
+                );
             }
         }
     }

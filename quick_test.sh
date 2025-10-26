@@ -71,6 +71,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 test_compile "examples/struct_test.paw" "Struct操作"
 test_compile "examples/nested_struct_test.paw" "嵌套Struct"
 test_compile "examples/self_simple.paw" "Self类型"
+test_compile "examples/struct_pass_by_value.paw" "Struct按值传递"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

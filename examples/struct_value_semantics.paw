@@ -1,0 +1,31 @@
+// 测试Struct的值语义（修改不应影响原值）
+
+type Counter = struct {
+    count: i32,
+}
+
+// 如果是按值传递，修改参数不会影响原值
+fn increment_by_value(c: Counter) -> Counter {
+    // 这里应该创建新的Counter返回
+    return Counter { count: c.count + 1 };
+}
+
+fn main() -> i32 {
+    println("=== Struct值语义测试 ===");
+    
+    let original: Counter = Counter { count: 10 };
+    debug(original.count);  // 10
+    
+    let modified: Counter = increment_by_value(original);
+    debug(modified.count);  // 11
+    
+    // 关键：原值不应该被修改
+    debug(original.count);  // 应该还是10
+    
+    assert(original.count == 10);
+    assert(modified.count == 11);
+    
+    println("✅ Struct按值传递，值语义正确！");
+    return 0;
+}
+
