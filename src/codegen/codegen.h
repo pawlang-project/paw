@@ -94,6 +94,7 @@ private:
     std::map<std::string, llvm::Type*> variable_types_;     ///< 变量名 -> LLVM类型（用于GEP等）
     std::map<std::string, llvm::Type*> array_element_types_;///< 数组参数 -> 元素类型（泛型）
     std::map<std::string, int64_t> array_param_sizes_;      ///< 数组参数 -> 数组大小
+    std::map<std::string, std::string> reference_struct_types_; ///< 引用参数 -> struct名称
     
     // ========== 循环控制 ==========
     /// 循环标签栈：(continue_target, break_target)

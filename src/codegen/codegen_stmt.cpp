@@ -1246,7 +1246,7 @@ void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
             idx++;
         }
         
-        // 单独处理数组和切片参数元素类型记录
+        // 单独处理数组、切片和引用参数的类型记录
         for (const auto& param : stmt->parameters) {
             if (!param.is_self && param.type) {
                 if (param.type->kind == Type::Kind::Array) {
@@ -1262,6 +1262,13 @@ void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
                     const SliceTypeNode* slice_type = static_cast<const SliceTypeNode*>(param.type.get());
                     llvm::Type* elem_type = convertType(slice_type->element_type.get());
                     array_element_types_[param.name] = elem_type;  // 切片也用这个map存储元素类型
+                } else if (param.type->kind == Type::Kind::Reference) {
+                    // 【新增】：记录引用类型参数指向的struct
+                    const ReferenceTypeNode* ref_type = static_cast<const ReferenceTypeNode*>(param.type.get());
+                    if (ref_type->inner_type->kind == Type::Kind::Named) {
+                        const NamedTypeNode* named = static_cast<const NamedTypeNode*>(ref_type->inner_type.get());
+                        reference_struct_types_[param.name] = named->name;
+                    }
                 }
             }
         }

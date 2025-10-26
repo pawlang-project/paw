@@ -177,13 +177,28 @@ llvm::Value* CodeGenerator::generateUnaryExpr(const UnaryExpr* expr) {
         case UnaryExpr::Op::Ref:
         case UnaryExpr::Op::RefMut: {
             // 取引用：&x 或 &mut x
-            // 返回变量的地址（alloca指针）
             if (expr->operand->kind == Expr::Kind::Identifier) {
                 std::string var_name = static_cast<const IdentifierExpr*>(expr->operand.get())->name;
                 auto it = named_values_.find(var_name);
-                if (it != named_values_.end()) {
-                    // 返回alloca指针（就是引用）
-                    return it->second;
+                auto type_it = variable_types_.find(var_name);
+                
+                if (it != named_values_.end() && type_it != variable_types_.end()) {
+                    llvm::Value* alloca = it->second;
+                    llvm::Type* var_type = type_it->second;
+                    
+                    // 【关键修复】：对于struct类型，alloca存储的是指向struct的指针
+                    // &x 应该返回指向struct的指针，而不是alloca本身
+                    if (var_type->isPointerTy()) {
+                        // struct变量：alloca存储ptr，load得到指向struct的指针
+                        return builder_->CreateLoad(
+                            llvm::PointerType::get(*context_, 0),
+                            alloca,
+                            var_name + "_ptr"
+                        );
+                    } else {
+                        // 基本类型：返回alloca指针
+                        return alloca;
+                    }
                 }
             }
             // 对于复杂表达式，生成值然后创建临时alloca
@@ -1049,8 +1064,27 @@ llvm::Value* CodeGenerator::generateAssignExpr(const AssignExpr* expr) {
         if (member_expr->object->kind == Expr::Kind::Identifier) {
             std::string obj_name = static_cast<const IdentifierExpr*>(member_expr->object.get())->name;
             
-            // 处理self
-            if (obj_name == "self" && !current_struct_name_.empty()) {
+            // 【新增】：检查是否是引用类型参数
+            auto ref_it = reference_struct_types_.find(obj_name);
+            if (ref_it != reference_struct_types_.end()) {
+                // 这是引用类型参数，需要load指针
+                std::string struct_name = ref_it->second;
+                auto struct_type = getOrCreateStructType(struct_name);
+                
+                if (struct_type) {
+                    auto val_it = named_values_.find(obj_name);
+                    if (val_it != named_values_.end()) {
+                        // 引用参数：alloca存储的是指向struct的指针
+                        obj_ptr = builder_->CreateLoad(
+                            llvm::PointerType::get(*context_, 0),
+                            val_it->second,
+                            obj_name + "_ref"
+                        );
+                        struct_value_type = struct_type;
+                    }
+                }
+            } else if (obj_name == "self" && !current_struct_name_.empty()) {
+                // 处理self
                 auto self_it = named_values_.find("self");
                 if (self_it != named_values_.end()) {
                     llvm::Value* self_alloca = self_it->second;
@@ -1188,6 +1222,49 @@ llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* exp
     // Check if it's标识符（变量名）
     if (expr->object->kind == Expr::Kind::Identifier) {
         std::string obj_name = static_cast<const IdentifierExpr*>(expr->object.get())->name;
+        
+        // 【新增】：检查是否是引用类型参数
+        auto ref_it = reference_struct_types_.find(obj_name);
+        if (ref_it != reference_struct_types_.end()) {
+            // 这是一个引用类型参数，如 p: &Point
+            std::string struct_name = ref_it->second;
+            auto struct_type = getOrCreateStructType(struct_name);
+            
+            if (struct_type) {
+                // 获取指针（引用就是指针）
+                auto val_it = named_values_.find(obj_name);
+                if (val_it != named_values_.end()) {
+                    // 引用参数：alloca存储的是指向struct的指针
+                    // 只需要load一次即可
+                    llvm::Value* struct_ptr = builder_->CreateLoad(
+                        llvm::PointerType::get(*context_, 0),
+                        val_it->second,
+                        obj_name + "_ref"
+                    );
+                    
+                    // 在struct定义中查找字段
+                    auto def_it = struct_defs_.find(struct_name);
+                    if (def_it != struct_defs_.end()) {
+                        int field_idx = 0;
+                        for (const auto& field : def_it->second->fields) {
+                            if (field.name == expr->member) {
+                                llvm::Value* field_ptr = builder_->CreateStructGEP(
+                                    struct_type, struct_ptr, field_idx, "field_ptr"
+                                );
+                                llvm::Type* field_type = resolveGenericType(field.type.get());
+                                
+                                if (field_type->isStructTy()) {
+                                    return field_ptr;
+                                } else {
+                                    return builder_->CreateLoad(field_type, field_ptr, expr->member);
+                                }
+                            }
+                            field_idx++;
+                        }
+                    }
+                }
+            }
+        }
         
         // 如果是self，并且在方法中
         if (obj_name == "self" && !current_struct_name_.empty()) {
