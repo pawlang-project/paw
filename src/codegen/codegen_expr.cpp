@@ -1061,6 +1061,66 @@ llvm::Value* CodeGenerator::generateAssignExpr(const AssignExpr* expr) {
  * 支持：struct.field访问
  */
 llvm::Value* CodeGenerator::generateMemberAccessExpr(const MemberAccessExpr* expr) {
+    // 【新增】：处理元组字段访问 tuple.0, tuple.1, tuple.2
+    if (expr->is_tuple_index) {
+        llvm::Value* tuple_ptr = nullptr;
+        llvm::Type* tuple_type = nullptr;
+        
+        // 如果对象是标识符，直接从命名值获取
+        if (expr->object->kind == Expr::Kind::Identifier) {
+            std::string tuple_name = static_cast<const IdentifierExpr*>(expr->object.get())->name;
+            auto it = named_values_.find(tuple_name);
+            auto type_it = variable_types_.find(tuple_name);
+            
+            if (it != named_values_.end() && type_it != variable_types_.end()) {
+                tuple_ptr = it->second;  // alloca指向元组的指针
+                tuple_type = type_it->second;  // 实际的元组struct类型
+            } else {
+                std::cerr << "Error: Unknown tuple variable: " << tuple_name << "\n";
+                return nullptr;
+            }
+        } else {
+            // 复杂表达式：生成并创建临时存储
+            llvm::Value* tuple_val = generateExpr(expr->object.get());
+            if (!tuple_val) {
+                std::cerr << "Error: Failed to generate tuple value for field access\n";
+                return nullptr;
+            }
+            
+            tuple_type = tuple_val->getType();
+            
+            // 创建临时alloca存储元组值
+            tuple_ptr = builder_->CreateAlloca(tuple_type, nullptr, "tuple_tmp");
+            builder_->CreateStore(tuple_val, tuple_ptr);
+        }
+        
+        // 元组应该是struct类型
+        if (!tuple_type->isStructTy()) {
+            std::cerr << "Error: Tuple field access requires a struct type, got: ";
+            tuple_type->print(llvm::errs());
+            std::cerr << "\n";
+            return nullptr;
+        }
+        
+        llvm::StructType* struct_type = llvm::cast<llvm::StructType>(tuple_type);
+        unsigned num_elements = struct_type->getNumElements();
+        
+        if (expr->tuple_index < 0 || static_cast<unsigned>(expr->tuple_index) >= num_elements) {
+            std::cerr << "Error: Tuple index " << expr->tuple_index 
+                      << " out of range (tuple has " << num_elements << " elements)\n";
+            return nullptr;
+        }
+        
+        // 提取字段
+        llvm::Value* field_ptr = builder_->CreateStructGEP(
+            tuple_type, tuple_ptr, expr->tuple_index, "tuple_field_ptr"
+        );
+        llvm::Type* field_type = struct_type->getElementType(expr->tuple_index);
+        
+        return builder_->CreateLoad(field_type, field_ptr, "tuple_field");
+    }
+    
+    // 原有的struct成员访问逻辑
     // 获取对象指针（必须是指针，用于GEP）
     llvm::Value* obj_ptr = nullptr;
     llvm::Type* struct_value_type = nullptr;

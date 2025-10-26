@@ -61,6 +61,99 @@ void CodeGenerator::generateStmt(const Stmt* stmt) {
 
 
 void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
+    // 【新增】：处理元组解构 let (x, y, z) = tuple;
+    if (stmt->pattern) {
+        // 生成初始化器（应该是一个元组）
+        if (!stmt->initializer) {
+            std::cerr << "Error: Tuple destructuring requires an initializer\n";
+            return;
+        }
+        
+        llvm::Value* tuple_ptr = nullptr;
+        llvm::Type* tuple_type = nullptr;
+        
+        // 如果初始化器是标识符，直接从命名值获取
+        if (stmt->initializer->kind == Expr::Kind::Identifier) {
+            std::string source_name = static_cast<const IdentifierExpr*>(stmt->initializer.get())->name;
+            auto it = named_values_.find(source_name);
+            auto type_it = variable_types_.find(source_name);
+            
+            if (it != named_values_.end() && type_it != variable_types_.end()) {
+                tuple_ptr = it->second;  // alloca指向元组的指针
+                tuple_type = type_it->second;  // 实际的元组struct类型
+            } else {
+                std::cerr << "Error: Unknown tuple variable for destructuring: " << source_name << "\n";
+                return;
+            }
+        } else {
+            // 复杂表达式：生成值并创建临时存储
+            llvm::Value* tuple_value = generateExpr(stmt->initializer.get());
+            if (!tuple_value) {
+                std::cerr << "Error: Failed to generate tuple value for destructuring\n";
+                return;
+            }
+            
+            tuple_type = tuple_value->getType();
+            
+            // 创建临时alloca存储元组值
+            tuple_ptr = builder_->CreateAlloca(tuple_type, nullptr, "tuple_tmp");
+            builder_->CreateStore(tuple_value, tuple_ptr);
+        }
+        
+        // 检查模式是否为元组模式
+        if (stmt->pattern->kind != Pattern::Kind::Tuple) {
+            std::cerr << "Error: Only tuple patterns are supported for destructuring\n";
+            return;
+        }
+        
+        const TuplePattern* tuple_pat = static_cast<const TuplePattern*>(stmt->pattern.get());
+        
+        // 元组应该是一个struct类型
+        if (!tuple_type->isStructTy()) {
+            std::cerr << "Error: Tuple value is not a struct type for destructuring\n";
+            return;
+        }
+        
+        llvm::StructType* struct_type = llvm::cast<llvm::StructType>(tuple_type);
+        unsigned num_elements = struct_type->getNumElements();
+        
+        if (tuple_pat->elements.size() != num_elements) {
+            std::cerr << "Error: Tuple pattern size mismatch: expected " 
+                      << num_elements << ", got " << tuple_pat->elements.size() << "\n";
+            return;
+        }
+        
+        // 为每个元素创建变量绑定
+        for (size_t i = 0; i < tuple_pat->elements.size(); ++i) {
+            const Pattern* elem_pat = tuple_pat->elements[i].get();
+            
+            // 目前只支持标识符模式
+            if (elem_pat->kind != Pattern::Kind::Identifier) {
+                std::cerr << "Error: Only identifier patterns are supported in tuple destructuring\n";
+                continue;
+            }
+            
+            const IdentifierPattern* id_pat = static_cast<const IdentifierPattern*>(elem_pat);
+            std::string var_name = id_pat->name;
+            
+            // 从元组中提取元素
+            llvm::Value* elem_ptr = builder_->CreateStructGEP(tuple_type, tuple_ptr, i);
+            llvm::Type* elem_type = struct_type->getElementType(i);
+            llvm::Value* elem_value = builder_->CreateLoad(elem_type, elem_ptr);
+            
+            // 为元素创建变量
+            llvm::AllocaInst* var_alloca = builder_->CreateAlloca(elem_type, nullptr, var_name);
+            builder_->CreateStore(elem_value, var_alloca);
+            
+            // 注册变量
+            named_values_[var_name] = var_alloca;
+            variable_types_[var_name] = elem_type;
+        }
+        
+        return;  // 元组解构完成，提前返回
+    }
+    
+    // 原有的单变量绑定逻辑
     llvm::Type* type = nullptr;
     llvm::Type* actual_type = nullptr;  // Actual storage type (may be struct value)
     
@@ -310,11 +403,20 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
                 // 禁止将i32?赋值给i32等非Result变量
                 llvm::Type* init_type = init_val->getType();
                 
-                // 检查init_val是否是Result类型（3字段struct: {i32, T, ptr}）
+                // 检查init_val是否是Result类型（3字段struct: {i32 tag, T value, ptr error_msg}）
+                // 【修复】：需要更精确的检测，避免将普通元组误认为Result
                 bool init_is_result = false;
                 if (init_type->isStructTy()) {
                     llvm::StructType* st = llvm::cast<llvm::StructType>(init_type);
-                    init_is_result = (st->getNumElements() == 3);  // Result = {tag, value, error_msg}
+                    // Result类型的特征：
+                    // 1. 有3个字段
+                    // 2. 第一个字段是 i32 (tag)
+                    // 3. 第三个字段是指针 (error_msg)
+                    if (st->getNumElements() == 3) {
+                        llvm::Type* first_field = st->getElementType(0);
+                        llvm::Type* third_field = st->getElementType(2);
+                        init_is_result = (first_field->isIntegerTy(32) && third_field->isPointerTy());
+                    }
                 }
                 
                 // 检查declared type是否是Result类型

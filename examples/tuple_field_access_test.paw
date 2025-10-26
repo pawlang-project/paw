@@ -1,0 +1,74 @@
+// 元组字段访问测试
+
+fn create_pair() -> (i32, i32) {
+    return (10, 20);
+}
+
+fn main() -> i32 {
+    println("=== 元组字段访问测试 ===");
+    
+    // 测试1：简单的字段访问
+    let pair: (i32, string) = (42, "hello");
+    
+    let first: i32 = pair.0;
+    let second: string = pair.1;
+    
+    print("pair.0 = ");
+    debug(first);  // 应该输出 42
+    print("pair.1 = ");
+    debug(second);  // 应该输出 hello
+    
+    // 测试2：三元组字段访问
+    let triple: (i32, f64, bool) = (100, 3.14, true);
+    
+    print("triple.0 = ");
+    debug(triple.0);  // 应该输出 100
+    print("triple.1 = ");
+    debug(triple.1);  // 应该输出 3.14
+    print("triple.2 = ");
+    debug(triple.2);  // 应该输出 true
+    
+    // 测试3：函数返回值的直接字段访问
+    let result: i32 = create_pair().0;
+    print("create_pair().0 = ");
+    debug(result);  // 应该输出 10
+    
+    let result2: i32 = create_pair().1;
+    print("create_pair().1 = ");
+    debug(result2);  // 应该输出 20
+    
+    // 测试4：嵌套元组的字段访问
+    let nested: ((i32, i32), string) = ((1, 2), "data");
+    
+    let inner_tuple: (i32, i32) = nested.0;
+    let text: string = nested.1;
+    
+    print("nested.0 = ");  // 这是一个元组
+    print("nested.1 = ");
+    debug(text);  // 应该输出 data
+    
+    // 访问嵌套元组的内部元素
+    let inner_first: i32 = inner_tuple.0;
+    let inner_second: i32 = inner_tuple.1;
+    
+    print("inner_tuple.0 = ");
+    debug(inner_first);  // 应该输出 1
+    print("inner_tuple.1 = ");
+    debug(inner_second);  // 应该输出 2
+    
+    // 测试5：多种类型的元组
+    let multi: (i32, string, f64, bool) = (5, "test", 2.71, false);
+    
+    print("multi.0 = ");
+    debug(multi.0);  // 应该输出 5
+    print("multi.1 = ");
+    debug(multi.1);  // 应该输出 test
+    print("multi.2 = ");
+    debug(multi.2);  // 应该输出 2.71
+    print("multi.3 = ");
+    debug(multi.3);  // 应该输出 false
+    
+    println("✅ 所有元组字段访问测试通过！");
+    return 0;
+}
+

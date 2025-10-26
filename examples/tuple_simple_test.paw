@@ -1,0 +1,13 @@
+// 最简单的元组测试
+
+fn main() -> i32 {
+    // 测试1：最简单的元组字面量
+    let pair: (i32, i32) = (10, 20);
+    
+    println("Test 1: Simple tuple literal");
+    debug(pair.0);
+    debug(pair.1);
+    
+    return 0;
+}
+

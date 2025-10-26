@@ -213,6 +213,41 @@ StmtPtr Parser::functionDeclaration(bool is_public) {
 
 StmtPtr Parser::letDeclaration() {
     bool is_mutable = match({TokenType::KW_MUT});
+    
+    // 检查是否是元组解构: let (x, y) = ...
+    if (check(TokenType::LPAREN)) {
+        auto pattern = parsePattern();
+        
+        // 如果是元组模式，记录所有绑定的变量为可变
+        if (is_mutable && pattern->kind == Pattern::Kind::Tuple) {
+            auto tuple_pat = static_cast<TuplePattern*>(pattern.get());
+            for (const auto& elem : tuple_pat->elements) {
+                if (elem->kind == Pattern::Kind::Identifier) {
+                    auto id_pat = static_cast<IdentifierPattern*>(elem.get());
+                    mutable_vars_.insert(id_pat->name);
+                }
+            }
+        }
+        
+        TypePtr type = nullptr;
+        if (match({TokenType::COLON})) {
+            type = parseType();
+        }
+        
+        ExprPtr initializer = nullptr;
+        if (match({TokenType::ASSIGN})) {
+            initializer = expression();
+        }
+        
+        consume(TokenType::SEMICOLON, "Expected ';' after variable declaration");
+        
+        return std::make_unique<LetStmt>(
+            std::move(pattern), is_mutable, std::move(type), 
+            std::move(initializer), pattern->location
+        );
+    }
+    
+    // 普通的单变量绑定: let x = ...
     Token name = consume(TokenType::IDENTIFIER, "Expected variable name");
     
     // 记录可变变量
@@ -577,10 +612,19 @@ ExprPtr Parser::postfix() {
         }
         
         if (match({TokenType::DOT})) {
-            Token member = consume(TokenType::IDENTIFIER, "Expected member name after '.'");
-            expr = std::make_unique<MemberAccessExpr>(
-                std::move(expr), member.value, member.location
-            );
+            // 检查是元组字段访问 (.0, .1) 还是普通成员访问 (.field)
+            if (check(TokenType::INTEGER)) {
+                Token index_token = advance();
+                int index = std::stoi(index_token.value);
+                expr = std::make_unique<MemberAccessExpr>(
+                    std::move(expr), index, index_token.location
+                );
+            } else {
+                Token member = consume(TokenType::IDENTIFIER, "Expected member name or tuple index after '.'");
+                expr = std::make_unique<MemberAccessExpr>(
+                    std::move(expr), member.value, member.location
+                );
+            }
         } else if (match({TokenType::LBRACKET})) {
             // 数组索引访问或范围切片: arr[index] 或 arr[start..end]
             Token lbracket = previous();

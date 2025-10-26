@@ -309,9 +309,18 @@ struct RangeExpr : Expr {
 struct MemberAccessExpr : Expr {
     ExprPtr object;
     std::string member;
+    bool is_tuple_index = false;  // 是否是元组字段访问 .0, .1, .2
+    int tuple_index = -1;         // 元组字段索引
     
+    // 普通成员访问: obj.field
     MemberAccessExpr(ExprPtr obj, const std::string& mem, const SourceLocation& loc)
-        : Expr(Kind::MemberAccess, loc), object(std::move(obj)), member(mem) {}
+        : Expr(Kind::MemberAccess, loc), object(std::move(obj)), member(mem), 
+          is_tuple_index(false), tuple_index(-1) {}
+    
+    // 元组字段访问: tuple.0, tuple.1
+    MemberAccessExpr(ExprPtr obj, int idx, const SourceLocation& loc)
+        : Expr(Kind::MemberAccess, loc), object(std::move(obj)), member(""), 
+          is_tuple_index(true), tuple_index(idx) {}
 };
 
 struct FieldInit {
@@ -440,13 +449,20 @@ struct ExprStmt : Stmt {
 };
 
 struct LetStmt : Stmt {
-    std::string name;
+    std::string name;              // 单变量绑定: let x = ...
+    PatternPtr pattern;            // 元组解构: let (x, y) = ...
     bool is_mutable;
     TypePtr type;  // 可选
     ExprPtr initializer;  // 可选
     
+    // 单变量绑定构造函数
     LetStmt(const std::string& n, bool mut, TypePtr t, ExprPtr init, const SourceLocation& loc)
-        : Stmt(Kind::Let, loc), name(n), is_mutable(mut), 
+        : Stmt(Kind::Let, loc), name(n), pattern(nullptr), is_mutable(mut), 
+          type(std::move(t)), initializer(std::move(init)) {}
+    
+    // 元组解构构造函数
+    LetStmt(PatternPtr pat, bool mut, TypePtr t, ExprPtr init, const SourceLocation& loc)
+        : Stmt(Kind::Let, loc), name(""), pattern(std::move(pat)), is_mutable(mut), 
           type(std::move(t)), initializer(std::move(init)) {}
 };
 

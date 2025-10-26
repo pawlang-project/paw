@@ -1,0 +1,16 @@
+// 简单的元组解构测试
+
+fn main() -> i32 {
+    // 测试1：简单解构
+    let pair: (i32, i32) = (10, 20);
+    let (x, y): (i32, i32) = pair;
+    
+    println("Tuple destructuring test:");
+    print("x = ");
+    debug(x);
+    print("y = ");
+    debug(y);
+    
+    return 0;
+}
+

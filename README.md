@@ -938,11 +938,19 @@ fn main() -> i32 {
     let pair: (i32, string) = (42, "hello");
     let triple: (i32, f64, bool) = (100, 3.14, true);
     
+    // Tuple field access with .0, .1, .2
+    let first: i32 = pair.0;      // 42
+    let second: string = pair.1;  // "hello"
+    debug(triple.2);              // true
+    
+    // Tuple destructuring
+    let (x, y): (i32, string) = pair;
+    let (quot, rem): (i32, i32) = divide_mod(10, 3);
+    
     // Nested tuples
     let nested: ((i32, i32), string) = ((1, 2), "data");
-    
-    // Tuples as return values
-    let result: (i32, string) = create_pair();
+    let (inner, text): ((i32, i32), string) = nested;
+    let (a, b): (i32, i32) = inner;
     
     return 0;
 }
@@ -1232,7 +1240,8 @@ MIT License
 - 🎉🎉🎉🎉🎉🎉 **Enum Architecture Upgrade** - String/pointer support, union representation! ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉🎉 **Type Safety Enhanced** - Result type checking, safer than Rust! ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉 **Pattern Matching 100%** - Match expressions, Is conditional binding, fully implemented! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
-- 🎉🎉🎉🎉🎉 **Tuple types** - Built-in (T, U, V), simpler than Pair/Triple! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
+- 🎉🎉🎉🎉🎉 **Tuple types** - (T, U, V) with .0/.1 access & destructuring! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
+- 🎉🎉🎉🎉🎉 **Tuple destructuring** - let (x, y) = tuple, elegant pattern matching! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉 **Range slicing** - arr[1..5], arr[..3], arr[2..] syntax! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉 **Generic struct internal methods** - Complete! Box::new<T>(), methods ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
 - 🎉🎉🎉🎉 **Math intrinsics** - pow/sqrt/floor/ceil/round using LLVM! ⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕
