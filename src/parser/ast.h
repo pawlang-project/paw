@@ -25,6 +25,7 @@ struct Type {
         Array,      // [T; N] 固定大小数组
         Slice,      // [T] 动态切片
         Tuple,      // (T, U, V) 元组类型
+        Reference,  // &T 或 &mut T 引用类型
         Function,   // fn(T1, T2) -> T3
         Named,      // 自定义类型
         Generic,    // 泛型参数 T, U等
@@ -99,6 +100,15 @@ struct TupleTypeNode : Type {
     
     TupleTypeNode(std::vector<TypePtr> elem_types, const SourceLocation& loc)
         : Type(Kind::Tuple, loc), element_types(std::move(elem_types)) {}
+};
+
+// 引用类型: &T 或 &mut T
+struct ReferenceTypeNode : Type {
+    TypePtr inner_type;
+    bool is_mutable;  // true = &mut T, false = &T
+    
+    ReferenceTypeNode(TypePtr inner, bool mut, const SourceLocation& loc)
+        : Type(Kind::Reference, loc), inner_type(std::move(inner)), is_mutable(mut) {}
 };
 
 // ====== 表达式 ======
@@ -182,7 +192,13 @@ struct BinaryExpr : Expr {
 };
 
 struct UnaryExpr : Expr {
-    enum class Op { Neg, Not };
+    enum class Op { 
+        Neg,      // -x
+        Not,      // !x
+        Ref,      // &x (不可变引用)
+        RefMut,   // &mut x (可变引用)
+        Deref     // *x (解引用)
+    };
     
     Op op;
     ExprPtr operand;
@@ -429,7 +445,7 @@ struct TuplePattern : Pattern {
 struct Stmt {
     enum class Kind {
         Expression, Let, Return, If, Loop, Block, Function,
-        Struct, Enum, TypeAlias, Impl, Break, Continue, Import, Extern
+        Struct, Enum, TypeAlias, Impl, Break, Continue, Import, Extern, Unsafe
     };
     
     Kind kind;
@@ -495,6 +511,14 @@ struct BlockStmt : Stmt {
     
     BlockStmt(std::vector<StmtPtr> stmts, const SourceLocation& loc)
         : Stmt(Kind::Block, loc), statements(std::move(stmts)) {}
+};
+
+// unsafe块: unsafe { ... }
+struct UnsafeBlockStmt : Stmt {
+    std::vector<StmtPtr> statements;
+    
+    UnsafeBlockStmt(std::vector<StmtPtr> stmts, const SourceLocation& loc)
+        : Stmt(Kind::Unsafe, loc), statements(std::move(stmts)) {}
 };
 
 struct IfStmt : Stmt {

@@ -70,6 +70,7 @@ private:
     StmtPtr continueStatement();
     StmtPtr expressionStatement();
     StmtPtr blockStatement();
+    StmtPtr unsafeBlockStatement();
     
     ExprPtr expression();
     ExprPtr assignment();

@@ -48,6 +48,7 @@ enum class TokenType {
     KW_AS,          // as
     KW_OK,          // ok (error handling)
     KW_ERR,         // err (error handling)
+    KW_UNSAFE,      // unsafe (unsafe blocks)
     
     // Identifiers and literals
     IDENTIFIER,
@@ -62,6 +63,7 @@ enum class TokenType {
     STAR,           // *
     SLASH,          // /
     PERCENT,        // %
+    AMPERSAND,      // &
     EQ,             // ==
     NE,             // !=
     LT,             // <

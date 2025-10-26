@@ -922,6 +922,38 @@ type Box<T> = struct { value: T, }
 let b: Box<i32> = Box<i32> { value: 42 };
 ```
 
+**Reference Types** ⭐⭐⭐⭐⭐⭐ 🆕🆕🆕:
+```rust
+// Zero-copy parameter passing with references
+fn swap(a: &mut i32, b: &mut i32) {
+    let temp: i32 = *a;
+    *a = *b;
+    *b = temp;
+}
+
+fn read_only(x: &i32) -> i32 {
+    return *x;  // Read without copying
+}
+
+fn main() -> i32 {
+    let mut x: i32 = 10;
+    let mut y: i32 = 20;
+    
+    swap(&mut x, &mut y);
+    debug(x);  // 20
+    debug(y);  // 10
+    
+    // Unsafe blocks for advanced control
+    unsafe {
+        let r1: &mut i32 = &mut x;
+        let r2: &mut i32 = &mut x;  // Allowed in unsafe
+        *r2 = 100;
+    }
+    
+    return 0;
+}
+```
+
 **Tuple Types** ⭐⭐⭐⭐⭐⭐ 🆕🆕🆕:
 ```rust
 // Built-in tuple types - simple and elegant!
@@ -1240,6 +1272,8 @@ MIT License
 - 🎉🎉🎉🎉🎉🎉 **Enum Architecture Upgrade** - String/pointer support, union representation! ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉🎉 **Type Safety Enhanced** - Result type checking, safer than Rust! ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉 **Pattern Matching 100%** - Match expressions, Is conditional binding, fully implemented! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
+- 🎉🎉🎉🎉🎉 **Reference types** - &T and &mut T for zero-copy! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
+- 🎉🎉🎉🎉🎉 **Unsafe blocks** - unsafe{} escape hatch for flexibility! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉 **Tuple types** - (T, U, V) with .0/.1 access & destructuring! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉 **Tuple destructuring** - let (x, y) = tuple, elegant pattern matching! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉 **Range slicing** - arr[1..5], arr[..3], arr[2..] syntax! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕

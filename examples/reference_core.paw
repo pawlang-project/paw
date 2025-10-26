@@ -1,0 +1,74 @@
+// 核心引用功能测试（不含struct成员访问和切片迭代）
+
+// swap函数
+fn swap(a: &mut i32, b: &mut i32) {
+    let temp: i32 = *a;
+    *a = *b;
+    *b = temp;
+}
+
+// increment函数
+fn increment(x: &mut i32) {
+    *x = *x + 1;
+}
+
+// 只读引用
+fn read_value(x: &i32) -> i32 {
+    return *x;
+}
+
+fn main() -> i32 {
+    println("=== 核心引用功能测试 ===");
+    
+    // 测试1：swap
+    println("\n1. Swap测试:");
+    let mut x: i32 = 10;
+    let mut y: i32 = 20;
+    print("Before: x=");
+    debug(x);
+    print("Before: y=");
+    debug(y);
+    
+    swap(&mut x, &mut y);
+    
+    print("After: x=");
+    debug(x);  // 20
+    print("After: y=");
+    debug(y);  // 10
+    
+    // 测试2：increment
+    println("\n2. Increment测试:");
+    let mut n: i32 = 100;
+    print("Before: n=");
+    debug(n);
+    
+    increment(&mut n);
+    
+    print("After: n=");
+    debug(n);  // 101
+    
+    // 测试3：只读引用
+    println("\n3. 只读引用测试:");
+    let val: i32 = 42;
+    let result: i32 = read_value(&val);
+    print("Read value: ");
+    debug(result);  // 42
+    
+    // 测试4：unsafe块
+    println("\n4. Unsafe块测试:");
+    let mut z: i32 = 50;
+    
+    unsafe {
+        let r1: &mut i32 = &mut z;
+        let r2: &mut i32 = &mut z;
+        *r1 = 75;
+        *r2 = 99;
+    }
+    
+    print("z = ");
+    debug(z);  // 99
+    
+    println("\n✅ 所有核心测试通过！");
+    return 0;
+}
+

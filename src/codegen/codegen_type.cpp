@@ -100,6 +100,12 @@ llvm::Type* CodeGenerator::convertType(const Type* type) {
             
             return llvm::StructType::get(*context_, element_llvm_types);
         }
+        case Type::Kind::Reference: {
+            // 引用类型: &T 或 &mut T
+            // 内部表示为指针（引用在LLVM中就是指针）
+            // 注意：&T 和 &mut T 在LLVM层面相同，可变性由前端检查
+            return llvm::PointerType::get(*context_, 0);
+        }
         case Type::Kind::Generic: {
             // 泛型参数在单态化后应该被替换
             // 这里暂时返回i32

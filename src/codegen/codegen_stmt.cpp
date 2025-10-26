@@ -32,6 +32,9 @@ void CodeGenerator::generateStmt(const Stmt* stmt) {
         case Stmt::Kind::Block:
             generateBlockStmt(static_cast<const BlockStmt*>(stmt));
             break;
+        case Stmt::Kind::Unsafe:
+            generateUnsafeBlockStmt(static_cast<const UnsafeBlockStmt*>(stmt));
+            break;
         case Stmt::Kind::Expression:
             generateExprStmt(static_cast<const ExprStmt*>(stmt));
             break;
@@ -1097,6 +1100,23 @@ void CodeGenerator::generateBlockStmt(const BlockStmt* stmt) {
     for (const auto& s : stmt->statements) {
         generateStmt(s.get());
     }
+}
+
+void CodeGenerator::generateUnsafeBlockStmt(const UnsafeBlockStmt* stmt) {
+    // unsafe块：标记为unsafe环境，绕过某些检查
+    // 代码生成和普通block相同
+    // 警告在类型检查阶段处理
+    
+    // 标记进入unsafe环境
+    bool prev_unsafe = in_unsafe_block_;
+    in_unsafe_block_ = true;
+    
+    for (const auto& s : stmt->statements) {
+        generateStmt(s.get());
+    }
+    
+    // 恢复unsafe环境标记
+    in_unsafe_block_ = prev_unsafe;
 }
 
 

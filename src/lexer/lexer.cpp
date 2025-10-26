@@ -29,7 +29,8 @@ namespace pawc
         {"is", TokenType::KW_IS},
         {"as", TokenType::KW_AS},
         {"ok", TokenType::KW_OK},
-        {"err", TokenType::KW_ERR}
+        {"err", TokenType::KW_ERR},
+        {"unsafe", TokenType::KW_UNSAFE}
     };
 
     Lexer::Lexer(const std::string& source, const std::string& filename)
@@ -126,7 +127,7 @@ namespace pawc
             return makeToken(TokenType::QUESTION, "?");
         case '&':
             if (match('&')) return makeToken(TokenType::AND, "&&");
-            break;
+            return makeToken(TokenType::AMPERSAND, "&");
         case '|':
             if (match('|')) return makeToken(TokenType::OR, "||");
             break;

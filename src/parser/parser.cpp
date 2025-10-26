@@ -158,6 +158,7 @@ StmtPtr Parser::statement() {
     if (match({TokenType::KW_RETURN})) return returnStatement();
     if (match({TokenType::KW_BREAK})) return breakStatement();
     if (match({TokenType::KW_CONTINUE})) return continueStatement();
+    if (match({TokenType::KW_UNSAFE})) return unsafeBlockStatement();
     if (match({TokenType::LBRACE})) return blockStatement();
     
     return expressionStatement();
@@ -192,7 +193,17 @@ StmtPtr Parser::functionDeclaration(bool is_public) {
     std::vector<Parameter> parameters;
     if (!check(TokenType::RPAREN)) {
         do {
-            parameters.push_back(parseParameter());
+            Parameter param = parseParameter();
+            
+            // 如果参数是&mut引用，将其视为可变
+            if (param.type && param.type->kind == Type::Kind::Reference) {
+                const ReferenceTypeNode* ref_type = static_cast<const ReferenceTypeNode*>(param.type.get());
+                if (ref_type->is_mutable) {
+                    mutable_vars_.insert(param.name);
+                }
+            }
+            
+            parameters.push_back(std::move(param));
         } while (match({TokenType::COMMA}));
     }
     consume(TokenType::RPAREN, "Expected ')' after parameters");
@@ -389,6 +400,20 @@ StmtPtr Parser::blockStatement() {
     return std::make_unique<BlockStmt>(std::move(statements), previous().location);
 }
 
+StmtPtr Parser::unsafeBlockStatement() {
+    Token unsafe_token = previous();
+    
+    consume(TokenType::LBRACE, "Expected '{' after 'unsafe'");
+    
+    std::vector<StmtPtr> statements;
+    while (!check(TokenType::RBRACE) && !isAtEnd()) {
+        statements.push_back(statement());
+    }
+    
+    consume(TokenType::RBRACE, "Expected '}' after unsafe block");
+    return std::make_unique<UnsafeBlockStmt>(std::move(statements), unsafe_token.location);
+}
+
 ExprPtr Parser::expression() {
     return matchExpression();  // is 表达式优先级最低
 }
@@ -401,12 +426,24 @@ ExprPtr Parser::assignment() {
         Token op = previous();
         auto value = assignment();  // 右结合
         
-        // 支持三种赋值目标：Identifier、MemberAccess、Index
+        // 支持四种赋值目标：Identifier、MemberAccess、Index、Unary(Deref)
         if (expr->kind != Expr::Kind::Identifier && 
             expr->kind != Expr::Kind::MemberAccess && 
-            expr->kind != Expr::Kind::Index) {
+            expr->kind != Expr::Kind::Index &&
+            expr->kind != Expr::Kind::Unary) {
             error("Invalid assignment target");
             return expr;
+        }
+        
+        // 对于Unary，只允许解引用操作
+        if (expr->kind == Expr::Kind::Unary) {
+            const UnaryExpr* unary = static_cast<const UnaryExpr*>(expr.get());
+            if (unary->op != UnaryExpr::Op::Deref) {
+                error("Invalid assignment target: only dereference (*x) can be assigned");
+                return expr;
+            }
+            // *x = value 是合法的
+            return std::make_unique<AssignExpr>(std::move(expr), std::move(value), op.location);
         }
         
         // 对于成员访问，检查对象是否可变
@@ -580,11 +617,32 @@ ExprPtr Parser::factor() {
 }
 
 ExprPtr Parser::unary() {
-    if (match({TokenType::MINUS, TokenType::NOT})) {
+    // 处理一元操作符：-, !, &, &mut, *
+    if (match({TokenType::MINUS, TokenType::NOT, TokenType::AMPERSAND, TokenType::STAR})) {
         Token op = previous();
+        
+        // 特殊处理 &mut
+        if (op.type == TokenType::AMPERSAND && check(TokenType::KW_MUT)) {
+            advance();  // 消费 mut
+            auto operand = unary();
+            return std::make_unique<UnaryExpr>(
+                UnaryExpr::Op::RefMut, std::move(operand), op.location
+            );
+        }
+        
         auto operand = unary();
-        UnaryExpr::Op operation = (op.type == TokenType::MINUS) ?
-            UnaryExpr::Op::Neg : UnaryExpr::Op::Not;
+        
+        UnaryExpr::Op operation;
+        if (op.type == TokenType::MINUS) {
+            operation = UnaryExpr::Op::Neg;
+        } else if (op.type == TokenType::NOT) {
+            operation = UnaryExpr::Op::Not;
+        } else if (op.type == TokenType::AMPERSAND) {
+            operation = UnaryExpr::Op::Ref;
+        } else { // STAR
+            operation = UnaryExpr::Op::Deref;
+        }
+        
         return std::make_unique<UnaryExpr>(
             operation, std::move(operand), op.location
         );
@@ -1146,6 +1204,14 @@ ExprPtr Parser::primary() {
  * @param allow_slice 是否允许[T]解析为切片（函数参数中为true）
  */
 TypePtr Parser::parseType(bool allow_slice) {
+    // 引用类型: &T 或 &mut T
+    if (match({TokenType::AMPERSAND})) {
+        Token amp_token = previous();
+        bool is_mutable = match({TokenType::KW_MUT});
+        TypePtr inner_type = parseType(allow_slice);
+        return std::make_unique<ReferenceTypeNode>(std::move(inner_type), is_mutable, amp_token.location);
+    }
+    
     // Self类型（在struct方法中使用）
     if (match({TokenType::KW_SELF_TYPE})) {
         return std::make_unique<SelfTypeNode>(previous().location);

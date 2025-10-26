@@ -173,19 +173,59 @@ llvm::Value* CodeGenerator::generateBinaryExpr(const BinaryExpr* expr) {
 
 
 llvm::Value* CodeGenerator::generateUnaryExpr(const UnaryExpr* expr) {
-    llvm::Value* operand = generateExpr(expr->operand.get());
-    if (!operand) return nullptr;
-    
     switch (expr->op) {
-        case UnaryExpr::Op::Neg:
+        case UnaryExpr::Op::Ref:
+        case UnaryExpr::Op::RefMut: {
+            // 取引用：&x 或 &mut x
+            // 返回变量的地址（alloca指针）
+            if (expr->operand->kind == Expr::Kind::Identifier) {
+                std::string var_name = static_cast<const IdentifierExpr*>(expr->operand.get())->name;
+                auto it = named_values_.find(var_name);
+                if (it != named_values_.end()) {
+                    // 返回alloca指针（就是引用）
+                    return it->second;
+                }
+            }
+            // 对于复杂表达式，生成值然后创建临时alloca
+            llvm::Value* val = generateExpr(expr->operand.get());
+            if (!val) return nullptr;
+            
+            llvm::AllocaInst* temp = builder_->CreateAlloca(val->getType(), nullptr, "ref_temp");
+            builder_->CreateStore(val, temp);
+            return temp;
+        }
+        case UnaryExpr::Op::Deref: {
+            // 解引用：*ref
+            // ref应该是一个指针，load它
+            llvm::Value* ref = generateExpr(expr->operand.get());
+            if (!ref) return nullptr;
+            
+            if (!ref->getType()->isPointerTy()) {
+                std::cerr << "Error: Cannot dereference non-pointer type\n";
+                return nullptr;
+            }
+            
+            // 推导被指向的类型（简化版本，假设是i32）
+            // TODO: 完整实现需要类型推导
+            llvm::Type* pointee_type = llvm::Type::getInt32Ty(*context_);
+            return builder_->CreateLoad(pointee_type, ref, "deref");
+        }
+        case UnaryExpr::Op::Neg: {
+            llvm::Value* operand = generateExpr(expr->operand.get());
+            if (!operand) return nullptr;
+            
             // 对于浮点数使用FNeg，对于整数使用Neg
             if (operand->getType()->isFloatingPointTy()) {
                 return builder_->CreateFNeg(operand, "fnegtmp");
             } else {
                 return builder_->CreateNeg(operand, "negtmp");
             }
-        case UnaryExpr::Op::Not:
+        }
+        case UnaryExpr::Op::Not: {
+            llvm::Value* operand = generateExpr(expr->operand.get());
+            if (!operand) return nullptr;
             return builder_->CreateNot(operand, "nottmp");
+        }
         default:
             return nullptr;
     }
@@ -904,6 +944,26 @@ llvm::Value* CodeGenerator::generateBuiltinCall(const std::string& name, const s
 llvm::Value* CodeGenerator::generateAssignExpr(const AssignExpr* expr) {
     llvm::Value* val = generateExpr(expr->value.get());
     if (!val) return nullptr;
+    
+    // 解引用赋值：*ref = value
+    if (expr->target_expr && expr->target_expr->kind == Expr::Kind::Unary) {
+        const UnaryExpr* unary = static_cast<const UnaryExpr*>(expr->target_expr.get());
+        
+        if (unary->op == UnaryExpr::Op::Deref) {
+            // 生成引用（指针）
+            llvm::Value* ref = generateExpr(unary->operand.get());
+            if (!ref) return nullptr;
+            
+            if (!ref->getType()->isPointerTy()) {
+                std::cerr << "Error: Cannot assign to non-pointer type\n";
+                return nullptr;
+            }
+            
+            // 存储值到引用指向的位置
+            builder_->CreateStore(val, ref);
+            return val;
+        }
+    }
     
     // 索引赋值：arr[i] = value 或 s[i] = value
     if (expr->target_expr && expr->target_expr->kind == Expr::Kind::Index) {

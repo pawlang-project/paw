@@ -119,6 +119,7 @@ private:
     const StructStmt* current_struct_;              ///< 当前处理的struct（用于self）
     std::string current_struct_name_;               ///< 当前struct名称
     bool current_is_method_;                        ///< 是否是实例方法（有self参数）
+    bool in_unsafe_block_ = false;                  ///< 是否在unsafe块中
     
     // ========== 模块系统 ==========
     std::string module_name_;                       ///< 当前模块名称
@@ -437,6 +438,12 @@ private:
      * @param stmt Block语句节点
      */
     void generateBlockStmt(const BlockStmt* stmt);
+    
+    /**
+     * @brief 生成unsafe代码块
+     * @param stmt UnsafeBlock语句节点
+     */
+    void generateUnsafeBlockStmt(const UnsafeBlockStmt* stmt);
     
     /**
      * @brief 生成表达式语句
