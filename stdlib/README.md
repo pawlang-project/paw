@@ -107,17 +107,11 @@ fn main() -> i32 {
 
 **泛型数据结构**
 
-#### Pair<K, V> - 键值对
+**注意**：对于简单的键值对，推荐使用内置元组类型：
 ```paw
-let p: Pair<i32, string> = Pair::new(1, "hello");
-let first: i32 = p.first();
-let second: string = p.second();
-let swapped: Pair<string, i32> = p.swap();
-```
-
-#### Triple<A, B, C> - 三元组
-```paw
-let t: Triple<i32, f64, string> = Triple::new(1, 3.14, "pi");
+// 使用元组（推荐）
+let pair: (i32, string) = (42, "hello");
+let triple: (i32, f64, bool) = (100, 3.14, true);
 ```
 
 #### Range<T> - 范围
@@ -286,9 +280,9 @@ fn main() -> i32 {
     let floats: [f64; 3] = [1.5, 2.5, 3.5];
     let sum_f: f64 = sum<f64>(floats);          // 7.5
     
-    // 使用泛型类型
-    let pair: Pair<i32, string> = Pair::new(42, "answer");
-    let first: i32 = pair.first();
+    // 使用内置元组类型（推荐）
+    let pair: (i32, string) = (42, "answer");
+    let triple: (i32, f64, bool) = (100, 3.14, true);
     
     // 使用数学函数
     let area: f64 = circle_area(5.0);

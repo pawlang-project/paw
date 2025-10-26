@@ -294,7 +294,8 @@ fn test_extern() -> i64 {
 
 **collections/** - 集合类型和操作
 - ✅ **std::collections::collections** - 完全泛型的数组/切片操作库（17个泛型函数）🆕🆕🆕
-- ✅ **std::collections::types** - 泛型数据结构（Pair, Triple, Range, Box）🆕
+- ✅ **std::collections::types** - 泛型数据结构（Range, Box）🆕
+- ✅ **内置元组类型** - (T, U, V) 替代 Pair/Triple，更简洁 🆕🆕🆕
 
 **顶层模块** - 通用功能
 - ✅ **std::string** - 字符串操作工具集（trim, is_alpha, to_upper等）
@@ -917,45 +918,58 @@ let x = add<i32>(10, 20);  // 30
 **Generic Structs**:
 ```rust
 type Box<T> = struct { value: T, }
-type Pair<T, U> = struct { first: T, second: U, }
 
 let b: Box<i32> = Box<i32> { value: 42 };
+```
+
+**Tuple Types** ⭐⭐⭐⭐⭐⭐ 🆕🆕🆕:
+```rust
+// Built-in tuple types - simple and elegant!
+fn create_pair() -> (i32, string) {
+    return (42, "answer");
+}
+
+fn divide_mod(a: i32, b: i32) -> (i32, i32) {
+    return (a / b, a % b);
+}
+
+fn main() -> i32 {
+    // Create tuples
+    let pair: (i32, string) = (42, "hello");
+    let triple: (i32, f64, bool) = (100, 3.14, true);
+    
+    // Nested tuples
+    let nested: ((i32, i32), string) = ((1, 2), "data");
+    
+    // Tuples as return values
+    let result: (i32, string) = create_pair();
+    
+    return 0;
+}
 ```
 
 **Generic Struct Internal Methods** ⭐⭐⭐⭐⭐⭐ 🆕🆕🆕:
 ```rust
 // Define generic struct with methods
-pub type Pair<K, V> = struct {
-    first: K,
-    second: V,
+pub type Box<T> = struct {
+    value: T,
     
     // Static method - constructor
-    pub fn new(k: K, v: V) -> Pair<K, V> {
-        return Pair<K, V> { first: k, second: v };
+    pub fn new(v: T) -> Box<T> {
+        return Box<T> { value: v };
     }
     
-    // Instance method - access fields
-    pub fn first(self) -> K {
-        return self.first;
-    }
-    
-    pub fn second(self) -> V {
-        return self.second;
-    }
-    
-    // Instance method - return new generic struct
-    pub fn swap(self) -> Pair<V, K> {
-        return Pair<V, K> { first: self.second, second: self.first };
+    // Instance method
+    pub fn get(self) -> T {
+        return self.value;
     }
 }
 
 // Use static method to create instance
-let p = Pair::new<i32, string>(42, "hello");
+let b = Box::new<i32>(42);
 
 // Use instance methods
-let k: i32 = p.first();        // 42
-let v: string = p.second();     // "hello"
-let p2 = p.swap();              // Pair<string, i32>
+let value: i32 = b.get();  // 42
 
 // Cross-module generic struct method calls
 import "std::collections";
@@ -1218,7 +1232,9 @@ MIT License
 - 🎉🎉🎉🎉🎉🎉 **Enum Architecture Upgrade** - String/pointer support, union representation! ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉🎉 **Type Safety Enhanced** - Result type checking, safer than Rust! ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕🆕
 - 🎉🎉🎉🎉🎉 **Pattern Matching 100%** - Match expressions, Is conditional binding, fully implemented! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
-- 🎉🎉🎉🎉🎉 **Generic struct internal methods** - Complete! Pair::new<K,V>(), p.method() ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
+- 🎉🎉🎉🎉🎉 **Tuple types** - Built-in (T, U, V), simpler than Pair/Triple! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
+- 🎉🎉🎉🎉🎉 **Range slicing** - arr[1..5], arr[..3], arr[2..] syntax! ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
+- 🎉🎉🎉🎉🎉 **Generic struct internal methods** - Complete! Box::new<T>(), methods ⭐⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕🆕
 - 🎉🎉🎉🎉 **Math intrinsics** - pow/sqrt/floor/ceil/round using LLVM! ⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕
 - 🎉🎉🎉🎉 **Error utilities** - panic/assert/unreachable/todo/unimplemented! ⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕
 - 🎉🎉🎉🎉 **Control Flow Fixes** - else-if enum return, unreachable block handling ⭐⭐⭐⭐⭐⭐⭐⭐ 🆕🆕🆕
