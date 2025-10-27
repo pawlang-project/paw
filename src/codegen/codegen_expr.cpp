@@ -1088,11 +1088,49 @@ llvm::Value* CodeGenerator::generateAssignExpr(const AssignExpr* expr) {
         
         // 获取数组/字符串的指针
         llvm::Value* array_ptr = nullptr;
+        llvm::Type* array_type_for_assign = nullptr;
+        
         if (index_expr->array->kind == Expr::Kind::Identifier) {
             std::string array_name = static_cast<const IdentifierExpr*>(index_expr->array.get())->name;
             auto it = named_values_.find(array_name);
             if (it != named_values_.end()) {
                 array_ptr = it->second;
+            }
+        } else if (index_expr->array->kind == Expr::Kind::MemberAccess) {
+            // self.data[i] = value
+            const MemberAccessExpr* member = static_cast<const MemberAccessExpr*>(index_expr->array.get());
+            
+            if (member->object->kind == Expr::Kind::Identifier) {
+                std::string obj_name = static_cast<const IdentifierExpr*>(member->object.get())->name;
+                
+                // 处理 self.field[i] = value
+                if (obj_name == "self" && !current_struct_name_.empty()) {
+                    auto def_it = struct_defs_.find(current_struct_name_);
+                    if (def_it != struct_defs_.end()) {
+                        int field_idx = 0;
+                        for (const auto& field : def_it->second->fields) {
+                            if (field.name == member->member && field.type->kind == Type::Kind::Array) {
+                                // 获取self指针
+                                auto self_it = named_values_.find("self");
+                                if (self_it != named_values_.end()) {
+                                    llvm::Value* self_ptr = builder_->CreateLoad(
+                                        llvm::PointerType::get(*context_, 0),
+                                        self_it->second,
+                                        "self"
+                                    );
+                                    
+                                    // GEP到字段
+                                    llvm::Type* struct_type = getOrCreateStructType(current_struct_name_);
+                                    array_ptr = builder_->CreateStructGEP(
+                                        struct_type, self_ptr, field_idx, "field_ptr"
+                                    );
+                                    array_type_for_assign = convertType(field.type.get());
+                                }
+                            }
+                            field_idx++;
+                        }
+                    }
+                }
             }
         }
         
@@ -1102,13 +1140,24 @@ llvm::Value* CodeGenerator::generateAssignExpr(const AssignExpr* expr) {
         }
         
         // 获取数组元素类型
-        auto type_it = variable_types_.find(static_cast<const IdentifierExpr*>(index_expr->array.get())->name);
-        if (type_it == variable_types_.end()) {
-            std::cerr << "Unknown array/string type for index assignment" << std::endl;
-            return nullptr;
+        llvm::Type* array_type = nullptr;
+        if (array_type_for_assign) {
+            // 已经从MemberAccess获取了类型
+            array_type = array_type_for_assign;
+        } else if (index_expr->array->kind == Expr::Kind::Identifier) {
+            // 从named_values_获取类型
+            auto type_it = variable_types_.find(static_cast<const IdentifierExpr*>(index_expr->array.get())->name);
+            if (type_it == variable_types_.end()) {
+                std::cerr << "Unknown array/string type for index assignment" << std::endl;
+                return nullptr;
+            }
+            array_type = type_it->second;
         }
         
-        llvm::Type* array_type = type_it->second;
+        if (!array_type) {
+            std::cerr << "Cannot determine array type for index assignment" << std::endl;
+            return nullptr;
+        }
         
         // Check if it's字符串类型（指针）
         if (array_type->isPointerTy()) {
@@ -1776,6 +1825,60 @@ llvm::Value* CodeGenerator::generateIndexExpr(const IndexExpr* expr) {
         
         array_ptr = first_ptr;
         array_type = first_elem;
+        
+    } else if (expr->array->kind == Expr::Kind::MemberAccess) {
+        // struct成员数组：self.data[i]
+        const MemberAccessExpr* member = static_cast<const MemberAccessExpr*>(expr->array.get());
+        
+        // 处理 self.field[i]
+        if (member->object->kind == Expr::Kind::Identifier) {
+            std::string obj_name = static_cast<const IdentifierExpr*>(member->object.get())->name;
+            
+            // 检查是否是self
+            if (obj_name == "self" && !current_struct_name_.empty()) {
+                // 从struct定义中查找字段类型
+                auto def_it = struct_defs_.find(current_struct_name_);
+                if (def_it != struct_defs_.end()) {
+                    int field_idx = 0;
+                    for (const auto& field : def_it->second->fields) {
+                        if (field.name == member->member) {
+                            // 找到字段！检查是否是数组
+                            if (field.type->kind == Type::Kind::Array) {
+                                // 获取self指针
+                                auto self_it = named_values_.find("self");
+                                if (self_it != named_values_.end()) {
+                                    llvm::Value* self_alloca = self_it->second;
+                                    llvm::Value* self_ptr = builder_->CreateLoad(
+                                        llvm::PointerType::get(*context_, 0),
+                                        self_alloca,
+                                        "self"
+                                    );
+                                    
+                                    // GEP到字段
+                                    llvm::Type* struct_type = getOrCreateStructType(current_struct_name_);
+                                    llvm::Value* field_ptr = builder_->CreateStructGEP(
+                                        struct_type, self_ptr, field_idx, "field_ptr"
+                                    );
+                                    
+                                    // 转换字段类型
+                                    llvm::Type* field_arr_type = convertType(field.type.get());
+                                    
+                                    array_ptr = field_ptr;
+                                    array_type = field_arr_type;
+                                }
+                            }
+                            break;
+                        }
+                        field_idx++;
+                    }
+                }
+            }
+        }
+        
+        if (!array_ptr) {
+            std::cerr << "Cannot access member array field" << std::endl;
+            return nullptr;
+        }
         
     } else {
         std::cerr << "Unsupported array expression" << std::endl;

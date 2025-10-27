@@ -1,0 +1,134 @@
+// Vec<T> 完整功能演示 - 闭包的威力！🔥
+
+type VecI32 = struct {
+    data: [i32; 128],
+    len: i64,
+    
+    fn new() -> VecI32 {
+        let arr: [i32; 128];
+        return VecI32 { data: arr, len: 0 };
+    }
+    
+    fn push(mut self, value: i32) -> VecI32 {
+        self.data[self.len] = value;
+        self.len = self.len + 1;
+        return self;
+    }
+    
+    fn get(self, index: i64) -> i32 {
+        return self.data[index];
+    }
+    
+    fn len(self) -> i64 {
+        return self.len;
+    }
+    
+    // map: 转换每个元素
+    fn map(self, f: fn(i32) -> i32) -> VecI32 {
+        let mut result: VecI32 = VecI32::new();
+        let mut i: i64 = 0;
+        loop i < self.len {
+            result = result.push(f(self.data[i]));
+            i = i + 1;
+        }
+        return result;
+    }
+    
+    // filter: 筛选元素（使用i32代替bool: 0=false, 非0=true）
+    fn filter(self, predicate: fn(i32) -> i32) -> VecI32 {
+        let mut result: VecI32 = VecI32::new();
+        let mut i: i64 = 0;
+        loop i < self.len {
+            if predicate(self.data[i]) != 0 {
+                result = result.push(self.data[i]);
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+    
+    // fold: 归约
+    fn fold(self, init: i32, f: fn(i32, i32) -> i32) -> i32 {
+        let mut acc: i32 = init;
+        let mut i: i64 = 0;
+        loop i < self.len {
+            acc = f(acc, self.data[i]);
+            i = i + 1;
+        }
+        return acc;
+    }
+}
+
+fn main() -> i32 {
+    println("=== Vec<T> Complete Demo ===");
+    println("");
+    
+    // 创建Vec
+    let mut v: VecI32 = VecI32::new();
+    v = v.push(1);
+    v = v.push(2);
+    v = v.push(3);
+    v = v.push(4);
+    v = v.push(5);
+    
+    let i0: i64 = 0;
+    let i1: i64 = 1;
+    let i2: i64 = 2;
+    let i3: i64 = 3;
+    let i4: i64 = 4;
+    
+    print("Original: [");
+    print(f"{v.get(i0)}, ");
+    print(f"{v.get(i1)}, ");
+    print(f"{v.get(i2)}, ");
+    print(f"{v.get(i3)}, ");
+    print(f"{v.get(i4)}");
+    println("]");
+    println("");
+    
+    // 1. map - 每个元素 * 2
+    let doubled: VecI32 = v.map((x: i32) -> i32 { return x * 2; });
+    print("Doubled: [");
+    print(f"{doubled.get(i0)}, ");
+    print(f"{doubled.get(i1)}, ");
+    print(f"{doubled.get(i2)}, ");
+    print(f"{doubled.get(i3)}, ");
+    print(f"{doubled.get(i4)}");
+    println("]");
+    println("");
+    
+    // 2. filter - 只保留偶数
+    let evens: VecI32 = v.filter((x: i32) -> i32 {
+        if x % 2 == 0 {
+            return 1;  // true
+        }
+        return 0;  // false
+    });
+    print("Evens: [");
+    print(f"{evens.get(i0)}, ");
+    print(f"{evens.get(i1)}");
+    println("]");
+    println("");
+    
+    // 3. fold - 求和
+    let sum: i32 = v.fold(0, (acc: i32, x: i32) -> i32 { return acc + x; });
+    println(f"Sum: {sum}");
+    println("");
+    
+    // 4. 链式操作：filter -> map
+    let result: VecI32 = v.filter((x: i32) -> i32 {
+        if x > 2 { return 1; }
+        return 0;
+    }).map((x: i32) -> i32 { return x * 10; });
+    
+    print("Filter(>2) then map(*10): [");
+    print(f"{result.get(i0)}, ");
+    print(f"{result.get(i1)}, ");
+    print(f"{result.get(i2)}");
+    println("]");
+    
+    println("");
+    println("=== All tests passed! ===");
+    return 0;
+}
+
