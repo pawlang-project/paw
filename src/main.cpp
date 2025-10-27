@@ -327,6 +327,12 @@ int main(int argc, char* argv[]) {
     }
     std::cout << pawc::Colors::success("  ✓ CodeGen: ") << "Success" << std::endl;
     
+    // 优化级别提示（LLVM Pass 优化将在未来版本实现）
+    if (opt_level != 0) {
+        std::string opt_str = opt_level == -1 ? "Os" : "O" + std::to_string(opt_level);
+        std::cout << pawc::Colors::info("  → Optimize: ") << "-" << opt_str << " (planned)" << std::endl;
+    }
+    
     // Print IR if requested
     if (print_ir) {
         std::cout << "\n========== LLVM IR ==========\n" << std::endl;

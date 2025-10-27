@@ -176,6 +176,28 @@ private:
     
     // 性能优化：缓存类型字符串表示
     mutable std::unordered_map<const types::Type*, std::string> string_cache_;
+    
+    // 性能优化：缓存类型比较结果
+    struct TypePair {
+        const types::Type* a;
+        const types::Type* b;
+        
+        bool operator==(const TypePair& other) const {
+            return (a == other.a && b == other.b) || 
+                   (a == other.b && b == other.a);  // 交换律
+        }
+    };
+    
+    struct TypePairHash {
+        size_t operator()(const TypePair& p) const {
+            // 确保哈希对称（a,b 和 b,a 相同）
+            size_t h1 = std::hash<const void*>()(p.a);
+            size_t h2 = std::hash<const void*>()(p.b);
+            return h1 < h2 ? (h1 ^ (h2 << 1)) : (h2 ^ (h1 << 1));
+        }
+    };
+    
+    mutable std::unordered_map<TypePair, bool, TypePairHash> equals_cache_;
 };
 
 } // namespace pawc

@@ -80,7 +80,18 @@ types::Type* TypeSystem::getFunctionType(std::vector<std::unique_ptr<types::Type
 bool TypeSystem::equals(const types::Type* a, const types::Type* b) {
     if (a == b) return true;  // 指针相同
     if (!a || !b) return false;
-    return a->equals(b);
+    
+    // 性能优化：检查缓存
+    TypePair pair{a, b};
+    auto it = equals_cache_.find(pair);
+    if (it != equals_cache_.end()) {
+        return it->second;
+    }
+    
+    // 计算并缓存
+    bool result = a->equals(b);
+    equals_cache_[pair] = result;
+    return result;
 }
 
 bool TypeSystem::isAssignable(const types::Type* from, const types::Type* to) {
