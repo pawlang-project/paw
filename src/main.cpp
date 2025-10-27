@@ -1,7 +1,9 @@
 #include "lexer/lexer.h"
 #include "parser/parser.h"
+#include "sema/semantic_analyzer.h"
 #include "codegen/codegen.h"
 #include "module/module_compiler.h"
+#include "types/type_system.h"
 #include "diagnostics/diagnostic_engine.h"
 #include "diagnostics/source_manager.h"
 #include "pawc/colors.h"
@@ -209,6 +211,15 @@ int main(int argc, char* argv[]) {
     }
     
     std::cout << pawc::Colors::success("  ✓ Parser: ") << program.statements.size() << " statements" << std::endl;
+    
+    // Semantic analysis
+    pawc::TypeSystem type_system;
+    pawc::SemanticAnalyzer sema(&type_system, &diagnostics);
+    if (!sema.analyze(program)) {
+        std::cerr << pawc::Colors::error("\nerror: ") << "semantic analysis failed" << std::endl;
+        return 1;
+    }
+    std::cout << pawc::Colors::success("  ✓ Semantic: ") << "passed" << std::endl;
     
     // Check for import statements (determine if module compilation is needed)
     bool has_imports = false;

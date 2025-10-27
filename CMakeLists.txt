@@ -305,6 +305,8 @@ set(SOURCES
         src/diagnostics/diagnostic_engine.cpp
         src/types/type.cpp
         src/types/type_system.cpp
+        src/sema/semantic_analyzer.cpp
+        src/sema/interface_validator.cpp
         src/colors.cpp
         src/toml_parser.cpp
 )
