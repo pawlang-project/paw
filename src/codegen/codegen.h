@@ -84,12 +84,15 @@ public:
     llvm::Module* getModule() { return module_.get(); }
     
     /**
-     * @brief 应用 LLVM 优化 Pass
-     * @param level 优化级别：0=无, 1=O1, 2=O2, 3=O3, -1=Os
+     * @brief 设置优化级别
+     * @param level 优化级别：0=O0, 1=O1, 2=O2, 3=O3, -1=Os
      */
-    void applyOptimizations(int level);
+    void setOptimizationLevel(int level) { optimization_level_ = level; }
     
 private:
+    // ========== 性能优化 ==========
+    int optimization_level_ = 0;  ///< 优化级别：0=O0, 1=O1, 2=O2, 3=O3, -1=Os
+    
     // ========== LLVM核心组件 ==========
     std::unique_ptr<llvm::LLVMContext> context_;  ///< LLVM上下文
     std::unique_ptr<llvm::Module> module_;        ///< LLVM模块

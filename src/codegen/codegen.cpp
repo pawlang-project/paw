@@ -208,8 +208,24 @@ bool CodeGenerator::compileToObject(const std::string& filename) {
     auto features = "";
     llvm::TargetOptions opt;
     auto RM = std::optional<llvm::Reloc::Model>();
-    // Use new API (LLVM 21+)
-    auto target_machine = target->createTargetMachine(triple, CPU, features, opt, RM);
+    
+    // 根据优化级别设置
+    llvm::CodeGenOptLevel cg_opt_level;
+    switch (optimization_level_) {
+        case 0:  cg_opt_level = llvm::CodeGenOptLevel::None; break;     // -O0
+        case 1:  cg_opt_level = llvm::CodeGenOptLevel::Less; break;     // -O1
+        case 2:  cg_opt_level = llvm::CodeGenOptLevel::Default; break;  // -O2
+        case 3:  cg_opt_level = llvm::CodeGenOptLevel::Aggressive; break; // -O3
+        case -1: cg_opt_level = llvm::CodeGenOptLevel::Default; break;  // -Os（使用 -O2 级别）
+        default: cg_opt_level = llvm::CodeGenOptLevel::None; break;
+    }
+    
+    // Use new API (LLVM 21+) - 优化级别通过 CodeModel 参数位置传递
+    auto target_machine = target->createTargetMachine(
+        triple, CPU, features, opt, RM, 
+        std::nullopt,  // CodeModel
+        cg_opt_level   // OL (OptLevel)
+    );
     
     module_->setDataLayout(target_machine->createDataLayout());
     
