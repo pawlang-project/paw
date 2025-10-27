@@ -1416,8 +1416,17 @@ void CodeGenerator::generateStructStmt(const StructStmt* stmt) {
             // 验证接口实现
             validateInterfaceImpl(stmt->name, interface_name, stmt->methods, stmt->location);
             
-            // 注册实现关系
-            symbol_table_->registerInterfaceImpl(module_name_, stmt->name, interface_name);
+            // 注册实现关系 - 使用扩展版本
+            // 注意：内联实现没有 SupportStmt，传递 nullptr
+            symbol_table_->registerInterfaceImplExtended(
+                module_name_, 
+                stmt->name, 
+                interface_name,
+                nullptr,  // 内联实现没有独立的 SupportStmt
+                false,    // 不是泛型（Phase 1）
+                {},       // 无泛型参数
+                {}        // 无约束
+            );
         }
     }
     
@@ -1474,9 +1483,17 @@ void CodeGenerator::generateSupportStmt(const SupportStmt* stmt) {
     validateInterfaceImpl(stmt->type_name, stmt->interface_name, 
                          stmt->methods, stmt->location);
     
-    // 注册接口实现（外联）
+    // 注册接口实现（外联）- 使用扩展版本
     if (symbol_table_) {
-        symbol_table_->registerInterfaceImpl(module_name_, stmt->type_name, stmt->interface_name);
+        symbol_table_->registerInterfaceImplExtended(
+            module_name_, 
+            stmt->type_name, 
+            stmt->interface_name,
+            stmt,  // 保存 SupportStmt 指针
+            false, // 不是泛型（Phase 1）
+            {},    // 无泛型参数
+            {}     // 无约束
+        );
     }
     
     // 查找对应的struct定义，设置当前上下文
@@ -1724,6 +1741,73 @@ std::string CodeGenerator::typeToString(const Type* type) {
     
     // 使用新类型系统的 toString
     return type_system_->toString(new_type);
+}
+
+// 推断表达式的类型名
+std::string CodeGenerator::inferTypeName(const Expr* expr) {
+    if (!expr) return "";
+    
+    switch (expr->kind) {
+        case Expr::Kind::Identifier: {
+            const auto* id_expr = static_cast<const IdentifierExpr*>(expr);
+            
+            // 查找变量类型
+            auto type_it = variable_types_.find(id_expr->name);
+            if (type_it != variable_types_.end()) {
+                llvm::Type* llvm_type = type_it->second;
+                
+                // 如果是 PointerType，尝试从 struct_defs_ 反向查找类型名
+                if (llvm_type->isPointerTy() || llvm_type->isStructTy()) {
+                    for (const auto& [struct_name, struct_def] : struct_defs_) {
+                        auto struct_type = getOrCreateStructType(struct_name);
+                        if (struct_type == llvm_type || 
+                            (llvm_type->isPointerTy() && struct_type->isStructTy())) {
+                            return struct_name;
+                        }
+                    }
+                }
+                
+                // 尝试基础类型
+                if (llvm_type->isIntegerTy(32)) return "i32";
+                if (llvm_type->isIntegerTy(64)) return "i64";
+                if (llvm_type->isDoubleTy()) return "f64";
+                if (llvm_type->isFloatTy()) return "f32";
+                if (llvm_type->isIntegerTy(1)) return "bool";
+                if (llvm_type->isIntegerTy(8)) return "char";
+                
+                // 检查是否是字符串（ptr）
+                if (llvm_type->isPointerTy()) {
+                    // 可能是 string
+                    return "string";
+                }
+            }
+            break;
+        }
+        
+        case Expr::Kind::Integer:
+            return "i32";  // 默认整数类型
+        
+        case Expr::Kind::Float:
+            return "f64";  // 默认浮点类型
+        
+        case Expr::Kind::Boolean:
+            return "bool";
+        
+        case Expr::Kind::String:
+            return "string";
+        
+        default:
+            break;
+    }
+    
+    return "";
+}
+
+// 对接口方法进行名称修饰
+std::string CodeGenerator::mangleInterfaceMethod(const std::string& type_name,
+                                                  const std::string& interface_name,
+                                                  const std::string& method_name) {
+    return type_name + "::" + interface_name + "::" + method_name;
 }
 
 } // namespace pawc

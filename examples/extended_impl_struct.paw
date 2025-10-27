@@ -1,0 +1,34 @@
+// 测试扩展接口实现 - Struct 测试
+// 目标：为自定义 struct 在外部实现接口
+
+// 定义接口
+type Display = interface {
+    fn to_string(self) -> string;
+}
+
+// 定义 struct（不内联实现接口）
+type Point = struct {
+    x: i32,
+    y: i32,
+}
+
+// 外部为 Point 实现 Display 接口
+support Display for Point {
+    fn to_string(self) -> string {
+        return "Point";
+    }
+}
+
+fn main() -> i32 {
+    println("===== 扩展接口实现测试（Struct） =====");
+    
+    let p = Point { x: 10, y: 20 };
+    
+    // 调用接口方法
+    let s = p.to_string();
+    println(s);
+    
+    println("===== 测试完成 =====");
+    return 0;
+}
+

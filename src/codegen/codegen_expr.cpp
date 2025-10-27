@@ -331,6 +331,88 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
             }
         }
         
+        // 【新增】：struct方法未找到，尝试查找接口方法
+        if (symbol_table_) {
+            // 推断对象的类型名
+            std::string type_name = inferTypeName(member_expr->object.get());
+            
+            if (!type_name.empty()) {
+                // 查找所有接口实现
+                std::vector<std::string> interfaces = symbol_table_->getImplementedInterfaces(type_name);
+                
+                for (const auto& interface_name : interfaces) {
+                    // 获取接口实现信息
+                    const auto* impl = symbol_table_->getInterfaceImpl(type_name, interface_name);
+                    if (impl && impl->impl_stmt) {
+                        // 在接口实现的方法中查找
+                        for (const auto& method : impl->impl_stmt->methods) {
+                            if (method->name == member_expr->member) {
+                                // 找到接口方法！生成方法调用
+                                std::string mangled_name = mangleInterfaceMethod(
+                                    type_name, interface_name, member_expr->member
+                                );
+                                
+                                llvm::Function* method_func = module_->getFunction(mangled_name);
+                                
+                                // 如果方法还未生成，现在生成它
+                                if (!method_func) {
+                                    // 保存当前上下文
+                                    auto saved_struct = current_struct_;
+                                    auto saved_name = current_struct_name_;
+                                    
+                                    // 设置为正在实现接口的类型
+                                    auto struct_it = struct_defs_.find(type_name);
+                                    if (struct_it != struct_defs_.end()) {
+                                        current_struct_ = struct_it->second;
+                                        current_struct_name_ = type_name;
+                                    }
+                                    
+                                    // 生成接口方法
+                                    generateFunctionStmt(method.get());
+                                    method_func = functions_[method->name];
+                                    
+                                    // 恢复上下文
+                                    current_struct_ = saved_struct;
+                                    current_struct_name_ = saved_name;
+                                }
+                                
+                                if (method_func) {
+                                    // 构建参数列表
+                                    std::vector<llvm::Value*> args;
+                                    
+                                    // 第一个参数是this指针
+                                    llvm::Value* actual_obj_ptr = obj_ptr;
+                                    if (!obj_name.empty()) {
+                                        auto type_it = variable_types_.find(obj_name);
+                                        if (type_it != variable_types_.end() && type_it->second->isPointerTy()) {
+                                            actual_obj_ptr = builder_->CreateLoad(
+                                                llvm::PointerType::get(*context_, 0), 
+                                                obj_ptr, 
+                                                obj_name + "_heap_ptr"
+                                            );
+                                        }
+                                    }
+                                    args.push_back(actual_obj_ptr);
+                                    
+                                    // 其他参数
+                                    for (const auto& arg : expr->arguments) {
+                                        llvm::Value* arg_val = generateArgumentValue(arg.get());
+                                        if (arg_val) args.push_back(arg_val);
+                                    }
+                                    
+                                    // 调用方法
+                                    if (method_func->getReturnType()->isVoidTy()) {
+                                        return builder_->CreateCall(method_func, args);
+                                    }
+                                    return builder_->CreateCall(method_func, args, "interface_methodcall");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         std::cerr << "Method not found: " << member_expr->member << std::endl;
         return nullptr;
     }

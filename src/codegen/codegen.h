@@ -549,6 +549,24 @@ private:
      */
     types::Type* convertASTType(const Type* ast_type);
     
+    /**
+     * @brief 推断表达式的类型名（用于接口方法调用）
+     * @param expr 表达式节点
+     * @return 类型名（如 "i32", "Point", "Vec"）
+     */
+    std::string inferTypeName(const Expr* expr);
+    
+    /**
+     * @brief 对接口方法进行名称修饰
+     * @param type_name 类型名
+     * @param interface_name 接口名
+     * @param method_name 方法名
+     * @return 修饰后的名称（如 "i32::Display::to_string"）
+     */
+    std::string mangleInterfaceMethod(const std::string& type_name,
+                                      const std::string& interface_name,
+                                      const std::string& method_name);
+    
     // ========== 泛型系统 ==========
     
     /**

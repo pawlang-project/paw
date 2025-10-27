@@ -95,8 +95,58 @@ void SymbolTable::registerInterface(const std::string& module, const std::string
 
 void SymbolTable::registerInterfaceImpl(const std::string& module, const std::string& type_name,
                                         const std::string& interface_name) {
-    // 记录类型实现了某个接口
+    // 记录类型实现了某个接口（旧方法，保持兼容）
     type_interfaces_[type_name].push_back(interface_name);
+}
+
+void SymbolTable::registerInterfaceImplExtended(
+    const std::string& module,
+    const std::string& type_name,
+    const std::string& interface_name,
+    const SupportStmt* impl_stmt,
+    bool is_generic,
+    const std::vector<std::string>& generic_params,
+    const std::vector<std::string>& constraints
+) {
+    // 创建接口实现信息
+    InterfaceImpl impl;
+    impl.type_name = type_name;
+    impl.interface_name = interface_name;
+    impl.module = module;
+    impl.impl_stmt = impl_stmt;
+    impl.is_generic = is_generic;
+    impl.generic_params = generic_params;
+    impl.constraints = constraints;
+    
+    // 存储实现信息
+    interface_impls_[type_name][interface_name] = impl;
+    
+    // 同时记录到旧系统（保持兼容）
+    type_interfaces_[type_name].push_back(interface_name);
+    
+    // 如果是泛型实现，也存储到泛型实现列表
+    if (is_generic) {
+        generic_impls_[interface_name].push_back(impl);
+    }
+}
+
+const SymbolTable::InterfaceImpl* SymbolTable::getInterfaceImpl(
+    const std::string& type_name,
+    const std::string& interface_name
+) const {
+    // 1. 先查找精确匹配
+    auto type_it = interface_impls_.find(type_name);
+    if (type_it != interface_impls_.end()) {
+        auto interface_it = type_it->second.find(interface_name);
+        if (interface_it != type_it->second.end()) {
+            return &interface_it->second;
+        }
+    }
+    
+    // 2. 查找泛型匹配（Phase 2，暂时返回 nullptr）
+    // TODO: 实现泛型匹配逻辑
+    
+    return nullptr;
 }
 
 bool SymbolTable::typeImplementsInterface(const std::string& type_name,
@@ -108,6 +158,17 @@ bool SymbolTable::typeImplementsInterface(const std::string& type_name,
     
     const auto& interfaces = it->second;
     return std::find(interfaces.begin(), interfaces.end(), interface_name) != interfaces.end();
+}
+
+bool SymbolTable::typeImplementsInterfaceExtended(const std::string& type_name,
+                                                  const std::string& interface_name) const {
+    // 1. 先查找精确匹配
+    if (getInterfaceImpl(type_name, interface_name) != nullptr) {
+        return true;
+    }
+    
+    // 2. 检查旧系统（兼容）
+    return typeImplementsInterface(type_name, interface_name);
 }
 
 std::vector<std::string> SymbolTable::getImplementedInterfaces(const std::string& type_name) const {
