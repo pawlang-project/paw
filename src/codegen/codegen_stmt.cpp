@@ -1483,6 +1483,24 @@ void CodeGenerator::generateSupportStmt(const SupportStmt* stmt) {
     validateInterfaceImpl(stmt->type_name, stmt->interface_name, 
                          stmt->methods, stmt->location);
     
+    // 检查是否是泛型接口实现
+    bool is_generic = !stmt->generic_params.empty();
+    
+    // 提取泛型参数名和约束
+    std::vector<std::string> generic_param_names;
+    std::vector<std::string> constraints;
+    
+    if (is_generic) {
+        for (const auto& param : stmt->generic_params) {
+            generic_param_names.push_back(param.name);
+            
+            // 收集约束
+            for (const auto& constraint : param.interface_constraints) {
+                constraints.push_back(constraint);
+            }
+        }
+    }
+    
     // 注册接口实现（外联）- 使用扩展版本
     if (symbol_table_) {
         symbol_table_->registerInterfaceImplExtended(
@@ -1490,9 +1508,9 @@ void CodeGenerator::generateSupportStmt(const SupportStmt* stmt) {
             stmt->type_name, 
             stmt->interface_name,
             stmt,  // 保存 SupportStmt 指针
-            false, // 不是泛型（Phase 1）
-            {},    // 无泛型参数
-            {}     // 无约束
+            is_generic,  // 是否是泛型
+            generic_param_names,  // 泛型参数名
+            constraints  // 约束
         );
     }
     

@@ -1696,12 +1696,22 @@ StmtPtr Parser::interfaceDeclaration(Token name_token, std::vector<GenericParam>
 
 // 解析 support 块: support I for T { ... }
 StmtPtr Parser::supportDeclaration() {
-    // support InterfaceName for TypeName { methods }
+    // support<T: Display> InterfaceName for TypeName<T> { methods }
+    
+    // 1. 解析泛型参数（如 <T: Display>）
+    // parseGenericParams() 会自己检查和消费 LT 和 GT
+    std::vector<GenericParam> generic_params = parseGenericParams();
+    
+    // 2. 解析接口名
     Token interface_name = consume(TokenType::IDENTIFIER, "Expected interface name after 'support'");
+    
+    // 3. 解析 'for'
     consume(TokenType::KW_FOR, "Expected 'for' after interface name");
+    
+    // 4. 解析类型名
     Token type_name = consume(TokenType::IDENTIFIER, "Expected type name after 'for'");
     
-    // 可选：泛型参数 support I for Vec<T>
+    // 5. 可选：类型的泛型参数 support I for Vec<T>
     std::vector<TypePtr> type_generic_args;
     if (match({TokenType::LT})) {
         do {
@@ -1764,7 +1774,8 @@ StmtPtr Parser::supportDeclaration() {
     
     return std::make_unique<SupportStmt>(
         interface_name.value, type_name.value,
-        std::move(type_generic_args), std::move(methods), interface_name.location
+        std::move(type_generic_args), std::move(methods), 
+        std::move(generic_params), interface_name.location
     );
 }
 

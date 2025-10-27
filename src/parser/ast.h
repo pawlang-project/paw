@@ -741,12 +741,16 @@ struct SupportStmt : Stmt {
     std::string type_name;
     std::vector<TypePtr> type_generic_args;  // T的泛型参数（如果有）
     std::vector<std::unique_ptr<FunctionStmt>> methods;  // 方法实现
+    std::vector<GenericParam> generic_params;  // 泛型参数（如 <T: Display>）
     
     SupportStmt(const std::string& iface, const std::string& type_n,
                 std::vector<TypePtr> type_args,
-                std::vector<std::unique_ptr<FunctionStmt>> meths, const SourceLocation& loc)
+                std::vector<std::unique_ptr<FunctionStmt>> meths, 
+                std::vector<GenericParam> gen_params,
+                const SourceLocation& loc)
         : Stmt(Kind::Support, loc), interface_name(iface), type_name(type_n),
-          type_generic_args(std::move(type_args)), methods(std::move(meths)) {}
+          type_generic_args(std::move(type_args)), methods(std::move(meths)),
+          generic_params(std::move(gen_params)) {}
 };
 
 // Type别名: type Result = enum { ... }
