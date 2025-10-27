@@ -302,6 +302,7 @@ set(SOURCES
         src/codegen/codegen_fstring.cpp
         src/codegen/codegen_closure.cpp
         src/codegen/codegen_closure_capture.cpp
+        src/codegen/codegen_closure_infer.cpp
         src/codegen/codegen_type.cpp
         src/builtins/builtins.cpp
         src/module/module_loader.cpp

@@ -209,6 +209,8 @@ private:
     llvm::Value* generateSimpleClosure(const ClosureExpr* expr);
     llvm::Value* generateCapturingClosure(const ClosureExpr* expr, const std::vector<std::string>& captures);
     llvm::Type* deduceClosureReturnType(const Stmt* body);
+    llvm::Type* deduceClosureParamType(const ClosureExpr* expr, size_t param_idx);
+    void setClosureExpectedType(ClosureExpr* closure, const Type* expected_type);
     int closure_counter_ = 0;  // 闭包计数器
     
     // 闭包类型信息（用于调用）

@@ -40,20 +40,29 @@ llvm::Value* CodeGenerator::generateSimpleClosure(const ClosureExpr* expr) {
     // 无捕获的简单闭包
     std::string closure_name = "simple_closure_" + std::to_string(closure_counter_++);
     
-    // 1. 构造参数类型列表
+    // 1. 构造参数类型列表（支持类型推导）
     std::vector<llvm::Type*> param_types;
-    for (const auto& param : expr->params) {
+    for (size_t i = 0; i < expr->params.size(); ++i) {
+        const auto& param = expr->params[i];
+        
         if (!param.type) {
-            std::cerr << "Error: Closure parameter '" << param.name 
-                      << "' must have explicit type in Phase 1\n";
-            return nullptr;
+            // 需要推导
+            llvm::Type* deduced_type = deduceClosureParamType(expr, i);
+            if (!deduced_type) {
+                std::cerr << "Error: Cannot deduce type for parameter '" << param.name 
+                          << "'. Please provide explicit type annotation.\n";
+                return nullptr;
+            }
+            param_types.push_back(deduced_type);
+        } else {
+            // 显式类型
+            llvm::Type* llvm_type = convertType(param.type.get());
+            if (!llvm_type) {
+                std::cerr << "Error: Invalid type for parameter '" << param.name << "'\n";
+                return nullptr;
+            }
+            param_types.push_back(llvm_type);
         }
-        llvm::Type* llvm_type = convertType(param.type.get());
-        if (!llvm_type) {
-            std::cerr << "Error: Invalid type for parameter '" << param.name << "'\n";
-            return nullptr;
-        }
-        param_types.push_back(llvm_type);
     }
     
     // 2. 确定返回类型
