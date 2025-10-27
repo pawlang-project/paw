@@ -303,10 +303,10 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
                 // obj_ptr是alloca的地址，需要load获取实际的heap指针
                 llvm::Value* actual_obj_ptr = obj_ptr;
                 
-                // 如果有obj_name并且在variable_types_中是StructType
+                // 如果有obj_name并且在variable_types_中是PointerType（新struct语义）
                 if (!obj_name.empty()) {
                     auto type_it = variable_types_.find(obj_name);
-                    if (type_it != variable_types_.end() && type_it->second->isStructTy()) {
+                    if (type_it != variable_types_.end() && type_it->second->isPointerTy()) {
                         // obj_ptr是alloca ptr，load获取heap指针
                         actual_obj_ptr = builder_->CreateLoad(
                             llvm::PointerType::get(*context_, 0), 
