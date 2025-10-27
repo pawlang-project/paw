@@ -1,0 +1,15 @@
+// 基础f-string测试
+
+fn main() -> i32 {
+    println(f"Hello, World!");
+    
+    let x = 42;
+    println(f"The answer is {x}");
+    
+    let a = 10;
+    let b = 20;
+    println(f"{a} + {b} = {a + b}");
+    
+    return 0;
+}
+

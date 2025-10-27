@@ -964,6 +964,11 @@ ExprPtr Parser::primary() {
         return std::make_unique<StringExpr>(previous().value, previous().location);
     }
     
+    // F-String字符串插值
+    if (match({TokenType::F_STRING})) {
+        return parseFString();
+    }
+    
     // 字符字面量（转换为整数）
     if (match({TokenType::CHAR})) {
         Token ch = previous();

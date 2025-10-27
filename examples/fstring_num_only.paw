@@ -1,0 +1,8 @@
+// 测试：纯数字插值
+
+fn main() -> i32 {
+    let x = 42;
+    let msg = f"{x}";
+    return 0;
+}
+

@@ -1,0 +1,26 @@
+// 测试不同类型的f-string插值
+
+fn main() -> i32 {
+    // 整数
+    let i: i32 = 42;
+    println(f"Integer: {i}");
+    
+    // 浮点数
+    let f: f64 = 3.14159;
+    println(f"Float: {f}");
+    
+    // 布尔值
+    let b: bool = true;
+    println(f"Boolean: {b}");
+    
+    // 字符
+    let c: char = 'A';
+    println(f"Char: {c}");
+    
+    // 字符串
+    let s = "PawLang";
+    println(f"String: {s}");
+    
+    return 0;
+}
+
