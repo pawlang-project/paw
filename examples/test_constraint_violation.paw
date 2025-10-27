@@ -1,0 +1,26 @@
+// 测试约束违反是否会报错
+
+type Display = interface {
+    fn to_string(self) -> string;
+}
+
+// BadType 没有实现 Display
+type BadType = struct {
+    value: i32,
+}
+
+// Box<T> 要求 T 必须实现 Display
+type Box<T: Display> = struct {
+    data: T,
+}
+
+fn main() -> i32 {
+    println("===== 约束违反测试 =====");
+    
+    // ❌ 这应该报错：BadType 没有实现 Display
+    let b = Box { data: BadType { value: 100 } };
+    
+    println("如果看到这行，说明约束没有被检查");
+    return 0;
+}
+
