@@ -768,6 +768,35 @@ llvm::Type* CodeGenerator::instantiateGenericStruct(
         return type_it->second;  // 返回struct类型本身
     }
     
+    // 【新增】检查泛型参数约束
+    for (size_t i = 0; i < generic_struct->generic_params.size() && i < type_args.size(); i++) {
+        const auto& param = generic_struct->generic_params[i];
+        const auto& type_arg = type_args[i];
+        
+        // 获取类型参数的名称
+        std::string type_arg_name = typeToString(type_arg.get());
+        
+        // 检查所有约束
+        for (const auto& constraint : param.interface_constraints) {
+            if (symbol_table_ && !symbol_table_->typeImplementsInterfaceExtended(type_arg_name, constraint)) {
+                // 报告约束违反错误
+                std::cerr << "\033[31m\033[1merror: \033[0m\033[1mType '\033[0m" 
+                          << type_arg_name 
+                          << "\033[1m' does not implement interface '\033[0m" 
+                          << constraint 
+                          << "\033[1m'\033[0m" << std::endl;
+                std::cerr << "  Required by generic parameter '\033[1m" 
+                          << param.name << "\033[0m' in type '\033[1m" 
+                          << name << "\033[0m'" << std::endl;
+                std::cerr << "  \033[32m=\033[0m \033[1mhelp:\033[0m implement '\033[2m" 
+                          << constraint << "\033[0m' for '\033[2m" 
+                          << type_arg_name << "\033[0m'" << std::endl;
+                std::cerr << std::endl;
+                return nullptr;  // 终止实例化
+            }
+        }
+    }
+    
     // 建立类型参数映射
     std::map<std::string, std::map<std::string, llvm::Type*>> old_map = type_param_map_;
     for (size_t i = 0; i < generic_struct->generic_params.size() && i < type_args.size(); i++) {
