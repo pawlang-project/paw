@@ -1,0 +1,47 @@
+// 完整测试约束检查 - 显式泛型参数
+
+type Display = interface {
+    fn to_string(self) -> string;
+}
+
+// GoodType 实现了 Display
+type GoodType = struct(Display) {
+    value: i32,
+    
+    fn to_string(self) -> string {
+        return "GoodType";
+    }
+}
+
+// BadType 没有实现 Display  
+type BadType = struct {
+    value: i32,
+}
+
+// Box<T> 要求 T 必须实现 Display
+type Box<T: Display> = struct {
+    data: T,
+}
+
+fn main() -> i32 {
+    println("===== 完整约束检查测试 =====");
+    println("");
+    
+    // ✅ 测试1：使用实现了 Display 的类型（应该成功）
+    println("1. Box<GoodType> { ... }:");
+    let good = GoodType { value: 42 };
+    let b1 = Box<GoodType> { data: good };
+    println("  ✅ 成功创建（GoodType 实现了 Display）");
+    println("");
+    
+    // ❌ 测试2：使用没有实现 Display 的类型（应该报错）
+    println("2. Box<BadType> { ... }:");
+    let bad = BadType { value: 100 };
+    let b2 = Box<BadType> { data: bad };
+    println("  ❌ 成功创建（不应该！BadType 没有实现 Display）");
+    println("");
+    
+    println("===== 如果看到测试2成功，说明约束检查失败 =====");
+    return 0;
+}
+

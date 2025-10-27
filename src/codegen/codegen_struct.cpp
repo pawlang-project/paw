@@ -97,24 +97,44 @@ llvm::Value* CodeGenerator::generateTupleLiteralExpr(const TupleLiteralExpr* exp
 }
 
 llvm::Value* CodeGenerator::generateStructLiteralExpr(const StructLiteralExpr* expr) {
-    // Resolve generic struct name (if in generic context)
-    std::string resolved_name = resolveGenericStructName(expr->type_name);
-    
-    // First look up directly from struct_types_ (support generic instances like Box_i32)
-    auto type_it = struct_types_.find(resolved_name);
+    std::string resolved_name;
     llvm::StructType* struct_type = nullptr;
     
-    if (type_it != struct_types_.end()) {
-        struct_type = type_it->second;
+    // 【新增】如果有显式泛型参数，实例化泛型struct
+    if (!expr->type_arguments.empty()) {
+        // Box<i32> { data: 42 } → 实例化 Box<i32>
+        llvm::Type* instantiated = instantiateGenericStruct(expr->type_name, expr->type_arguments);
+        
+        if (!instantiated) {
+            std::cerr << "\033[31m\033[1mfatal error: \033[0mConstraint validation failed, aborting compilation\033[0m" << std::endl;
+            // 返回一个dummy值以避免崩溃，但会导致后续验证失败
+            return llvm::ConstantPointerNull::get(llvm::PointerType::get(*context_, 0));
+        }
+        
+        struct_type = llvm::cast<llvm::StructType>(instantiated);
+        
+        // 使用修饰名称
+        resolved_name = mangleGenericName(expr->type_name, expr->type_arguments);
     } else {
-        // If not found directly, try through getOrCreateStructType
-        struct_type = getOrCreateStructType(resolved_name);
-    }
-    
-    if (!struct_type) {
-        std::cerr << "Unknown struct type: " << expr->type_name 
-                  << " (resolved: " << resolved_name << ")" << std::endl;
-        return nullptr;
+        // 原有逻辑：没有显式泛型参数
+        // Resolve generic struct name (if in generic context)
+        resolved_name = resolveGenericStructName(expr->type_name);
+        
+        // First look up directly from struct_types_ (support generic instances like Box_i32)
+        auto type_it = struct_types_.find(resolved_name);
+        
+        if (type_it != struct_types_.end()) {
+            struct_type = type_it->second;
+        } else {
+            // If not found directly, try through getOrCreateStructType
+            struct_type = getOrCreateStructType(resolved_name);
+        }
+        
+        if (!struct_type) {
+            std::cerr << "Unknown struct type: " << expr->type_name 
+                      << " (resolved: " << resolved_name << ")" << std::endl;
+            return nullptr;
+        }
     }
     
     // 1. Allocate temporary struct on stack
@@ -778,7 +798,12 @@ llvm::Type* CodeGenerator::instantiateGenericStruct(
         
         // 检查所有约束
         for (const auto& constraint : param.interface_constraints) {
-            if (symbol_table_ && !symbol_table_->typeImplementsInterfaceExtended(type_arg_name, constraint)) {
+            bool implements = false;
+            if (symbol_table_) {
+                implements = symbol_table_->typeImplementsInterfaceExtended(type_arg_name, constraint);
+            }
+            
+            if (!implements) {
                 // 报告约束违反错误
                 std::cerr << "\033[31m\033[1merror: \033[0m\033[1mType '\033[0m" 
                           << type_arg_name 

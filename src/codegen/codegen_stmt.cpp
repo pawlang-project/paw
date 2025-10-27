@@ -1402,6 +1402,23 @@ void CodeGenerator::generateStructStmt(const StructStmt* stmt) {
         symbol_table_->registerType(module_name_, stmt->name, stmt->is_public, struct_type, stmt);
     }
     
+    // 【优化】先注册接口实现关系，再生成方法
+    // 这样约束检查时可以正确识别内联实现
+    if (symbol_table_) {
+        for (const auto& interface_name : stmt->interfaces) {
+            // 注册实现关系 - 使用扩展版本（先注册）
+            symbol_table_->registerInterfaceImplExtended(
+                module_name_, 
+                stmt->name, 
+                interface_name,
+                nullptr,  // 内联实现没有独立的 SupportStmt
+                false,    // 不是泛型（Phase 1）
+                {},       // 无泛型参数
+                {}        // 无约束
+            );
+        }
+    }
+    
     // 生成struct内的方法
     current_struct_ = stmt;
     current_struct_name_ = stmt->name;
@@ -1417,23 +1434,11 @@ void CodeGenerator::generateStructStmt(const StructStmt* stmt) {
         }
     }
     
-    // 验证并注册接口实现（内联）
+    // 验证接口实现（内联）
     if (symbol_table_) {
         for (const auto& interface_name : stmt->interfaces) {
             // 验证接口实现
             validateInterfaceImpl(stmt->name, interface_name, stmt->methods, stmt->location);
-            
-            // 注册实现关系 - 使用扩展版本
-            // 注意：内联实现没有 SupportStmt，传递 nullptr
-            symbol_table_->registerInterfaceImplExtended(
-                module_name_, 
-                stmt->name, 
-                interface_name,
-                nullptr,  // 内联实现没有独立的 SupportStmt
-                false,    // 不是泛型（Phase 1）
-                {},       // 无泛型参数
-                {}        // 无约束
-            );
         }
     }
     
@@ -1486,10 +1491,6 @@ void CodeGenerator::generateInterfaceStmt(const InterfaceStmt* stmt) {
 }
 
 void CodeGenerator::generateSupportStmt(const SupportStmt* stmt) {
-    // 验证接口实现
-    validateInterfaceImpl(stmt->type_name, stmt->interface_name, 
-                         stmt->methods, stmt->location);
-    
     // 检查是否是泛型接口实现
     bool is_generic = !stmt->generic_params.empty();
     
@@ -1508,7 +1509,8 @@ void CodeGenerator::generateSupportStmt(const SupportStmt* stmt) {
         }
     }
     
-    // 注册接口实现（外联）- 使用扩展版本
+    // 【关键】先注册接口实现，再验证
+    // 这样约束检查时可以立即看到实现关系
     if (symbol_table_) {
         symbol_table_->registerInterfaceImplExtended(
             module_name_, 
@@ -1520,6 +1522,10 @@ void CodeGenerator::generateSupportStmt(const SupportStmt* stmt) {
             constraints  // 约束
         );
     }
+    
+    // 验证接口实现（在注册之后）
+    validateInterfaceImpl(stmt->type_name, stmt->interface_name, 
+                         stmt->methods, stmt->location);
     
     // 检查是否是内置类型
     bool is_builtin = isBuiltinType(stmt->type_name);

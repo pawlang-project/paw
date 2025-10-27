@@ -1101,30 +1101,11 @@ ExprPtr Parser::primary() {
                 
                 consume(TokenType::RBRACE, "Expected '}' after struct literal");
                 
-                // 生成泛型类型名（Box<i32> → Box_i32）
-                std::string mangled_name = name_token.value;
-                for (const auto& arg : type_args) {
-                    mangled_name += "_";
-                    if (arg->kind == Type::Kind::Named) {
-                        const NamedTypeNode* named = static_cast<const NamedTypeNode*>(arg.get());
-                        mangled_name += named->name;
-                    } else if (arg->kind == Type::Kind::Primitive) {
-                        const PrimitiveTypeNode* prim = static_cast<const PrimitiveTypeNode*>(arg.get());
-                        switch (prim->prim_type) {
-                            case PrimitiveType::I32: mangled_name += "i32"; break;
-                            case PrimitiveType::I64: mangled_name += "i64"; break;
-                            case PrimitiveType::STRING: mangled_name += "string"; break;
-                            default: mangled_name += "T"; break;
-                        }
-                    } else if (arg->kind == Type::Kind::Generic) {
-                        // 泛型参数（K, V等）在泛型函数内部
-                        const GenericTypeNode* gen = static_cast<const GenericTypeNode*>(arg.get());
-                        mangled_name += gen->name;  // 添加参数名（K, V等）
-                    }
-                }
-                
+                // 【修改】保留原始名称和type_arguments，让CodeGen处理
+                // 不在Parser中生成mangled_name
                 return std::make_unique<StructLiteralExpr>(
-                    mangled_name, std::move(field_inits), name_token.location
+                    name_token.value, std::move(field_inits), 
+                    std::move(type_args), name_token.location
                 );
             } else {
                 // 回退
@@ -1132,29 +1113,50 @@ ExprPtr Parser::primary() {
             }
         }
         
+        // 解析可选的泛型参数: Box<i32>
+        std::vector<TypePtr> type_arguments;
+        if (match({TokenType::LT})) {
+            do {
+                type_arguments.push_back(parseType());
+            } while (match({TokenType::COMMA}));
+            consume(TokenType::GT, "Expected '>' after generic arguments");
+        }
+        
         // 检查是否是普通struct literal: Type { field: value, ... }
+        // 或泛型struct: Type<T1, T2> { field: value, ... }
         // 使用符号表：只有已注册的类型才能构造
-        if (isRegisteredType(name_token.value) && match({TokenType::LBRACE})) {
-            std::vector<FieldInit> field_inits;
+        if (isRegisteredType(name_token.value)) {
             
-            while (!check(TokenType::RBRACE) && !isAtEnd()) {
-                Token field_name = consume(TokenType::IDENTIFIER, "Expected field name");
-                consume(TokenType::COLON, "Expected ':' after field name");
-                auto field_value = expression();
+            if (match({TokenType::LBRACE})) {
+                std::vector<FieldInit> field_inits;
                 
-                FieldInit field_init;
-                field_init.name = field_name.value;
-                field_init.value = std::move(field_value);
-                field_inits.push_back(std::move(field_init));
+                while (!check(TokenType::RBRACE) && !isAtEnd()) {
+                    Token field_name = consume(TokenType::IDENTIFIER, "Expected field name");
+                    consume(TokenType::COLON, "Expected ':' after field name");
+                    auto field_value = expression();
+                    
+                    FieldInit field_init;
+                    field_init.name = field_name.value;
+                    field_init.value = std::move(field_value);
+                    field_inits.push_back(std::move(field_init));
+                    
+                    if (!match({TokenType::COMMA})) break;
+                }
                 
-                if (!match({TokenType::COMMA})) break;
+                consume(TokenType::RBRACE, "Expected '}' after struct literal");
+                
+                // 如果有显式泛型参数，使用新构造函数
+                if (!type_arguments.empty()) {
+                    return std::make_unique<StructLiteralExpr>(
+                        name_token.value, std::move(field_inits), 
+                        std::move(type_arguments), name_token.location
+                    );
+                } else {
+                    return std::make_unique<StructLiteralExpr>(
+                        name_token.value, std::move(field_inits), name_token.location
+                    );
+                }
             }
-            
-            consume(TokenType::RBRACE, "Expected '}' after struct literal");
-            
-            return std::make_unique<StructLiteralExpr>(
-                name_token.value, std::move(field_inits), name_token.location
-            );
         }
         
         return std::make_unique<IdentifierExpr>(name_token.value, name_token.location);

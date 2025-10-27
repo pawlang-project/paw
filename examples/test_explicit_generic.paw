@@ -1,0 +1,35 @@
+// 测试显式泛型参数语法 Box<i32> { ... }
+
+type Display = interface {
+    fn to_string(self) -> string;
+}
+
+// 定义实现了 Display 的类型
+type Point = struct(Display) {
+    x: i32,
+    y: i32,
+    
+    fn to_string(self) -> string {
+        return "Point";
+    }
+}
+
+// 定义泛型 Box<T> with 约束
+type Box<T: Display> = struct {
+    data: T,
+}
+
+fn main() -> i32 {
+    println("===== 显式泛型参数测试 =====");
+    
+    // ✅ 测试：Box<Point> { data: ... }
+    println("1. 创建 Box<Point>:");
+    let p = Point { x: 10, y: 20 };
+    let b = Box<Point> { data: p };
+    println("  ✅ Box<Point> 创建成功");
+    println("");
+    
+    println("===== 测试完成 =====");
+    return 0;
+}
+

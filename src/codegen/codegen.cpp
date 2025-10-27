@@ -154,10 +154,23 @@ bool CodeGenerator::generate(const Program& program) {
         }
     }
     
-    // Second pass: Generate other statements (functions, etc.)
+    // Second pass: Process Interface and Support statements
+    // This ensures interface implementations are registered before type checking
     for (const auto& stmt : program.statements) {
-        // Skip already processed type definitions
-        if (stmt->kind != Stmt::Kind::Struct && stmt->kind != Stmt::Kind::Enum) {
+        if (stmt->kind == Stmt::Kind::Interface) {
+            generateStmt(stmt.get());
+        } else if (stmt->kind == Stmt::Kind::Support) {
+            generateStmt(stmt.get());
+        }
+    }
+    
+    // Third pass: Generate other statements (functions, etc.)
+    for (const auto& stmt : program.statements) {
+        // Skip already processed statements
+        if (stmt->kind != Stmt::Kind::Struct && 
+            stmt->kind != Stmt::Kind::Enum &&
+            stmt->kind != Stmt::Kind::Interface &&
+            stmt->kind != Stmt::Kind::Support) {
             generateStmt(stmt.get());
         }
     }

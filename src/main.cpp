@@ -317,6 +317,7 @@ int main(int argc, char* argv[]) {
     
     // 使用 Pass-Based 架构进行语义分析
     pawc::TypeSystem type_system;
+    pawc::SymbolTable symbol_table;  // 创建SymbolTable
     pawc::CompilationUnit unit(input_file, &program, &type_system, &diagnostics);
     
     pawc::PassManager pass_manager(false);
@@ -328,8 +329,8 @@ int main(int argc, char* argv[]) {
     }
     std::cout << pawc::Colors::success("  ✓ Semantic: ") << "passed" << std::endl;
     
-    // 代码生成
-    pawc::CodeGenerator codegen("pawc_module");
+    // 代码生成（传递SymbolTable）
+    pawc::CodeGenerator codegen("pawc_module", &symbol_table);
     codegen.setOptimizationLevel(opt_level);  // 设置优化级别
     
     if (!codegen.generate(program)) {

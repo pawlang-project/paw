@@ -1,0 +1,37 @@
+// 约束检查成功案例测试
+
+type Display = interface {
+    fn to_string(self) -> string;
+}
+
+// GoodType 实现了 Display
+type GoodType = struct {
+    value: i32,
+}
+
+support Display for GoodType {
+    fn to_string(self) -> string {
+        return "GoodType";
+    }
+}
+
+// Box<T> 要求 T 必须实现 Display
+type Box<T: Display> = struct {
+    data: T,
+}
+
+fn main() -> i32 {
+    println("===== 约束检查成功案例测试 =====");
+    println("");
+    
+    // ✅ 使用实现了 Display 的类型（应该成功）
+    println("创建 Box<GoodType>:");
+    let good = GoodType { value: 42 };
+    let b = Box<GoodType> { data: good };
+    println("  ✅ 成功创建！");
+    println("");
+    
+    println("===== 测试完成 - 约束检查正常工作 =====");
+    return 0;
+}
+

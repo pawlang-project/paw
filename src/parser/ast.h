@@ -389,9 +389,15 @@ struct FieldInit {
 struct StructLiteralExpr : Expr {
     std::string type_name;
     std::vector<FieldInit> fields;
+    std::vector<TypePtr> type_arguments;  // 显式泛型参数，如 Box<i32> { ... }
     
     StructLiteralExpr(const std::string& name, std::vector<FieldInit> flds, const SourceLocation& loc)
         : Expr(Kind::StructLiteral, loc), type_name(name), fields(std::move(flds)) {}
+    
+    StructLiteralExpr(const std::string& name, std::vector<FieldInit> flds, 
+                      std::vector<TypePtr> type_args, const SourceLocation& loc)
+        : Expr(Kind::StructLiteral, loc), type_name(name), fields(std::move(flds)),
+          type_arguments(std::move(type_args)) {}
 };
 
 struct EnumVariantExpr : Expr {

@@ -128,6 +128,9 @@ void SymbolTable::registerInterfaceImplExtended(
     if (is_generic) {
         generic_impls_[interface_name].push_back(impl);
     }
+    
+    // 【调试】注册成功（可选）
+    // std::cerr << "[SymbolTable] 注册接口实现: " << type_name << " → " << interface_name << std::endl;
 }
 
 const SymbolTable::InterfaceImpl* SymbolTable::getInterfaceImpl(
