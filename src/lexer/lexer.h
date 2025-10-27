@@ -45,6 +45,7 @@ public:
     Token identifier();
     Token number();
     Token string();
+    Token fstring();  // f-string interpolation
     Token charLiteral();
     
     // 关键字检查

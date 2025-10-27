@@ -88,6 +88,7 @@ private:
     ExprPtr matchExpression();
     ExprPtr logicalOr();
     ExprPtr logicalAnd();
+    ExprPtr parseFString();  // f-string interpolation
     ExprPtr equality();
     ExprPtr comparison();
     ExprPtr term();

@@ -58,6 +58,7 @@ enum class TokenType {
     INTEGER,
     FLOAT,
     STRING,
+    F_STRING,       // f"..." (string interpolation)
     CHAR,
     
     // Operators

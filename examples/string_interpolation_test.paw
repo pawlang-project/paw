@@ -1,0 +1,38 @@
+// 字符串插值测试
+
+fn main() -> i32 {
+    // 基础变量插值
+    let name = "Alice";
+    println(f"Hello, {name}!");
+    
+    // 多个变量
+    let x = 10;
+    let y = 20;
+    println(f"x={x}, y={y}, sum={x+y}");
+    
+    // 不同类型
+    let i: i32 = 42;
+    let f: f64 = 3.14;
+    let b: bool = true;
+    let c: char = 'A';
+    println(f"i={i}, f={f}, b={b}, c={c}");
+    
+    // 表达式
+    println(f"2 + 3 = {2 + 3}");
+    println(f"10 * 5 = {10 * 5}");
+    
+    // 转义
+    println(f"Use {{braces}} for literal");
+    
+    // 空f-string
+    let empty = f"";
+    println(empty);
+    
+    // 只有插值
+    let num = 100;
+    let only_interp = f"{num}";
+    println(only_interp);
+    
+    return 0;
+}
+

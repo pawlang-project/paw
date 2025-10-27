@@ -1,0 +1,9 @@
+// 简单的f-string测试
+
+fn main() -> i32 {
+    let x = 42;
+    let msg = f"{x}";
+    println(msg);
+    return 0;
+}
+

@@ -115,7 +115,7 @@ struct ReferenceTypeNode : Type {
 
 struct Expr {
     enum class Kind {
-        Integer, Float, Boolean, String, Identifier,
+        Integer, Float, Boolean, String, FString, Identifier,
         Binary, Unary, Call, Index, Assign,
         MemberAccess,      // obj.field
         StructLiteral,     // Counter { value: 10 }
@@ -167,6 +167,15 @@ struct StringExpr : Expr {
     
     StringExpr(const std::string& v, const SourceLocation& loc)
         : Expr(Kind::String, loc), value(v) {}
+};
+
+// F-String interpolation expression
+struct FStringExpr : Expr {
+    std::vector<std::string> parts;        // 字符串片段
+    std::vector<ExprPtr> expressions;      // 插值表达式
+    
+    FStringExpr(std::vector<std::string> p, std::vector<ExprPtr> e, const SourceLocation& loc)
+        : Expr(Kind::FString, loc), parts(std::move(p)), expressions(std::move(e)) {}
 };
 
 struct IdentifierExpr : Expr {

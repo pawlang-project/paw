@@ -92,6 +92,14 @@ namespace pawc
 
         char c = advance();
 
+        // F-String (f"...")
+        // 必须在identifier之前检查
+        if (c == 'f' && peek() == '"')
+        {
+            advance();  // 跳过 "
+            return fstring();
+        }
+
         // Identifier or keyword
         if (std::isalpha(c) || c == '_')
         {
@@ -355,6 +363,129 @@ namespace pawc
         advance(); // closing "
 
         return Token(TokenType::STRING, value, SourceLocation(filename_, line_, start_column));
+    }
+    
+    Token Lexer::fstring()
+    {
+        // f"..." 字符串插值
+        // 格式：parts 和 expressions 用特殊分隔符编码
+        // 编码格式：<count>|part0|expr0|part1|expr1|...
+        
+        size_t start = current_;
+        int start_column = column_ - 2;  // f" 两个字符
+        
+        std::vector<std::string> parts;
+        std::vector<std::string> expressions;
+        std::string current_part;
+        
+        while (!isAtEnd() && peek() != '"')
+        {
+            if (peek() == '{')
+            {
+                if (peekNext() == '{')
+                {
+                    // {{ -> 字面量 {
+                    current_part += '{';
+                    advance();  // 跳过第一个 {
+                    advance();  // 跳过第二个 {
+                }
+                else
+                {
+                    // 表达式开始
+                    parts.push_back(current_part);
+                    current_part = "";
+                    
+                    advance();  // 跳过 {
+                    
+                    // 提取表达式（直到遇到 }）
+                    std::string expr;
+                    int brace_count = 1;  // 支持嵌套花括号
+                    
+                    while (!isAtEnd() && brace_count > 0)
+                    {
+                        char ch = peek();
+                        if (ch == '{') {
+                            brace_count++;
+                        } else if (ch == '}') {
+                            brace_count--;
+                            if (brace_count == 0) break;
+                        }
+                        expr += advance();
+                    }
+                    
+                    if (isAtEnd() || peek() != '}')
+                    {
+                        // 错误：未闭合的插值
+                        return Token(TokenType::INVALID, "Unclosed interpolation expression", 
+                                   SourceLocation(filename_, line_, column_));
+                    }
+                    
+                    advance();  // 跳过 }
+                    
+                    if (expr.empty())
+                    {
+                        // 错误：空表达式
+                        return Token(TokenType::INVALID, "Empty interpolation expression",
+                                   SourceLocation(filename_, line_, column_));
+                    }
+                    
+                    expressions.push_back(expr);
+                }
+            }
+            else if (peek() == '}' && peekNext() == '}')
+            {
+                // }} -> 字面量 }
+                current_part += '}';
+                advance();
+                advance();
+            }
+            else if (peek() == '\\')
+            {
+                // 转义字符
+                advance();
+                if (!isAtEnd())
+                {
+                    char escaped = advance();
+                    switch (escaped)
+                    {
+                    case 'n': current_part += '\n'; break;
+                    case 't': current_part += '\t'; break;
+                    case 'r': current_part += '\r'; break;
+                    case '\\': current_part += '\\'; break;
+                    case '"': current_part += '"'; break;
+                    default: current_part += escaped;
+                    }
+                }
+            }
+            else
+            {
+                current_part += advance();
+            }
+        }
+        
+        if (isAtEnd())
+        {
+            return Token(TokenType::INVALID, "Unterminated f-string", 
+                       SourceLocation(filename_, line_, start_column));
+        }
+        
+        advance();  // 跳过结束的 "
+        
+        // 添加最后一个部分
+        parts.push_back(current_part);
+        
+        // 编码为特殊格式：<part_count>|part0|expr0|part1|expr1|...
+        std::string encoded = std::to_string(parts.size());
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            encoded += "|" + parts[i];
+            if (i < expressions.size())
+            {
+                encoded += "|" + expressions[i];
+            }
+        }
+        
+        return Token(TokenType::F_STRING, encoded, SourceLocation(filename_, line_, start_column));
     }
 
     Token Lexer::charLiteral()

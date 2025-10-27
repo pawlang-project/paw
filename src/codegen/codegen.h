@@ -195,6 +195,15 @@ private:
      */
     llvm::Value* generateExpr(const Expr* expr);
     
+    // F-String 相关
+    llvm::Value* generateFStringExpr(const FStringExpr* expr);
+    llvm::Value* createStringConstant(const std::string& str);
+    llvm::Value* concatenateStrings(llvm::Value* left, llvm::Value* right);
+    llvm::Value* convertToString(llvm::Value* value, Type* type);
+    llvm::Value* intToString(llvm::Value* value);
+    llvm::Value* floatToString(llvm::Value* value);
+    llvm::Value* charToString(llvm::Value* value);
+    
     /**
      * @brief 生成标识符表达式
      * @param expr 标识符表达式节点
