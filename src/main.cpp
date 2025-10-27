@@ -77,14 +77,21 @@ void printUsage(const char* program_name) {
     std::cout << "\nUsage: " << program_name << " [options] <input-file>\n\n";
     std::cout << "Options:\n";
     std::cout << "  -o <file>       Write output to <file> (default: executable)\n";
+    std::cout << "  -O<level>       Optimization level: 0, 1, 2, 3, s (default: 0)\n";
     std::cout << "  --emit-llvm     Emit LLVM IR instead of executable\n";
     std::cout << "  --emit-obj      Emit object file (.o) instead of executable\n";
     std::cout << "  --print-ast     Print the Abstract Syntax Tree\n";
     std::cout << "  --print-ir      Print LLVM IR to stdout\n";
     std::cout << "  -h, --help      Show this help message\n";
+    std::cout << "\nOptimization Levels:\n";
+    std::cout << "  -O0             No optimization (fastest compile, debugging)\n";
+    std::cout << "  -O1             Basic optimization\n";
+    std::cout << "  -O2             Standard optimization (recommended)\n";
+    std::cout << "  -O3             Aggressive optimization\n";
+    std::cout << "  -Os             Optimize for size\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << program_name << " program.paw              # Generate executable ./a.out\n";
-    std::cout << "  " << program_name << " program.paw -o hello    # Generate executable ./hello\n";
+    std::cout << "  " << program_name << " program.paw -O2 -o hello # Generate optimized executable ./hello\n";
     std::cout << "  " << program_name << " program.paw --emit-obj  # Generate object file output.o\n";
     std::cout << "  " << program_name << " program.paw --emit-llvm # Generate LLVM IR output.ll\n";
 }
@@ -119,6 +126,7 @@ int main(int argc, char* argv[]) {
     
     std::string input_file;
     std::string output_file;
+    int opt_level = 0;  // 优化级别：0-3, -1 表示 Os
     bool emit_llvm = false;
     bool emit_obj = false;
     bool print_ir = false;
@@ -140,6 +148,24 @@ int main(int argc, char* argv[]) {
             std::cout << pawc::Colors::warning("Warning: --print-ast not yet implemented") << std::endl;
         } else if (arg == "--print-ir") {
             print_ir = true;
+        } else if (arg.substr(0, 2) == "-O") {
+            // 优化级别：-O0, -O1, -O2, -O3, -Os
+            if (arg.length() == 3) {
+                char level = arg[2];
+                if (level >= '0' && level <= '3') {
+                    opt_level = level - '0';
+                } else if (level == 's' || level == 'S') {
+                    opt_level = -1;  // Os
+                } else {
+                    std::cerr << "Invalid optimization level: " << arg << std::endl;
+                    return 1;
+                }
+            } else if (arg == "-O") {
+                opt_level = 1;  // -O 等同于 -O1
+            } else {
+                std::cerr << "Invalid optimization option: " << arg << std::endl;
+                return 1;
+            }
         } else if (arg[0] != '-') {
             input_file = arg;
         } else {

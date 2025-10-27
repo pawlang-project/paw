@@ -96,6 +96,9 @@ private:
     // module_name -> symbol_name -> Symbol
     std::map<std::string, std::map<std::string, Symbol>> module_symbols_;
     
+    // 性能优化：符号索引 (全局唯一名 -> Symbol*)
+    std::map<std::string, Symbol*> symbol_index_;
+    
     // 接口实现关系: type_name -> [interface_names]
     std::map<std::string, std::vector<std::string>> type_interfaces_;
 };

@@ -13,6 +13,7 @@
 
 #include "type.h"
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <vector>
 
@@ -172,6 +173,9 @@ private:
      * 辅助方法：克隆类型向量
      */
     std::vector<std::unique_ptr<types::Type>> cloneTypeVector(const std::vector<std::unique_ptr<types::Type>>& types);
+    
+    // 性能优化：缓存类型字符串表示
+    mutable std::unordered_map<const types::Type*, std::string> string_cache_;
 };
 
 } // namespace pawc

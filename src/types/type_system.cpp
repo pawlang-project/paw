@@ -135,7 +135,18 @@ bool TypeSystem::isSubtype(const types::Type* sub, const types::Type* super) {
 }
 
 std::string TypeSystem::toString(const types::Type* type) {
-    return type ? type->toString() : "null";
+    if (!type) return "null";
+    
+    // 性能优化：检查缓存
+    auto it = string_cache_.find(type);
+    if (it != string_cache_.end()) {
+        return it->second;
+    }
+    
+    // 计算并缓存
+    std::string result = type->toString();
+    string_cache_[type] = result;
+    return result;
 }
 
 // ============================================================================
