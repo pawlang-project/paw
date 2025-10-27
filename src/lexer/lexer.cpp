@@ -36,9 +36,27 @@ namespace pawc
         {"unsafe", TokenType::KW_UNSAFE}
     };
 
-    Lexer::Lexer(const std::string& source, const std::string& filename)
-        : source_(source), filename_(filename), current_(0), line_(1), column_(1)
+    Lexer::Lexer(const std::string& source, const std::string& filename, StringPool* string_pool)
+        : source_(source), filename_(filename), string_pool_(string_pool), current_(0), line_(1), column_(1)
     {
+        // 如果提供了 string_pool，预先驻留常用关键字和类型名
+        if (string_pool_) {
+            // 驻留原始类型名
+            string_pool_->intern("i8");
+            string_pool_->intern("i16");
+            string_pool_->intern("i32");
+            string_pool_->intern("i64");
+            string_pool_->intern("u8");
+            string_pool_->intern("u16");
+            string_pool_->intern("u32");
+            string_pool_->intern("u64");
+            string_pool_->intern("f32");
+            string_pool_->intern("f64");
+            string_pool_->intern("bool");
+            string_pool_->intern("char");
+            string_pool_->intern("string");
+            string_pool_->intern("void");
+        }
     }
 
     std::vector<Token> Lexer::tokenize()
@@ -253,6 +271,15 @@ namespace pawc
 
         std::string text = source_.substr(start, current_ - start);
         TokenType type = checkKeyword(text);
+
+        // 性能优化：如果启用了字符串池，驻留标识符
+        if (string_pool_ && type == TokenType::IDENTIFIER) {
+            // 对于标识符，使用驻留字符串
+            std::string_view interned = string_pool_->intern(text);
+            Token token(type, "", SourceLocation(filename_, line_, start_column));
+            token.value = std::string(interned);  // 从驻留字符串创建
+            return token;
+        }
 
         return Token(type, text, SourceLocation(filename_, line_, start_column));
     }

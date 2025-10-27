@@ -2,6 +2,7 @@
 #define PAWC_LEXER_H
 
 #include "pawc/common.h"
+#include "pawc/string_pool.h"
 #include <string>
 #include <vector>
 
@@ -9,7 +10,7 @@ namespace pawc {
 
 class Lexer {
 public:
-    explicit Lexer(const std::string& source, const std::string& filename = "<stdin>");
+    explicit Lexer(const std::string& source, const std::string& filename = "<stdin>", StringPool* string_pool = nullptr);
     
     // 获取所有tokens
     std::vector<Token> tokenize();
@@ -23,12 +24,13 @@ public:
     // 是否到达文件末尾
     bool isAtEnd() const;
     
-private:
-    std::string source_;
-    std::string filename_;
-    size_t current_;
-    int line_;
-    int column_;
+    private:
+        std::string source_;
+        std::string filename_;
+        StringPool* string_pool_;  // 可选的字符串池
+        size_t current_;
+        int line_;
+        int column_;
     
     // 辅助方法
     char advance();

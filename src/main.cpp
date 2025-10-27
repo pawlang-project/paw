@@ -221,8 +221,11 @@ int main(int argc, char* argv[]) {
     source_manager.addSource(input_file, source);
     pawc::DiagnosticEngine diagnostics(&source_manager);
     
-    // Lexical analysis
-    pawc::Lexer lexer(source, input_file);
+    // 性能优化：创建字符串池
+    pawc::StringPool string_pool;
+    
+    // Lexical analysis（使用字符串池）
+    pawc::Lexer lexer(source, input_file, &string_pool);
     std::vector<pawc::Token> tokens = lexer.tokenize();
     std::cout << pawc::Colors::success("  ✓ Lexer: ") << tokens.size() << " tokens" << std::endl;
     
