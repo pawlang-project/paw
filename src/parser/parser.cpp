@@ -31,6 +31,8 @@ Parser::Parser(const std::vector<Token>& tokens, DiagnosticEngine* diag_engine, 
 
 Program Parser::parse() {
     Program program;
+    // 性能优化：预分配语句容器（估计至少 50 个语句）
+    program.statements.reserve(50);
     
     while (!isAtEnd()) {
         try {

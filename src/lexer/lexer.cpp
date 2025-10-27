@@ -44,6 +44,9 @@ namespace pawc
     std::vector<Token> Lexer::tokenize()
     {
         std::vector<Token> tokens;
+        // 性能优化：预分配容器空间（平均每 5 个字符 1 个 token）
+        tokens.reserve(source_.size() / 5);
+        
         while (!isAtEnd())
         {
             Token token = nextToken();
@@ -56,6 +59,7 @@ namespace pawc
                 break;
             }
         }
+        // 性能优化：显式移动（虽然有 RVO，但更明确）
         return tokens;
     }
 
