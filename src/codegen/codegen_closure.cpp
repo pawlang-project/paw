@@ -8,16 +8,37 @@
 
 #include "codegen.h"
 #include "../parser/ast.h"
+#include "../parser/closure_analyzer.h"
 #include <iostream>
 
 namespace pawc {
 
 llvm::Value* CodeGenerator::generateClosureExpr(const ClosureExpr* expr) {
-    // Phase 1: 简单闭包（假设无捕获）
-    // (x: i32, y: i32) -> i32 { x + y }
-    // 转换为一个普通的内部函数
+    // Phase 2: 支持环境捕获
+    // (x: i32, y: i32) -> i32 { x + y + captured_var }
     
     std::string closure_name = "closure_" + std::to_string(closure_counter_++);
+    
+    // 分析捕获的变量
+    std::set<std::string> available_vars;
+    for (const auto& pair : named_values_) {
+        available_vars.insert(pair.first);
+    }
+    
+    std::vector<std::string> captures = ClosureAnalyzer::analyzeCapturedVars(expr, available_vars);
+    
+    // 如果有捕获，生成捕获闭包
+    if (!captures.empty()) {
+        return generateCapturingClosure(expr, captures);
+    }
+    
+    // 否则生成简单闭包（Phase 1 逻辑）
+    return generateSimpleClosure(expr);
+}
+
+llvm::Value* CodeGenerator::generateSimpleClosure(const ClosureExpr* expr) {
+    // 无捕获的简单闭包
+    std::string closure_name = "simple_closure_" + std::to_string(closure_counter_++);
     
     // 1. 构造参数类型列表
     std::vector<llvm::Type*> param_types;

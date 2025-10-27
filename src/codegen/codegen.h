@@ -206,8 +206,15 @@ private:
     
     // Closure 相关
     llvm::Value* generateClosureExpr(const ClosureExpr* expr);
+    llvm::Value* generateSimpleClosure(const ClosureExpr* expr);
+    llvm::Value* generateCapturingClosure(const ClosureExpr* expr, const std::vector<std::string>& captures);
     llvm::Type* deduceClosureReturnType(const Stmt* body);
     int closure_counter_ = 0;  // 闭包计数器
+    
+    // 闭包类型信息（用于调用）
+    std::map<std::string, llvm::FunctionType*> closure_types_;     // 存储闭包的函数类型
+    std::map<std::string, llvm::Value*> closure_environments_;     // 存储闭包的环境指针
+    llvm::Value* last_generated_closure_env_ = nullptr;            // 最近生成的闭包环境（临时）
     
     /**
      * @brief 生成标识符表达式

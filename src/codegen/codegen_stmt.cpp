@@ -310,6 +310,26 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
             }
         }
         
+        // 特殊处理：闭包 - 记录环境指针
+        if (stmt->initializer->kind == Expr::Kind::Closure) {
+            llvm::Value* closure_fn = generateExpr(stmt->initializer.get());
+            if (closure_fn) {
+                llvm::AllocaInst* alloca = builder_->CreateAlloca(
+                    llvm::PointerType::get(*context_, 0), nullptr, stmt->name
+                );
+                named_values_[stmt->name] = alloca;
+                variable_types_[stmt->name] = llvm::PointerType::get(*context_, 0);
+                builder_->CreateStore(closure_fn, alloca);
+                
+                // 如果有环境捕获，记录环境指针
+                if (last_generated_closure_env_) {
+                    closure_environments_[stmt->name] = last_generated_closure_env_;
+                    last_generated_closure_env_ = nullptr;  // 清空
+                }
+            }
+            return;
+        }
+        
         // 其他类型的初始化器：正常推导
         llvm::Value* init_val = generateExpr(stmt->initializer.get());
         if (init_val) {

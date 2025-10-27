@@ -293,6 +293,7 @@ set(SOURCES
         src/parser/parser.cpp
         src/parser/parser_fstring.cpp
         src/parser/parser_closure.cpp
+        src/parser/closure_analyzer.cpp
         src/codegen/codegen.cpp
         src/codegen/codegen_match.cpp
         src/codegen/codegen_stmt.cpp
@@ -300,6 +301,7 @@ set(SOURCES
         src/codegen/codegen_struct.cpp
         src/codegen/codegen_fstring.cpp
         src/codegen/codegen_closure.cpp
+        src/codegen/codegen_closure_capture.cpp
         src/codegen/codegen_type.cpp
         src/builtins/builtins.cpp
         src/module/module_loader.cpp

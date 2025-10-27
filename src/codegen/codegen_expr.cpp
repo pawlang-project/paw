@@ -758,37 +758,72 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
     if (closure_var_it != named_values_.end()) {
         llvm::Value* var_ptr = closure_var_it->second;
         
-        // 尝试作为闭包调用（函数指针）
-        // var_ptr 是 alloca ptr，存储的是函数指针
-        llvm::Value* fn_ptr = builder_->CreateLoad(
-            llvm::PointerType::get(*context_, 0),
-            var_ptr,
-            "closure_fn"
-        );
+        // 检查是否存储了闭包结构信息
+        auto closure_env_it = closure_environments_.find(callee_name);
         
-        // 检查加载的值是否看起来像函数
-        if (llvm::isa<llvm::Function>(fn_ptr) || fn_ptr->getType()->isPointerTy()) {
-            // 生成参数
+        if (closure_env_it != closure_environments_.end()) {
+            // 这是捕获闭包，需要传递环境指针
+            llvm::Value* env_ptr = closure_env_it->second;
+            
+            // 加载函数指针
+            llvm::Value* fn_ptr = builder_->CreateLoad(
+                llvm::PointerType::get(*context_, 0),
+                var_ptr,
+                "closure_fn"
+            );
+            
+            // 生成参数（第一个是 env）
             std::vector<llvm::Value*> args;
+            args.push_back(env_ptr);  // 环境指针
+            
             for (const auto& arg_expr : expr->arguments) {
                 llvm::Value* arg_val = generateExpr(arg_expr.get());
                 if (!arg_val) return nullptr;
                 args.push_back(arg_val);
             }
             
-            // 推导函数类型
+            // 推导函数类型（第一个参数是 env*）
             std::vector<llvm::Type*> param_types;
             for (auto* arg : args) {
                 param_types.push_back(arg->getType());
             }
             
-            // 假设返回 i32（TODO: 从类型系统获取）
             llvm::Type* return_type = llvm::Type::getInt32Ty(*context_);
             llvm::FunctionType* fn_type = llvm::FunctionType::get(
                 return_type, param_types, false
             );
             
             return builder_->CreateCall(fn_type, fn_ptr, args, "closure_call");
+        } else {
+            // 简单闭包（无捕获）
+            llvm::Value* fn_ptr = builder_->CreateLoad(
+                llvm::PointerType::get(*context_, 0),
+                var_ptr,
+                "closure_fn"
+            );
+            
+            if (llvm::isa<llvm::Function>(fn_ptr) || fn_ptr->getType()->isPointerTy()) {
+                // 生成参数
+                std::vector<llvm::Value*> args;
+                for (const auto& arg_expr : expr->arguments) {
+                    llvm::Value* arg_val = generateExpr(arg_expr.get());
+                    if (!arg_val) return nullptr;
+                    args.push_back(arg_val);
+                }
+                
+                // 推导函数类型
+                std::vector<llvm::Type*> param_types;
+                for (auto* arg : args) {
+                    param_types.push_back(arg->getType());
+                }
+                
+                llvm::Type* return_type = llvm::Type::getInt32Ty(*context_);
+                llvm::FunctionType* fn_type = llvm::FunctionType::get(
+                    return_type, param_types, false
+                );
+                
+                return builder_->CreateCall(fn_type, fn_ptr, args, "closure_call");
+            }
         }
     }
     
