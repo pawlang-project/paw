@@ -190,7 +190,7 @@ struct ClosureExpr : Expr {
     TypePtr return_type;                    // 返回类型（可选）
     StmtPtr body;                           // 函数体（块语句）
     std::vector<std::string> captures;      // 捕获的变量（分析后填充）
-    TypePtr expected_fn_type;               // 期望的函数类型（用于类型推导）
+    const Type* expected_fn_type;           // 期望的函数类型（用于类型推导，不拥有）
     
     ClosureExpr(std::vector<ClosureParam> p, TypePtr ret, StmtPtr b, const SourceLocation& loc)
         : Expr(Kind::Closure, loc), 

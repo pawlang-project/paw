@@ -310,9 +310,16 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
             }
         }
         
-        // 特殊处理：闭包 - 记录环境指针
+        // 特殊处理：闭包 - 传递期望类型并记录环境指针
         if (stmt->initializer->kind == Expr::Kind::Closure) {
-            llvm::Value* closure_fn = generateExpr(stmt->initializer.get());
+            ClosureExpr* closure = static_cast<ClosureExpr*>(stmt->initializer.get());
+            
+            // Phase 3: 如果有类型标注，传递给闭包用于类型推导
+            if (stmt->type) {
+                closure->expected_fn_type = stmt->type.get();
+            }
+            
+            llvm::Value* closure_fn = generateExpr(closure);
             if (closure_fn) {
                 llvm::AllocaInst* alloca = builder_->CreateAlloca(
                     llvm::PointerType::get(*context_, 0), nullptr, stmt->name
