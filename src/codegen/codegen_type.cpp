@@ -151,6 +151,28 @@ llvm::Type* CodeGenerator::convertType(const Type* type) {
                 return struct_type;
             }
         }
+        
+        case Type::Kind::Function: {
+            // 函数类型: fn(T1, T2) -> R
+            // 在LLVM中，函数类型作为函数指针存储
+            auto func_type = static_cast<const FunctionTypeNode*>(type);
+            
+            // 转换参数类型
+            std::vector<llvm::Type*> param_types;
+            for (const auto& param : func_type->param_types) {
+                param_types.push_back(convertType(param.get()));
+            }
+            
+            // 转换返回类型
+            llvm::Type* return_type = convertType(func_type->return_type.get());
+            
+            // 创建LLVM函数类型
+            llvm::FunctionType* fn_type = llvm::FunctionType::get(return_type, param_types, false);
+            
+            // 函数类型作为指针类型使用
+            return llvm::PointerType::get(*context_, 0);  // 函数指针
+        }
+        
         default:
             return llvm::Type::getVoidTy(*context_);
     }

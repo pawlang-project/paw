@@ -1,0 +1,9 @@
+// 最简单的类型推导测试
+
+fn main() -> i32 {
+    // Test: 单参数推导
+    let double: fn(i32) -> i32 = (x) -> { return x * 2; };
+    println(f"double(5) = {double(5)}");
+    return 0;
+}
+

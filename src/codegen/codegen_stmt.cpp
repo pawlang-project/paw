@@ -317,6 +317,14 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
             // Phase 3: 如果有类型标注，传递给闭包用于类型推导
             if (stmt->type) {
                 closure->expected_fn_type = stmt->type.get();
+                std::cerr << "[DEBUG] Setting expected type for closure. Type kind: " 
+                          << (int)stmt->type->kind << std::endl;
+                if (stmt->type->kind == Type::Kind::Function) {
+                    const FunctionTypeNode* fn = static_cast<const FunctionTypeNode*>(stmt->type.get());
+                    std::cerr << "[DEBUG] Function type has " << fn->param_types.size() << " parameters\n";
+                }
+            } else {
+                std::cerr << "[DEBUG] No type annotation for closure\n";
             }
             
             llvm::Value* closure_fn = generateExpr(closure);
@@ -1683,10 +1691,20 @@ types::Type* CodeGenerator::convertASTType(const Type* ast_type) {
             return type_system_->getTupleType(std::move(elements));
         }
         
-        case Type::Kind::Function:
-            // Function 类型节点在 AST 中可能不存在，暂时返回 nullptr
-            // 如果需要，可以稍后添加
+        case Type::Kind::Function: {
+            const auto* func = static_cast<const FunctionTypeNode*>(ast_type);
+            std::vector<std::unique_ptr<types::Type>> param_types;
+            for (const auto& param : func->param_types) {
+                if (auto conv = convertASTType(param.get())) {
+                    param_types.push_back(conv->clone());
+                }
+            }
+            auto return_type = convertASTType(func->return_type.get());
+            if (return_type) {
+                return type_system_->getFunctionType(std::move(param_types), return_type->clone());
+            }
             return nullptr;
+        }
     }
     
     return nullptr;

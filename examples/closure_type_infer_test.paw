@@ -1,0 +1,23 @@
+// 闭包参数类型推导测试
+// Phase 3: 参数类型推导（完整版）
+
+fn main() -> i32 {
+    println("=== Closure Parameter Type Inference Test ===");
+    
+    // Test 1: 完整的参数类型推导
+    // 显式声明函数类型，闭包参数类型从中推导
+    let add: fn(i32, i32) -> i32 = (x, y) -> { return x + y; };
+    println(f"1. add(10, 20) = {add(10, 20)}");
+    
+    // Test 2: 单参数类型推导
+    let double: fn(i32) -> i32 = (x) -> { return x * 2; };
+    println(f"2. double(21) = {double(21)}");
+    
+    // Test 3: 无参数闭包（不需要推导）
+    let get_value: fn() -> i32 = () -> { return 42; };
+    println(f"3. get_value() = {get_value()}");
+    
+    println("=== All type inference tests passed! ===");
+    return 0;
+}
+

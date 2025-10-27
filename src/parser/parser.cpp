@@ -1217,6 +1217,34 @@ ExprPtr Parser::primary() {
  * @param allow_slice 是否允许[T]解析为切片（函数参数中为true）
  */
 TypePtr Parser::parseType(bool allow_slice) {
+    // 函数类型: fn(T1, T2) -> R
+    if (match({TokenType::KW_FN})) {
+        Token fn_token = previous();
+        
+        consume(TokenType::LPAREN, "Expected '(' after 'fn'");
+        
+        // 解析参数类型列表
+        std::vector<TypePtr> param_types;
+        if (!check(TokenType::RPAREN)) {
+            do {
+                param_types.push_back(parseType(allow_slice));
+            } while (match({TokenType::COMMA}));
+        }
+        
+        consume(TokenType::RPAREN, "Expected ')' after function parameters");
+        
+        // 解析返回类型（可选）
+        TypePtr return_type;
+        if (match({TokenType::ARROW})) {
+            return_type = parseType(allow_slice);
+        } else {
+            // 默认返回 void
+            return_type = std::make_unique<PrimitiveTypeNode>(PrimitiveType::VOID, fn_token.location);
+        }
+        
+        return std::make_unique<FunctionTypeNode>(std::move(param_types), std::move(return_type), fn_token.location);
+    }
+    
     // 引用类型: &T 或 &mut T
     if (match({TokenType::AMPERSAND})) {
         Token amp_token = previous();

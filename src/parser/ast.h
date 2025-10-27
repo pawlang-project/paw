@@ -70,6 +70,17 @@ struct SelfTypeNode : Type {
         : Type(Kind::SelfType, loc) {}
 };
 
+// Function类型: fn(T1, T2) -> R
+struct FunctionTypeNode : Type {
+    std::vector<TypePtr> param_types;  // 参数类型
+    TypePtr return_type;               // 返回类型
+    
+    FunctionTypeNode(std::vector<TypePtr> params, TypePtr ret, const SourceLocation& loc)
+        : Type(Kind::Function, loc), 
+          param_types(std::move(params)), 
+          return_type(std::move(ret)) {}
+};
+
 // Optional类型: T?（用于错误处理）
 struct OptionalTypeNode : Type {
     TypePtr inner_type;
