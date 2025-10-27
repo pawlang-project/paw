@@ -1,0 +1,11 @@
+// 测试省略返回类型（推导）
+
+fn main() -> i32 {
+    // 省略返回类型
+    let add = (x: i32, y: i32) -> { return x + y; };
+    let result = add(15, 25);
+    println(f"add(15, 25) = {result}");
+    
+    return 0;
+}
+

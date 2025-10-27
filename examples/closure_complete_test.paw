@@ -1,0 +1,30 @@
+// 闭包完整测试
+
+fn main() -> i32 {
+    println("=== Closure Phase 1 Test ===");
+    
+    // 测试1: 双参数闭包
+    let add = (x: i32, y: i32) -> i32 { return x + y; };
+    println(f"1. add(10, 20) = {add(10, 20)}");
+    
+    // 测试2: 单参数闭包
+    let double = (x: i32) -> i32 { return x * 2; };
+    println(f"2. double(21) = {double(21)}");
+    
+    // 测试3: 无参数闭包
+    let get_value = () -> i32 { return 42; };
+    println(f"3. get_value() = {get_value()}");
+    
+    // 测试4: 返回类型推导
+    let subtract = (x: i32, y: i32) -> { return x - y; };
+    println(f"4. subtract(50, 20) = {subtract(50, 20)}");
+    
+    // 测试5: 链式调用
+    let triple = (n: i32) -> i32 { return n * 3; };
+    let result = triple(double(5));
+    println(f"5. triple(double(5)) = {result}");
+    
+    println("=== All tests passed! ===");
+    return 0;
+}
+

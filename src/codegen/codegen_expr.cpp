@@ -753,6 +753,45 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
         return builder_->CreateCall(local_func, args, "cross_module_call");
     }
     
+    // 检查是否是闭包调用（函数指针变量）
+    auto closure_var_it = named_values_.find(callee_name);
+    if (closure_var_it != named_values_.end()) {
+        llvm::Value* var_ptr = closure_var_it->second;
+        
+        // 尝试作为闭包调用（函数指针）
+        // var_ptr 是 alloca ptr，存储的是函数指针
+        llvm::Value* fn_ptr = builder_->CreateLoad(
+            llvm::PointerType::get(*context_, 0),
+            var_ptr,
+            "closure_fn"
+        );
+        
+        // 检查加载的值是否看起来像函数
+        if (llvm::isa<llvm::Function>(fn_ptr) || fn_ptr->getType()->isPointerTy()) {
+            // 生成参数
+            std::vector<llvm::Value*> args;
+            for (const auto& arg_expr : expr->arguments) {
+                llvm::Value* arg_val = generateExpr(arg_expr.get());
+                if (!arg_val) return nullptr;
+                args.push_back(arg_val);
+            }
+            
+            // 推导函数类型
+            std::vector<llvm::Type*> param_types;
+            for (auto* arg : args) {
+                param_types.push_back(arg->getType());
+            }
+            
+            // 假设返回 i32（TODO: 从类型系统获取）
+            llvm::Type* return_type = llvm::Type::getInt32Ty(*context_);
+            llvm::FunctionType* fn_type = llvm::FunctionType::get(
+                return_type, param_types, false
+            );
+            
+            return builder_->CreateCall(fn_type, fn_ptr, args, "closure_call");
+        }
+    }
+    
     // Check if it's泛型调用
     llvm::Function* callee = nullptr;
     if (!expr->type_arguments.empty()) {
