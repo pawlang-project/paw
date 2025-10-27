@@ -292,12 +292,14 @@ set(SOURCES
         src/lexer/lexer.cpp
         src/parser/parser.cpp
         src/parser/parser_fstring.cpp
+        src/parser/parser_closure.cpp
         src/codegen/codegen.cpp
         src/codegen/codegen_match.cpp
         src/codegen/codegen_stmt.cpp
         src/codegen/codegen_expr.cpp
         src/codegen/codegen_struct.cpp
         src/codegen/codegen_fstring.cpp
+        src/codegen/codegen_closure.cpp
         src/codegen/codegen_type.cpp
         src/builtins/builtins.cpp
         src/module/module_loader.cpp

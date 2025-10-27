@@ -1160,7 +1160,16 @@ ExprPtr Parser::primary() {
         return std::make_unique<IdentifierExpr>(name_token.value, name_token.location);
     }
     
-    if (match({TokenType::LPAREN})) {
+    // 闭包或元组/括号表达式
+    if (check(TokenType::LPAREN)) {
+        // 前瞻判断
+        if (isClosurePattern()) {
+            advance();  // consume (
+            return parseClosure();
+        }
+        
+        // 否则是元组或括号表达式
+        advance();  // consume (
         Token lparen = previous();
         
         // 空元组 ()

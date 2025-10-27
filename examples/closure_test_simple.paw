@@ -1,0 +1,7 @@
+// 最简单的闭包测试
+
+fn main() -> i32 {
+    let f = (x: i32) -> i32 { return x + 1; };
+    return 0;
+}
+

@@ -204,6 +204,11 @@ private:
     llvm::Value* floatToString(llvm::Value* value);
     llvm::Value* charToString(llvm::Value* value);
     
+    // Closure 相关
+    llvm::Value* generateClosureExpr(const ClosureExpr* expr);
+    llvm::Type* deduceClosureReturnType(const Stmt* body);
+    int closure_counter_ = 0;  // 闭包计数器
+    
     /**
      * @brief 生成标识符表达式
      * @param expr 标识符表达式节点

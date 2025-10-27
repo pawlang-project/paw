@@ -25,6 +25,8 @@ llvm::Value* CodeGenerator::generateExpr(const Expr* expr) {
         }
         case Expr::Kind::FString:
             return generateFStringExpr(static_cast<const FStringExpr*>(expr));
+        case Expr::Kind::Closure:
+            return generateClosureExpr(static_cast<const ClosureExpr*>(expr));
         case Expr::Kind::Identifier:
             return generateIdentifierExpr(static_cast<const IdentifierExpr*>(expr));
         case Expr::Kind::Binary:

@@ -89,6 +89,10 @@ private:
     ExprPtr logicalOr();
     ExprPtr logicalAnd();
     ExprPtr parseFString();  // f-string interpolation
+    
+    // Closure support
+    bool isClosurePattern();     // 前瞻判断是否是闭包
+    ExprPtr parseClosure();      // 解析闭包
     ExprPtr equality();
     ExprPtr comparison();
     ExprPtr term();

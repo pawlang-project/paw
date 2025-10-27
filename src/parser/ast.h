@@ -116,7 +116,7 @@ struct ReferenceTypeNode : Type {
 struct Expr {
     enum class Kind {
         Integer, Float, Boolean, String, FString, Identifier,
-        Binary, Unary, Call, Index, Assign,
+        Binary, Unary, Call, Index, Assign, Closure,
         MemberAccess,      // obj.field
         StructLiteral,     // Counter { value: 10 }
         EnumVariant,       // Result::Ok(42)
@@ -176,6 +176,26 @@ struct FStringExpr : Expr {
     
     FStringExpr(std::vector<std::string> p, std::vector<ExprPtr> e, const SourceLocation& loc)
         : Expr(Kind::FString, loc), parts(std::move(p)), expressions(std::move(e)) {}
+};
+
+// Closure parameter
+struct ClosureParam {
+    std::string name;
+    TypePtr type;  // 可选，nullptr 表示需要推导
+};
+
+// Closure expression: (x: i32, y: i32) -> i32 { body }
+struct ClosureExpr : Expr {
+    std::vector<ClosureParam> params;       // 参数列表
+    TypePtr return_type;                    // 返回类型（可选）
+    StmtPtr body;                           // 函数体（块语句）
+    std::vector<std::string> captures;      // 捕获的变量（分析后填充）
+    
+    ClosureExpr(std::vector<ClosureParam> p, TypePtr ret, StmtPtr b, const SourceLocation& loc)
+        : Expr(Kind::Closure, loc), 
+          params(std::move(p)), 
+          return_type(std::move(ret)),
+          body(std::move(b)) {}
 };
 
 struct IdentifierExpr : Expr {
