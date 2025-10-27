@@ -7,6 +7,7 @@
 #include <sstream>
 
 namespace pawc {
+namespace types {
 
 // ============================================================================
 // PrimitiveType 实现
@@ -160,5 +161,6 @@ std::unique_ptr<Type> FunctionType::clone() const {
     return std::make_unique<FunctionType>(std::move(cloned_params), return_type_->clone());
 }
 
+} // namespace types
 } // namespace pawc
 

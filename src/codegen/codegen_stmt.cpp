@@ -1567,155 +1567,124 @@ void CodeGenerator::validateInterfaceImpl(const std::string& type_name,
     }
 }
 
-bool CodeGenerator::compareTypes(const Type* a, const Type* b) {
-    // 处理nullptr（void类型）
-    if (a == nullptr && b == nullptr) return true;
-    if (a == nullptr || b == nullptr) return false;
+// AST 类型转换函数
+types::Type* CodeGenerator::convertASTType(const Type* ast_type) {
+    if (!ast_type) return nullptr;
     
-    // 检查类型种类
-    if (a->kind != b->kind) return false;
-    
-    switch (a->kind) {
+    switch (ast_type->kind) {
         case Type::Kind::Primitive: {
-            auto prim_a = static_cast<const PrimitiveTypeNode*>(a);
-            auto prim_b = static_cast<const PrimitiveTypeNode*>(b);
-            return prim_a->prim_type == prim_b->prim_type;
+            const auto* prim = static_cast<const PrimitiveTypeNode*>(ast_type);
+            types::PrimitiveType::Primitive prim_kind;
+            switch (prim->prim_type) {
+                case PrimitiveType::I8:     prim_kind = types::PrimitiveType::Primitive::I8; break;
+                case PrimitiveType::I16:    prim_kind = types::PrimitiveType::Primitive::I16; break;
+                case PrimitiveType::I32:    prim_kind = types::PrimitiveType::Primitive::I32; break;
+                case PrimitiveType::I64:    prim_kind = types::PrimitiveType::Primitive::I64; break;
+                case PrimitiveType::I128:   prim_kind = types::PrimitiveType::Primitive::I128; break;
+                case PrimitiveType::U8:     prim_kind = types::PrimitiveType::Primitive::U8; break;
+                case PrimitiveType::U16:    prim_kind = types::PrimitiveType::Primitive::U16; break;
+                case PrimitiveType::U32:    prim_kind = types::PrimitiveType::Primitive::U32; break;
+                case PrimitiveType::U64:    prim_kind = types::PrimitiveType::Primitive::U64; break;
+                case PrimitiveType::U128:   prim_kind = types::PrimitiveType::Primitive::U128; break;
+                case PrimitiveType::F32:    prim_kind = types::PrimitiveType::Primitive::F32; break;
+                case PrimitiveType::F64:    prim_kind = types::PrimitiveType::Primitive::F64; break;
+                case PrimitiveType::BOOL:   prim_kind = types::PrimitiveType::Primitive::Bool; break;
+                case PrimitiveType::CHAR:   prim_kind = types::PrimitiveType::Primitive::Char; break;
+                case PrimitiveType::STRING: prim_kind = types::PrimitiveType::Primitive::String; break;
+                case PrimitiveType::VOID:   prim_kind = types::PrimitiveType::Primitive::Void; break;
+            }
+            return type_system_->getPrimitiveType(prim_kind);
         }
         
         case Type::Kind::Named: {
-            auto named_a = static_cast<const NamedTypeNode*>(a);
-            auto named_b = static_cast<const NamedTypeNode*>(b);
-            return named_a->name == named_b->name;
-        }
-        
-        case Type::Kind::Array: {
-            auto array_a = static_cast<const ArrayTypeNode*>(a);
-            auto array_b = static_cast<const ArrayTypeNode*>(b);
-            return array_a->size == array_b->size && 
-                   compareTypes(array_a->element_type.get(), array_b->element_type.get());
-        }
-        
-        case Type::Kind::Slice: {
-            auto slice_a = static_cast<const SliceTypeNode*>(a);
-            auto slice_b = static_cast<const SliceTypeNode*>(b);
-            return compareTypes(slice_a->element_type.get(), slice_b->element_type.get());
-        }
-        
-        case Type::Kind::Reference: {
-            auto ref_a = static_cast<const ReferenceTypeNode*>(a);
-            auto ref_b = static_cast<const ReferenceTypeNode*>(b);
-            return ref_a->is_mutable == ref_b->is_mutable &&
-                   compareTypes(ref_a->inner_type.get(), ref_b->inner_type.get());
-        }
-        
-        case Type::Kind::SelfType:
-            return true;  // Self总是匹配Self
-        
-        case Type::Kind::Generic: {
-            auto gen_a = static_cast<const GenericTypeNode*>(a);
-            auto gen_b = static_cast<const GenericTypeNode*>(b);
-            return gen_a->name == gen_b->name;
-        }
-        
-        case Type::Kind::Optional: {
-            auto opt_a = static_cast<const OptionalTypeNode*>(a);
-            auto opt_b = static_cast<const OptionalTypeNode*>(b);
-            return compareTypes(opt_a->inner_type.get(), opt_b->inner_type.get());
-        }
-        
-        case Type::Kind::Tuple: {
-            auto tuple_a = static_cast<const TupleTypeNode*>(a);
-            auto tuple_b = static_cast<const TupleTypeNode*>(b);
-            if (tuple_a->element_types.size() != tuple_b->element_types.size()) return false;
-            for (size_t i = 0; i < tuple_a->element_types.size(); ++i) {
-                if (!compareTypes(tuple_a->element_types[i].get(), tuple_b->element_types[i].get())) {
-                    return false;
+            const auto* named = static_cast<const NamedTypeNode*>(ast_type);
+            std::vector<std::unique_ptr<types::Type>> generic_args;
+            for (const auto& arg : named->generic_args) {
+                if (auto conv = convertASTType(arg.get())) {
+                    generic_args.push_back(conv->clone());
                 }
             }
-            return true;
+            return type_system_->getNamedType(named->name, std::move(generic_args));
         }
         
-        default:
-            return false;
-    }
-}
-
-std::string CodeGenerator::typeToString(const Type* type) {
-    if (type == nullptr) return "void";
-    
-    switch (type->kind) {
-        case Type::Kind::Primitive: {
-            auto prim = static_cast<const PrimitiveTypeNode*>(type);
-            switch (prim->prim_type) {
-                case PrimitiveType::I8: return "i8";
-                case PrimitiveType::I16: return "i16";
-                case PrimitiveType::I32: return "i32";
-                case PrimitiveType::I64: return "i64";
-                case PrimitiveType::I128: return "i128";
-                case PrimitiveType::U8: return "u8";
-                case PrimitiveType::U16: return "u16";
-                case PrimitiveType::U32: return "u32";
-                case PrimitiveType::U64: return "u64";
-                case PrimitiveType::U128: return "u128";
-                case PrimitiveType::F32: return "f32";
-                case PrimitiveType::F64: return "f64";
-                case PrimitiveType::BOOL: return "bool";
-                case PrimitiveType::CHAR: return "char";
-                case PrimitiveType::STRING: return "string";
-                case PrimitiveType::VOID: return "void";
-                default: return "unknown";
-            }
-        }
+        case Type::Kind::Generic:
+            return type_system_->getGenericType(static_cast<const GenericTypeNode*>(ast_type)->name);
         
-        case Type::Kind::Named: {
-            auto named = static_cast<const NamedTypeNode*>(type);
-            return named->name;
-        }
+        case Type::Kind::SelfType:
+            return type_system_->getSelfType();
         
         case Type::Kind::Array: {
-            auto array = static_cast<const ArrayTypeNode*>(type);
-            return "[" + typeToString(array->element_type.get()) + "; " + 
-                   std::to_string(array->size) + "]";
+            const auto* array = static_cast<const ArrayTypeNode*>(ast_type);
+            if (auto elem = convertASTType(array->element_type.get())) {
+                return type_system_->getArrayType(elem, array->size);
+            }
+            return nullptr;
         }
         
         case Type::Kind::Slice: {
-            auto slice = static_cast<const SliceTypeNode*>(type);
-            return "[" + typeToString(slice->element_type.get()) + "]";
+            const auto* slice = static_cast<const SliceTypeNode*>(ast_type);
+            if (auto elem = convertASTType(slice->element_type.get())) {
+                return type_system_->getSliceType(elem);
+            }
+            return nullptr;
         }
         
         case Type::Kind::Reference: {
-            auto ref = static_cast<const ReferenceTypeNode*>(type);
-            return std::string("&") + (ref->is_mutable ? "mut " : "") + 
-                   typeToString(ref->inner_type.get());
-        }
-        
-        case Type::Kind::SelfType:
-            return "Self";
-        
-        case Type::Kind::Generic: {
-            auto gen = static_cast<const GenericTypeNode*>(type);
-            return gen->name;
+            const auto* ref = static_cast<const ReferenceTypeNode*>(ast_type);
+            if (auto pointee = convertASTType(ref->inner_type.get())) {
+                return type_system_->getReferenceType(pointee, ref->is_mutable);
+            }
+            return nullptr;
         }
         
         case Type::Kind::Optional: {
-            auto opt = static_cast<const OptionalTypeNode*>(type);
-            return typeToString(opt->inner_type.get()) + "?";
+            const auto* opt = static_cast<const OptionalTypeNode*>(ast_type);
+            if (auto inner = convertASTType(opt->inner_type.get())) {
+                return type_system_->getOptionalType(inner);
+            }
+            return nullptr;
         }
         
         case Type::Kind::Tuple: {
-            auto tuple = static_cast<const TupleTypeNode*>(type);
-            std::string result = "(";
-            for (size_t i = 0; i < tuple->element_types.size(); ++i) {
-                if (i > 0) result += ", ";
-                result += typeToString(tuple->element_types[i].get());
+            const auto* tuple = static_cast<const TupleTypeNode*>(ast_type);
+            std::vector<std::unique_ptr<types::Type>> elements;
+            for (const auto& elem : tuple->element_types) {
+                if (auto conv = convertASTType(elem.get())) {
+                    elements.push_back(conv->clone());
+                }
             }
-            result += ")";
-            return result;
+            return type_system_->getTupleType(std::move(elements));
         }
         
-        default:
-            return "unknown";
+        case Type::Kind::Function:
+            // Function 类型节点在 AST 中可能不存在，暂时返回 nullptr
+            // 如果需要，可以稍后添加
+            return nullptr;
     }
+    
+    return nullptr;
+}
+
+// 使用新类型系统的 compareTypes
+bool CodeGenerator::compareTypes(const Type* a, const Type* b) {
+    // 转换为新类型系统
+    types::Type* type_a = convertASTType(a);
+    types::Type* type_b = convertASTType(b);
+    
+    // 使用新类型系统比较
+    return type_system_->equals(type_a, type_b);
+}
+
+// 使用新类型系统的 typeToString
+std::string CodeGenerator::typeToString(const Type* type) {
+    if (!type) return "void";
+    
+    // 转换为新类型系统
+    types::Type* new_type = convertASTType(type);
+    
+    // 使用新类型系统的 toString
+    return type_system_->toString(new_type);
 }
 
 } // namespace pawc
+

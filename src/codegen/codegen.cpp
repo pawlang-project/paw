@@ -65,6 +65,7 @@ CodeGenerator::CodeGenerator(const std::string& module_name)
     module_ = std::make_unique<llvm::Module>(module_name, *context_);
     builder_ = std::make_unique<llvm::IRBuilder<>>(*context_);
     builtins_ = std::make_unique<Builtins>(*context_, *module_);
+    type_system_ = std::make_unique<TypeSystem>();  // 初始化类型系统
     
     // Set target platform DataLayout (ensure all types use proper alignment)
     llvm::InitializeNativeTarget();
@@ -105,6 +106,7 @@ CodeGenerator::CodeGenerator(const std::string& module_name, SymbolTable* symbol
     module_ = std::make_unique<llvm::Module>(module_name, *context_);
     builder_ = std::make_unique<llvm::IRBuilder<>>(*context_);
     builtins_ = std::make_unique<Builtins>(*context_, *module_);
+    type_system_ = std::make_unique<TypeSystem>();  // 初始化类型系统
     
     // Set target platform DataLayout (ensure all types use proper alignment)
     llvm::InitializeNativeTarget();

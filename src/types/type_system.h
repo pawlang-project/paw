@@ -39,54 +39,54 @@ public:
     /**
      * 获取原始类型（缓存）
      */
-    Type* getPrimitiveType(PrimitiveType::Primitive prim);
+    types::Type* getPrimitiveType(types::PrimitiveType::Primitive prim);
     
     /**
      * 创建命名类型
      */
-    Type* getNamedType(const std::string& name, 
-                       std::vector<std::unique_ptr<Type>> generic_args = {});
+    types::Type* getNamedType(const std::string& name, 
+                       std::vector<std::unique_ptr<types::Type>> generic_args = {});
     
     /**
      * 创建泛型类型
      */
-    Type* getGenericType(const std::string& name);
+    types::Type* getGenericType(const std::string& name);
     
     /**
      * 获取 Self 类型（单例）
      */
-    Type* getSelfType();
+    types::Type* getSelfType();
     
     /**
      * 创建数组类型
      */
-    Type* getArrayType(Type* element, int size);
+    types::Type* getArrayType(types::Type* element, int size);
     
     /**
      * 创建切片类型
      */
-    Type* getSliceType(Type* element);
+    types::Type* getSliceType(types::Type* element);
     
     /**
      * 创建元组类型
      */
-    Type* getTupleType(std::vector<std::unique_ptr<Type>> elements);
+    types::Type* getTupleType(std::vector<std::unique_ptr<types::Type>> elements);
     
     /**
      * 创建引用类型
      */
-    Type* getReferenceType(Type* pointee, bool is_mutable);
+    types::Type* getReferenceType(types::Type* pointee, bool is_mutable);
     
     /**
      * 创建可选类型
      */
-    Type* getOptionalType(Type* inner);
+    types::Type* getOptionalType(types::Type* inner);
     
     /**
      * 创建函数类型
      */
-    Type* getFunctionType(std::vector<std::unique_ptr<Type>> params, 
-                          std::unique_ptr<Type> return_type);
+    types::Type* getFunctionType(std::vector<std::unique_ptr<types::Type>> params, 
+                          std::unique_ptr<types::Type> return_type);
     
     // ========================================================================
     // 类型查询与比较
@@ -95,27 +95,27 @@ public:
     /**
      * 类型相等性比较
      */
-    bool equals(const Type* a, const Type* b);
+    bool equals(const types::Type* a, const types::Type* b);
     
     /**
      * 类型是否可赋值（from 可以赋值给 to）
      */
-    bool isAssignable(const Type* from, const Type* to);
+    bool isAssignable(const types::Type* from, const types::Type* to);
     
     /**
      * 获取两个类型的公共类型（如果存在）
      */
-    Type* commonType(const Type* a, const Type* b);
+    types::Type* commonType(const types::Type* a, const types::Type* b);
     
     /**
      * 是否是子类型关系
      */
-    bool isSubtype(const Type* sub, const Type* super);
+    bool isSubtype(const types::Type* sub, const types::Type* super);
     
     /**
      * 获取类型的字符串表示
      */
-    std::string toString(const Type* type);
+    std::string toString(const types::Type* type);
     
     // ========================================================================
     // 类型注册
@@ -124,12 +124,12 @@ public:
     /**
      * 注册用户定义类型
      */
-    void registerType(const std::string& name, Type* type);
+    void registerType(const std::string& name, types::Type* type);
     
     /**
      * 查找类型
      */
-    Type* lookupType(const std::string& name);
+    types::Type* lookupType(const std::string& name);
     
     /**
      * 是否已注册类型
@@ -152,26 +152,26 @@ public:
     
 private:
     // 原始类型缓存（16 个原始类型）
-    std::map<PrimitiveType::Primitive, Type*> primitive_cache_;
+    std::map<types::PrimitiveType::Primitive, types::Type*> primitive_cache_;
     
     // Self 类型单例
-    Type* self_type_;
+    types::Type* self_type_;
     
     // 类型池（管理所有创建的类型）
-    std::vector<std::unique_ptr<Type>> type_pool_;
+    std::vector<std::unique_ptr<types::Type>> type_pool_;
     
     // 命名类型注册表
-    std::map<std::string, Type*> named_types_;
+    std::map<std::string, types::Type*> named_types_;
     
     /**
      * 将类型添加到类型池并返回原始指针
      */
-    Type* internType(std::unique_ptr<Type> type);
+    types::Type* internType(std::unique_ptr<types::Type> type);
     
     /**
      * 辅助方法：克隆类型向量
      */
-    std::vector<std::unique_ptr<Type>> cloneTypeVector(const std::vector<std::unique_ptr<Type>>& types);
+    std::vector<std::unique_ptr<types::Type>> cloneTypeVector(const std::vector<std::unique_ptr<types::Type>>& types);
 };
 
 } // namespace pawc

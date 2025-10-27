@@ -20,6 +20,7 @@
 #include <memory>
 
 namespace pawc {
+namespace types {  // 使用子命名空间避免与 AST 的 Type 冲突
 
 /**
  * 类型基类
@@ -104,16 +105,16 @@ public:
     
     explicit PrimitiveType(Primitive prim) : primitive_(prim) {}
     
-    Kind getKind() const override { return Kind::Primitive; }
+    Kind getKind() const { return Kind::Primitive; }
     
-    bool equals(const Type* other) const override {
+    bool equals(const Type* other) const {
         if (!other || other->getKind() != Kind::Primitive) return false;
         return primitive_ == static_cast<const PrimitiveType*>(other)->primitive_;
     }
     
-    std::string toString() const override;
+    std::string toString() const;
     
-    std::unique_ptr<Type> clone() const override {
+    std::unique_ptr<Type> clone() const {
         return std::make_unique<PrimitiveType>(primitive_);
     }
     
@@ -138,13 +139,13 @@ public:
     NamedType(std::string name, std::vector<std::unique_ptr<Type>> generic_args = {})
         : name_(std::move(name)), generic_args_(std::move(generic_args)) {}
     
-    Kind getKind() const override { return Kind::Named; }
+    Kind getKind() const { return Kind::Named; }
     
-    bool equals(const Type* other) const override;
+    bool equals(const Type* other) const;
     
-    std::string toString() const override;
+    std::string toString() const;
     
-    std::unique_ptr<Type> clone() const override;
+    std::unique_ptr<Type> clone() const;
     
     const std::string& getName() const { return name_; }
     const std::vector<std::unique_ptr<Type>>& getGenericArgs() const { return generic_args_; }
@@ -167,16 +168,16 @@ class GenericType : public Type {
 public:
     explicit GenericType(std::string name) : name_(std::move(name)) {}
     
-    Kind getKind() const override { return Kind::Generic; }
+    Kind getKind() const { return Kind::Generic; }
     
-    bool equals(const Type* other) const override {
+    bool equals(const Type* other) const {
         if (!other || other->getKind() != Kind::Generic) return false;
         return name_ == static_cast<const GenericType*>(other)->name_;
     }
     
-    std::string toString() const override { return name_; }
+    std::string toString() const { return name_; }
     
-    std::unique_ptr<Type> clone() const override {
+    std::unique_ptr<Type> clone() const {
         return std::make_unique<GenericType>(name_);
     }
     
@@ -199,15 +200,15 @@ class SelfType : public Type {
 public:
     SelfType() = default;
     
-    Kind getKind() const override { return Kind::SelfType; }
+    Kind getKind() const { return Kind::SelfType; }
     
-    bool equals(const Type* other) const override {
+    bool equals(const Type* other) const {
         return other && other->getKind() == Kind::SelfType;
     }
     
-    std::string toString() const override { return "Self"; }
+    std::string toString() const { return "Self"; }
     
-    std::unique_ptr<Type> clone() const override {
+    std::unique_ptr<Type> clone() const {
         return std::make_unique<SelfType>();
     }
 };
@@ -226,18 +227,18 @@ public:
     explicit OptionalType(std::unique_ptr<Type> inner)
         : inner_type_(std::move(inner)) {}
     
-    Kind getKind() const override { return Kind::Optional; }
+    Kind getKind() const { return Kind::Optional; }
     
-    bool equals(const Type* other) const override {
+    bool equals(const Type* other) const {
         if (!other || other->getKind() != Kind::Optional) return false;
         return inner_type_->equals(static_cast<const OptionalType*>(other)->inner_type_.get());
     }
     
-    std::string toString() const override {
+    std::string toString() const {
         return inner_type_->toString() + "?";
     }
     
-    std::unique_ptr<Type> clone() const override {
+    std::unique_ptr<Type> clone() const {
         return std::make_unique<OptionalType>(inner_type_->clone());
     }
     
@@ -261,19 +262,19 @@ public:
     ArrayType(std::unique_ptr<Type> element, int size)
         : element_type_(std::move(element)), size_(size) {}
     
-    Kind getKind() const override { return Kind::Array; }
+    Kind getKind() const { return Kind::Array; }
     
-    bool equals(const Type* other) const override {
+    bool equals(const Type* other) const {
         if (!other || other->getKind() != Kind::Array) return false;
         const auto* arr = static_cast<const ArrayType*>(other);
         return size_ == arr->size_ && element_type_->equals(arr->element_type_.get());
     }
     
-    std::string toString() const override {
+    std::string toString() const {
         return "[" + element_type_->toString() + "; " + std::to_string(size_) + "]";
     }
     
-    std::unique_ptr<Type> clone() const override {
+    std::unique_ptr<Type> clone() const {
         return std::make_unique<ArrayType>(element_type_->clone(), size_);
     }
     
@@ -299,18 +300,18 @@ public:
     explicit SliceType(std::unique_ptr<Type> element)
         : element_type_(std::move(element)) {}
     
-    Kind getKind() const override { return Kind::Slice; }
+    Kind getKind() const { return Kind::Slice; }
     
-    bool equals(const Type* other) const override {
+    bool equals(const Type* other) const {
         if (!other || other->getKind() != Kind::Slice) return false;
         return element_type_->equals(static_cast<const SliceType*>(other)->element_type_.get());
     }
     
-    std::string toString() const override {
+    std::string toString() const {
         return "[" + element_type_->toString() + "]";
     }
     
-    std::unique_ptr<Type> clone() const override {
+    std::unique_ptr<Type> clone() const {
         return std::make_unique<SliceType>(element_type_->clone());
     }
     
@@ -334,13 +335,13 @@ public:
     explicit TupleType(std::vector<std::unique_ptr<Type>> elements)
         : element_types_(std::move(elements)) {}
     
-    Kind getKind() const override { return Kind::Tuple; }
+    Kind getKind() const { return Kind::Tuple; }
     
-    bool equals(const Type* other) const override;
+    bool equals(const Type* other) const;
     
-    std::string toString() const override;
+    std::string toString() const;
     
-    std::unique_ptr<Type> clone() const override;
+    std::unique_ptr<Type> clone() const;
     
     const std::vector<std::unique_ptr<Type>>& getElementTypes() const { return element_types_; }
     
@@ -362,19 +363,19 @@ public:
     ReferenceType(std::unique_ptr<Type> pointee, bool is_mutable)
         : pointee_type_(std::move(pointee)), is_mutable_(is_mutable) {}
     
-    Kind getKind() const override { return Kind::Reference; }
+    Kind getKind() const { return Kind::Reference; }
     
-    bool equals(const Type* other) const override {
+    bool equals(const Type* other) const {
         if (!other || other->getKind() != Kind::Reference) return false;
         const auto* ref = static_cast<const ReferenceType*>(other);
         return is_mutable_ == ref->is_mutable_ && pointee_type_->equals(ref->pointee_type_.get());
     }
     
-    std::string toString() const override {
+    std::string toString() const {
         return "&" + std::string(is_mutable_ ? "mut " : "") + pointee_type_->toString();
     }
     
-    std::unique_ptr<Type> clone() const override {
+    std::unique_ptr<Type> clone() const {
         return std::make_unique<ReferenceType>(pointee_type_->clone(), is_mutable_);
     }
     
@@ -400,13 +401,13 @@ public:
     FunctionType(std::vector<std::unique_ptr<Type>> params, std::unique_ptr<Type> return_type)
         : param_types_(std::move(params)), return_type_(std::move(return_type)) {}
     
-    Kind getKind() const override { return Kind::Function; }
+    Kind getKind() const { return Kind::Function; }
     
-    bool equals(const Type* other) const override;
+    bool equals(const Type* other) const;
     
-    std::string toString() const override;
+    std::string toString() const;
     
-    std::unique_ptr<Type> clone() const override;
+    std::unique_ptr<Type> clone() const;
     
     const std::vector<std::unique_ptr<Type>>& getParamTypes() const { return param_types_; }
     const Type* getReturnType() const { return return_type_.get(); }
@@ -416,6 +417,7 @@ private:
     std::unique_ptr<Type> return_type_;
 };
 
+} // namespace types
 } // namespace pawc
 
 #endif // PAWC_TYPE_H

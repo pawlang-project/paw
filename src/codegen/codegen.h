@@ -20,6 +20,7 @@
 #include "../parser/ast.h"
 #include "../builtins/builtins.h"
 #include "../module/symbol_table.h"
+#include "../types/type_system.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/IRBuilder.h"
@@ -88,6 +89,9 @@ private:
     std::unique_ptr<llvm::Module> module_;        ///< LLVM模块
     std::unique_ptr<llvm::IRBuilder<>> builder_;  ///< LLVM IR构建器
     std::unique_ptr<Builtins> builtins_;          ///< 内置函数管理器
+    
+    // ========== 类型系统 ==========
+    std::unique_ptr<TypeSystem> type_system_;     ///< 类型系统管理器
     
     // ========== 符号表 ==========
     std::map<std::string, llvm::Value*> named_values_;      ///< 变量名 -> LLVM值
@@ -505,6 +509,13 @@ private:
      * @return 类型字符串
      */
     std::string typeToString(const Type* type);
+    
+    /**
+     * @brief 从 AST 类型节点转换为新类型系统的 Type
+     * @param ast_type AST 类型节点
+     * @return 新类型系统的 Type 指针
+     */
+    types::Type* convertASTType(const Type* ast_type);
     
     // ========== 泛型系统 ==========
     
