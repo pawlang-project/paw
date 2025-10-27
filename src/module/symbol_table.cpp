@@ -143,8 +143,15 @@ const SymbolTable::InterfaceImpl* SymbolTable::getInterfaceImpl(
         }
     }
     
-    // 2. 查找泛型匹配（Phase 2，暂时返回 nullptr）
-    // TODO: 实现泛型匹配逻辑
+    // 2. 查找泛型匹配（Phase 2.5）
+    auto generic_it = generic_impls_.find(interface_name);
+    if (generic_it != generic_impls_.end()) {
+        for (const auto& impl : generic_it->second) {
+            if (matchesGenericPatternImpl(type_name, impl.type_name, impl.constraints)) {
+                return &impl;
+            }
+        }
+    }
     
     return nullptr;
 }
@@ -241,6 +248,102 @@ std::vector<SymbolTable::Symbol*> SymbolTable::getPublicSymbols(const std::strin
     }
     
     return result;
+}
+
+SymbolTable::TypePattern SymbolTable::parseTypePattern(const std::string& type_name) const {
+    TypePattern pattern;
+    
+    size_t lt_pos = type_name.find('<');
+    
+    if (lt_pos == std::string::npos) {
+        // 没有泛型参数
+        pattern.base = type_name;
+        pattern.has_generics = false;
+        return pattern;
+    }
+    
+    // 有泛型参数
+    pattern.base = type_name.substr(0, lt_pos);
+    pattern.has_generics = true;
+    
+    // 提取泛型参数部分
+    std::string args_str = type_name.substr(lt_pos + 1);
+    if (!args_str.empty() && args_str.back() == '>') {
+        args_str = args_str.substr(0, args_str.size() - 1);
+    }
+    
+    // 解析参数（处理嵌套泛型）
+    int depth = 0;
+    std::string current_arg;
+    
+    for (char c : args_str) {
+        if (c == '<') {
+            depth++;
+            if (!current_arg.empty() || depth > 1) {
+                current_arg += c;
+            }
+        } else if (c == '>') {
+            depth--;
+            if (depth >= 0) {
+                current_arg += c;
+            }
+        } else if (c == ',' && depth == 0) {
+            if (!current_arg.empty()) {
+                pattern.args.push_back(current_arg);
+            }
+            current_arg = "";
+        } else {
+            current_arg += c;
+        }
+    }
+    if (!current_arg.empty()) {
+        pattern.args.push_back(current_arg);
+    }
+    
+    return pattern;
+}
+
+bool SymbolTable::matchesGenericPatternImpl(
+    const std::string& concrete_type,
+    const std::string& pattern,
+    const std::vector<std::string>& constraints
+) const {
+    // 解析两个类型
+    TypePattern concrete_pattern = parseTypePattern(concrete_type);
+    TypePattern pattern_parsed = parseTypePattern(pattern);
+    
+    // 检查 base 是否相同
+    if (concrete_pattern.base != pattern_parsed.base) {
+        return false;
+    }
+    
+    // 检查参数数量
+    if (concrete_pattern.args.size() != pattern_parsed.args.size()) {
+        return false;
+    }
+    
+    // 检查约束（如果有）
+    if (!constraints.empty()) {
+        for (const auto& arg : concrete_pattern.args) {
+            if (!checkConstraintsImpl(arg, constraints)) {
+                return false;
+            }
+        }
+    }
+    
+    return true;
+}
+
+bool SymbolTable::checkConstraintsImpl(
+    const std::string& type_name,
+    const std::vector<std::string>& constraints
+) const {
+    for (const auto& constraint : constraints) {
+        if (!typeImplementsInterface(type_name, constraint)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void SymbolTable::dump() const {

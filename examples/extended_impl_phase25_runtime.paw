@@ -1,0 +1,49 @@
+// 测试 Phase 2.5 运行时泛型匹配
+
+// 定义接口
+type Display = interface {
+    fn to_string(self) -> string;
+}
+
+// 定义泛型 Box<T>
+type Box<T> = struct {
+    value: T,
+}
+
+// ✅ 泛型接口实现
+support<T: Display> Display for Box<T> {
+    fn to_string(self) -> string {
+        return "Box";
+    }
+}
+
+// 定义一个实现了 Display 的类型
+type Point = struct(Display) {
+    x: i32,
+    y: i32,
+    
+    fn to_string(self) -> string {
+        return "Point";
+    }
+}
+
+fn main() -> i32 {
+    println("===== Phase 2.5 运行时泛型匹配测试 =====");
+    
+    // 创建 Point
+    let p = Point { x: 10, y: 20 };
+    println("Point created");
+    
+    // 创建 Box<Point>
+    let b = Box { value: p };
+    println("Box<Point> created");
+    
+    // ✅ 测试：Box<Point> 应该自动使用 Box<T> 的 Display 实现
+    let s = b.to_string();
+    println("Box.to_string() called");
+    println(s);
+    
+    println("===== 测试完成 =====");
+    return 0;
+}
+

@@ -24,6 +24,15 @@ struct SupportStmt;
  */
 class SymbolTable {
 public:
+    // 类型模式结构（用于泛型匹配）
+    struct TypePattern {
+        std::string base;                     // "Box", "Vec", "Pair"
+        std::vector<std::string> args;       // ["Point"], ["Point", "i32"]
+        bool has_generics;                   // true if has '<...>'
+        
+        TypePattern() : has_generics(false) {}
+    };
+    
     enum class SymbolKind {
         Function,
         GenericFunction,  // 泛型函数
@@ -141,6 +150,18 @@ private:
     
     // 泛型接口实现: interface_name -> [InterfaceImpl]
     std::map<std::string, std::vector<InterfaceImpl>> generic_impls_;
+    
+    // 辅助函数（泛型匹配）
+    TypePattern parseTypePattern(const std::string& type_name) const;
+    bool matchesGenericPatternImpl(
+        const std::string& concrete_type,
+        const std::string& pattern,
+        const std::vector<std::string>& constraints
+    ) const;
+    bool checkConstraintsImpl(
+        const std::string& type_name,
+        const std::vector<std::string>& constraints
+    ) const;
 };
 
 } // namespace pawc
