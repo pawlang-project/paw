@@ -72,7 +72,9 @@ let doubled = map(numbers, |x| x * 2);  // [2, 4, 6]
 - ✅ 接口定义
 - ✅ 内联实现（`struct(I)`）
 - ✅ 外部实现（`support I for T`）
-- ❌ 为已有类型实现接口（如为 i32 实现 Display）
+- ✅ 为自定义类型外部实现接口（Phase 1 完成）
+- ⚠️ 为已有内置类型实现接口（如为 i32 实现 Display）- Phase 1.5 待实现
+- ⚠️ 泛型接口实现（如 `support<T> I for Vec<T>`）- Phase 2 待实现
 
 **示例**（Rust风格）：
 ```rust
@@ -92,13 +94,20 @@ support<T: Display> Display for Box<T> {
 }
 ```
 
-**需要实现**：
-- 为基础类型（i32, string等）实现接口
-- 泛型接口实现
-- impl块中的泛型约束
+**已实现（Phase 1）**：
+- ✅ 为自定义 struct 外部实现接口
+- ✅ 接口方法调用
+- ✅ 类型推断和方法查找
 
-**工作量**: 1-2周
-**收益**: 更灵活的接口系统
+**待实现（Phase 1.5）**：
+- ⚠️ 为基础类型（i32, string等）实现接口 - 1-2天
+
+**待实现（Phase 2）**：
+- ⚠️ 泛型接口实现 - 3-5天
+- ⚠️ impl块中的泛型约束
+
+**工作量**: Phase 1 完成，Phase 1.5 + Phase 2 需要 1周
+**收益**: 更灵活的接口系统，接近 Rust trait 水平
 
 ---
 
