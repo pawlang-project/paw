@@ -301,6 +301,8 @@ set(SOURCES
         src/module/module_loader.cpp
         src/module/symbol_table.cpp
         src/module/module_compiler.cpp
+        src/diagnostics/source_manager.cpp
+        src/diagnostics/diagnostic_engine.cpp
         src/colors.cpp
         src/toml_parser.cpp
         src/error_reporter.cpp

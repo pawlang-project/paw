@@ -26,8 +26,8 @@ namespace pawc {
 // 第1部分：核心接口和工具函数
 // ============================================================================
 
-Parser::Parser(const std::vector<Token>& tokens, ErrorReporter* reporter)
-    : tokens_(tokens), current_(0), error_reporter_(reporter) {}
+Parser::Parser(const std::vector<Token>& tokens, DiagnosticEngine* diag_engine, const std::string& filename)
+    : tokens_(tokens), current_(0), diag_engine_(diag_engine), filename_(filename) {}
 
 Program Parser::parse() {
     Program program;
@@ -42,7 +42,6 @@ Program Parser::parse() {
         }
     }
     
-    program.errors = std::move(errors_);
     return program;
 }
 
@@ -87,27 +86,18 @@ Token Parser::consume(TokenType type, const std::string& message) {
 void Parser::error(const std::string& message) {
     SourceLocation loc = peek().location;
     
-    // 使用ErrorReporter（如果可用）
-    if (error_reporter_) {
-        // 根据错误类型添加智能提示
-        std::vector<ErrorHint> hints;
-        
-        if (message.find("Expected ';'") != std::string::npos) {
-            hints.push_back(ErrorHint("add a semicolon at the end of the statement"));
-        } else if (message.find("Expected '{'") != std::string::npos) {
-            hints.push_back(ErrorHint("add an opening brace here"));
-        } else if (message.find("Expected '}'") != std::string::npos) {
-            hints.push_back(ErrorHint("add a closing brace to match the opening brace"));
-        } else if (message.find("Expected type") != std::string::npos) {
-            hints.push_back(ErrorHint("type annotations are required for function parameters"));
-        } else if (message.find("Expected identifier") != std::string::npos) {
-            hints.push_back(ErrorHint("identifiers must start with a letter or underscore"));
-        }
-        
-        error_reporter_->reportError(message, loc, hints);
+    // 使用新的诊断引擎
+    if (diag_engine_) {
+        // 转换为 DiagnosticLocation 格式
+        pawc::DiagnosticLocation diag_loc(
+            filename_.empty() ? loc.filename : filename_,
+            loc.line,
+            loc.column,
+            peek().value.length()
+        );
+        diag_engine_->reportError(message, diag_loc);
     } else {
-        // 回退到旧的错误处理
-        errors_.push_back(CompilerError(message, loc));
+        // 如果没有诊断引擎，直接输出错误（不应该发生）
         std::cerr << Colors::error("Error: ") << message << std::endl;
         std::cerr << Colors::info("  --> ") << loc.filename 
                   << ":" << loc.line 

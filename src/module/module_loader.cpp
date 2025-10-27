@@ -117,17 +117,17 @@ bool ModuleLoader::loadSingleModule(const std::string& module_name, const std::s
     Lexer lexer(source, file_path);
     auto tokens = lexer.tokenize();
     
+    // Create diagnostic system for this module
+    SourceManager source_manager;
+    source_manager.addSource(file_path, source);
+    DiagnosticEngine diagnostics(&source_manager);
+    
     // Parser
-    Parser parser(tokens);
+    Parser parser(tokens, &diagnostics, file_path);
     Program ast = parser.parse();
     
-    if (!ast.errors.empty()) {
+    if (diagnostics.hasErrors()) {
         std::cerr << "Parse errors in " << file_path << std::endl;
-        for (const auto& error : ast.errors) {
-            std::cerr << "  " << error.location.filename << ":" 
-                     << error.location.line << ":" << error.location.column 
-                     << ": " << error.message << std::endl;
-        }
         loading_.erase(module_name);
         return false;
     }

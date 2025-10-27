@@ -2,8 +2,9 @@
 #include "parser/parser.h"
 #include "codegen/codegen.h"
 #include "module/module_compiler.h"
+#include "diagnostics/diagnostic_engine.h"
+#include "diagnostics/source_manager.h"
 #include "pawc/colors.h"
-#include "pawc/error_reporter.h"
 #include "llvm/Support/TargetSelect.h"
 #include <iostream>
 #include <fstream>
@@ -185,34 +186,25 @@ int main(int argc, char* argv[]) {
     printLogo();  // 显示 PawLang 版本号
     std::cout << pawc::Colors::info("Compiling ") << input_file << "..." << std::endl;
     
-    // Create error reporter
-    pawc::ErrorReporter error_reporter;
-    error_reporter.setSourceCode(input_file, source);
+    // Create diagnostic system
+    pawc::SourceManager source_manager;
+    source_manager.addSource(input_file, source);
+    pawc::DiagnosticEngine diagnostics(&source_manager);
     
     // Lexical analysis
     pawc::Lexer lexer(source, input_file);
     std::vector<pawc::Token> tokens = lexer.tokenize();
     std::cout << pawc::Colors::success("  ✓ Lexer: ") << tokens.size() << " tokens" << std::endl;
     
-    // Parsing (using ErrorReporter)
-    pawc::Parser parser(tokens, &error_reporter);
+    // Parsing (using DiagnosticEngine)
+    pawc::Parser parser(tokens, &diagnostics, input_file);
     pawc::Program program = parser.parse();
     
     // Check for parse errors
-    if (error_reporter.hasErrors()) {
-        std::cerr << std::endl;  // 空行
-        error_reporter.printSummary();
-        return 1;
-    }
-    
-    // Backward compatibility: check old errors
-    if (!program.errors.empty()) {
-        std::cerr << pawc::Colors::error("\n✗ Parse errors:\n") << std::endl;
-        for (const auto& error : program.errors) {
-            std::cerr << pawc::Colors::error("  error: ") << error.message << std::endl;
-            std::cerr << pawc::Colors::info("   --> ") << error.location.filename << ":"
-                      << error.location.line << ":" << error.location.column << std::endl;
-        }
+    if (diagnostics.hasErrors()) {
+        std::cerr << pawc::Colors::error("\nerror: ") << "could not compile due to " 
+                  << diagnostics.getErrorCount() << " error" 
+                  << (diagnostics.getErrorCount() > 1 ? "s" : "") << std::endl;
         return 1;
     }
     
