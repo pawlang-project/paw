@@ -4,6 +4,7 @@
 #include "ast.h"
 #include "../lexer/lexer.h"
 #include "../diagnostics/diagnostic_engine.h"
+#include "pawc/arena_allocator.h"
 #include <vector>
 #include <set>
 
@@ -16,6 +17,11 @@ public:
     // 解析整个程序
     Program parse();
     
+    /**
+     * 获取 Arena 分配器统计信息（调试用）
+     */
+    ArenaAllocator* getArena() { return &arena_; }
+    
 private:
     std::vector<Token> tokens_;
     size_t current_;
@@ -26,6 +32,9 @@ private:
     std::set<std::string> enum_names_;  // 已定义的Enum名
     std::set<std::string> mutable_vars_;  // 可变变量集合（let mut）
     std::string current_parsing_struct_;  // 当前正在解析的struct名（用于Self）
+    
+    // 性能优化：Arena 分配器（用于 AST 节点）
+    ArenaAllocator arena_;
     
     // Token操作
     Token peek() const;

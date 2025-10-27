@@ -229,9 +229,15 @@ int main(int argc, char* argv[]) {
     std::vector<pawc::Token> tokens = lexer.tokenize();
     std::cout << pawc::Colors::success("  ✓ Lexer: ") << tokens.size() << " tokens" << std::endl;
     
-    // Parsing (using DiagnosticEngine)
+    // Parsing (using DiagnosticEngine and Arena)
     pawc::Parser parser(tokens, &diagnostics, input_file);
     pawc::Program program = parser.parse();
+    
+    // 性能优化：显示 Arena 分配器统计（调试模式）
+    if (print_ir) {  // 重用 --print-ir 标志来显示统计
+        std::cout << pawc::Colors::info("\n[Arena Statistics]") << std::endl;
+        parser.getArena()->printStats();
+    }
     
     // Check for parse errors
     if (diagnostics.hasErrors()) {
