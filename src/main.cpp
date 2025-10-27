@@ -1,6 +1,8 @@
 #include "lexer/lexer.h"
 #include "parser/parser.h"
-#include "sema/semantic_analyzer.h"
+#include "passes/pass_manager.h"
+#include "passes/semantic_pass.h"
+#include "passes/codegen_pass.h"
 #include "codegen/codegen.h"
 #include "module/module_compiler.h"
 #include "types/type_system.h"
@@ -212,15 +214,6 @@ int main(int argc, char* argv[]) {
     
     std::cout << pawc::Colors::success("  ✓ Parser: ") << program.statements.size() << " statements" << std::endl;
     
-    // Semantic analysis
-    pawc::TypeSystem type_system;
-    pawc::SemanticAnalyzer sema(&type_system, &diagnostics);
-    if (!sema.analyze(program)) {
-        std::cerr << pawc::Colors::error("\nerror: ") << "semantic analysis failed" << std::endl;
-        return 1;
-    }
-    std::cout << pawc::Colors::success("  ✓ Semantic: ") << "passed" << std::endl;
-    
     // Check for import statements (determine if module compilation is needed)
     bool has_imports = false;
     for (const auto& stmt : program.statements) {
@@ -287,13 +280,25 @@ int main(int argc, char* argv[]) {
     // Single-file compilation mode
     std::cout << pawc::Colors::info("  → Mode: ") << "Single-file compilation" << std::endl;
     
-    // Code generation
+    // 使用 Pass-Based 架构进行语义分析
+    pawc::TypeSystem type_system;
+    pawc::CompilationUnit unit(input_file, &program, &type_system, &diagnostics);
+    
+    pawc::PassManager pass_manager(false);
+    pass_manager.addPass(std::make_unique<pawc::SemanticAnalysisPass>());
+    
+    if (!pass_manager.runAll(&unit)) {
+        std::cerr << pawc::Colors::error("\n✗ Semantic analysis failed") << std::endl;
+        return 1;
+    }
+    std::cout << pawc::Colors::success("  ✓ Semantic: ") << "passed" << std::endl;
+    
+    // 代码生成
     pawc::CodeGenerator codegen("pawc_module");
     if (!codegen.generate(program)) {
         std::cerr << pawc::Colors::error("\n✗ Code generation failed") << std::endl;
         return 1;
     }
-    
     std::cout << pawc::Colors::success("  ✓ CodeGen: ") << "Success" << std::endl;
     
     // Print IR if requested
