@@ -24,34 +24,12 @@ llvm::Type* CodeGenerator::deduceClosureParamType(const ClosureExpr* expr, size_
             if (param_idx < func_type->param_types.size()) {
                 const Type* param_type = func_type->param_types[param_idx].get();
                 llvm::Type* llvm_type = convertType(param_type);
-                if (llvm_type) {
-                    std::cerr << "[INFO] ✅ Successfully deduced parameter " << param_idx 
-                              << " type from fn(...) type\n";
-                    return llvm_type;
-                }
-            }
-        } else if (expr->expected_fn_type->kind == Type::Kind::Named) {
-            // 旧方案：Named 类型（为兼容性保留）
-            const NamedTypeNode* named = static_cast<const NamedTypeNode*>(expr->expected_fn_type);
-            
-            std::cerr << "[DEBUG] Trying to deduce param " << param_idx 
-                      << " from named type: " << named->name << std::endl;
-                      
-            // 检查是否有泛型参数（这些可能是函数参数和返回类型）
-            if (!named->generic_args.empty() && param_idx < named->generic_args.size()) {
-                // 假设前N个generic_args是参数类型
-                const Type* param_type = named->generic_args[param_idx].get();
-                llvm::Type* llvm_type = convertType(param_type);
-                if (llvm_type) {
-                    std::cerr << "[INFO] Successfully deduced parameter type from generic args\n";
-                    return llvm_type;
-                }
+                return llvm_type;
             }
         }
     }
     
     // 无法推导
-    std::cerr << "[WARN] Cannot deduce parameter type for closure parameter " << param_idx << std::endl;
     return nullptr;
 }
 

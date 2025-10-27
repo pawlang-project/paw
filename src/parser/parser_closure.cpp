@@ -47,9 +47,18 @@ bool Parser::isClosurePattern() {
             advance();  // skip ,
             if (check(TokenType::IDENTIFIER)) {
                 advance();
-                if (check(TokenType::COLON) || check(TokenType::COMMA)) {
-                    current_ = saved;
-                    return true;
+                // 检查下一个标识符后面
+                if (check(TokenType::COLON) || check(TokenType::COMMA) || check(TokenType::RPAREN)) {
+                    // 如果是 : 或 , 或 )，都可能是闭包
+                    // 需要进一步检查是否有 ->
+                    while (!check(TokenType::RPAREN) && !isAtEnd()) {
+                        advance();
+                    }
+                    if (match({TokenType::RPAREN})) {
+                        bool result = check(TokenType::ARROW);
+                        current_ = saved;
+                        return result;
+                    }
                 }
             }
         }

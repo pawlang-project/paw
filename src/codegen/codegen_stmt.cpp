@@ -166,6 +166,34 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
     llvm::Type* type = nullptr;
     llvm::Type* actual_type = nullptr;  // Actual storage type (may be struct value)
     
+    // ⭐ Phase 3: 闭包类型推导 - 提前处理（在类型处理之前）
+    if (stmt->initializer && stmt->initializer->kind == Expr::Kind::Closure) {
+        ClosureExpr* closure = static_cast<ClosureExpr*>(stmt->initializer.get());
+        
+        // 如果有类型标注，传递给闭包用于类型推导
+        if (stmt->type) {
+            closure->expected_fn_type = stmt->type.get();
+        }
+        
+        // 生成闭包
+        llvm::Value* closure_fn = generateExpr(closure);
+        if (closure_fn) {
+            llvm::AllocaInst* alloca = builder_->CreateAlloca(
+                llvm::PointerType::get(*context_, 0), nullptr, stmt->name
+            );
+            named_values_[stmt->name] = alloca;
+            variable_types_[stmt->name] = llvm::PointerType::get(*context_, 0);
+            builder_->CreateStore(closure_fn, alloca);
+            
+            // 如果有环境捕获，记录环境指针
+            if (last_generated_closure_env_) {
+                closure_environments_[stmt->name] = last_generated_closure_env_;
+                last_generated_closure_env_ = nullptr;  // 清空
+            }
+        }
+        return;  // 提前返回，跳过后续的通用类型处理
+    }
+    
     // If there is a type declaration
     if (stmt->type) {
         // Use resolveGenericType instead of convertType to properly handle generic type T
@@ -310,40 +338,7 @@ void CodeGenerator::generateLetStmt(const LetStmt* stmt) {
             }
         }
         
-        // 特殊处理：闭包 - 传递期望类型并记录环境指针
-        if (stmt->initializer->kind == Expr::Kind::Closure) {
-            ClosureExpr* closure = static_cast<ClosureExpr*>(stmt->initializer.get());
-            
-            // Phase 3: 如果有类型标注，传递给闭包用于类型推导
-            if (stmt->type) {
-                closure->expected_fn_type = stmt->type.get();
-                std::cerr << "[DEBUG] Setting expected type for closure. Type kind: " 
-                          << (int)stmt->type->kind << std::endl;
-                if (stmt->type->kind == Type::Kind::Function) {
-                    const FunctionTypeNode* fn = static_cast<const FunctionTypeNode*>(stmt->type.get());
-                    std::cerr << "[DEBUG] Function type has " << fn->param_types.size() << " parameters\n";
-                }
-            } else {
-                std::cerr << "[DEBUG] No type annotation for closure\n";
-            }
-            
-            llvm::Value* closure_fn = generateExpr(closure);
-            if (closure_fn) {
-                llvm::AllocaInst* alloca = builder_->CreateAlloca(
-                    llvm::PointerType::get(*context_, 0), nullptr, stmt->name
-                );
-                named_values_[stmt->name] = alloca;
-                variable_types_[stmt->name] = llvm::PointerType::get(*context_, 0);
-                builder_->CreateStore(closure_fn, alloca);
-                
-                // 如果有环境捕获，记录环境指针
-                if (last_generated_closure_env_) {
-                    closure_environments_[stmt->name] = last_generated_closure_env_;
-                    last_generated_closure_env_ = nullptr;  // 清空
-                }
-            }
-            return;
-        }
+        // 注：闭包处理已经移到函数开头（line 168），这里不再需要
         
         // 其他类型的初始化器：正常推导
         llvm::Value* init_val = generateExpr(stmt->initializer.get());
