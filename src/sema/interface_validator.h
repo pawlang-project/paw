@@ -55,6 +55,7 @@ private:
     TypeSystem* type_system_;
     DiagnosticEngine* diagnostics_;
     const std::map<std::string, const InterfaceStmt*>& interface_defs_;
+    std::string current_impl_type_;  // 当前正在验证的类型名（用于 Self 解析）
     
     /**
      * 比较两个 AST 类型是否相等

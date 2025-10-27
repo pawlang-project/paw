@@ -567,6 +567,20 @@ private:
                                       const std::string& interface_name,
                                       const std::string& method_name);
     
+    /**
+     * @brief 检查是否是内置类型
+     * @param type_name 类型名
+     * @return true 如果是内置类型
+     */
+    bool isBuiltinType(const std::string& type_name) const;
+    
+    /**
+     * @brief 获取内置类型的 LLVM Type
+     * @param type_name 类型名
+     * @return LLVM Type 指针
+     */
+    llvm::Type* getBuiltinLLVMType(const std::string& type_name);
+    
     // ========== 泛型系统 ==========
     
     /**

@@ -1,0 +1,133 @@
+// 测试 Phase 1.5：为内置类型实现接口（完整版）
+
+// 定义接口
+type Display = interface {
+    fn to_string(self) -> string;
+}
+
+type Clone = interface {
+    fn clone(self) -> Self;
+}
+
+type Eq = interface {
+    fn eq(self, other: Self) -> bool;
+    fn ne(self, other: Self) -> bool;
+}
+
+// ========== 为内置类型实现 Display ==========
+
+// ✅ 为 i32 实现 Display
+support Display for i32 {
+    fn to_string(self) -> string {
+        // 简化实现：返回占位符
+        return "[i32]";
+    }
+}
+
+// ✅ 为 f64 实现 Display
+support Display for f64 {
+    fn to_string(self) -> string {
+        return "[f64]";
+    }
+}
+
+// ✅ 为 bool 实现 Display
+support Display for bool {
+    fn to_string(self) -> string {
+        return "[bool]";
+    }
+}
+
+// ✅ 为 string 实现 Display
+support Display for string {
+    fn to_string(self) -> string {
+        return self;  // 字符串返回自身
+    }
+}
+
+// ========== 为内置类型实现 Clone ==========
+
+support Clone for i32 {
+    fn clone(self) -> i32 {
+        return self;
+    }
+}
+
+support Clone for f64 {
+    fn clone(self) -> f64 {
+        return self;
+    }
+}
+
+support Clone for bool {
+    fn clone(self) -> bool {
+        return self;
+    }
+}
+
+// ========== 为内置类型实现 Eq ==========
+
+support Eq for i32 {
+    fn eq(self, other: i32) -> bool {
+        return self == other;
+    }
+    
+    fn ne(self, other: i32) -> bool {
+        return self != other;
+    }
+}
+
+support Eq for f64 {
+    fn eq(self, other: f64) -> bool {
+        return self == other;
+    }
+    
+    fn ne(self, other: f64) -> bool {
+        return self != other;
+    }
+}
+
+fn main() -> i32 {
+    println("===== Phase 1.5: 内置类型接口实现测试 =====");
+    println("");
+    
+    // 测试 Display
+    println("1. Display 接口:");
+    let x = 42;
+    println(x.to_string());
+    
+    let f = 3.14;
+    println(f.to_string());
+    
+    let s = "hello world";
+    println(s.to_string());
+    println("");
+    
+    // 测试 Clone
+    println("2. Clone 接口:");
+    let y = 100;
+    let z = y.clone();
+    println("[i32 cloned]");
+    println("");
+    
+    // 测试 Eq
+    println("3. Eq 接口:");
+    let a = 10;
+    let b = 10;
+    if a.eq(b) {
+        println("10 == 10: true");
+    } else {
+        println("10 == 10: false");
+    }
+    
+    if a.ne(20) {
+        println("10 != 20: true");
+    } else {
+        println("10 != 20: false");
+    }
+    println("");
+    
+    println("===== 所有测试完成 ✅ =====");
+    return 0;
+}
+

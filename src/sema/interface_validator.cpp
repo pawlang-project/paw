@@ -21,6 +21,9 @@ bool InterfaceValidator::validateImpl(
     const std::vector<std::unique_ptr<FunctionStmt>>& methods,
     const SourceLocation& location) {
     
+    // 设置当前类型（用于 Self 解析）
+    current_impl_type_ = type_name;
+    
     // 查找接口定义
     auto interface_it = interface_defs_.find(interface_name);
     if (interface_it == interface_defs_.end()) {
@@ -130,6 +133,18 @@ bool InterfaceValidator::compareTypes(const Type* a, const Type* b) {
     // 暂时使用简单的结构比较
     if (a == nullptr && b == nullptr) return true;
     if (a == nullptr || b == nullptr) return false;
+    
+    // 【关键修复】：处理 Self 类型
+    // 如果其中一个是 Self，解析为当前实现的类型
+    if (a->kind == Type::Kind::SelfType && b->kind == Type::Kind::Named) {
+        auto named_b = static_cast<const NamedTypeNode*>(b);
+        return named_b->name == current_impl_type_;
+    }
+    if (b->kind == Type::Kind::SelfType && a->kind == Type::Kind::Named) {
+        auto named_a = static_cast<const NamedTypeNode*>(a);
+        return named_a->name == current_impl_type_;
+    }
+    
     if (a->kind != b->kind) return false;
     
     switch (a->kind) {

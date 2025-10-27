@@ -296,27 +296,37 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
             if (method_it != methods.end()) {
                 llvm::Function* method_func = method_it->second;
                 
-                // 构建参数列表：第一个参数是this指针
+                // 构建参数列表：第一个参数是this指针或值
                 std::vector<llvm::Value*> args;
                 
-                // 【关键修复】：在新的struct语义下，struct变量是alloca ptr
-                // obj_ptr是alloca的地址，需要load获取实际的heap指针
+                // 检查是否是内置类型
                 llvm::Value* actual_obj_ptr = obj_ptr;
                 
-                // 如果有obj_name并且在variable_types_中是PointerType（新struct语义）
-                if (!obj_name.empty()) {
-                    auto type_it = variable_types_.find(obj_name);
-                    if (type_it != variable_types_.end() && type_it->second->isPointerTy()) {
-                        // obj_ptr是alloca ptr，load获取heap指针
-                        actual_obj_ptr = builder_->CreateLoad(
-                            llvm::PointerType::get(*context_, 0), 
-                            obj_ptr, 
-                            obj_name + "_heap_ptr"
-                        );
+                if (isBuiltinType(struct_name)) {
+                    // 内置类型：传递值
+                    if (obj_ptr->getType()->isPointerTy()) {
+                        // obj_ptr 是 alloca，需要 load 值
+                        llvm::Type* builtin_type = getBuiltinLLVMType(struct_name);
+                        actual_obj_ptr = builder_->CreateLoad(builtin_type, obj_ptr, obj_name + "_val");
+                    }
+                } else {
+                    // Struct类型：传递指针
+                    // 【关键修复】：在新的struct语义下，struct变量是alloca ptr
+                    // obj_ptr是alloca的地址，需要load获取实际的heap指针
+                    if (!obj_name.empty()) {
+                        auto type_it = variable_types_.find(obj_name);
+                        if (type_it != variable_types_.end() && type_it->second->isPointerTy()) {
+                            // obj_ptr是alloca ptr，load获取heap指针
+                            actual_obj_ptr = builder_->CreateLoad(
+                                llvm::PointerType::get(*context_, 0), 
+                                obj_ptr, 
+                                obj_name + "_heap_ptr"
+                            );
+                        }
                     }
                 }
                 
-                args.push_back(actual_obj_ptr);  // this指针（heap指针）
+                args.push_back(actual_obj_ptr);  // this指针或值
                 
                 for (const auto& arg : expr->arguments) {
                     llvm::Value* arg_val = generateArgumentValue(arg.get());
@@ -380,16 +390,28 @@ llvm::Value* CodeGenerator::generateCallExpr(const CallExpr* expr) {
                                     // 构建参数列表
                                     std::vector<llvm::Value*> args;
                                     
-                                    // 第一个参数是this指针
+                                    // 第一个参数是this指针或值
                                     llvm::Value* actual_obj_ptr = obj_ptr;
-                                    if (!obj_name.empty()) {
-                                        auto type_it = variable_types_.find(obj_name);
-                                        if (type_it != variable_types_.end() && type_it->second->isPointerTy()) {
-                                            actual_obj_ptr = builder_->CreateLoad(
-                                                llvm::PointerType::get(*context_, 0), 
-                                                obj_ptr, 
-                                                obj_name + "_heap_ptr"
-                                            );
+                                    
+                                    // 检查是否是内置类型
+                                    if (isBuiltinType(type_name)) {
+                                        // 内置类型：传递值
+                                        if (obj_ptr->getType()->isPointerTy()) {
+                                            // obj_ptr 是 alloca，需要 load 值
+                                            llvm::Type* builtin_type = getBuiltinLLVMType(type_name);
+                                            actual_obj_ptr = builder_->CreateLoad(builtin_type, obj_ptr, obj_name + "_val");
+                                        }
+                                    } else {
+                                        // Struct类型：传递指针
+                                        if (!obj_name.empty()) {
+                                            auto type_it = variable_types_.find(obj_name);
+                                            if (type_it != variable_types_.end() && type_it->second->isPointerTy()) {
+                                                actual_obj_ptr = builder_->CreateLoad(
+                                                    llvm::PointerType::get(*context_, 0), 
+                                                    obj_ptr, 
+                                                    obj_name + "_heap_ptr"
+                                                );
+                                            }
                                         }
                                     }
                                     args.push_back(actual_obj_ptr);

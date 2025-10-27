@@ -1175,10 +1175,17 @@ void CodeGenerator::generateFunctionStmt(const FunctionStmt* stmt) {
     
     std::vector<llvm::Type*> param_types;
     
-    // 如果是方法（有self参数），第一个参数是struct指针
+    // 如果是方法（有self参数）
     if (stmt->is_method && !current_struct_name_.empty()) {
-        llvm::Type* struct_type = getOrCreateStructType(current_struct_name_);
-        param_types.push_back(llvm::PointerType::get(*context_, 0));  // struct*
+        if (isBuiltinType(current_struct_name_)) {
+            // 内置类型：self 是值类型
+            llvm::Type* builtin_type = getBuiltinLLVMType(current_struct_name_);
+            param_types.push_back(builtin_type);
+        } else {
+            // Struct类型：self 是指针类型
+            llvm::Type* struct_type = getOrCreateStructType(current_struct_name_);
+            param_types.push_back(llvm::PointerType::get(*context_, 0));  // struct*
+        }
     }
     
     // 其他参数
@@ -1514,11 +1521,20 @@ void CodeGenerator::generateSupportStmt(const SupportStmt* stmt) {
         );
     }
     
-    // 查找对应的struct定义，设置当前上下文
-    auto struct_it = struct_defs_.find(stmt->type_name);
-    if (struct_it != struct_defs_.end()) {
-        current_struct_ = struct_it->second;
-        current_struct_name_ = stmt->type_name;
+    // 检查是否是内置类型
+    bool is_builtin = isBuiltinType(stmt->type_name);
+    
+    if (!is_builtin) {
+        // 原有逻辑：查找对应的struct定义，设置当前上下文
+        auto struct_it = struct_defs_.find(stmt->type_name);
+        if (struct_it != struct_defs_.end()) {
+            current_struct_ = struct_it->second;
+            current_struct_name_ = stmt->type_name;
+        }
+    } else {
+        // 新逻辑：内置类型实现
+        current_struct_ = nullptr;
+        current_struct_name_ = stmt->type_name;  // 存储类型名用于标识
     }
     
     // 生成所有方法
@@ -1826,6 +1842,26 @@ std::string CodeGenerator::mangleInterfaceMethod(const std::string& type_name,
                                                   const std::string& interface_name,
                                                   const std::string& method_name) {
     return type_name + "::" + interface_name + "::" + method_name;
+}
+
+// 检查是否是内置类型
+bool CodeGenerator::isBuiltinType(const std::string& type_name) const {
+    return type_name == "i32" || type_name == "i64" || 
+           type_name == "f32" || type_name == "f64" || 
+           type_name == "bool" || type_name == "char" ||
+           type_name == "string";
+}
+
+// 获取内置类型的 LLVM Type
+llvm::Type* CodeGenerator::getBuiltinLLVMType(const std::string& type_name) {
+    if (type_name == "i32") return llvm::Type::getInt32Ty(*context_);
+    if (type_name == "i64") return llvm::Type::getInt64Ty(*context_);
+    if (type_name == "f32") return llvm::Type::getFloatTy(*context_);
+    if (type_name == "f64") return llvm::Type::getDoubleTy(*context_);
+    if (type_name == "bool") return llvm::Type::getInt1Ty(*context_);
+    if (type_name == "char") return llvm::Type::getInt8Ty(*context_);
+    if (type_name == "string") return llvm::PointerType::get(*context_, 0);
+    return nullptr;
 }
 
 } // namespace pawc

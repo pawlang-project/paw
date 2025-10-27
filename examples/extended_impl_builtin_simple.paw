@@ -1,0 +1,26 @@
+// 测试 Phase 1.5：内置类型接口实现（简化版）
+
+// 定义接口
+type Display = interface {
+    fn to_string(self) -> string;
+}
+
+// ✅ 为 i32 实现 Display（使用简单返回）
+support Display for i32 {
+    fn to_string(self) -> string {
+        return "42";  // 简化：直接返回字符串，不调用内置函数
+    }
+}
+
+fn main() -> i32 {
+    println("===== 内置类型接口实现测试（简化版） =====");
+    
+    // 测试 i32
+    let x = 42;
+    let s = x.to_string();
+    println(s);
+    
+    println("===== 测试完成 =====");
+    return 0;
+}
+
