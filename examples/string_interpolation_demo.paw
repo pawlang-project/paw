@@ -1,0 +1,37 @@
+// 字符串插值完整演示
+
+fn main() -> i32 {
+    println("=== PawLang String Interpolation Demo ===");
+    println("");
+    
+    // 1. 基础变量插值
+    let name = "Alice";
+    println(f"1. Basic: Hello, {name}!");
+    
+    // 2. 数字类型
+    let x: i32 = 42;
+    let y: f64 = 3.14159;
+    println(f"2. Numbers: x={x}, y={y}");
+    
+    // 3. 布尔和字符
+    let flag: bool = true;
+    let ch: char = 'A';
+    println(f"3. Bool/Char: flag={flag}, ch={ch}");
+    
+    // 4. 表达式插值
+    let a = 10;
+    let b = 20;
+    println(f"4. Expression: {a} + {b} = {a + b}");
+    
+    // 5. 复杂表达式
+    println(f"5. Complex: 2 * 3 + 4 = {2 * 3 + 4}");
+    
+    // 6. 转义花括号
+    println(f"6. Escape: Use {{braces}} for literal");
+    
+    println("");
+    println("=== All tests passed! ===");
+    
+    return 0;
+}
+

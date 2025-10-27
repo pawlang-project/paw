@@ -23,6 +23,8 @@ llvm::Value* CodeGenerator::generateExpr(const Expr* expr) {
             // Create global string and return pointer
             return builder_->CreateGlobalStringPtr(str_expr->value, "str");
         }
+        case Expr::Kind::FString:
+            return generateFStringExpr(static_cast<const FStringExpr*>(expr));
         case Expr::Kind::Identifier:
             return generateIdentifierExpr(static_cast<const IdentifierExpr*>(expr));
         case Expr::Kind::Binary:

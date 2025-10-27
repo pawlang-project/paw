@@ -15,13 +15,23 @@ llvm::Value* CodeGenerator::generateFStringExpr(const FStringExpr* expr) {
     // 转换为：
     // "Hello, " + to_string(name) + "! Age: " + to_string(age)
     
+    // Debug: 打印parts和expressions信息
+    std::cerr << "[DEBUG] FStringExpr: parts=" << expr->parts.size() 
+              << ", expressions=" << expr->expressions.size() << std::endl;
+    for (size_t i = 0; i < expr->parts.size(); ++i) {
+        std::cerr << "  part[" << i << "]: [" << expr->parts[i] << "]" << std::endl;
+    }
+    
     llvm::Value* result = nullptr;
     
     for (size_t i = 0; i < expr->parts.size(); ++i) {
         // 添加字符串片段
         if (!expr->parts[i].empty()) {
+            std::cerr << "[DEBUG] Creating string constant for part " << i << std::endl;
             llvm::Value* part = createStringConstant(expr->parts[i]);
+            std::cerr << "[DEBUG] Got part, result=" << (void*)result << ", part=" << (void*)part << std::endl;
             result = result ? concatenateStrings(result, part) : part;
+            std::cerr << "[DEBUG] After assign, result=" << (void*)result << std::endl;
         }
         
         // 添加表达式（如果有）

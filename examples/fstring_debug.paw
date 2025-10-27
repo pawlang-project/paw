@@ -1,0 +1,17 @@
+// 调试f-string
+
+fn main() -> i32 {
+    // 测试1：纯字符串（无插值）
+    println("Test 1: Plain string");
+    println(f"Test 2: F-string without interpolation");
+    
+    // 测试2：纯插值（无字符串）
+    let x = 42;
+    println(f"{x}");
+    
+    // 测试3：字符串+插值
+    println(f"Value: {x}");
+    
+    return 0;
+}
+
