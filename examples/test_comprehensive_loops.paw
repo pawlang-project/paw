@@ -1,0 +1,16 @@
+// 综合循环测试
+
+fn main() {
+    println("Testing loop with inclusive range:");
+    loop i in 0..=2 {
+        println(i);
+    }
+    
+    println("Testing loop with exclusive range:");
+    loop j in 10..13 {
+        println(j);
+    }
+    
+    println("All loop tests completed!");
+}
+

@@ -1,0 +1,9 @@
+// 无闭包测试 - 验证基础功能仍正常
+
+fn main() -> i32 {
+    println("No closure test");
+    let x = 42;
+    println(x);
+    return 0;
+}
+

@@ -1,0 +1,13 @@
+// 嵌套泛型测试
+
+type Box<T> = struct {
+    value: T
+};
+
+fn main() {
+    // 测试嵌套泛型 Box<Box<i32>>
+    let nested = Box { value: Box { value: 42 } };
+    
+    println("Nested generics test!");
+}
+

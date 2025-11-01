@@ -1,0 +1,11 @@
+// loop迭代测试
+
+fn main() {
+    // 基础迭代循环 loop i in ...
+    loop i in 0..5 {
+        println(i);
+    }
+    
+    println("Loop iteration test completed!");
+}
+

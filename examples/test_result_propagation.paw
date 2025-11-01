@@ -1,0 +1,17 @@
+fn divide(a: i32, b: i32) -> i32! {
+    if b == 0 {
+        return err("Division by zero");
+    }
+    return ok(a / b);
+}
+
+fn calculate() -> i32! {
+    // 测试错误传播
+    let result = divide(10, 0)!;  // 这里会触发错误传播
+    return ok(result + 5);  // 不应该执行到这里
+}
+
+fn main() -> i32! {
+    return calculate();
+}
+

@@ -1,0 +1,16 @@
+// 闭包系统 - 基础测试
+// 测试闭包语法解析和类型检查
+
+fn main() -> i32 {
+    println("=== Closure System Test ===");
+    
+    // 测试1: 简单闭包（语句版本）
+    let add = (x: i32, y: i32) -> i32 {
+        return x + y;
+    };
+    
+    println("Closure test passed");
+    
+    return 0;
+}
+

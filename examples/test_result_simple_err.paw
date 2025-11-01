@@ -1,0 +1,6 @@
+fn main() -> void {
+    // 测试err构造器
+    let x = err("error message");
+    println("ERR test");
+}
+

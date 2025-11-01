@@ -1,0 +1,28 @@
+// PawLang编译器功能演示
+// 展示所有已实现的语法特性
+
+fn main() {
+    // 1. 基础类型和变量
+    let x: i32 = 42;
+    let y: i32 = 10;
+    let z: i32 = x + y;
+    
+    // 2. 数组字面量
+    let arr = [1, 2, 3, 4, 5];
+    let flags = [true, false, true];
+    
+    // 3. 元组
+    let pair = (x, y);
+    let triple = (1, 2, 3);
+    let mixed = (42, true);
+    
+    // 4. if表达式
+    let result = if x > 30 { 1 } else { 0 };
+    
+    // 5. Builtin函数
+    println(x);
+    println(result);
+    
+    println("All features test completed!");
+}
+

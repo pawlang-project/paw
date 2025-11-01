@@ -1,0 +1,6 @@
+fn main() -> void {
+    // 只定义闭包，不调用
+    let f = () -> void { };
+    println("Closure defined");
+}
+

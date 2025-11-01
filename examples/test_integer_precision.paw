@@ -1,0 +1,44 @@
+// 整数精度测试 - 简化版本
+
+fn main() -> void {
+    println("=== i8类型测试 ===");
+    let i8_pos: i8 = 127;
+    let i8_neg: i8 = 0 - 128;  // 使用运算避免解析问题
+    println(i8_pos);
+    println(i8_neg);
+    
+    println("=== i16类型测试 ===");
+    let i16_pos: i16 = 32767;
+    let i16_neg: i16 = 0 - 32768;
+    println(i16_pos);
+    println(i16_neg);
+    
+    println("=== i32类型测试 ===");
+    let i32_pos: i32 = 2147483647;
+    let i32_neg: i32 = 0 - 2147483648;
+    println(i32_pos);
+    println(i32_neg);
+    
+    println("=== i64类型测试 ===");
+    let i64_val: i64 = 9223372036854775807;
+    println(i64_val);
+    
+    println("=== u8/u16/u32/u64测试 ===");
+    let u8_val: u8 = 255;
+    let u16_val: u16 = 65535;
+    let u32_val: u32 = 4294967295;
+    let u64_val: u64 = 18446744073709551615;
+    println(u8_val);
+    println(u16_val);
+    println(u32_val);
+    println(u64_val);
+    
+    println("=== i128/u128测试 ===");
+    let i128_val: i128 = 170141183460469231731687303715884105727;
+    let u128_val: u128 = 340282366920938463463374607431768211455;
+    println(i128_val);
+    println(u128_val);
+    
+    println("=== 整数精度测试完成 ===");
+}
+

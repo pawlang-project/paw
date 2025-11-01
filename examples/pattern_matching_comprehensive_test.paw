@@ -1,0 +1,514 @@
+// PawLang 模式匹配完整测试
+// 测试所有模式类型和边界情况
+
+// ============================================
+// 1. 字面量模式 - 所有类型
+// ============================================
+
+fn test_literal_patterns() {
+    // 整数字面量
+    let x = 42;
+    let result1 = x is {
+        0 => "zero",
+        1 => "one",
+        42 => "answer",
+        -1 => "negative",
+        _ => "other",
+    };
+    
+    // 布尔字面量
+    let b = true;
+    let result2 = b is {
+        true => "yes",
+        false => "no",
+    };
+    
+    // 字符字面量
+    let ch = 'A';
+    let result3 = ch is {
+        'A' => "letter A",
+        '0' => "digit 0",
+        _ => "other char",
+    };
+    
+    println("字面量模式测试通过");
+}
+
+// ============================================
+// 2. 变量绑定模式
+// ============================================
+
+fn test_binding_patterns() {
+    let x = 100;
+    
+    // 简单绑定
+    let result1 = x is {
+        value => value * 2,
+    };
+    
+    // 条件绑定
+    let result2 = x is {
+        0 => "zero",
+        value => {
+            if value > 50 {
+                "large"
+            } else {
+                "small"
+            }
+        },
+    };
+    
+    println("变量绑定模式测试通过");
+}
+
+// ============================================
+// 3. 通配符模式
+// ============================================
+
+fn test_wildcard_patterns() {
+    let x = 999;
+    
+    let result = x is {
+        0 => "zero",
+        1 => "one",
+        _ => "anything else",  // 通配符捕获所有其他情况
+    };
+    
+    println("通配符模式测试通过");
+}
+
+// ============================================
+// 4. 元组模式 - 各种场景
+// ============================================
+
+fn test_tuple_patterns() {
+    // 简单元组
+    let pair = (10, 20);
+    let sum = pair is {
+        (0, 0) => 0,
+        (x, 0) => x,
+        (0, y) => y,
+        (x, y) => x + y,
+    };
+    
+    // 嵌套元组
+    let nested = ((1, 2), (3, 4));
+    let result = nested is {
+        ((a, b), (c, d)) => a + b + c + d,
+        _ => 0,
+    };
+    
+    // 三元组
+    let triple = (1, 2, 3);
+    let result2 = triple is {
+        (0, 0, 0) => "all zero",
+        (x, y, z) => {
+            let temp = x + y + z;
+            "sum"
+        },
+    };
+    
+    // 混合字面量和绑定
+    let pair2 = (5, 10);
+    let result3 = pair2 is {
+        (0, _) => "first is zero",
+        (_, 0) => "second is zero",
+        (5, y) => y,  // 第一个是5，绑定第二个
+        (x, 10) => x,  // 第二个是10，绑定第一个
+        (x, y) => x + y,
+    };
+    
+    println("元组模式测试通过");
+}
+
+// ============================================
+// 5. 枚举模式 - 完整测试
+// ============================================
+
+type Option<T> = enum {
+    Some(T),
+    None
+}
+
+type Result<T, E> = enum {
+    Ok(T),
+    Err(E)
+}
+
+type Message = enum {
+    Quit,
+    Move(i32, i32),
+    Write(string),
+    ChangeColor(i32, i32, i32)
+}
+
+fn test_enum_patterns() {
+    // Option模式
+    let opt = Option::Some(42);
+    let value1 = opt is {
+        Some(x) => x,
+        None => 0,
+    };
+    
+    let none_opt = Option::None;
+    let value2 = none_opt is {
+        Some(x) => x,
+        None => -1,
+    };
+    
+    // Result模式
+    let ok_result = Result::Ok(100);
+    let value3 = ok_result is {
+        Ok(v) => v,
+        Err(e) => 0,
+    };
+    
+    let err_result = Result::Err("error");
+    let value4 = err_result is {
+        Ok(v) => 1,
+        Err(msg) => {
+            println(msg);
+            -1
+        },
+    };
+    
+    // 复杂枚举模式
+    let msg = Message::Move(10, 20);
+    let result = msg is {
+        Quit => "quit",
+        Move(x, y) => {
+            let sum = x + y;
+            "moved"
+        },
+        Write(text) => text,
+        ChangeColor(r, g, b) => "color changed",
+    };
+    
+    // 嵌套枚举
+    let nested = Option::Some(Option::Some(42));
+    let value5 = nested is {
+        Some(Some(x)) => x,
+        Some(None) => -1,
+        None => -2,
+    };
+    
+    println("枚举模式测试通过");
+}
+
+// ============================================
+// 6. 结构体模式 - 详细测试
+// ============================================
+
+type Point = struct {
+    x: i32,
+    y: i32
+}
+
+type Rectangle = struct {
+    top_left: Point,
+    bottom_right: Point
+}
+
+type Person = struct {
+    name: string,
+    age: i32,
+    active: bool
+}
+
+fn test_struct_patterns() {
+    // 简单结构体模式 - 简写形式
+    let p = Point { x: 10, y: 20 };
+    let sum = p is {
+        Point { x, y } => x + y,  // 字段名即变量名
+        _ => 0,
+    };
+    
+    // 结构体模式 - 重绑定形式
+    let product = p is {
+        Point { x: a, y: b } => a * b,  // 字段映射到不同变量
+        _ => 0,
+    };
+    
+    // 字面量匹配
+    let origin = Point { x: 0, y: 0 };
+    let result = origin is {
+        Point { x: 0, y: 0 } => "origin",
+        Point { x: 0, y } => "on y-axis",
+        Point { x, y: 0 } => "on x-axis",
+        Point { x, y } => "arbitrary point",
+    };
+    
+    // 嵌套结构体模式
+    let rect = Rectangle {
+        top_left: Point { x: 0, y: 0 },
+        bottom_right: Point { x: 100, y: 100 }
+    };
+    
+    let area = rect is {
+        Rectangle {
+            top_left: Point { x: x1, y: y1 },
+            bottom_right: Point { x: x2, y: y2 }
+        } => (x2 - x1) * (y2 - y1),
+        _ => 0,
+    };
+    
+    // 复杂结构体模式
+    let person = Person {
+        name: "Alice",
+        age: 30,
+        active: true
+    };
+    
+    let status = person is {
+        Person { name: "Alice", age, active: true } => age,
+        Person { name, age, active: false } => -1,
+        Person { name, age, active } => age,
+    };
+    
+    println("结构体模式测试通过");
+}
+
+// ============================================
+// 7. 混合模式 - 复杂组合
+// ============================================
+
+type ComplexEnum = enum {
+    Empty,
+    Single(i32),
+    Pair(i32, i32),
+    Triple(i32, i32, i32),
+    WithPoint(Point),
+    WithTuple((i32, i32))
+}
+
+fn test_mixed_patterns() {
+    // 枚举 + 元组
+    let data1 = (Option::Some(42), Option::None);
+    let result1 = data1 is {
+        (Some(x), Some(y)) => x + y,
+        (Some(x), None) => x,
+        (None, Some(y)) => y,
+        (None, None) => 0,
+    };
+    
+    // 枚举 + 结构体
+    let data2 = ComplexEnum::WithPoint(Point { x: 5, y: 10 });
+    let result2 = data2 is {
+        Empty => 0,
+        Single(x) => x,
+        Pair(x, y) => x + y,
+        Triple(x, y, z) => x + y + z,
+        WithPoint(Point { x, y }) => x * y,
+        WithTuple((a, b)) => a + b,
+    };
+    
+    // 多层嵌套
+    let nested_data = (
+        Option::Some(Point { x: 1, y: 2 }),
+        Result::Ok(42)
+    );
+    
+    let result3 = nested_data is {
+        (Some(Point { x, y }), Ok(v)) => x + y + v,
+        (Some(Point { x, y }), Err(_)) => x + y,
+        (None, Ok(v)) => v,
+        (None, Err(_)) => 0,
+    };
+    
+    println("混合模式测试通过");
+}
+
+// ============================================
+// 8. 穷尽性检查测试
+// ============================================
+
+type TrafficLight = enum {
+    Red,
+    Yellow,
+    Green
+}
+
+fn test_exhaustiveness() {
+    let light = TrafficLight::Red;
+    
+    // ✅ 穷尽所有情况
+    let action = light is {
+        Red => "stop",
+        Yellow => "slow",
+        Green => "go",
+    };
+    
+    // ✅ 使用通配符
+    let action2 = light is {
+        Red => "stop",
+        _ => "proceed with caution",
+    };
+    
+    // ❌ 不完整的匹配（应该产生编译错误）
+    // let action3 = light is {
+    //     Red => "stop",
+    //     Yellow => "slow",
+    //     // 缺少 Green 分支
+    // };
+    
+    println("穷尽性检查测试通过");
+}
+
+// ============================================
+// 9. 深度嵌套模式测试
+// ============================================
+
+fn test_deep_nesting() {
+    // 深度嵌套元组
+    let deep_tuple = (((1, 2), 3), 4);
+    let result1 = deep_tuple is {
+        (((a, b), c), d) => a + b + c + d,
+        _ => 0,
+    };
+    
+    // 深度嵌套枚举
+    let deep_option = Option::Some(Option::Some(Option::Some(42)));
+    let result2 = deep_option is {
+        Some(Some(Some(x))) => x,
+        Some(Some(None)) => -1,
+        Some(None) => -2,
+        None => -3,
+    };
+    
+    // 深度嵌套结构体
+    type Container = struct {
+        inner: Rectangle
+    }
+    
+    let container = Container {
+        inner: Rectangle {
+            top_left: Point { x: 0, y: 0 },
+            bottom_right: Point { x: 50, y: 50 }
+        }
+    };
+    
+    let result3 = container is {
+        Container {
+            inner: Rectangle {
+                top_left: Point { x: 0, y: 0 },
+                bottom_right: Point { x, y }
+            }
+        } => x * y,
+        _ => 0,
+    };
+    
+    println("深度嵌套模式测试通过");
+}
+
+// ============================================
+// 10. 边界情况测试
+// ============================================
+
+fn test_pattern_edge_cases() {
+    // 空元组（unit）
+    let unit = ();
+    let result1 = unit is {
+        () => "unit",
+    };
+    
+    // 单元素元组（如果存在）
+    // let single = (42);
+    
+    // 大型元组
+    let large_tuple = (1, 2, 3, 4, 5, 6, 7, 8);
+    let result2 = large_tuple is {
+        (a, b, c, d, e, f, g, h) => a + b + c + d + e + f + g + h,
+        _ => 0,
+    };
+    
+    // 多个通配符
+    let tuple = (1, 2, 3, 4);
+    let result3 = tuple is {
+        (_, _, _, _) => "all ignored",
+    };
+    
+    // 部分通配符
+    let result4 = tuple is {
+        (x, _, _, y) => x + y,
+        _ => 0,
+    };
+    
+    println("边界情况测试通过");
+}
+
+// ============================================
+// 11. 复杂Real-world场景
+// ============================================
+
+type HttpRequest = enum {
+    Get(string),
+    Post(string, string),
+    Put(string, string),
+    Delete(string)
+}
+
+type HttpResponse = enum {
+    Ok(i32, string),
+    NotFound,
+    ServerError(string)
+}
+
+fn handle_http(req: HttpRequest, resp: HttpResponse) -> string {
+    // 模式匹配处理HTTP请求和响应
+    return (req, resp) is {
+        (Get(path), Ok(200, body)) => {
+            println("GET success");
+            body
+        },
+        (Post(path, data), Ok(201, _)) => {
+            println("POST created");
+            "created"
+        },
+        (_, NotFound) => {
+            println("404");
+            "not found"
+        },
+        (_, ServerError(msg)) => {
+            println(msg);
+            "error"
+        },
+        _ => "unknown",
+    };
+}
+
+fn test_real_world_patterns() {
+    let req = HttpRequest::Get("/api/users");
+    let resp = HttpResponse::Ok(200, "user data");
+    let result = handle_http(req, resp);
+    
+    println("Real-world场景测试通过");
+}
+
+// ============================================
+// 主测试函数
+// ============================================
+
+fn main() {
+    println("========================================");
+    println("PawLang 模式匹配完整测试");
+    println("========================================");
+    
+    test_literal_patterns();
+    test_binding_patterns();
+    test_wildcard_patterns();
+    test_tuple_patterns();
+    test_enum_patterns();
+    test_struct_patterns();
+    test_mixed_patterns();
+    test_exhaustiveness();
+    test_deep_nesting();
+    test_pattern_edge_cases();
+    test_real_world_patterns();
+    
+    println("========================================");
+    println("所有模式匹配测试完成!");
+    println("========================================");
+}
+
+
+

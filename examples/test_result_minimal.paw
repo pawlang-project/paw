@@ -1,0 +1,10 @@
+// T? 最小测试
+
+fn test_ok() -> i32? {
+    return ok(42);
+}
+
+fn main() -> i32 {
+    return 0;
+}
+

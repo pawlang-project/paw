@@ -1,0 +1,18 @@
+// 泛型枚举测试
+
+// 定义泛型枚举
+type Option<T> = enum {
+    Some(T),
+    None
+};
+
+fn main() {
+    // 使用Option - 应该生成Option_i32
+    let opt1 = Option::Some(42);
+    
+    // 另一个Option - 应该生成Option_string
+    let opt2 = Option::Some("hello");
+    
+    println("Generic enum test!");
+}
+

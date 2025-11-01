@@ -1,0 +1,7 @@
+// 简单元组测试（不包含println）
+
+fn main() {
+    let tup1 = (1, 2, 3);
+    let x: i32 = 42;
+}
+

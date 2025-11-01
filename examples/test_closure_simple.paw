@@ -1,0 +1,19 @@
+// 闭包系统 - 简单测试
+// 测试闭包语法解析
+
+fn main() -> i32 {
+    // 测试1: 简单闭包
+    let add = (x: i32, y: i32) -> i32 {
+        return x + y;
+    };
+    
+    // 测试2: 返回类型推导
+    let multiply = (x: i32, y: i32) {
+        x * y
+    };
+    
+    println("Closure test");
+    
+    return 0;
+}
+

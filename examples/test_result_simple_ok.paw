@@ -1,0 +1,6 @@
+fn main() -> void {
+    // 最简单的Result测试
+    let x = ok(42);
+    println("OK test");
+}
+

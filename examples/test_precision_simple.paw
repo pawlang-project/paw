@@ -1,0 +1,28 @@
+// 简单精度测试
+
+fn main() -> void {
+    println("=== 简单类型测试 ===");
+    
+    // i8测试
+    let a: i8 = 100;
+    println(a);
+    
+    // i16测试
+    let b: i16 = 1000;
+    println(b);
+    
+    // i32测试
+    let c: i32 = 100000;
+    println(c);
+    
+    // i64测试
+    let d: i64 = 1000000000;
+    println(d);
+    
+    // u64测试
+    let e: u64 = 1000000000;
+    println(e);
+    
+    println("=== 完成 ===");
+}
+

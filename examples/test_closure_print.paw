@@ -1,0 +1,10 @@
+fn main() -> void {
+    // 带参数但无返回值的闭包
+    let greet = (name: i32) -> void {
+        println(name);
+    };
+    
+    greet(42);
+    println("Done");
+}
+

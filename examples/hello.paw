@@ -1,9 +1,6 @@
-// Hello World example in PawLang
+// Hello World program
 
-fn main() -> i32 {
-    println("Hello, PawLang!");
-    return 0;
+fn main() {
+    let x: i32 = 42;
+    println(x);
 }
-
-
-

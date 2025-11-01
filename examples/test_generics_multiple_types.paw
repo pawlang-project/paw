@@ -1,0 +1,19 @@
+// 测试多种类型的泛型实例化
+
+type Box<T> = struct {
+    value: T
+};
+
+fn main() {
+    // 生成Box_i32
+    let b1 = Box { value: 42 };
+    
+    // 生成Box_string
+    let b2 = Box { value: "hello" };
+    
+    // 生成Box_bool
+    let b3 = Box { value: true };
+    
+    println("Multiple type instantiation test!");
+}
+

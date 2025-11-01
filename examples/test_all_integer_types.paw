@@ -1,0 +1,57 @@
+// 全整数类型精度测试
+// 测试所有14种整数类型的精度和范围
+
+fn main() -> void {
+    println("=== 有符号整数类型测试 ===");
+    
+    // i8: -128 to 127
+    let i8_min: i8 = -128;
+    let i8_max: i8 = 127;
+    println(i8_min);
+    println(i8_max);
+    
+    // i16: -32768 to 32767
+    let i16_min: i16 = -32768;
+    let i16_max: i16 = 32767;
+    println(i16_min);
+    println(i16_max);
+    
+    // i32: -2147483648 to 2147483647
+    let i32_min: i32 = -2147483648;
+    let i32_max: i32 = 2147483647;
+    println(i32_min);
+    println(i32_max);
+    
+    // i64: large numbers
+    let i64_val: i64 = 9223372036854775807;
+    println(i64_val);
+    
+    // i128: very large numbers
+    let i128_val: i128 = 170141183460469231731687303715884105727;
+    println(i128_val);
+    
+    println("=== 无符号整数类型测试 ===");
+    
+    // u8: 0 to 255
+    let u8_max: u8 = 255;
+    println(u8_max);
+    
+    // u16: 0 to 65535
+    let u16_max: u16 = 65535;
+    println(u16_max);
+    
+    // u32: 0 to 4294967295
+    let u32_max: u32 = 4294967295;
+    println(u32_max);
+    
+    // u64: large numbers
+    let u64_max: u64 = 18446744073709551615;
+    println(u64_max);
+    
+    // u128: very large numbers
+    let u128_val: u128 = 340282366920938463463374607431768211455;
+    println(u128_val);
+    
+    println("=== 整数类型测试完成 ===");
+}
+

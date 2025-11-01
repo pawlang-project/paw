@@ -1,0 +1,18 @@
+// 测试调试相关的builtin函数
+
+fn main() {
+    // 测试assert
+    let x: i32 = 42;
+    assert(x > 0, "x must be positive");
+    
+    // 测试debug_assert (只在debug模式生效)
+    debug_assert(x < 100, "x must be less than 100");
+    
+    // 测试panic
+    if x < 0 {
+        panic("x is negative!");
+    }
+    
+    println("All assertions passed!");
+}
+

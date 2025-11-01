@@ -1,0 +1,25 @@
+// 接口系统 - 带参数的方法测试
+
+type Calculator = interface {
+    fn add(x: i32, y: i32) -> i32;
+    fn multiply(x: i32, y: i32) -> i32;
+};
+
+type SimpleCalc = struct {
+    base: i32
+};
+
+support SimpleCalc with Calculator {
+    fn add(x: i32, y: i32) -> i32 {
+        return x + y;
+    }
+    
+    fn multiply(x: i32, y: i32) -> i32 {
+        return x * y;
+    }
+}
+
+fn main() {
+    println("Interface with parameters test completed!");
+}
+

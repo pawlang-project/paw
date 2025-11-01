@@ -1,0 +1,18 @@
+// 多泛型参数测试
+
+// 定义双泛型参数结构体
+type Pair<T, U> = struct {
+    first: T,
+    second: U
+};
+
+fn main() {
+    // 使用Pair - 应该生成Pair_i32_string
+    let p1 = Pair { first: 42, second: "hello" };
+    
+    // 另一个Pair - 应该生成Pair_bool_f64
+    let p2 = Pair { first: true, second: 3.14 };
+    
+    println("Multi-param generics test!");
+}
+

@@ -1,0 +1,14 @@
+// 泛型实例生成测试
+
+// 定义泛型结构体
+type Box<T> = struct {
+    value: T
+};
+
+fn main() {
+    // 使用泛型 - 应该生成Box_i32
+    let x = Box { value: 42 };
+    
+    println("Generic instantiation test!");
+}
+

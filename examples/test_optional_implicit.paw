@@ -1,0 +1,13 @@
+fn find(value: i32) -> i32? {
+    if value > 0 {
+        return value;  // 自动包装为Some(value)
+    }
+    return null;
+}
+
+fn main() -> void {
+    let x = find(10);
+    let y = find(-5);
+    println("Optional test done");
+}
+

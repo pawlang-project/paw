@@ -1,0 +1,15 @@
+// match表达式 - 字面量匹配测试
+
+fn main() {
+    let x = 1;
+    
+    let result = x is {
+        0 => "zero",
+        1 => "one",
+        2 => "two",
+        _ => "other"
+    };
+    
+    println("Match expression basic test completed!");
+}
+

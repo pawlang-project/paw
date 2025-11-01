@@ -1,0 +1,7 @@
+// 测试无初始化的变量（TypeChecker修改后的回归测试）
+
+fn main() {
+    let x: i32 = 42;
+    println(x);
+}
+

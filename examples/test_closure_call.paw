@@ -1,0 +1,18 @@
+// 闭包调用测试
+
+fn main() -> i32 {
+    println("=== Closure Call Test ===");
+    
+    // 测试1: 简单闭包调用
+    let add = (x: i32, y: i32) -> i32 {
+        return x + y;
+    };
+    
+    let result = add(10, 20);
+    println(result);
+    
+    println("Closure call test complete");
+    
+    return 0;
+}
+

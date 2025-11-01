@@ -1,0 +1,30 @@
+// 全基础类型测试
+// 测试bool, char, string等基础类型
+
+fn main() -> void {
+    println("=== 基础类型测试 ===");
+    
+    // bool类型
+    let b1: bool = true;
+    let b2: bool = false;
+    println(b1);
+    println(b2);
+    
+    // char类型
+    let c1: char = 'A';
+    let c2: char = 'Z';
+    let c3: char = '0';
+    let c4: char = '9';
+    println(c1);
+    println(c2);
+    println(c3);
+    println(c4);
+    
+    // string类型
+    let s1: string = "Hello, PawLang!";
+    let s2: string = "Precision Test";
+    println(s1);
+    println(s2);
+    
+    println("=== 基础类型测试完成 ===");
+}

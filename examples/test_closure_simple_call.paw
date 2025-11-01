@@ -1,0 +1,7 @@
+fn main() -> void {
+    // 最简单的闭包定义和调用 - 无参数
+    let f = () -> void { };
+    f();
+    println("Done");
+}
+

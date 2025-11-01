@@ -1,0 +1,10 @@
+// 数组字面量测试
+
+fn main() {
+    let arr1 = [1, 2, 3, 4, 5];
+    let arr2 = [true, false, true];
+    let empty = [];
+    
+    println("Array test completed");
+}
+

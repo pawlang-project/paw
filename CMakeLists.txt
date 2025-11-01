@@ -1,139 +1,92 @@
 cmake_minimum_required(VERSION 3.20)
-project(pawc C CXX)
+project(PawLang VERSION 1.4.0 LANGUAGES CXX C)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PawLang 编译器 - Pass-Based架构
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# ============================================================================
-# LLVM Integration - Direct Source Build (zig-bootstrap style)
-# ============================================================================
+# 默认构建类型
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 
 message(STATUS "")
-message(STATUS "========================================")
-message(STATUS "  Building LLVM from source")
-message(STATUS "========================================")
+message(STATUS "╔════════════════════════════════════════╗")
+message(STATUS "║   PawLang Compiler v${PROJECT_VERSION}        ║")
+message(STATUS "║   LLVM 21.1.0                    ║")
+message(STATUS "╚════════════════════════════════════════╝")
 message(STATUS "")
 
-# Configure LLVM build options BEFORE adding subdirectory
-# Enable Clang and LLD projects
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# LLVM Integration - zig-bootstrap style
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# 启用Clang和LLD项目
 set(LLVM_ENABLE_PROJECTS "clang;lld" CACHE STRING "Semicolon-separated list of projects to build" FORCE)
 
-# Point to external Clang and LLD source directories
+# 设置外部源目录
 set(LLVM_EXTERNAL_CLANG_SOURCE_DIR "${CMAKE_SOURCE_DIR}/clang" CACHE PATH "" FORCE)
 set(LLVM_EXTERNAL_LLD_SOURCE_DIR "${CMAKE_SOURCE_DIR}/lld" CACHE PATH "" FORCE)
 
-# Verify directories exist
+# 验证目录存在
 if(EXISTS "${CMAKE_SOURCE_DIR}/clang")
-    message(STATUS "[OK] Clang source found: ${CMAKE_SOURCE_DIR}/clang")
+    message(STATUS "[OK] Clang source found")
 else()
-    message(FATAL_ERROR "[ERROR] Clang source not found at: ${CMAKE_SOURCE_DIR}/clang")
+    message(FATAL_ERROR "[ERROR] Clang source not found")
 endif()
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/lld")
-    message(STATUS "[OK] LLD source found: ${CMAKE_SOURCE_DIR}/lld")
+    message(STATUS "[OK] LLD source found")
 else()
-    message(FATAL_ERROR "[ERROR] LLD source not found at: ${CMAKE_SOURCE_DIR}/lld")
+    message(FATAL_ERROR "[ERROR] LLD source not found")
 endif()
 
-# Enable building tools (required for clang and lld executables)
-set(LLVM_BUILD_TOOLS ON CACHE BOOL "" FORCE)
-
-message(STATUS "LLVM_ENABLE_PROJECTS: ${LLVM_ENABLE_PROJECTS}")
-message(STATUS "LLVM_BUILD_TOOLS: ${LLVM_BUILD_TOOLS}")
-
-# Clang build options (minimal)
-set(CLANG_ENABLE_ARCMT OFF CACHE BOOL "")
-set(CLANG_ENABLE_STATIC_ANALYZER OFF CACHE BOOL "")
-set(CLANG_BUILD_EXAMPLES OFF CACHE BOOL "")
-set(CLANG_INCLUDE_DOCS OFF CACHE BOOL "")
-set(CLANG_INCLUDE_TESTS OFF CACHE BOOL "")
-
-# LLD build options (minimal)
-set(LLD_BUILD_TOOLS ON CACHE BOOL "")
-set(LLD_INCLUDE_TESTS OFF CACHE BOOL "")
-
-# 根据当前平台和架构自动选择LLVM目标（减少编译时间和二进制大小）
-# 参考：
-# - Windows: x86_64, aarch64, x86
-# - macOS: x86_64, aarch64  
-# - Linux: x86_64, aarch64, arm, riscv64, powerpc64le, x86, loongarch64, s390x
-
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64|AARCH64")
-    # ARM64/AArch64 架构（Apple Silicon、服务器ARM、移动设备）
+# 根据平台自动选择目标
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64|AARCH64")
     set(LLVM_TARGETS_TO_BUILD "AArch64" CACHE STRING "")
     set(PLATFORM_TARGET "AArch64")
-    message(STATUS "Detected AArch64 (ARM64) - building AArch64 target only")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|x64")
-    # x86_64 架构（主流桌面和服务器）
+    message(STATUS "Detected AArch64 - building AArch64 target")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|x64")
     set(LLVM_TARGETS_TO_BUILD "X86" CACHE STRING "")
     set(PLATFORM_TARGET "X86")
-    message(STATUS "Detected x86_64 - building X86 target only")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "i386|i686|x86")
-    # 32位 x86 架构（旧PC、嵌入式）
-    set(LLVM_TARGETS_TO_BUILD "X86" CACHE STRING "")
-    set(PLATFORM_TARGET "X86")
-    message(STATUS "Detected x86 (32-bit) - building X86 target only")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7|arm")
-    # ARM 32位架构（嵌入式、旧移动设备）
-    set(LLVM_TARGETS_TO_BUILD "ARM" CACHE STRING "")
-    set(PLATFORM_TARGET "ARM")
-    message(STATUS "Detected ARM (32-bit) - building ARM target only")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
-    # RISC-V 64位架构（新兴开源架构）
-    set(LLVM_TARGETS_TO_BUILD "RISCV" CACHE STRING "")
-    set(PLATFORM_TARGET "RISCV")
-    message(STATUS "Detected RISC-V 64-bit - building RISCV target only")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64le|powerpc64le")
-    # PowerPC 64位小端架构（IBM服务器）
-    set(LLVM_TARGETS_TO_BUILD "PowerPC" CACHE STRING "")
-    set(PLATFORM_TARGET "PowerPC")
-    message(STATUS "Detected PowerPC 64LE - building PowerPC target only")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "loongarch64")
-    # LoongArch 64位架构（中国龙芯）
-    set(LLVM_TARGETS_TO_BUILD "LoongArch" CACHE STRING "")
-    set(PLATFORM_TARGET "LoongArch")
-    message(STATUS "Detected LoongArch 64-bit - building LoongArch target only")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "s390x")
-    # IBM z/Architecture（大型机）
-    set(LLVM_TARGETS_TO_BUILD "SystemZ" CACHE STRING "")
-    set(PLATFORM_TARGET "SystemZ")
-    message(STATUS "Detected s390x - building SystemZ target only")
-    
+    message(STATUS "Detected x86_64 - building X86 target")
 else()
-    # 未知平台，编译常用的两个目标（兼容性）
     set(LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
     set(PLATFORM_TARGET "X86;AArch64")
-    message(WARNING "Unknown platform: ${CMAKE_SYSTEM_PROCESSOR}")
-    message(STATUS "Building X86 and AArch64 targets for compatibility")
+    message(STATUS "Building X86 and AArch64 for compatibility")
 endif()
 
+# LLVM最小化配置
+set(LLVM_BUILD_TOOLS ON CACHE BOOL "")
 set(LLVM_BUILD_EXAMPLES OFF CACHE BOOL "")
 set(LLVM_BUILD_TESTS OFF CACHE BOOL "")
 set(LLVM_BUILD_BENCHMARKS OFF CACHE BOOL "")
-set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
-set(LLVM_ENABLE_EH ON CACHE BOOL "")
-set(LLVM_ENABLE_ZLIB OFF CACHE BOOL "")
-set(LLVM_ENABLE_ZSTD OFF CACHE BOOL "")
-set(LLVM_ENABLE_LIBXML2 OFF CACHE BOOL "")
-set(LLVM_ENABLE_TERMINFO OFF CACHE BOOL "")
-set(LLVM_ENABLE_THREADS ON CACHE BOOL "")
-set(LLVM_ENABLE_UNWIND_TABLES ON CACHE BOOL "")
-set(LLVM_ENABLE_WARNINGS OFF CACHE BOOL "")
-set(LLVM_ENABLE_WERROR OFF CACHE BOOL "")
-set(LLVM_INCLUDE_EXAMPLES OFF CACHE BOOL "")
 set(LLVM_INCLUDE_TESTS OFF CACHE BOOL "")
+set(LLVM_INCLUDE_EXAMPLES OFF CACHE BOOL "")
 set(LLVM_INCLUDE_BENCHMARKS OFF CACHE BOOL "")
 set(LLVM_INCLUDE_DOCS OFF CACHE BOOL "")
+set(LLVM_ENABLE_DOXYGEN OFF CACHE BOOL "")
+set(LLVM_ENABLE_SPHINX OFF CACHE BOOL "")
+set(LLVM_ENABLE_RTTI ON CACHE BOOL "")
+set(LLVM_ENABLE_EH ON CACHE BOOL "")
+set(LLVM_ENABLE_WARNINGS OFF CACHE BOOL "")
 
-# Apply minimal patches for clang and lld
+# Clang配置
+set(CLANG_ENABLE_ARCMT OFF CACHE BOOL "")
+set(CLANG_ENABLE_STATIC_ANALYZER OFF CACHE BOOL "")
+set(CLANG_BUILD_EXAMPLES OFF CACHE BOOL "")
+set(CLANG_INCLUDE_TESTS OFF CACHE BOOL "")
+set(CLANG_INCLUDE_DOCS OFF CACHE BOOL "")
+
+# LLD配置
+set(LLD_BUILD_TOOLS ON CACHE BOOL "")
+set(LLD_INCLUDE_TESTS OFF CACHE BOOL "")
+
+# 应用最小补丁（参考您的原版本）
 set(CLANG_CMAKE "${CMAKE_SOURCE_DIR}/clang/CMakeLists.txt")
 if(EXISTS ${CLANG_CMAKE})
     file(READ ${CLANG_CMAKE} CLANG_CONTENT)
@@ -154,243 +107,156 @@ if(EXISTS ${LLD_CMAKE})
     endif()
 endif()
 
-# Add LLVM as subdirectory (exclude from default build)
+# LLVM docs补丁
+set(LLVM_CMAKE "${CMAKE_SOURCE_DIR}/llvm/CMakeLists.txt")
+if(EXISTS ${LLVM_CMAKE})
+    file(READ ${LLVM_CMAKE} LLVM_CONTENT)
+    if(NOT LLVM_CONTENT MATCHES "if.*EXISTS.*docs.*LLVM_INCLUDE_DOCS")
+        string(REPLACE "add_subdirectory(docs)" "if(LLVM_INCLUDE_DOCS AND EXISTS \"\${CMAKE_CURRENT_SOURCE_DIR}/docs\")\n  add_subdirectory(docs)\nendif()" LLVM_CONTENT "${LLVM_CONTENT}")
+        string(REPLACE "add_subdirectory(benchmarks)" "if(LLVM_INCLUDE_BENCHMARKS AND EXISTS \"\${CMAKE_CURRENT_SOURCE_DIR}/benchmarks\")\n  add_subdirectory(benchmarks)\nendif()" LLVM_CONTENT "${LLVM_CONTENT}")
+        file(WRITE ${LLVM_CMAKE} "${LLVM_CONTENT}")
+        message(STATUS "Applied patch: LLVM docs/benchmarks directory")
+    endif()
+endif()
+
+# 添加LLVM子项目（使用EXCLUDE_FROM_ALL避免默认构建所有）
 add_subdirectory(llvm EXCLUDE_FROM_ALL)
 
-message(STATUS "LLVM source integration complete")
-message(STATUS "")
-
-# LLVM include directories
+# LLVM include目录
 include_directories(
-        ${CMAKE_SOURCE_DIR}/llvm/include
-        ${CMAKE_BINARY_DIR}/llvm/include
+    ${CMAKE_SOURCE_DIR}/llvm/include
+    ${CMAKE_BINARY_DIR}/llvm/include
 )
 
-# Get LLVM components (minimal for code generation)
-# 根据平台动态添加目标库
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 第三方库
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+message(STATUS "Using bundled SipHash from third-party/siphash")
+add_library(siphash INTERFACE)
+target_include_directories(siphash INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/siphash/include
+)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 生成配置头文件
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/pawc/version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/pawc/version.h"
+)
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/pawc/config.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/pawc/config.h"
+)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PawLang编译器模块（按依赖顺序）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# 1. 基础设施
+add_subdirectory(src/utils)
+add_subdirectory(src/diagnostics)
+add_subdirectory(src/pass)
+add_subdirectory(src/runtime)
+
+# 2. 中间表示
+add_subdirectory(src/middleend)
+
+# 3. 前端
+add_subdirectory(src/frontend)
+
+# 4. 后端
+add_subdirectory(src/backend)
+
+# 5. Pass实现
+add_subdirectory(src/passes)
+
+# 6. 驱动
+add_subdirectory(src/driver)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PawLang编译器可执行文件
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# LLVM库列表（根据平台）
 set(llvm_libs
-        LLVMCore
-        LLVMSupport
-        LLVMIRReader
-        LLVMTarget
-        LLVMAnalysis
-        LLVMTransformUtils
-        LLVMScalarOpts
-        LLVMipo
-        LLVMAsmParser
-        LLVMAsmPrinter
-        LLVMMC
-        LLVMMCParser
-        LLVMObject
-        LLVMBitReader
-        LLVMBitWriter
+    LLVMCore
+    LLVMSupport
+    LLVMIRReader
+    LLVMTarget
+    LLVMAnalysis
+    LLVMTransformUtils
+    LLVMScalarOpts
+    LLVMipo
+    LLVMAsmParser
+    LLVMAsmPrinter
+    LLVMMC
+    LLVMMCParser
+    LLVMObject
+    LLVMBitReader
+    LLVMBitWriter
+    LLVMPasses
 )
 
-# 根据检测到的平台添加相应的目标库
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64|AARCH64")
-    # AArch64 (ARM 64-bit)
+# 根据平台添加目标库
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64|AARCH64")
     list(APPEND llvm_libs
         LLVMAArch64CodeGen
         LLVMAArch64AsmParser
         LLVMAArch64Desc
         LLVMAArch64Info
     )
-    message(STATUS "Linking AArch64 libraries")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|x64")
-    # x86-64 (64-bit Intel/AMD)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|x64|i386|i686|x86")
     list(APPEND llvm_libs
         LLVMX86CodeGen
         LLVMX86AsmParser
         LLVMX86Desc
         LLVMX86Info
     )
-    message(STATUS "Linking X86 libraries")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "i386|i686|x86")
-    # x86 (32-bit)
-    list(APPEND llvm_libs
-        LLVMX86CodeGen
-        LLVMX86AsmParser
-        LLVMX86Desc
-        LLVMX86Info
-    )
-    message(STATUS "Linking X86 libraries (32-bit)")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "armv7|arm")
-    # ARM (32-bit)
-    list(APPEND llvm_libs
-        LLVMARMCodeGen
-        LLVMARMAsmParser
-        LLVMARMDesc
-        LLVMARMInfo
-    )
-    message(STATUS "Linking ARM libraries (32-bit)")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
-    # RISC-V (64-bit)
-    list(APPEND llvm_libs
-        LLVMRISCVCodeGen
-        LLVMRISCVAsmParser
-        LLVMRISCVDesc
-        LLVMRISCVInfo
-    )
-    message(STATUS "Linking RISC-V libraries")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64le|powerpc64le")
-    # PowerPC (64-bit little-endian)
-    list(APPEND llvm_libs
-        LLVMPowerPCCodeGen
-        LLVMPowerPCAsmParser
-        LLVMPowerPCDesc
-        LLVMPowerPCInfo
-    )
-    message(STATUS "Linking PowerPC libraries")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "loongarch64")
-    # LoongArch (64-bit)
-    list(APPEND llvm_libs
-        LLVMLoongArchCodeGen
-        LLVMLoongArchAsmParser
-        LLVMLoongArchDesc
-        LLVMLoongArchInfo
-    )
-    message(STATUS "Linking LoongArch libraries")
-    
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "s390x")
-    # IBM System z (s390x)
-    list(APPEND llvm_libs
-        LLVMSystemZCodeGen
-        LLVMSystemZAsmParser
-        LLVMSystemZDesc
-        LLVMSystemZInfo
-    )
-    message(STATUS "Linking SystemZ libraries")
-    
 else()
-    # 未知平台：编译最常用的两个目标（兼容性）
     list(APPEND llvm_libs
-        LLVMX86CodeGen
-        LLVMX86AsmParser
-        LLVMX86Desc
-        LLVMX86Info
-        LLVMAArch64CodeGen
-        LLVMAArch64AsmParser
-        LLVMAArch64Desc
-        LLVMAArch64Info
+        LLVMX86CodeGen LLVMX86AsmParser LLVMX86Desc LLVMX86Info
+        LLVMAArch64CodeGen LLVMAArch64AsmParser LLVMAArch64Desc LLVMAArch64Info
     )
-    message(WARNING "Unknown architecture: ${CMAKE_SYSTEM_PROCESSOR}")
-    message(STATUS "Linking both X86 and AArch64 libraries for compatibility")
 endif()
 
-# Include directories
-include_directories(${PROJECT_SOURCE_DIR}/include)
+add_executable(pawc src/driver/main.cpp)
 
-# Source files for main compiler
-set(SOURCES
-        src/main.cpp
-        src/lexer/lexer.cpp
-        src/parser/parser.cpp
-        src/parser/parser_fstring.cpp
-        src/parser/parser_closure.cpp
-        src/parser/closure_analyzer.cpp
-        src/codegen/codegen.cpp
-        src/codegen/codegen_match.cpp
-        src/codegen/codegen_stmt.cpp
-        src/codegen/codegen_expr.cpp
-        src/codegen/codegen_struct.cpp
-        src/codegen/codegen_fstring.cpp
-        src/codegen/codegen_closure.cpp
-        src/codegen/codegen_closure_capture.cpp
-        src/codegen/codegen_closure_infer.cpp
-        src/codegen/codegen_type.cpp
-        src/builtins/builtins.cpp
-        src/module/module_loader.cpp
-        src/module/symbol_table.cpp
-        src/module/module_compiler.cpp
-        src/diagnostics/source_manager.cpp
-        src/diagnostics/diagnostic_engine.cpp
-        src/types/type.cpp
-        src/types/type_system.cpp
-        src/sema/semantic_analyzer.cpp
-        src/sema/interface_validator.cpp
-        src/passes/pass_manager.cpp
-        src/colors.cpp
-        src/toml_parser.cpp
+target_link_libraries(pawc PRIVATE
+    pawc_driver
+    pawc_pass
+    pawc_runtime
+    ${llvm_libs}
 )
 
-# Create main compiler executable
-add_executable(pawc ${SOURCES})
+target_include_directories(pawc PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_BINARY_DIR}/include
+)
 
-# Ensure pawc depends on LLVM libraries being built
-add_dependencies(pawc ${llvm_libs})
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 安装配置
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# Also depend on clang and lld if they are being built
-if(TARGET clang)
-    add_dependencies(pawc clang)
-    message(STATUS "pawc will depend on clang")
-endif()
-if(TARGET lld)
-    add_dependencies(pawc lld)
-    message(STATUS "pawc will depend on lld")
-endif()
+install(TARGETS pawc
+    RUNTIME DESTINATION bin
+)
 
-# Expose clang and lld paths for runtime use
-if(TARGET clang)
-    set(CLANG_EXECUTABLE "$<TARGET_FILE:clang>" CACHE INTERNAL "Path to clang executable")
-    message(STATUS "Clang executable will be available at: ${CMAKE_BINARY_DIR}/bin/clang")
-endif()
-if(TARGET lld)
-    set(LLD_EXECUTABLE "$<TARGET_FILE:lld>" CACHE INTERNAL "Path to lld executable")
-    message(STATUS "LLD executable will be available at: ${CMAKE_BINARY_DIR}/bin/lld")
-endif()
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 构建信息
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# Link LLVM libraries
-target_link_libraries(pawc ${llvm_libs})
-
-# Note: Using dynamic linking with MinGW
-# Required DLLs will be copied to the output directory
-
-# Compiler options
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-    target_compile_options(pawc PRIVATE -Wall -Wextra -Wno-unused-parameter)
-elseif (MSVC)
-    target_compile_options(pawc PRIVATE /utf-8 /wd4819 /wd4624)
-    target_compile_definitions(pawc PRIVATE _CRT_SECURE_NO_WARNINGS)
-endif ()
-
-# Windows-specific LLVM definitions
-if (WIN32)
-    add_compile_definitions(LLVM_ON_WIN32=1)
-endif ()
-
-# Copy stdlib to build directory
-file(COPY stdlib DESTINATION ${CMAKE_BINARY_DIR})
-
-# Installation
-install(TARGETS pawc DESTINATION bin)
-install(DIRECTORY stdlib DESTINATION .)
-
-# Install clang and lld if they are built
-if(TARGET clang)
-    install(TARGETS clang DESTINATION bin)
-    message(STATUS "clang will be installed to bin/")
-endif()
-if(TARGET lld)
-    install(TARGETS lld DESTINATION bin)
-    message(STATUS "lld will be installed to bin/")
-endif()
-
-# Output information
 message(STATUS "")
-message(STATUS "========================================")
-message(STATUS "  PawLang Compiler")
-message(STATUS "========================================")
-message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "LLVM: Building from source")
-message(STATUS "Target Architecture: ${PLATFORM_TARGET}")
-message(STATUS "Clang: Enabled (as build tool)")
-message(STATUS "LLD: Enabled (as build tool)")
-message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "========================================")
+message(STATUS "╔════════════════════════════════════════╗")
+message(STATUS "║   PawLang Build Configuration          ║")
+message(STATUS "╠════════════════════════════════════════╣")
+message(STATUS "║ Version:           ${PROJECT_VERSION}")
+message(STATUS "║ Build Type:        ${CMAKE_BUILD_TYPE}")
+message(STATUS "║ C++ Compiler:      ${CMAKE_CXX_COMPILER_ID}")
+message(STATUS "║ LLVM Version:      21.1.0")
+message(STATUS "║ Targets:           X86;AArch64")
+message(STATUS "╚════════════════════════════════════════╝")
 message(STATUS "")

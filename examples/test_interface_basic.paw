@@ -1,0 +1,22 @@
+// 接口系统 - 基础测试
+
+type Display = interface {
+    fn show();
+};
+
+type Point = struct {
+    x: i32,
+    y: i32
+};
+
+support Point with Display {
+    fn show() {
+        println("Point");
+    }
+}
+
+fn main() {
+    let p = Point { x: 10, y: 20 };
+    println("Interface basic test completed!");
+}
+

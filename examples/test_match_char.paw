@@ -1,0 +1,16 @@
+// match表达式 - 字符匹配测试
+
+fn main() {
+    let ch = 'b';
+    
+    let result = ch is {
+        'a' => 1,
+        'b' => 2,
+        'c' => 3,
+        _ => 0
+    };
+    
+    println(result);  // 应输出: 2
+    println("Char match test completed!");
+}
+

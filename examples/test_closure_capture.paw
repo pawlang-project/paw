@@ -1,0 +1,11 @@
+fn main() -> void {
+    let x = 10;
+    
+    // 捕获外部变量x
+    let f = () -> void {
+        println(x);
+    };
+    
+    f();
+}
+

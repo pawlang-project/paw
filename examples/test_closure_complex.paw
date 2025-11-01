@@ -1,0 +1,13 @@
+fn main() -> void {
+    let x = 10;
+    let y = 20;
+    
+    // 捕获多个变量
+    let sum_with_x = (z: i32) -> i32 {
+        return x + z;
+    };
+    
+    let result = sum_with_x(5);
+    println(result);  // 应该是 10 + 5 = 15
+}
+

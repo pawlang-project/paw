@@ -1,0 +1,24 @@
+// 泛型系统简单测试 - 仅测试解析
+// 不测试运行，只测试能否编译通过
+
+// 单泛型参数结构体
+type Box<T> = struct {
+    value: T
+};
+
+// 多泛型参数结构体
+type Pair<T, U> = struct {
+    first: T,
+    second: U
+};
+
+// 泛型枚举
+type Option<T> = enum {
+    Some(T),
+    None
+};
+
+fn main() {
+    println("Generic parsing test complete!");
+}
+

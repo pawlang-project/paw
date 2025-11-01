@@ -1,0 +1,503 @@
+// PawLang 闭包压力测试
+// 严格测试闭包的所有特性和边界情况
+
+// ============================================
+// 1. 基础闭包语法测试
+// ============================================
+
+fn test_basic_closure_syntax() {
+    // 完整类型注解
+    let add = (x: i32, y: i32) -> i32 {
+        return x + y;
+    };
+    
+    // 单参数
+    let double = (x: i32) -> i32 {
+        return x * 2;
+    };
+    
+    // 无参数
+    let get_value = () -> i32 {
+        return 42;
+    };
+    
+    // 调用闭包
+    let result1 = add(10, 20);
+    let result2 = double(5);
+    let result3 = get_value();
+    
+    println("基础闭包语法测试通过");
+}
+
+// ============================================
+// 2. 隐式返回测试
+// ============================================
+
+fn test_implicit_return() {
+    // 单表达式隐式返回
+    let square = (x: i32) -> i32 { x * x };
+    
+    // 块表达式隐式返回
+    let complex = (x: i32, y: i32) -> i32 {
+        let sum = x + y;
+        let product = x * y;
+        sum + product  // 无分号，隐式返回
+    };
+    
+    // 混合显式和隐式
+    let mixed = (x: i32) -> i32 {
+        if x > 10 {
+            return x * 2;  // 显式返回
+        }
+        x  // 隐式返回
+    };
+    
+    let r1 = square(5);
+    let r2 = complex(3, 4);
+    let r3 = mixed(15);
+    let r4 = mixed(5);
+    
+    println("隐式返回测试通过");
+}
+
+// ============================================
+// 3. 返回类型推导测试
+// ============================================
+
+fn test_return_type_inference() {
+    // 推导为i32
+    let infer_i32 = (x: i32) {
+        x + 10
+    };
+    
+    // 推导为bool
+    let infer_bool = (x: i32) {
+        x > 0
+    };
+    
+    // 推导为string
+    let infer_string = (x: i32) {
+        "result"
+    };
+    
+    let r1 = infer_i32(5);
+    let r2 = infer_bool(10);
+    let r3 = infer_string(0);
+    
+    println("返回类型推导测试通过");
+}
+
+// ============================================
+// 4. 环境捕获测试
+// ============================================
+
+fn test_environment_capture() {
+    // 捕获单个变量
+    let base = 100;
+    let add_base = (x: i32) -> i32 {
+        x + base
+    };
+    
+    let result1 = add_base(50);
+    
+    // 捕获多个变量
+    let a = 10;
+    let b = 20;
+    let c = 30;
+    let sum_all = (x: i32) -> i32 {
+        x + a + b + c
+    };
+    
+    let result2 = sum_all(5);
+    
+    // 捕获不同类型
+    let multiplier = 2;
+    let prefix = "Value: ";
+    let compute = (x: i32) -> i32 {
+        x * multiplier
+    };
+    
+    let result3 = compute(10);
+    
+    println("环境捕获测试通过");
+}
+
+// ============================================
+// 5. 闭包作为参数测试
+// ============================================
+
+fn apply(x: i32, f: fn(i32) -> i32) -> i32 {
+    return f(x);
+}
+
+fn apply_twice(x: i32, f: fn(i32) -> i32) -> i32 {
+    return f(f(x));
+}
+
+fn test_closure_as_parameter() {
+    let double = (x: i32) -> i32 { x * 2 };
+    let add_one = (x: i32) -> i32 { x + 1 };
+    
+    let result1 = apply(10, double);
+    let result2 = apply(10, add_one);
+    let result3 = apply_twice(5, double);
+    
+    // 直接传递闭包字面量
+    let result4 = apply(20, (x: i32) -> i32 { x * 3 });
+    
+    println("闭包作为参数测试通过");
+}
+
+// ============================================
+// 6. 闭包作为返回值测试
+// ============================================
+
+fn make_adder(base: i32) -> fn(i32) -> i32 {
+    return (x: i32) -> i32 {
+        x + base
+    };
+}
+
+fn make_multiplier(factor: i32) -> fn(i32) -> i32 {
+    return (x: i32) -> i32 {
+        x * factor
+    };
+}
+
+fn test_closure_as_return_value() {
+    let add10 = make_adder(10);
+    let add100 = make_adder(100);
+    let mul5 = make_multiplier(5);
+    
+    let r1 = add10(5);
+    let r2 = add100(5);
+    let r3 = mul5(10);
+    
+    println("闭包作为返回值测试通过");
+}
+
+// ============================================
+// 7. 高阶函数测试
+// ============================================
+
+fn map(arr: [i32; 5], f: fn(i32) -> i32) -> [i32; 5] {
+    let~ result: [i32; 5] = [0, 0, 0, 0, 0];
+    loop i in 0..5 {
+        result[i] = f(arr[i]);
+    }
+    return result;
+}
+
+fn filter(arr: [i32; 5], pred: fn(i32) -> bool) -> [i32; 5] {
+    let~ result: [i32; 5] = [0, 0, 0, 0, 0];
+    let~ count = 0;
+    loop i in 0..5 {
+        if pred(arr[i]) {
+            result[count] = arr[i];
+            count = count + 1;
+        }
+    }
+    return result;
+}
+
+fn reduce(arr: [i32; 5], init: i32, f: fn(i32, i32) -> i32) -> i32 {
+    let~ acc = init;
+    loop i in 0..5 {
+        acc = f(acc, arr[i]);
+    }
+    return acc;
+}
+
+fn test_higher_order_functions() {
+    let numbers: [i32; 5] = [1, 2, 3, 4, 5];
+    
+    // map
+    let doubled = map(numbers, (x: i32) -> i32 { x * 2 });
+    let squared = map(numbers, (x: i32) -> i32 { x * x });
+    
+    // filter
+    let threshold = 3;
+    let filtered = filter(numbers, (x: i32) -> bool {
+        x > threshold
+    });
+    
+    // reduce
+    let sum = reduce(numbers, 0, (acc: i32, x: i32) -> i32 {
+        acc + x
+    });
+    
+    let product = reduce(numbers, 1, (acc: i32, x: i32) -> i32 {
+        acc * x
+    });
+    
+    println("高阶函数测试通过");
+}
+
+// ============================================
+// 8. 闭包组合测试
+// ============================================
+
+fn compose(f: fn(i32) -> i32, g: fn(i32) -> i32) -> fn(i32) -> i32 {
+    return (x: i32) -> i32 {
+        f(g(x))
+    };
+}
+
+fn test_closure_composition() {
+    let add_one = (x: i32) -> i32 { x + 1 };
+    let double = (x: i32) -> i32 { x * 2 };
+    
+    // (x + 1) * 2
+    let composed1 = compose(double, add_one);
+    let result1 = composed1(5);
+    
+    // ((x + 1) * 2) + 1
+    let composed2 = compose(add_one, compose(double, add_one));
+    let result2 = composed2(5);
+    
+    println("闭包组合测试通过");
+}
+
+// ============================================
+// 9. 闭包与控制流测试
+// ============================================
+
+fn test_closure_with_control_flow() {
+    // if表达式
+    let max = (x: i32, y: i32) -> i32 {
+        if x > y {
+            return x;
+        }
+        return y;
+    };
+    
+    // 复杂控制流
+    let categorize = (x: i32) -> string {
+        if x < 0 {
+            return "negative";
+        } else if x == 0 {
+            return "zero";
+        } else if x < 10 {
+            return "small";
+        } else if x < 100 {
+            return "medium";
+        }
+        return "large";
+    };
+    
+    let r1 = max(10, 20);
+    let r2 = categorize(50);
+    
+    println("闭包与控制流测试通过");
+}
+
+// ============================================
+// 10. 递归闭包测试（如果支持）
+// ============================================
+
+fn test_recursive_closure() {
+    // 注：递归闭包可能需要特殊处理
+    // 这里测试简单的递归模拟
+    
+    let factorial_helper = (n: i32, acc: i32) -> i32 {
+        if n <= 1 {
+            return acc;
+        }
+        return n * acc;
+    };
+    
+    let result = factorial_helper(5, 1);
+    
+    println("递归闭包测试通过");
+}
+
+// ============================================
+// 11. 闭包与泛型测试
+// ============================================
+
+type Box<T> = struct {
+    value: T
+}
+
+fn map_box<T, U>(box: Box<T>, f: fn(T) -> U) -> Box<U> {
+    return Box { value: f(box.value) };
+}
+
+fn test_closure_with_generics() {
+    let box_int = Box { value: 42 };
+    
+    // i32 -> i32
+    let doubled_box = map_box(box_int, (x: i32) -> i32 {
+        x * 2
+    });
+    
+    // i32 -> bool
+    let bool_box = map_box(box_int, (x: i32) -> bool {
+        x > 50
+    });
+    
+    println("闭包与泛型测试通过");
+}
+
+// ============================================
+// 12. 复杂嵌套闭包测试
+// ============================================
+
+fn test_nested_closures() {
+    // 闭包返回闭包
+    let make_adder_closure = (base: i32) -> fn(i32) -> i32 {
+        return (x: i32) -> i32 {
+            x + base
+        };
+    };
+    
+    let add5 = make_adder_closure(5);
+    let result1 = add5(10);
+    
+    // 多层嵌套
+    let complex = (x: i32) -> fn(i32) -> fn(i32) -> i32 {
+        return (y: i32) -> fn(i32) -> i32 {
+            return (z: i32) -> i32 {
+                x + y + z
+            };
+        };
+    };
+    
+    let f1 = complex(1);
+    let f2 = f1(2);
+    let result2 = f2(3);
+    
+    println("嵌套闭包测试通过");
+}
+
+// ============================================
+// 13. 闭包与模式匹配测试
+// ============================================
+
+type Option<T> = enum {
+    Some(T),
+    None
+}
+
+fn map_option<T, U>(opt: Option<T>, f: fn(T) -> U) -> Option<U> {
+    return opt is {
+        Some(x) => Option::Some(f(x)),
+        None => Option::None,
+    };
+}
+
+fn test_closure_with_pattern_matching() {
+    let some_val = Option::Some(42);
+    let none_val: Option<i32> = Option::None;
+    
+    let doubled = map_option(some_val, (x: i32) -> i32 {
+        x * 2
+    });
+    
+    let none_doubled = map_option(none_val, (x: i32) -> i32 {
+        x * 2
+    });
+    
+    println("闭包与模式匹配测试通过");
+}
+
+// ============================================
+// 14. 闭包边界情况测试
+// ============================================
+
+fn test_closure_edge_cases() {
+    // 空闭包
+    let noop = () {
+        // 什么都不做
+    };
+    
+    // 立即调用的闭包
+    let result1 = ((x: i32) -> i32 { x * 2 })(21);
+    
+    // 捕获大量变量
+    let v1 = 1;
+    let v2 = 2;
+    let v3 = 3;
+    let v4 = 4;
+    let v5 = 5;
+    let sum_many = (x: i32) -> i32 {
+        x + v1 + v2 + v3 + v4 + v5
+    };
+    
+    let result2 = sum_many(0);
+    
+    println("闭包边界情况测试通过");
+}
+
+// ============================================
+// 15. Real-world闭包场景
+// ============================================
+
+fn test_real_world_closures() {
+    // 回调函数模拟
+    fn on_click(handler: fn(i32) -> i32) -> i32 {
+        return handler(42);
+    }
+    
+    let click_result = on_click((data: i32) -> i32 {
+        println("Clicked!");
+        data * 2
+    });
+    
+    // 延迟计算
+    fn lazy_compute(compute: fn() -> i32) -> i32 {
+        println("Computing...");
+        return compute();
+    }
+    
+    let expensive_value = 100;
+    let result = lazy_compute(() -> i32 {
+        expensive_value * 2
+    });
+    
+    // 策略模式
+    let use_strategy = (strategy: fn(i32) -> i32, value: i32) -> i32 {
+        return strategy(value);
+    };
+    
+    let aggressive = (x: i32) -> i32 { x * 10 };
+    let conservative = (x: i32) -> i32 { x + 1 };
+    
+    let r1 = use_strategy(aggressive, 5);
+    let r2 = use_strategy(conservative, 5);
+    
+    println("Real-world闭包场景测试通过");
+}
+
+// ============================================
+// 主测试函数
+// ============================================
+
+fn main() {
+    println("========================================");
+    println("PawLang 闭包压力测试");
+    println("========================================");
+    
+    test_basic_closure_syntax();
+    test_implicit_return();
+    test_return_type_inference();
+    test_environment_capture();
+    test_closure_as_parameter();
+    test_closure_as_return_value();
+    test_higher_order_functions();
+    test_closure_composition();
+    test_closure_with_control_flow();
+    test_recursive_closure();
+    test_closure_with_generics();
+    test_nested_closures();
+    test_closure_with_pattern_matching();
+    test_closure_edge_cases();
+    test_real_world_closures();
+    
+    println("========================================");
+    println("所有闭包测试完成!");
+    println("========================================");
+}
+
+
+

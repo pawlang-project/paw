@@ -1,0 +1,17 @@
+fn main() -> void {
+    // 测试多个闭包
+    let add = (x: i32, y: i32) -> i32 {
+        return x + y;
+    };
+    
+    let multiply = (x: i32, y: i32) -> i32 {
+        return x * y;
+    };
+    
+    let sum = add(10, 20);
+    let product = multiply(5, 6);
+    
+    println(sum);
+    println(product);
+}
+

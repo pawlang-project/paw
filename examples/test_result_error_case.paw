@@ -1,0 +1,12 @@
+fn divide(a: i32, b: i32) -> i32! {
+    if b == 0 {
+        return err("Division by zero");
+    }
+    return ok(a / b);
+}
+
+fn main() -> i32! {
+    let result = divide(10, 0);  // 除以0，应该返回错误
+    return result;
+}
+

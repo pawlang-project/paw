@@ -1,0 +1,18 @@
+//===--- config.h - Build Configuration -------------------------*- C++ -*-===//
+//
+// PawLang Compiler - Build Configuration (Generated)
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef PAWC_CONFIG_H
+#define PAWC_CONFIG_H
+
+#cmakedefine PAWLANG_ON_UNIX
+#cmakedefine PAWLANG_ON_WIN32
+
+#cmakedefine PAWLANG_BUILD_RUNTIME
+#cmakedefine PAWLANG_ENABLE_ASSERTIONS
+
+#define PAWLANG_TARGET_TRIPLE "@LLVM_DEFAULT_TARGET_TRIPLE@"
+
+#endif // PAWC_CONFIG_H

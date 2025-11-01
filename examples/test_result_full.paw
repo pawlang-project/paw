@@ -1,0 +1,13 @@
+fn divide(a: i32, b: i32) -> i32! {
+    if b == 0 {
+        return err("Division by zero");
+    }
+    return ok(a / b);
+}
+
+fn main() -> i32! {
+    let result = divide(10, 2)!;
+    println(result);
+    return ok(0);
+}
+

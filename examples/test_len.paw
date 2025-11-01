@@ -1,0 +1,17 @@
+// 测试len函数对string的支持
+
+fn main() {
+    // String长度测试
+    let s: string = "Hello, PawLang!";
+    let length: u64 = len(s);
+    
+    println("Testing len() function:");
+    println("String: Hello, PawLang!");
+    println("Length: ");
+    println(length);
+    
+    // 空字符串
+    let empty: string = "";
+    println("Empty string length:");
+    println(len(empty));
+}

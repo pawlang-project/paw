@@ -1,0 +1,29 @@
+// PawLang完整功能测试
+
+fn main() {
+    // 1. 基础类型
+    let x: i32 = 42;
+    let y: i32 = 10;
+    
+    // 2. 数组字面量
+    let arr = [1, 2, 3];
+    
+    // 3. 元组
+    let pair = (x, y);
+    
+    // 4. if表达式
+    let result = if x > 30 { 1 } else { 0 };
+    
+    // 5. loop迭代 + Range
+    println("Loop iteration:");
+    loop i in 0..3 {
+        println(i);
+    }
+    
+    // 6. 数组索引
+    println("Array element:");
+    println(arr[0]);
+    
+    println("All features test completed!");
+}
+

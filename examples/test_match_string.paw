@@ -1,0 +1,16 @@
+// match表达式 - 字符串匹配测试
+
+fn main() {
+    let cmd = "start";
+    
+    let result = cmd is {
+        "start" => 1,
+        "stop" => 2,
+        "pause" => 3,
+        _ => 0
+    };
+    
+    println(result);  // 应输出: 1
+    println("String match test completed!");
+}
+

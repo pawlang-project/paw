@@ -1,0 +1,52 @@
+// PawLang 泛型系统演示程序
+// 展示泛型定义、实例化、多类型、多泛型参数
+
+// ============================================
+// 1. 单泛型参数结构体
+// ============================================
+
+type Box<T> = struct {
+    value: T
+};
+
+// ============================================
+// 2. 多泛型参数结构体
+// ============================================
+
+type Pair<T, U> = struct {
+    first: T,
+    second: U
+};
+
+// ============================================
+// 3. 主函数 - 展示泛型使用
+// ============================================
+
+fn main() {
+    println("=== PawLang泛型系统演示 ===");
+    println("");
+    
+    // 单泛型参数 - 不同类型
+    println("1. 单泛型参数:");
+    let box_int = Box { value: 42 };       // Box_i32
+    let box_str = Box { value: "hello" };  // Box_string
+    let box_bool = Box { value: true };    // Box_bool
+    println("   ✅ Box<i32>, Box<string>, Box<bool>");
+    println("");
+    
+    // 多泛型参数
+    println("2. 多泛型参数:");
+    let pair1 = Pair { first: 100, second: "world" };   // Pair_i32_string
+    let pair2 = Pair { first: false, second: 2.718 };   // Pair_bool_f64
+    println("   ✅ Pair<i32,string>, Pair<bool,f64>");
+    println("");
+    
+    // 相同类型复用
+    println("3. 智能缓存:");
+    let box2 = Box { value: 99 };          // 复用Box_i32
+    println("   ✅ 相同类型参数只生成一次");
+    println("");
+    
+    println("=== 泛型系统演示完成！===");
+}
+

@@ -1,0 +1,13 @@
+fn find(value: i32) -> i32? {
+    if value > 0 {
+        return value;
+    }
+    return null;
+}
+
+fn main() -> i32? {
+    let result = find(10)?;
+    println(result);
+    return result;
+}
+

@@ -1,0 +1,13 @@
+// 测试：不使用Result的简单函数
+
+fn simple_test() -> i32 {
+    return 100;
+}
+
+fn main() -> i32 {
+    println("Test without Result");
+    let x = simple_test();
+    println(x);
+    return 0;
+}
+

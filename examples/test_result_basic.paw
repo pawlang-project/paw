@@ -1,0 +1,38 @@
+// T? 错误处理系统 - 基础测试
+// 测试：Result类型、ok/err构造器
+
+fn divide(a: i32, b: i32) -> i32? {
+    if b == 0 {
+        return err("Division by zero");
+    }
+    return ok(a / b);
+}
+
+fn main() -> i32 {
+    println("=== T? 错误处理系统测试 ===");
+    
+    // 测试1: ok情况
+    let result1 = divide(10, 2);
+    let value1 = result1 is {
+        ok(v) => v,
+        err(msg) => {
+            println(msg);
+            -1
+        },
+    };
+    println(value1);  // 应该输出5
+    
+    // 测试2: err情况
+    let result2 = divide(10, 0);
+    let value2 = result2 is {
+        ok(v) => v,
+        err(msg) => {
+            println(msg);  // 应该输出"Division by zero"
+            -1
+        },
+    };
+    println(value2);  // 应该输出-1
+    
+    return 0;
+}
+

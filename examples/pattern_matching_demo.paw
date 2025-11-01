@@ -1,0 +1,181 @@
+// PawLang 模式匹配完整演示
+// 展示所有支持的模式匹配特性
+
+// ============================================
+// 1. 基础模式匹配
+// ============================================
+
+fn test_basic_patterns() {
+    let x = 42;
+    
+    // 字面量模式
+    let result1 = x is {
+        42 => "答案",
+        _ => "其他",
+    };
+    
+    // 标识符模式（绑定）
+    let result2 = x is {
+        n => n * 2,
+        _ => 0,
+    };
+    
+    println(result1);
+    println(result2);
+}
+
+// ============================================
+// 2. 元组模式匹配
+// ============================================
+
+fn test_tuple_patterns() {
+    let pair = (10, 20);
+    
+    // 基础元组解构
+    let sum = pair is {
+        (x, y) => x + y,
+        _ => 0,
+    };
+    
+    // 嵌套元组
+    let nested = ((1, 2), (3, 4));
+    let result = nested is {
+        ((a, b), (c, d)) => a + b + c + d,
+        _ => 0,
+    };
+    
+    println(sum);
+    println(result);
+}
+
+// ============================================
+// 3. 枚举模式匹配
+// ============================================
+
+type Option<T> = enum {
+    Some(T),
+    None
+}
+
+fn test_enum_patterns() {
+    let opt = Option::Some(42);
+    
+    // 枚举模式匹配
+    let value = opt is {
+        Some(x) => x,
+        None => 0,
+    };
+    
+    // 嵌套枚举
+    let nested_opt = Option::Some(Option::Some(100));
+    let result = nested_opt is {
+        Some(Some(x)) => x,
+        Some(None) => -1,
+        None => -2,
+    };
+    
+    println(value);
+    println(result);
+}
+
+// ============================================
+// 4. ✨ 结构体模式匹配（新增）
+// ============================================
+
+type Point = struct {
+    x: i32,
+    y: i32
+}
+
+fn test_struct_patterns() {
+    let p = Point { x: 10, y: 20 };
+    
+    // ✅ 简写形式（字段名即变量名）
+    let sum = p is {
+        Point { x, y } => x + y,
+        _ => 0,
+    };
+    
+    // ✅ 重绑定形式（字段映射到不同变量）
+    let product = p is {
+        Point { x: a, y: b } => a * b,
+        _ => 0,
+    };
+    
+    println(sum);      // 30
+    println(product);  // 200
+}
+
+// ============================================
+// 5. ✨ 嵌套结构体模式（新增）
+// ============================================
+
+type Rectangle = struct {
+    top_left: Point,
+    bottom_right: Point
+}
+
+fn test_nested_struct_patterns() {
+    let rect = Rectangle {
+        top_left: Point { x: 0, y: 0 },
+        bottom_right: Point { x: 100, y: 100 }
+    };
+    
+    // ✅ 深度嵌套解构
+    let area = rect is {
+        Rectangle {
+            top_left: Point { x: x1, y: y1 },
+            bottom_right: Point { x: x2, y: y2 }
+        } => {
+            let width = x2 - x1;
+            let height = y2 - y1;
+            width * height  // 隐式返回
+        },
+        _ => 0,
+    };
+    
+    println(area);  // 10000
+}
+
+// ============================================
+// 6. 混合模式匹配
+// ============================================
+
+type Result<T> = enum {
+    Ok(T),
+    Err(string)
+}
+
+fn test_mixed_patterns() {
+    // 元组 + 枚举
+    let data = (Result::Ok(42), Result::Err("error"));
+    
+    let output = data is {
+        (Ok(x), Ok(y)) => x + y,
+        (Ok(x), Err(_)) => x,
+        (Err(_), Ok(y)) => y,
+        (Err(_), Err(_)) => 0,
+    };
+    
+    println(output);  // 42
+}
+
+// ============================================
+// 主函数
+// ============================================
+
+fn main() {
+    println("=== 模式匹配演示 ===");
+    
+    test_basic_patterns();
+    test_tuple_patterns();
+    test_enum_patterns();
+    test_struct_patterns();
+    test_nested_struct_patterns();
+    test_mixed_patterns();
+    
+    println("=== 演示完成 ===");
+}
+
+
+

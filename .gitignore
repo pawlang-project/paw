@@ -1,17 +1,30 @@
 # Build directories
 build/
+build-*/
+out/
 cmake-build-*/
-build.log
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+CPackConfig.cmake
+CPackSourceConfig.cmake
+
+# Generated files
 *.o
+*.obj
 *.a
+*.lib
 *.so
 *.dylib
-
-
-# Executables
-/pawc
-*.out
-
+*.dll
+*.exe
+*.ll
+*.bc
+*.s
 
 # IDE
 .vscode/
@@ -19,10 +32,17 @@ build.log
 *.swp
 *.swo
 *~
-
-# macOS
 .DS_Store
 
+# LLVM build artifacts
+llvm/build/
+clang/build/
+lld/build/
+
 # Test outputs
-output.ll
-*.ll
+tests/output/
+*.test
+
+# Temporary files
+*.tmp
+*.temp

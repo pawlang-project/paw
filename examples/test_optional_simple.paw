@@ -1,0 +1,8 @@
+fn get_value() -> i32? {
+    return 42;  // 应该自动包装为Some(42)
+}
+
+fn main() -> void {
+    let x = get_value();
+    println("Optional test done");
+}

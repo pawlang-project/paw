@@ -1,0 +1,13 @@
+// 测试不同类型的Box实例化
+type Box<T> = struct {
+    value: T
+};
+
+fn main() {
+    let b_int = Box { value: 42 };
+    let b_string = Box { value: "hello" };
+    let b_bool = Box { value: true };
+    
+    println("Multi-type test!");
+}
+

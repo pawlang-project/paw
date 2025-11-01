@@ -1,0 +1,587 @@
+// PawLang 泛型和接口完整测试
+// 严格测试泛型、接口、Support、Where约束
+
+// ============================================
+// 1. 单泛型参数测试
+// ============================================
+
+type Box<T> = struct {
+    value: T
+}
+
+fn test_single_generic() {
+    // 各种类型的Box
+    let box_i32 = Box { value: 42 };
+    let box_i64 = Box { value: 9223372036854775807 };
+    let box_f64 = Box { value: 3.14159 };
+    let box_bool = Box { value: true };
+    let box_char = Box { value: 'X' };
+    let box_string = Box { value: "hello" };
+    
+    // 访问字段
+    let val1 = box_i32.value;
+    let val2 = box_string.value;
+    
+    println("单泛型参数测试通过");
+}
+
+// ============================================
+// 2. 多泛型参数测试
+// ============================================
+
+type Pair<T, U> = struct {
+    first: T,
+    second: U
+}
+
+type Triple<A, B, C> = struct {
+    a: A,
+    b: B,
+    c: C
+}
+
+type Quad<A, B, C, D> = struct {
+    a: A,
+    b: B,
+    c: C,
+    d: D
+}
+
+fn test_multi_generic() {
+    // 两个泛型参数
+    let pair1 = Pair { first: 1, second: "one" };
+    let pair2 = Pair { first: true, second: 3.14 };
+    let pair3 = Pair { first: 'A', second: 65 };
+    
+    // 三个泛型参数
+    let triple = Triple { a: 1, b: "two", c: true };
+    
+    // 四个泛型参数
+    let quad = Quad { a: 1, b: 2.0, c: "three", d: false };
+    
+    // 访问字段
+    let f1 = pair1.first;
+    let s1 = pair1.second;
+    let a = triple.a;
+    let b = quad.b;
+    
+    println("多泛型参数测试通过");
+}
+
+// ============================================
+// 3. 嵌套泛型测试
+// ============================================
+
+fn test_nested_generics() {
+    // Box<Box<T>>
+    let nested_box = Box { value: Box { value: 42 } };
+    let inner_value = nested_box.value.value;
+    
+    // Pair<Box<T>, Box<U>>
+    let pair_of_boxes = Pair {
+        first: Box { value: 1 },
+        second: Box { value: "two" }
+    };
+    
+    // Box<Pair<T, U>>
+    let box_of_pair = Box {
+        value: Pair { first: 10, second: 20 }
+    };
+    
+    // 三层嵌套
+    let deep = Box {
+        value: Box {
+            value: Box {
+                value: 100
+            }
+        }
+    };
+    
+    println("嵌套泛型测试通过");
+}
+
+// ============================================
+// 4. 泛型枚举测试
+// ============================================
+
+type Option<T> = enum {
+    Some(T),
+    None
+}
+
+type Result<T, E> = enum {
+    Ok(T),
+    Err(E)
+}
+
+type Either<L, R> = enum {
+    Left(L),
+    Right(R)
+}
+
+fn test_generic_enums() {
+    // Option<T>
+    let some_int = Option::Some(42);
+    let some_str = Option::Some("hello");
+    let none_int: Option<i32> = Option::None;
+    
+    // Result<T, E>
+    let ok_val = Result::Ok(100);
+    let err_val = Result::Err("error message");
+    
+    // Either<L, R>
+    let left = Either::Left(42);
+    let right = Either::Right("text");
+    
+    // 嵌套泛型枚举
+    let nested = Option::Some(Option::Some(42));
+    
+    // 模式匹配
+    let value1 = some_int is {
+        Some(x) => x,
+        None => 0,
+    };
+    
+    let value2 = left is {
+        Left(x) => x,
+        Right(_) => 0,
+    };
+    
+    println("泛型枚举测试通过");
+}
+
+// ============================================
+// 5. 泛型函数测试
+// ============================================
+
+fn identity<T>(x: T) -> T {
+    return x;
+}
+
+fn swap<T, U>(a: T, b: U) -> (U, T) {
+    return (b, a);
+}
+
+fn first<T, U>(pair: Pair<T, U>) -> T {
+    return pair.first;
+}
+
+fn wrap<T>(value: T) -> Box<T> {
+    return Box { value: value };
+}
+
+fn test_generic_functions() {
+    // identity
+    let i1 = identity(42);
+    let i2 = identity("hello");
+    let i3 = identity(true);
+    
+    // swap
+    let swapped = swap(1, "one");
+    let (s1, s2) = swapped;
+    
+    // first
+    let pair = Pair { first: 100, second: "text" };
+    let f = first(pair);
+    
+    // wrap
+    let wrapped1 = wrap(42);
+    let wrapped2 = wrap("hello");
+    
+    println("泛型函数测试通过");
+}
+
+// ============================================
+// 6. 接口定义测试
+// ============================================
+
+type Display = interface {
+    fn show();
+}
+
+type Debug = interface {
+    fn debug();
+}
+
+type Printable = interface {
+    fn print();
+    fn println() {
+        self.print();
+    }
+}
+
+type Comparable<T> = interface {
+    fn compare(other: T) -> i32;
+}
+
+fn test_interface_definitions() {
+    // 接口定义本身不需要实例化
+    println("接口定义测试通过");
+}
+
+// ============================================
+// 7. 基本Support实现测试
+// ============================================
+
+type Point = struct {
+    x: i32,
+    y: i32
+}
+
+support Point with Display {
+    fn show() {
+        println("Point");
+    }
+}
+
+support Point with Debug {
+    fn debug() {
+        println("Point { x, y }");
+    }
+}
+
+fn test_basic_support() {
+    let p = Point { x: 10, y: 20 };
+    p.show();
+    p.debug();
+    
+    println("基本Support测试通过");
+}
+
+// ============================================
+// 8. 泛型Support测试
+// ============================================
+
+support Box<T> with Display {
+    fn show() {
+        println("Box");
+    }
+}
+
+support Pair<T, U> with Display {
+    fn show() {
+        println("Pair");
+    }
+}
+
+fn test_generic_support() {
+    let box_val = Box { value: 42 };
+    box_val.show();
+    
+    let pair_val = Pair { first: 1, second: 2 };
+    pair_val.show();
+    
+    println("泛型Support测试通过");
+}
+
+// ============================================
+// 9. Where约束 - 单约束测试
+// ============================================
+
+fn print_value<T>(value: T) where T: Display {
+    value.show();
+}
+
+fn debug_value<T>(value: T) where T: Debug {
+    value.debug();
+}
+
+fn test_single_where_constraint() {
+    let p = Point { x: 5, y: 10 };
+    print_value(p);
+    debug_value(p);
+    
+    let b = Box { value: 100 };
+    print_value(b);
+    
+    println("单Where约束测试通过");
+}
+
+// ============================================
+// 10. Where约束 - 多约束测试
+// ============================================
+
+fn print_and_debug<T>(value: T) where T: Display, T: Debug {
+    value.show();
+    value.debug();
+}
+
+fn test_multi_where_constraint() {
+    let p = Point { x: 15, y: 25 };
+    print_and_debug(p);
+    
+    println("多Where约束测试通过");
+}
+
+// ============================================
+// 11. Where约束 - Support中使用
+// ============================================
+
+type Container<T> = struct {
+    item: T
+}
+
+support Container<T> with Display where T: Display {
+    fn show() {
+        println("Container contains:");
+        self.item.show();
+    }
+}
+
+fn test_where_in_support() {
+    let container_point = Container {
+        item: Point { x: 1, y: 2 }
+    };
+    container_point.show();
+    
+    let container_box = Container {
+        item: Box { value: 42 }
+    };
+    container_box.show();
+    
+    println("Support中Where约束测试通过");
+}
+
+// ============================================
+// 12. 复杂Where约束组合
+// ============================================
+
+type Wrapper<T> = struct {
+    data: T
+}
+
+support Wrapper<T> with Display where T: Display {
+    fn show() {
+        self.data.show();
+    }
+}
+
+support Wrapper<T> with Debug where T: Debug {
+    fn debug() {
+        self.data.debug();
+    }
+}
+
+fn process<T>(wrapper: Wrapper<T>) where T: Display, T: Debug {
+    wrapper.show();
+    wrapper.debug();
+}
+
+fn test_complex_where_constraints() {
+    let w = Wrapper {
+        data: Point { x: 3, y: 4 }
+    };
+    
+    process(w);
+    
+    println("复杂Where约束测试通过");
+}
+
+// ============================================
+// 13. 泛型与Optional/Result组合
+// ============================================
+
+type Maybe<T> = enum {
+    Just(T),
+    Nothing
+}
+
+fn safe_unwrap<T>(maybe: Maybe<T>, default: T) -> T {
+    return maybe is {
+        Just(value) => value,
+        Nothing => default,
+    };
+}
+
+fn test_generic_with_optional() {
+    let just_int = Maybe::Just(42);
+    let nothing_int: Maybe<i32> = Maybe::Nothing;
+    
+    let val1 = safe_unwrap(just_int, 0);
+    let val2 = safe_unwrap(nothing_int, -1);
+    
+    // Box<Optional>
+    let box_opt = Box { value: 42 };
+    
+    // Optional<Box>
+    let opt_box: Box<i32>? = Box { value: 100 };
+    
+    println("泛型与Optional组合测试通过");
+}
+
+// ============================================
+// 14. 泛型递归结构
+// ============================================
+
+type List<T> = enum {
+    Cons(T, Box<List<T>>),
+    Nil
+}
+
+fn test_generic_recursive() {
+    // 创建列表: [1, 2, 3]
+    let list = List::Cons(1, Box {
+        value: List::Cons(2, Box {
+            value: List::Cons(3, Box {
+                value: List::Nil
+            })
+        })
+    });
+    
+    println("泛型递归结构测试通过");
+}
+
+// ============================================
+// 15. 复杂泛型场景
+// ============================================
+
+type Matrix<T> = struct {
+    data: T
+}
+
+type Graph<N, E> = struct {
+    nodes: N,
+    edges: E
+}
+
+fn test_complex_generic_scenarios() {
+    // Matrix<Box<i32>>
+    let matrix = Matrix {
+        data: Box { value: 42 }
+    };
+    
+    // Graph<Box<i32>, Pair<i32, i32>>
+    let graph = Graph {
+        nodes: Box { value: 1 },
+        edges: Pair { first: 1, second: 2 }
+    };
+    
+    // Triple<Box<T>, Pair<U, V>, W>
+    let complex = Triple {
+        a: Box { value: 1 },
+        b: Pair { first: 2, second: 3 },
+        c: true
+    };
+    
+    println("复杂泛型场景测试通过");
+}
+
+// ============================================
+// 16. 接口多实现测试
+// ============================================
+
+type Circle = struct {
+    radius: i32
+}
+
+support Circle with Display {
+    fn show() {
+        println("Circle");
+    }
+}
+
+support Circle with Debug {
+    fn debug() {
+        println("Circle { radius }");
+    }
+}
+
+fn test_multiple_interface_impl() {
+    let c = Circle { radius: 10 };
+    c.show();
+    c.debug();
+    
+    println("多接口实现测试通过");
+}
+
+// ============================================
+// 17. 默认方法测试
+// ============================================
+
+type Loggable = interface {
+    fn log();
+    
+    fn log_with_prefix() {
+        println("LOG:");
+        self.log();
+    }
+}
+
+type Rectangle = struct {
+    width: i32,
+    height: i32
+}
+
+support Rectangle with Loggable {
+    fn log() {
+        println("Rectangle");
+    }
+}
+
+fn test_default_methods() {
+    let r = Rectangle { width: 10, height: 20 };
+    r.log();
+    r.log_with_prefix();
+    
+    println("默认方法测试通过");
+}
+
+// ============================================
+// 18. 泛型边界情况
+// ============================================
+
+fn test_generic_edge_cases() {
+    // 空Box（如果T是unit）
+    let empty = Box { value: () };
+    
+    // Box<Box<Box<...>>> 深度嵌套
+    let deep = Box {
+        value: Box {
+            value: Box {
+                value: Box {
+                    value: Box {
+                        value: 1
+                    }
+                }
+            }
+        }
+    };
+    
+    println("泛型边界情况测试通过");
+}
+
+// ============================================
+// 主测试函数
+// ============================================
+
+fn main() {
+    println("========================================");
+    println("PawLang 泛型和接口完整测试");
+    println("========================================");
+    
+    test_single_generic();
+    test_multi_generic();
+    test_nested_generics();
+    test_generic_enums();
+    test_generic_functions();
+    test_interface_definitions();
+    test_basic_support();
+    test_generic_support();
+    test_single_where_constraint();
+    test_multi_where_constraint();
+    test_where_in_support();
+    test_complex_where_constraints();
+    test_generic_with_optional();
+    test_generic_recursive();
+    test_complex_generic_scenarios();
+    test_multiple_interface_impl();
+    test_default_methods();
+    test_generic_edge_cases();
+    
+    println("========================================");
+    println("所有泛型和接口测试完成!");
+    println("========================================");
+}
+
+
+

@@ -1,0 +1,24 @@
+// match表达式 - 完整测试
+
+fn main() {
+    // 测试1: 字面量匹配
+    let x = 2;
+    let result1 = x is {
+        0 => 10,
+        1 => 20,
+        2 => 30,
+        _ => 40
+    };
+    println(result1);  // 应该输出30
+    
+    // 测试2: 布尔匹配
+    let b = true;
+    let result2 = b is {
+        true => 100,
+        false => 200
+    };
+    println(result2);  // 应该输出100
+    
+    println("Match expression test completed!");
+}
+

@@ -1,0 +1,46 @@
+// match表达式 - 完整模式测试
+
+type MyEnum = enum {
+    None,
+    Value(i32),
+    Text(string)
+};
+
+fn main() {
+    // 测试1: 字面量匹配 - 整数
+    let x = 2;
+    let r1 = x is {
+        0 => 100,
+        1 => 200,
+        2 => 300,
+        _ => 400
+    };
+    println(r1);  // 应输出: 300
+    
+    // 测试2: 字面量匹配 - 布尔
+    let b = false;
+    let r2 = b is {
+        true => 10,
+        false => 20
+    };
+    println(r2);  // 应输出: 20
+    
+    // 测试3: 变量绑定
+    let y = 42;
+    let r3 = y is {
+        value => value * 2
+    };
+    println(r3);  // 应输出: 84
+    
+    // 测试4: 元组模式匹配
+    let tuple = (1, 2);
+    let r4 = tuple is {
+        (0, _) => 1000,
+        (1, 2) => 2000,
+        (x, y) => x + y
+    };
+    println(r4);  // 应输出: 2000
+    
+    println("All match pattern tests completed!");
+}
+

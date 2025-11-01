@@ -1,0 +1,10 @@
+fn main() -> void {
+    // 带参数的闭包调用
+    let add = (x: i32, y: i32) -> i32 {
+        return x + y;
+    };
+    
+    let result = add(10, 20);
+    println(result);
+}
+

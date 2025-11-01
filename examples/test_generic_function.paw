@@ -1,0 +1,16 @@
+// 泛型函数测试
+
+// 泛型函数: identity
+fn identity<T>(value: T) -> T {
+    return value;
+}
+
+fn main() {
+    // 调用泛型函数，推导类型参数
+    let x = identity(42);          // identity_i32
+    let y = identity("hello");     // identity_string
+    let z = identity(true);        // identity_bool
+    
+    println("Generic function test!");
+}
+

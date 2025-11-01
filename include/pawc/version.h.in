@@ -1,0 +1,17 @@
+//===--- version.h - Version Information -------------------------*- C++ -*-===//
+//
+// PawLang Compiler - Version Configuration (Generated)
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef PAWC_VERSION_H
+#define PAWC_VERSION_H
+
+#define PAWLANG_VERSION_MAJOR @PawLang_VERSION_MAJOR@
+#define PAWLANG_VERSION_MINOR @PawLang_VERSION_MINOR@
+#define PAWLANG_VERSION_PATCH @PawLang_VERSION_PATCH@
+#define PAWLANG_VERSION_STRING "@PawLang_VERSION@"
+
+#define PAWLANG_LLVM_VERSION_STRING "21.1.0"
+
+#endif // PAWC_VERSION_H

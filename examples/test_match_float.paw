@@ -1,0 +1,15 @@
+// match表达式 - 浮点数匹配测试
+
+fn main() {
+    let f = 3.14;
+    
+    let result = f is {
+        3.14 => 100,
+        2.718 => 200,
+        _ => 300
+    };
+    
+    println(result);  // 应输出: 100
+    println("Float match test completed!");
+}
+

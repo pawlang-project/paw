@@ -1,0 +1,15 @@
+// match表达式 - 元组模式测试
+
+fn main() {
+    let tuple = (1, 2);
+    
+    let result = tuple is {
+        (0, _) => 1000,
+        (1, 2) => 2000,
+        _ => 3000
+    };
+    
+    println(result);  // 应输出: 2000
+    println("Tuple match test completed!");
+}
+

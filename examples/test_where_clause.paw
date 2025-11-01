@@ -1,0 +1,11 @@
+// Where约束测试
+
+fn print_value<T>(value: T) where T: Display {
+    // 这里假设T实现了Display接口
+    return;
+}
+
+fn main() {
+    println("Where clause test!");
+}
+

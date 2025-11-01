@@ -1,0 +1,12 @@
+// 循环完整测试
+
+fn main() {
+    // 1. loop迭代
+    println("Loop iteration:");
+    loop i in 0..3 {
+        println(i);
+    }
+    
+    println("All loops test completed!");
+}
+

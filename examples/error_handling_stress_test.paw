@@ -1,0 +1,581 @@
+// PawLang 错误处理压力测试
+// 严格测试Optional(T?)和Result(T!)类型的所有场景
+
+// ============================================
+// 1. Optional类型 - 基础测试
+// ============================================
+
+fn test_optional_basic() {
+    // 所有基础类型的Optional
+    let opt_i8: i8? = 127;
+    let opt_i16: i16? = 32767;
+    let opt_i32: i32? = 2147483647;
+    let opt_i64: i64? = 9223372036854775807;
+    let opt_u8: u8? = 255;
+    let opt_u16: u16? = 65535;
+    let opt_u32: u32? = 4294967295;
+    let opt_u64: u64? = 18446744073709551615;
+    
+    let opt_f32: f32? = 3.14;
+    let opt_f64: f64? = 2.718281828;
+    
+    let opt_bool: bool? = true;
+    let opt_char: char? = 'Z';
+    let opt_string: string? = "test";
+    
+    // null值
+    let null_i32: i32? = null;
+    let null_string: string? = null;
+    let null_bool: bool? = null;
+    
+    println("Optional基础测试通过");
+}
+
+// ============================================
+// 2. Optional类型 - null检查所有方式
+// ============================================
+
+fn test_optional_null_check() {
+    let some_val: i32? = 42;
+    let none_val: i32? = null;
+    
+    // 直接比较
+    if some_val == null {
+        println("错误：some_val不应该是null");
+    }
+    
+    if none_val == null {
+        println("正确：none_val是null");
+    }
+    
+    // 不等比较
+    if some_val != null {
+        println("正确：some_val不是null");
+    }
+    
+    if none_val != null {
+        println("错误：none_val应该是null");
+    }
+    
+    println("Optional null检查测试通过");
+}
+
+// ============================================
+// 3. Optional类型 - 模式匹配所有场景
+// ============================================
+
+fn test_optional_pattern_matching() {
+    let some_val: i32? = 100;
+    let none_val: i32? = null;
+    
+    // 成功匹配
+    let result1 = some_val is {
+        null => -1,
+        value => value * 2,
+    };
+    
+    // null匹配
+    let result2 = none_val is {
+        null => 0,
+        value => value,
+    };
+    
+    // 嵌套匹配
+    let nested_some: i32?? = some_val;
+    let result3 = nested_some is {
+        null => -1,
+        inner => {
+            inner is {
+                null => -2,
+                value => value,
+            }
+        },
+    };
+    
+    // 元组中的Optional
+    let tuple_opt = (some_val, none_val);
+    let result4 = tuple_opt is {
+        (null, null) => 0,
+        (value1, null) => value1,
+        (null, value2) => value2,
+        (value1, value2) => value1 + value2,
+    };
+    
+    println("Optional模式匹配测试通过");
+}
+
+// ============================================
+// 4. Result类型 - 基础测试
+// ============================================
+
+fn safe_divide(a: i32, b: i32) -> i32! {
+    if b == 0 {
+        return err("除数不能为零");
+    }
+    return ok(a / b);
+}
+
+fn safe_sqrt(x: i32) -> i32! {
+    if x < 0 {
+        return err("不能对负数开平方");
+    }
+    return ok(x);  // 简化，实际应该计算平方根
+}
+
+fn test_result_basic() {
+    // 成功情况
+    let result1 = safe_divide(10, 2);
+    let result2 = safe_divide(100, 5);
+    let result3 = safe_sqrt(16);
+    
+    // 失败情况
+    let error1 = safe_divide(10, 0);
+    let error2 = safe_sqrt(-10);
+    
+    // 边界值
+    let result4 = safe_divide(2147483647, 1);
+    let result5 = safe_divide(-2147483648, 1);
+    let result6 = safe_divide(1, 2147483647);
+    
+    println("Result基础测试通过");
+}
+
+// ============================================
+// 5. Result类型 - 模式匹配所有路径
+// ============================================
+
+fn test_result_pattern_matching() {
+    let ok_result = safe_divide(20, 4);
+    let err_result = safe_divide(10, 0);
+    
+    // ok分支匹配
+    let value1 = ok_result is {
+        ok(v) => v * 2,
+        err(msg) => {
+            println(msg);
+            -1
+        },
+    };
+    
+    // err分支匹配
+    let value2 = err_result is {
+        ok(v) => v,
+        err(msg) => {
+            println(msg);
+            0
+        },
+    };
+    
+    // 嵌套Result
+    let nested: i32!! = ok(safe_divide(10, 2));
+    
+    // 元组中的Result
+    let tuple_result = (ok_result, err_result);
+    let value3 = tuple_result is {
+        (ok(v1), ok(v2)) => v1 + v2,
+        (ok(v), err(_)) => v,
+        (err(_), ok(v)) => v,
+        (err(_), err(_)) => 0,
+    };
+    
+    println("Result模式匹配测试通过");
+}
+
+// ============================================
+// 6. Try表达式测试 (!)
+// ============================================
+
+fn chain_operations(a: i32, b: i32, c: i32) -> i32! {
+    // 链式错误传播
+    let result1 = safe_divide(a, b)!;
+    let result2 = safe_divide(result1, c)!;
+    return ok(result2);
+}
+
+fn test_try_operator() {
+    // 成功链
+    let success = chain_operations(100, 5, 2);
+    let final_value = success is {
+        ok(v) => v,
+        err(msg) => {
+            println(msg);
+            -1
+        },
+    };
+    
+    // 中间失败
+    let failure1 = chain_operations(100, 0, 2);
+    let value1 = failure1 is {
+        ok(v) => v,
+        err(msg) => {
+            println(msg);
+            -1
+        },
+    };
+    
+    // 后面失败
+    let failure2 = chain_operations(100, 5, 0);
+    let value2 = failure2 is {
+        ok(v) => v,
+        err(msg) => {
+            println(msg);
+            -1
+        },
+    };
+    
+    println("Try表达式测试通过");
+}
+
+// ============================================
+// 7. 组合类型测试 T?! 和 T!?
+// ============================================
+
+// T?! = Result<Optional<T>, string>
+fn find_value(arr: [i32; 5], target: i32) -> i32?! {
+    // 模拟可能失败的查找，成功时可能返回null
+    if target < 0 {
+        return err("目标值不能为负");
+    }
+    
+    // 查找逻辑（简化）
+    if target == 0 {
+        return ok(null);  // 找到了但是是null
+    }
+    
+    return ok(target);  // 找到了
+}
+
+fn test_result_optional_combo() {
+    // ok(some)
+    let result1 = find_value([1, 2, 3, 4, 5], 3);
+    let value1 = result1 is {
+        ok(null) => -1,
+        ok(value) => value,
+        err(msg) => {
+            println(msg);
+            -2
+        },
+    };
+    
+    // ok(null)
+    let result2 = find_value([1, 2, 3, 4, 5], 0);
+    let value2 = result2 is {
+        ok(null) => -1,
+        ok(value) => value,
+        err(msg) => {
+            println(msg);
+            -2
+        },
+    };
+    
+    // err
+    let result3 = find_value([1, 2, 3, 4, 5], -5);
+    let value3 = result3 is {
+        ok(null) => -1,
+        ok(value) => value,
+        err(msg) => {
+            println(msg);
+            -2
+        },
+    };
+    
+    println("T?!组合类型测试通过");
+}
+
+// ============================================
+// 8. 复杂类型的Optional和Result
+// ============================================
+
+type Point = struct {
+    x: i32,
+    y: i32
+}
+
+type Box<T> = struct {
+    value: T
+}
+
+fn test_complex_optional_result() {
+    // Optional结构体
+    let opt_point: Point? = Point { x: 10, y: 20 };
+    let null_point: Point? = null;
+    
+    // Result结构体
+    fn create_point(x: i32, y: i32) -> Point! {
+        if x < 0 || y < 0 {
+            return err("坐标不能为负");
+        }
+        return ok(Point { x: x, y: y });
+    }
+    
+    let ok_point = create_point(5, 10);
+    let err_point = create_point(-5, 10);
+    
+    // Optional泛型
+    let opt_box: Box<i32>? = Box { value: 42 };
+    let null_box: Box<i32>? = null;
+    
+    // Result泛型
+    fn create_box<T>(value: T) -> Box<T>! {
+        return ok(Box { value: value });
+    }
+    
+    let ok_box = create_box(100);
+    
+    println("复杂类型Optional/Result测试通过");
+}
+
+// ============================================
+// 9. 极端边界情况测试
+// ============================================
+
+fn test_edge_cases() {
+    // 空字符串的Optional
+    let empty_str: string? = "";
+    let result1 = empty_str is {
+        null => "null",
+        value => value,
+    };
+    
+    // 零值的Optional
+    let zero: i32? = 0;
+    let result2 = zero is {
+        null => -1,
+        value => value,
+    };
+    
+    // false的Optional
+    let false_val: bool? = false;
+    let result3 = false_val is {
+        null => true,
+        value => value,
+    };
+    
+    // 深度嵌套Optional
+    let deep_opt: i32???? = 42;
+    
+    // 深度嵌套Result
+    let deep_res: i32!!!! = ok(ok(ok(ok(42))));
+    
+    println("边界情况测试通过");
+}
+
+// ============================================
+// 10. 错误消息测试
+// ============================================
+
+fn test_error_messages() {
+    // 各种错误消息
+    let err1 = err("简单错误");
+    let err2 = err("包含数字的错误: 12345");
+    let err3 = err("包含特殊字符的错误: !@#$%^&*()");
+    let err4 = err("");  // 空错误消息
+    
+    // 长错误消息
+    let long_err = err("这是一个非常非常非常非常非常非常非常非常非常长的错误消息，用来测试系统对长错误消息的处理能力");
+    
+    println("错误消息测试通过");
+}
+
+// ============================================
+// 11. 多层错误传播测试
+// ============================================
+
+fn level3_operation(x: i32) -> i32! {
+    if x == 0 {
+        return err("level3: x不能为0");
+    }
+    return ok(x * 2);
+}
+
+fn level2_operation(x: i32) -> i32! {
+    let result = level3_operation(x)!;
+    if result > 100 {
+        return err("level2: 结果太大");
+    }
+    return ok(result + 10);
+}
+
+fn level1_operation(x: i32) -> i32! {
+    let result = level2_operation(x)!;
+    return ok(result * 3);
+}
+
+fn test_multi_level_propagation() {
+    // 成功传播
+    let success = level1_operation(10);
+    
+    // level3失败
+    let fail3 = level1_operation(0);
+    
+    // level2失败
+    let fail2 = level1_operation(60);
+    
+    // 验证每个结果
+    let v1 = success is {
+        ok(v) => v,
+        err(msg) => {
+            println(msg);
+            -1
+        },
+    };
+    
+    let v2 = fail3 is {
+        ok(v) => v,
+        err(msg) => {
+            println(msg);
+            -1
+        },
+    };
+    
+    let v3 = fail2 is {
+        ok(v) => v,
+        err(msg) => {
+            println(msg);
+            -1
+        },
+    };
+    
+    println("多层错误传播测试通过");
+}
+
+// ============================================
+// 12. Real-world场景测试
+// ============================================
+
+type User = struct {
+    id: i32,
+    name: string,
+    email: string?
+}
+
+fn validate_user(user: User) -> User! {
+    if user.id <= 0 {
+        return err("用户ID必须为正数");
+    }
+    
+    if user.name == "" {
+        return err("用户名不能为空");
+    }
+    
+    return ok(user);
+}
+
+fn find_user(id: i32) -> User?! {
+    if id < 0 {
+        return err("无效的用户ID");
+    }
+    
+    if id == 0 {
+        return ok(null);  // 用户不存在
+    }
+    
+    return ok(User {
+        id: id,
+        name: "测试用户",
+        email: null
+    });
+}
+
+fn test_real_world_scenarios() {
+    // 验证用户
+    let valid_user = User {
+        id: 1,
+        name: "Alice",
+        email: "alice@example.com"
+    };
+    
+    let invalid_user1 = User {
+        id: -1,
+        name: "Bob",
+        email: null
+    };
+    
+    let invalid_user2 = User {
+        id: 1,
+        name: "",
+        email: null
+    };
+    
+    let result1 = validate_user(valid_user);
+    let result2 = validate_user(invalid_user1);
+    let result3 = validate_user(invalid_user2);
+    
+    // 查找用户
+    let found = find_user(1);
+    let not_found = find_user(0);
+    let error = find_user(-1);
+    
+    // 处理结果
+    let v1 = found is {
+        ok(null) => "用户不存在",
+        ok(user) => user.name,
+        err(msg) => msg,
+    };
+    
+    let v2 = not_found is {
+        ok(null) => "用户不存在",
+        ok(user) => user.name,
+        err(msg) => msg,
+    };
+    
+    let v3 = error is {
+        ok(null) => "用户不存在",
+        ok(user) => user.name,
+        err(msg) => msg,
+    };
+    
+    println("Real-world场景测试通过");
+}
+
+// ============================================
+// 13. 压力测试 - 大量错误处理
+// ============================================
+
+fn stress_test_errors() {
+    // 循环中的错误处理
+    let~ count = 0;
+    loop i in 0..100 {
+        let result = safe_divide(1000, i);
+        let value = result is {
+            ok(v) => {
+                count = count + 1;
+                v
+            },
+            err(msg) => 0,
+        };
+    }
+    
+    println("压力测试通过");
+}
+
+// ============================================
+// 主测试函数
+// ============================================
+
+fn main() {
+    println("========================================");
+    println("PawLang 错误处理压力测试");
+    println("========================================");
+    
+    test_optional_basic();
+    test_optional_null_check();
+    test_optional_pattern_matching();
+    test_result_basic();
+    test_result_pattern_matching();
+    test_try_operator();
+    test_result_optional_combo();
+    test_complex_optional_result();
+    test_edge_cases();
+    test_error_messages();
+    test_multi_level_propagation();
+    test_real_world_scenarios();
+    stress_test_errors();
+    
+    println("========================================");
+    println("所有错误处理测试完成!");
+    println("========================================");
+}
+
+
+

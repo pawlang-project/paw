@@ -1,0 +1,25 @@
+// T! Result类型系统 - 简化测试
+// 测试：ok/err构造器、Result类型
+
+fn get_success() -> i32! {
+    return ok(42);
+}
+
+fn get_error() -> i32! {
+    return err("This is an error");
+}
+
+fn main() -> i32 {
+    println("=== T! Result类型系统 - 简化测试 ===");
+    
+    // 测试ok构造器
+    let result_ok = get_success();
+    
+    // 测试err构造器
+    let result_err = get_error();
+    
+    println("ok/err test complete");
+    
+    return 0;
+}
+

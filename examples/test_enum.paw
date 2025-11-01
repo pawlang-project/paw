@@ -1,0 +1,17 @@
+// 枚举测试
+
+type Status = enum {
+    Active,
+    Inactive,
+    Pending
+};
+
+type Message = enum {
+    Text(string),
+    Number(i32)
+};
+
+fn main() {
+    println("Enum test completed!");
+}
+

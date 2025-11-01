@@ -1,0 +1,6 @@
+// 测试字符串字面量
+
+fn main() {
+    println("Hello");
+}
+

@@ -1,0 +1,21 @@
+// 闭包系统 - 纯语法测试
+// 不涉及调用，只测试定义
+
+fn test_closures() {
+    // 测试1: 有return的闭包
+    let add = (x: i32, y: i32) -> i32 {
+        return x + y;
+    };
+    
+    // 测试2: 无参数闭包
+    let get_value = () -> i32 {
+        return 42;
+    };
+}
+
+fn main() -> i32 {
+    println("Closure syntax test");
+    test_closures();
+    return 0;
+}
+

@@ -1,0 +1,9 @@
+// 元组测试（无println）
+
+fn main() {
+    let tup1 = (1, 2, 3);
+    let tup2 = (1, true);
+    let unit = ();
+    let single = (42,);
+}
+

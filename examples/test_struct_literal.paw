@@ -1,0 +1,18 @@
+// 结构体字面量测试
+
+type Point = struct {
+    x: i32,
+    y: i32
+};
+
+fn main() {
+    let p = Point { x: 10, y: 20 };
+    let q = Point { x: 5, y: 15 };
+    
+    println(p.x);
+    println(p.y);
+    println(q.x);
+    
+    println("Struct literal test completed!");
+}
+

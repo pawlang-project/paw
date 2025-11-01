@@ -1,0 +1,10 @@
+fn main() -> void {
+    // 测试无返回值的闭包调用
+    let greet = () -> void {
+        println("Hello from closure!");
+    };
+    
+    greet();
+    println("Done");
+}
+

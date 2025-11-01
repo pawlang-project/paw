@@ -1,0 +1,9 @@
+fn get_null() -> i32? {
+    return null;
+}
+
+fn main() -> void {
+    let x = get_null();
+    println("Null test done");
+}
+

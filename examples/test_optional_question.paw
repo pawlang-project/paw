@@ -1,0 +1,14 @@
+fn get_value(x: i32) -> i32? {
+    return x;
+}
+
+fn process() -> i32? {
+    let result = get_value(10)?;  // 测试?操作符
+    return result;
+}
+
+fn main() -> void {
+    let x = process();
+    println("Question operator test done");
+}
+

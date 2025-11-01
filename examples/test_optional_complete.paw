@@ -1,0 +1,13 @@
+fn find_positive(x: i32) -> i32? {
+    if x > 0 {
+        return x;  // 隐式包装为Some(x)
+    }
+    return null;
+}
+
+fn main() -> void {
+    let a = find_positive(10);
+    let b = find_positive(-5);
+    println("Optional complete test done");
+}
+
