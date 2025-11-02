@@ -12,6 +12,7 @@ class BoolLiteral;
 class CharLiteral;
 class StringLiteral;
 class NullLiteral;
+class CastExpr;
 class ClosureExpr;
 class IdentifierExpr;
 class SelfExpr;
@@ -36,9 +37,12 @@ class WildcardPattern;
 class VariablePattern;
 class TuplePattern;
 class EnumPattern;
+class StructPattern;
 
 class ExprStmt;
 class VarDecl;
+class DestructuringDecl;
+class StructDestructuringDecl;
 class FunctionDecl;
 class ReturnStmt;
 class IfStmt;
@@ -65,6 +69,7 @@ public:
     virtual void visit(CharLiteral* node) = 0;
     virtual void visit(StringLiteral* node) = 0;
     virtual void visit(NullLiteral* node) = 0;
+    virtual void visit(CastExpr* node) = 0;
     virtual void visit(ClosureExpr* node) = 0;
     virtual void visit(IdentifierExpr* node) = 0;
     virtual void visit(SelfExpr* node) = 0;
@@ -89,10 +94,13 @@ public:
     virtual void visit(VariablePattern* node) = 0;
     virtual void visit(TuplePattern* node) = 0;
     virtual void visit(EnumPattern* node) = 0;
+    virtual void visit(StructPattern* node) = 0;
     
     // 语句访问
     virtual void visit(ExprStmt* node) = 0;
     virtual void visit(VarDecl* node) = 0;
+    virtual void visit(DestructuringDecl* node) = 0;
+    virtual void visit(StructDestructuringDecl* node) = 0;
     virtual void visit(FunctionDecl* node) = 0;
     virtual void visit(ReturnStmt* node) = 0;
     virtual void visit(IfStmt* node) = 0;

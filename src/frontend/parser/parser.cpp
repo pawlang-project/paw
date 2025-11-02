@@ -73,22 +73,93 @@ bool Parser::isAtEnd() const {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 StmtPtr Parser::parseStatement() {
+    // 检查pub可见性修饰符
+    bool is_public = match(TokenType::PUB);
+    
     if (match(TokenType::LET)) return parseVarDecl();
-    if (match(TokenType::FN)) return parseFunctionDecl();
-    if (match(TokenType::TYPE)) return parseTypeDecl();
+    if (match(TokenType::FN)) return parseFunctionDecl(is_public);
+    if (match(TokenType::TYPE)) return parseTypeDecl(is_public);
     if (match(TokenType::SUPPORT)) return parseSupportDecl();
     if (match(TokenType::RETURN)) return parseReturnStmt();
-    if (match(TokenType::IF)) return parseIfStmt();
+    if (match(TokenType::IF)) return parseIfStmt();  // if语句支持
     if (match(TokenType::LOOP)) return parseLoopStmt();
     if (match(TokenType::BREAK)) return parseBreakStmt();
     if (match(TokenType::CONTINUE)) return parseContinueStmt();
     if (check(TokenType::LBRACE)) return parseBlockStmt();
+    
+    // 如果有pub但后面不是fn/type，报错
+    if (is_public) {
+        error("pub can only be used with fn or type declarations");
+    }
+    
     return parseExprStmt();
 }
 
 StmtPtr Parser::parseVarDecl() {
     bool is_mutable = match(TokenType::TILDE);  // let ~x
     
+    // 检查是否是元组解构: let (a, b) = ...
+    if (check(TokenType::LPAREN)) {
+        advance();  // 消费 '('
+        
+        // 解析变量名列表
+        std::vector<std::string> names;
+        if (!check(TokenType::RPAREN)) {
+            do {
+                Token var_name = consume(TokenType::IDENTIFIER, "Expected variable name in destructuring");
+                names.push_back(var_name.lexeme);
+            } while (match(TokenType::COMMA));
+        }
+        
+        consume(TokenType::RPAREN, "Expected ')' after destructuring pattern");
+        
+        // 必须有初始化表达式
+        consume(TokenType::EQ, "Expected '=' in destructuring declaration");
+        ExprPtr init = parseExpression();
+        
+        consume(TokenType::SEMICOLON, "Expected ';' after destructuring declaration");
+        
+        return std::make_unique<DestructuringDecl>(std::move(names), is_mutable, std::move(init));
+    }
+    
+    // 检查是否是结构体解构: let StructName { field1, field2 } = ...
+    if (check(TokenType::IDENTIFIER)) {
+        Token name_token = peek();
+        // Lookahead: 检查identifier后是否有 '{'
+        size_t saved_pos = current_;
+        advance(); // 消费identifier
+        
+        if (check(TokenType::LBRACE) && !name_token.lexeme.empty() && std::isupper(name_token.lexeme[0])) {
+            // 结构体解构（结构体名首字母大写）
+            std::string struct_name = name_token.lexeme;
+            advance(); // 消费 '{'
+            
+            // 解析字段名列表
+            std::vector<std::string> field_names;
+            if (!check(TokenType::RBRACE)) {
+                do {
+                    Token field_name = consume(TokenType::IDENTIFIER, "Expected field name in struct destructuring");
+                    field_names.push_back(field_name.lexeme);
+                } while (match(TokenType::COMMA));
+            }
+            
+            consume(TokenType::RBRACE, "Expected '}' after struct destructuring pattern");
+            
+            // 必须有初始化表达式
+            consume(TokenType::EQ, "Expected '=' in struct destructuring declaration");
+            ExprPtr init = parseExpression();
+            
+            consume(TokenType::SEMICOLON, "Expected ';' after struct destructuring declaration");
+            
+            return std::make_unique<StructDestructuringDecl>(struct_name, std::move(field_names), 
+                                                            is_mutable, std::move(init));
+        }
+        
+        // 回退，不是结构体解构
+        current_ = saved_pos;
+    }
+    
+    // 普通变量声明
     Token name = consume(TokenType::IDENTIFIER, "Expected variable name");
     
     Type* type = nullptr;
@@ -106,7 +177,7 @@ StmtPtr Parser::parseVarDecl() {
     return std::make_unique<VarDecl>(name.lexeme, type, is_mutable, std::move(init));
 }
 
-StmtPtr Parser::parseFunctionDecl() {
+StmtPtr Parser::parseFunctionDecl(bool is_public) {
     Token name = consume(TokenType::IDENTIFIER, "Expected function name");
     
     // 解析泛型参数 <T, U>
@@ -147,10 +218,11 @@ StmtPtr Parser::parseFunctionDecl() {
     
     return std::make_unique<FunctionDecl>(name.lexeme, std::move(generic_params),
                                           std::move(params), return_type, 
-                                          std::move(body), std::move(where_clauses));
+                                          std::move(body), std::move(where_clauses),
+                                          is_public);
 }
 
-StmtPtr Parser::parseTypeDecl() {
+StmtPtr Parser::parseTypeDecl(bool is_public) {
     // type Name<T, U> = struct/enum/interface { ... }
     Token name = consume(TokenType::IDENTIFIER, "Expected type name after 'type'");
     
@@ -158,6 +230,10 @@ StmtPtr Parser::parseTypeDecl() {
     auto generic_params = parseGenericParams();
     
     consume(TokenType::EQ, "Expected '=' after type name");
+    
+    // 暂时忽略is_public，仅用于语法识别
+    // TODO: 在StructDecl/EnumDecl/InterfaceDecl中添加is_public支持
+    (void)is_public;  // 避免未使用警告
     
     if (match(TokenType::STRUCT)) {
         return parseStructDecl(name.lexeme, std::move(generic_params));
@@ -199,7 +275,11 @@ StmtPtr Parser::parseStructDecl(const std::string& name, std::vector<GenericPara
     }
     
     consume(TokenType::RBRACE, "Expected '}' after struct fields");
-    consume(TokenType::SEMICOLON, "Expected ';' after struct definition");
+    match(TokenType::SEMICOLON);  // 分号是可选的
+    
+    // ✅ Parser阶段立即注册类型（使后续代码能使用此类型）
+    StructType* struct_type = new StructType(name, fields);
+    type_system_->registerStruct(struct_type);
     
     // 恢复泛型参数上下文
     current_generic_params_ = saved_generic_params;
@@ -239,7 +319,15 @@ StmtPtr Parser::parseEnumDecl(const std::string& name, std::vector<GenericParam>
     }
     
     consume(TokenType::RBRACE, "Expected '}' after enum variants");
-    consume(TokenType::SEMICOLON, "Expected ';' after enum definition");
+    match(TokenType::SEMICOLON);  // 分号是可选的
+    
+    // ✅ Parser阶段立即注册类型
+    std::vector<std::pair<std::string, Type*>> variant_types;
+    for (const auto& v : variants) {
+        variant_types.push_back({v.name, v.data_type});
+    }
+    EnumType* enum_type = new EnumType(name, variant_types);
+    type_system_->registerEnum(enum_type);
     
     // 恢复泛型参数上下文
     current_generic_params_ = saved_generic_params;
@@ -305,7 +393,20 @@ StmtPtr Parser::parseInterfaceDecl(const std::string& name, std::vector<GenericP
     }
     
     consume(TokenType::RBRACE, "Expected '}' after interface methods");
-    consume(TokenType::SEMICOLON, "Expected ';' after interface definition");
+    match(TokenType::SEMICOLON);  // 分号是可选的
+    
+    // ✅ Parser阶段立即注册接口类型（完整实现）
+    std::vector<InterfaceType::MethodSignature> method_signatures;
+    for (const auto& method : methods) {
+        // 将InterfaceMethod转换为InterfaceType::MethodSignature
+        std::vector<Type*> param_types;
+        for (const auto& param : method.params) {
+            param_types.push_back(param.type);
+        }
+        method_signatures.emplace_back(method.name, std::move(param_types), method.return_type);
+    }
+    InterfaceType* interface_type = new InterfaceType(name, std::move(method_signatures));
+    type_system_->registerInterface(interface_type);
     
     return std::make_unique<InterfaceDecl>(name, std::move(generic_params), std::move(methods));
 }
@@ -406,11 +507,29 @@ StmtPtr Parser::parseReturnStmt() {
 
 StmtPtr Parser::parseIfStmt() {
     ExprPtr condition = parseExpression();
-    StmtPtr then_stmt = parseStatement();
-    StmtPtr else_stmt = nullptr;
     
+    // if语句的then分支必须是block（用大括号）
+    // parseBlockStmt会自己消费大括号
+    if (!check(TokenType::LBRACE)) {
+        error("Expected '{' after if condition");
+        return nullptr;
+    }
+    StmtPtr then_stmt = parseBlockStmt();
+    
+    StmtPtr else_stmt = nullptr;
     if (match(TokenType::ELSE)) {
-        else_stmt = parseStatement();
+        // else后面可以是block或另一个if语句
+        if (match(TokenType::IF)) {
+            // else if - 递归解析
+            else_stmt = parseIfStmt();
+        } else {
+            // else block
+            if (!check(TokenType::LBRACE)) {
+                error("Expected '{' after else");
+                return nullptr;
+            }
+            else_stmt = parseBlockStmt();
+        }
     }
     
     return std::make_unique<IfStmt>(std::move(condition), std::move(then_stmt),
@@ -481,7 +600,44 @@ StmtPtr Parser::parseBlockStmt() {
     
     std::vector<StmtPtr> stmts;
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
-        stmts.push_back(parseStatement());
+        // 检查是否是块的最后一个位置（可能是隐式返回）
+        // 向前看：解析一个表达式，然后检查是否直接跟着'}'
+        size_t saved_pos = current_;
+        
+        // 尝试解析表达式（可能无分号）
+        try {
+            // 先检查是否是语句关键字（let, fn, return, if等）
+            if (check(TokenType::LET) || check(TokenType::FN) || check(TokenType::TYPE) ||
+                check(TokenType::SUPPORT) || check(TokenType::RETURN) || check(TokenType::IF) ||
+                check(TokenType::LOOP) || check(TokenType::BREAK) || check(TokenType::CONTINUE) ||
+                check(TokenType::LBRACE)) {
+                // 按正常语句解析
+                stmts.push_back(parseStatement());
+            } else {
+                // 可能是表达式
+                // 先解析表达式
+                ExprPtr expr = parseExpression();
+                
+                // 检查后面是分号还是'}'
+                if (check(TokenType::RBRACE)) {
+                    // 隐式返回：无分号，直接到'}'
+                    stmts.push_back(std::make_unique<ReturnStmt>(std::move(expr)));
+                    break;  // 结束块解析
+                } else if (match(TokenType::SEMICOLON)) {
+                    // 普通表达式语句
+                    stmts.push_back(std::make_unique<ExprStmt>(std::move(expr)));
+                } else {
+                    // 错误：期待';'或'}'
+                    error("Expected ';' after expression");
+                    // 尝试恢复
+                    synchronize();
+                }
+            }
+        } catch (...) {
+            // 解析失败，回退按正常方式解析
+            current_ = saved_pos;
+            stmts.push_back(parseStatement());
+        }
     }
     
     consume(TokenType::RBRACE, "Expected '}'");
@@ -493,6 +649,41 @@ StmtPtr Parser::parseExprStmt() {
     ExprPtr expr = parseExpression();
     consume(TokenType::SEMICOLON, "Expected ';' after expression");
     return std::make_unique<ExprStmt>(std::move(expr));
+}
+
+std::vector<StmtPtr> Parser::parseBlockStmtsWithImplicitReturn() {
+    // 解析块中的语句，允许最后一个表达式无分号（用于BlockExpr）
+    std::vector<StmtPtr> stmts;
+    
+    while (!check(TokenType::RBRACE) && !isAtEnd()) {
+        // 检查是否是语句关键字（使用check而不是match）
+        if (check(TokenType::LET) || check(TokenType::FN) || check(TokenType::TYPE) ||
+            check(TokenType::SUPPORT) || check(TokenType::RETURN) ||
+            check(TokenType::LOOP) || check(TokenType::BREAK) || check(TokenType::CONTINUE) ||
+            check(TokenType::LBRACE)) {
+            // 按正常语句解析
+            stmts.push_back(parseStatement());
+        } else {
+            // 可能是表达式
+            ExprPtr expr = parseExpression();
+            
+            // 检查后面是分号还是'}'
+            if (check(TokenType::RBRACE)) {
+                // 无分号，最后一个表达式
+                stmts.push_back(std::make_unique<ExprStmt>(std::move(expr)));
+                break;
+            } else if (match(TokenType::SEMICOLON)) {
+                // 有分号，普通表达式语句
+                stmts.push_back(std::make_unique<ExprStmt>(std::move(expr)));
+            } else {
+                // 错误：期待';'或'}'
+                error("Expected ';' after expression");
+                synchronize();
+            }
+        }
+    }
+    
+    return stmts;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -554,8 +745,8 @@ ExprPtr Parser::parseEquality() {
 ExprPtr Parser::parseComparison() {
     ExprPtr expr = parseRange();
     
-    while (match(TokenType::LT) || match(TokenType::LESS_EQ) ||
-           match(TokenType::GT) || match(TokenType::GREATER_EQ)) {
+    while (match(TokenType::LESS) || match(TokenType::LESS_EQ) ||
+           match(TokenType::GREATER) || match(TokenType::GREATER_EQ)) {
         TokenType op = tokens_[current_ - 1].type;
         ExprPtr right = parseRange();
         expr = std::make_unique<BinaryExpr>(op, std::move(expr), std::move(right));
@@ -626,22 +817,34 @@ ExprPtr Parser::parsePostfix() {
     ExprPtr expr = parsePrimary();
     
     // 检查结构体字面量: IDENTIFIER { ... }
+    // 要求结构体名首字母大写（类型命名约定）
     if (auto* ident = dynamic_cast<IdentifierExpr*>(expr.get())) {
-        if (check(TokenType::LBRACE)) {
-            // 这是结构体字面量，不是普通标识符
-            std::string struct_name = ident->getName();
+        std::string name = ident->getName();
+        if (check(TokenType::LBRACE) && !name.empty() && std::isupper(name[0])) {
+            // 这是结构体字面量（首字母大写的类型名）
+            std::string struct_name = name;
             advance(); // consume '{'
             
             std::vector<FieldInit> fields;
             
-            // 解析字段初始化列表
+            // 解析字段初始化列表（支持简写）
             if (!check(TokenType::RBRACE)) {
                 do {
                     Token field_name = consume(TokenType::IDENTIFIER, "Expected field name");
-                    consume(TokenType::COLON, "Expected ':' after field name");
-                    ExprPtr value = parseExpression();
                     
-                    fields.push_back(FieldInit(field_name.lexeme, std::move(value)));
+                    // 检查是否是简写形式（字段名与变量名相同）
+                    if (check(TokenType::COLON)) {
+                        // 完整形式: field: value
+                        consume(TokenType::COLON, "Expected ':' after field name");
+                        ExprPtr value = parseExpression();
+                        fields.push_back(FieldInit(field_name.lexeme, std::move(value)));
+                    } else if (check(TokenType::COMMA) || check(TokenType::RBRACE)) {
+                        // 简写形式: field （等价于 field: field）
+                        ExprPtr value = std::make_unique<IdentifierExpr>(field_name.lexeme);
+                        fields.push_back(FieldInit(field_name.lexeme, std::move(value)));
+                    } else {
+                        error("Expected ':' or ',' after field name");
+                    }
                 } while (match(TokenType::COMMA) && !check(TokenType::RBRACE));
             }
             
@@ -672,8 +875,16 @@ ExprPtr Parser::parsePostfix() {
             expr = std::make_unique<CallExpr>(std::move(expr), std::move(args));
         }
         else if (match(TokenType::DOT)) {
-            Token member = consume(TokenType::IDENTIFIER, "Expected member name");
-            expr = std::make_unique<MemberExpr>(std::move(expr), member.lexeme);
+            // 支持两种成员访问：
+            // 1. struct.field_name (IDENTIFIER)
+            // 2. tuple.0 (INT_LITERAL)
+            if (check(TokenType::INT_LITERAL)) {
+                Token index = advance();
+                expr = std::make_unique<MemberExpr>(std::move(expr), index.lexeme);
+            } else {
+                Token member = consume(TokenType::IDENTIFIER, "Expected member name or tuple index");
+                expr = std::make_unique<MemberExpr>(std::move(expr), member.lexeme);
+            }
         }
         else if (match(TokenType::LBRACKET)) {
             ExprPtr index = parseExpression();
@@ -720,6 +931,11 @@ ExprPtr Parser::parsePostfix() {
             // ! 操作符: expr!
             // 用于Result类型，自动提取或传播错误
             expr = std::make_unique<TryExpr>(std::move(expr), TokenType::BANG);
+        }
+        else if (match(TokenType::AS)) {
+            // as 类型转换: expr as Type
+            Type* target_type = parseType();
+            expr = std::make_unique<CastExpr>(std::move(expr), target_type);
         }
         else {
             break;
@@ -818,10 +1034,7 @@ ExprPtr Parser::parsePrimary() {
                 // 无参数闭包
                 Type* return_type = parseType();
                 consume(TokenType::LBRACE, "Expected '{' for closure body");
-                std::vector<StmtPtr> stmts;
-                while (!check(TokenType::RBRACE) && !isAtEnd()) {
-                    stmts.push_back(parseStatement());
-                }
+                std::vector<StmtPtr> stmts = parseBlockStmtsWithImplicitReturn();
                 consume(TokenType::RBRACE, "Expected '}' after closure body");
                 
                 ExprPtr body = std::make_unique<BlockExpr>(std::move(stmts));
@@ -872,10 +1085,7 @@ ExprPtr Parser::parsePrimary() {
             
             // 闭包体 - 解析为BlockExpr
             consume(TokenType::LBRACE, "Expected '{' for closure body");
-            std::vector<StmtPtr> stmts;
-            while (!check(TokenType::RBRACE) && !isAtEnd()) {
-                stmts.push_back(parseStatement());
-            }
+            std::vector<StmtPtr> stmts = parseBlockStmtsWithImplicitReturn();
             consume(TokenType::RBRACE, "Expected '}' after closure body");
             
             ExprPtr body = std::make_unique<BlockExpr>(std::move(stmts));
@@ -915,15 +1125,19 @@ ExprPtr Parser::parsePrimary() {
     if (match(TokenType::IF)) {
         ExprPtr condition = parseExpression();
         
+        // 解析then分支（块表达式，支持隐式返回）
         consume(TokenType::LBRACE, "Expected '{' after if condition");
-        ExprPtr then_expr = parseExpression();
-        consume(TokenType::RBRACE, "Expected '}' after then expression");
+        std::vector<StmtPtr> then_stmts = parseBlockStmtsWithImplicitReturn();
+        consume(TokenType::RBRACE, "Expected '}' after then block");
+        ExprPtr then_expr = std::make_unique<BlockExpr>(std::move(then_stmts));
         
+        // 解析else分支（可选）
         ExprPtr else_expr = nullptr;
         if (match(TokenType::ELSE)) {
             consume(TokenType::LBRACE, "Expected '{' after else");
-            else_expr = parseExpression();
-            consume(TokenType::RBRACE, "Expected '}' after else expression");
+            std::vector<StmtPtr> else_stmts = parseBlockStmtsWithImplicitReturn();
+            consume(TokenType::RBRACE, "Expected '}' after else block");
+            else_expr = std::make_unique<BlockExpr>(std::move(else_stmts));
         }
         
         return std::make_unique<IfExpr>(std::move(condition), std::move(then_expr), std::move(else_expr));
@@ -931,10 +1145,7 @@ ExprPtr Parser::parsePrimary() {
     
     // 块表达式 { ... }
     if (match(TokenType::LBRACE)) {
-        std::vector<StmtPtr> stmts;
-        while (!check(TokenType::RBRACE) && !isAtEnd()) {
-            stmts.push_back(parseStatement());
-        }
+        std::vector<StmtPtr> stmts = parseBlockStmtsWithImplicitReturn();
         consume(TokenType::RBRACE, "Expected '}'");
         return std::make_unique<BlockExpr>(std::move(stmts));
     }
@@ -948,6 +1159,68 @@ ExprPtr Parser::parsePrimary() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Type* Parser::parseType() {
+    // === 切片类型: [T] ===
+    // 注意：PawLang使用[T]表示切片（动态大小），[T; N]表示数组（固定大小）
+    if (match(TokenType::LBRACKET)) {
+        Type* element_type = parseType();
+        
+        // 检查是否是固定大小数组 [T; N]
+        if (match(TokenType::SEMICOLON)) {
+            // 固定大小数组 [T; N]
+            if (!check(TokenType::INT_LITERAL)) {
+                error("Expected array size after ';'");
+                consume(TokenType::RBRACKET, "Expected ']' after array type");
+                return type_system_->getSliceType(element_type);
+            }
+            
+            Token size_token = advance();
+            size_t size = std::stoull(size_token.lexeme);
+            consume(TokenType::RBRACKET, "Expected ']' after array size");
+            
+            // 创建固定大小数组类型
+            return type_system_->getArrayType(element_type, size);
+        }
+        
+        consume(TokenType::RBRACKET, "Expected ']' after array element type");
+        
+        // 创建切片类型（动态大小）
+        return type_system_->getSliceType(element_type);
+    }
+    
+    // === 函数类型: fn(T1, T2) -> R ===
+    if (match(TokenType::FN)) {
+        // 已消费 'fn'
+        
+        consume(TokenType::LPAREN, "Expected '(' after 'fn'");
+        
+        // 解析参数类型列表
+        std::vector<Type*> param_types;
+        if (!check(TokenType::RPAREN)) {
+            do {
+                param_types.push_back(parseType());
+            } while (match(TokenType::COMMA));
+        }
+        
+        consume(TokenType::RPAREN, "Expected ')' after function parameter types");
+        
+        // 解析返回类型
+        Type* return_type = type_system_->getVoidType();
+        if (match(TokenType::ARROW)) {
+            return_type = parseType();
+        }
+        
+        // 创建FunctionType
+        return type_system_->getFunctionType(param_types, return_type);
+    }
+    
+    // 检查Self类型
+    if (match(TokenType::SELF_UPPER)) {
+        // Self类型：在support上下文中表示当前类型
+        // TODO: 需要从上下文获取实际类型
+        // 暂时返回特殊的SelfType标记
+        return type_system_->getSelfType();
+    }
+    
     Token type_token = advance();
     
     // 首先检查是否是当前泛型参数
@@ -1042,20 +1315,55 @@ std::vector<WhereClause> Parser::parseWhereClauses() {
     // 解析 where T: Display, U: Debug
     std::vector<WhereClause> clauses;
     
-    if (!check(TokenType::IDENTIFIER) || peek().lexeme != "where") {
-        return clauses;  // 没有where约束
+    // 检查当前token是否是WHERE关键字
+    if (!match(TokenType::WHERE)) {
+        return clauses;  // 没有where子句
     }
     
-    advance();  // 消费 'where'
+    // 已消费 'where'
     
+    // 解析where子句列表
     do {
-        // 解析 T: Interface
-        Token type_param = consume(TokenType::IDENTIFIER, "Expected type parameter in where clause");
-        consume(TokenType::COLON, "Expected ':' after type parameter");
-        Token interface_name = consume(TokenType::IDENTIFIER, "Expected interface name");
+        // 检查是否到达函数体（'{'）
+        if (check(TokenType::LBRACE)) {
+            break;  // 正常结束，准备解析函数体
+        }
         
+        // 解析 T: Interface
+        // 必须是IDENTIFIER（类型参数）
+        if (!check(TokenType::IDENTIFIER)) {
+            // where后面不是IDENTIFIER，可能是其他token，安全退出
+            break;
+        }
+        
+        Token type_param = advance();  // 类型参数名（如T）
+        
+        // 期望冒号
+        if (!check(TokenType::COLON)) {
+            // 没有冒号，可能格式错误，安全退出
+            break;
+        }
+        advance();  // 消费冒号
+        
+        // 期望接口名
+        if (!check(TokenType::IDENTIFIER)) {
+            // 没有接口名，安全退出
+            break;
+        }
+        
+        Token interface_name = advance();  // 接口名（如Display）
+        
+        // 添加where子句
         clauses.push_back(WhereClause(type_param.lexeme, interface_name.lexeme));
-    } while (match(TokenType::COMMA));
+        
+        // 检查是否有更多约束（逗号分隔）
+        if (!match(TokenType::COMMA)) {
+            // 没有逗号，where子句结束
+            break;
+        }
+        
+        // 继续解析下一个约束
+    } while (!isAtEnd());
     
     return clauses;
 }
@@ -1082,6 +1390,11 @@ std::unique_ptr<Pattern> Parser::parsePattern() {
     // 元组模式 (pattern, pattern, ...)
     if (match(TokenType::LPAREN)) {
         return parseTuplePattern();
+    }
+    
+    // 枚举构造器关键字: ok(...), err(...), some(...), none
+    if (check(TokenType::OK) || check(TokenType::ERR)) {
+        return parseEnumConstructorPattern();
     }
     
     // 变量绑定或枚举模式
@@ -1123,19 +1436,126 @@ std::unique_ptr<Pattern> Parser::parseLiteralPattern() {
     throw std::runtime_error("Parse error");
 }
 
-std::unique_ptr<Pattern> Parser::parseVariableOrEnumPattern() {
-    Token name = consume(TokenType::IDENTIFIER, "Expected identifier");
+// 解析枚举构造器关键字模式: ok(...), err(...)
+std::unique_ptr<Pattern> Parser::parseEnumConstructorPattern() {
+    Token constructor = advance();  // OK or ERR
     
-    // 检查是否为枚举模式 Variant(pattern)
-    if (match(TokenType::LPAREN)) {
-        // 枚举模式带内部模式
-        auto inner = parsePattern();
-        consume(TokenType::RPAREN, "Expected ')' after enum pattern");
-        return std::make_unique<EnumPattern>(name.lexeme, std::move(inner));
+    // 映射关键字到标准枚举变体名
+    std::string variant_name;
+    if (constructor.type == TokenType::OK) {
+        variant_name = "Ok";
+    } else if (constructor.type == TokenType::ERR) {
+        variant_name = "Err";
     }
     
-    // 简单变量绑定模式
-    return std::make_unique<VariablePattern>(name.lexeme);
+    // 必须有参数列表
+    consume(TokenType::LPAREN, "Expected '(' after enum constructor");
+    
+    // 解析内部模式
+    std::vector<std::unique_ptr<Pattern>> inner_patterns;
+    
+    if (!check(TokenType::RPAREN)) {
+        do {
+            inner_patterns.push_back(parsePattern());
+        } while (match(TokenType::COMMA) && !check(TokenType::RPAREN));
+    }
+    
+    consume(TokenType::RPAREN, "Expected ')' after enum pattern");
+    
+    // 创建枚举模式，标记为别名
+    return std::make_unique<EnumPattern>(
+        "", variant_name, std::move(inner_patterns), true
+    );
+}
+
+std::unique_ptr<Pattern> Parser::parseVariableOrEnumPattern() {
+    Token first = consume(TokenType::IDENTIFIER, "Expected identifier");
+    
+    // 1. 检查静态访问: Option::Some(x)
+    if (match(TokenType::COLON_COLON)) {
+        std::string type_name = first.lexeme;
+        Token variant = consume(TokenType::IDENTIFIER, "Expected variant name after '::'");
+        
+        if (match(TokenType::LPAREN)) {
+            // Option::Some(x, y, ...)
+            std::vector<std::unique_ptr<Pattern>> inner_patterns;
+            
+            if (!check(TokenType::RPAREN)) {
+                do {
+                    inner_patterns.push_back(parsePattern());
+                } while (match(TokenType::COMMA) && !check(TokenType::RPAREN));
+            }
+            
+            consume(TokenType::RPAREN, "Expected ')' after enum pattern");
+            return std::make_unique<EnumPattern>(
+                type_name, variant.lexeme, std::move(inner_patterns), false
+            );
+        }
+        
+        // Option::Some (无参数)
+        return std::make_unique<EnumPattern>(
+            type_name, variant.lexeme, std::vector<std::unique_ptr<Pattern>>{}, false
+        );
+    }
+    
+    // 2. 检查枚举构造器: Some(...) 或 ok(...)
+    if (match(TokenType::LPAREN)) {
+        // 检查是否是别名（小写开头）
+        bool is_alias = !first.lexeme.empty() && std::islower(first.lexeme[0]);
+        
+        // 规范化别名: ok → Ok, err → Err, some → Some, none → None
+        std::string variant_name = first.lexeme;
+        if (is_alias) {
+            variant_name = normalizeEnumAlias(first.lexeme);
+        }
+        
+        // 解析多个内部模式
+        std::vector<std::unique_ptr<Pattern>> inner_patterns;
+        
+        if (!check(TokenType::RPAREN)) {
+            do {
+                inner_patterns.push_back(parsePattern());
+            } while (match(TokenType::COMMA) && !check(TokenType::RPAREN));
+        }
+        
+        consume(TokenType::RPAREN, "Expected ')' after enum pattern");
+        return std::make_unique<EnumPattern>(
+            "", variant_name, std::move(inner_patterns), is_alias
+        );
+    }
+    
+    // 3. 检查结构体模式: Point { x, y } 或 Point { x: a, y: b }
+    if (match(TokenType::LBRACE)) {
+        return parseStructPattern(first.lexeme);
+    }
+    
+    // 4. 简单变量绑定或枚举变体 (需要类型检查时区分)
+    //    例如: None, Active, 或普通变量 x
+    return std::make_unique<VariablePattern>(first.lexeme);
+}
+
+// 枚举别名规范化: ok → Ok, err → Err, some → Some, none → None
+std::string Parser::normalizeEnumAlias(const std::string& alias) {
+    static const std::unordered_map<std::string, std::string> aliases = {
+        {"ok", "Ok"},
+        {"err", "Err"},
+        {"some", "Some"},
+        {"none", "None"},
+    };
+    
+    auto it = aliases.find(alias);
+    if (it != aliases.end()) {
+        return it->second;
+    }
+    
+    // 如果不是已知别名，返回首字母大写版本
+    if (!alias.empty()) {
+        std::string result = alias;
+        result[0] = std::toupper(result[0]);
+        return result;
+    }
+    
+    return alias;
 }
 
 std::unique_ptr<Pattern> Parser::parseTuplePattern() {
@@ -1161,6 +1581,42 @@ std::unique_ptr<Pattern> Parser::parseTuplePattern() {
     
     consume(TokenType::RPAREN, "Expected ')' after tuple pattern");
     return std::make_unique<TuplePattern>(std::move(elements));
+}
+
+//  结构体模式解析: Point { x, y } 或 Point { x: a, y: b }
+std::unique_ptr<Pattern> Parser::parseStructPattern(const std::string& struct_name) {
+    // 已经消费了 '{', 解析字段列表
+    
+    std::vector<StructPattern::FieldPattern> fields;
+    
+    while (!check(TokenType::RBRACE) && !isAtEnd()) {
+        Token field_name = consume(TokenType::IDENTIFIER, "Expected field name in struct pattern");
+        
+        PatternPtr pattern;
+        
+        // 检查是重绑定形式 (x: a) 还是简写形式 (x)
+        if (match(TokenType::COLON)) {
+            // 重绑定形式: x: a
+            pattern = parsePattern();
+        } else {
+            // 简写形式: x (等价于 x: x)
+            pattern = std::make_unique<VariablePattern>(field_name.lexeme);
+        }
+        
+        fields.push_back(StructPattern::FieldPattern(field_name.lexeme, std::move(pattern)));
+        
+        // 逗号是可选的（支持尾随逗号）
+        if (!match(TokenType::COMMA)) {
+            // 如果没有逗号，必须是 }
+            if (!check(TokenType::RBRACE)) {
+                error("Expected ',' or '}' after struct pattern field");
+            }
+        }
+    }
+    
+    consume(TokenType::RBRACE, "Expected '}' after struct pattern fields");
+    
+    return std::make_unique<StructPattern>(struct_name, std::move(fields));
 }
 
 } // namespace pawc

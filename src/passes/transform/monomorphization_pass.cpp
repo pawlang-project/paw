@@ -4,6 +4,7 @@
 #include "backend/codegen/generic/mangling.h"  // 使用新的Mangling模块
 #include "pass/pass_context.h"
 #include "middleend/types/type_system.h"
+#include "frontend/parser/ast/pattern.h"
 #include <iostream>
 
 namespace pawc {
@@ -612,6 +613,18 @@ void MonomorphizationPass::visit(VarDecl* decl) {
     }
 }
 
+void MonomorphizationPass::visit(DestructuringDecl* decl) {
+    if (decl->getInit()) {
+        decl->getInit()->accept(this);
+    }
+}
+
+void MonomorphizationPass::visit(StructDestructuringDecl* decl) {
+    if (decl->getInit()) {
+        decl->getInit()->accept(this);
+    }
+}
+
 void MonomorphizationPass::visit(FunctionDecl* decl) {
     // 已在collectGenericDefinitions中处理
     // 遍历函数体
@@ -684,6 +697,12 @@ void MonomorphizationPass::visit(BoolLiteral*) {}
 void MonomorphizationPass::visit(CharLiteral*) {}
 void MonomorphizationPass::visit(StringLiteral*) {}
 void MonomorphizationPass::visit(NullLiteral*) {}
+
+void MonomorphizationPass::visit(CastExpr* expr) {
+    if (expr->getExpr()) {
+        expr->getExpr()->accept(this);
+    }
+}
 
 void MonomorphizationPass::visit(ClosureExpr* expr) {
     // 闭包单态化：处理闭包体中的泛型使用
@@ -924,6 +943,15 @@ void MonomorphizationPass::visit(VariablePattern*) {}
 void MonomorphizationPass::visit(WildcardPattern*) {}
 void MonomorphizationPass::visit(TuplePattern*) {}
 void MonomorphizationPass::visit(EnumPattern*) {}
+
+void MonomorphizationPass::visit(StructPattern* pattern) {
+    // 结构体模式：遍历字段模式
+    for (const auto& field : pattern->getFields()) {
+        if (field.pattern) {
+            field.pattern->accept(this);
+        }
+    }
+}
 
 } // namespace pawc
 

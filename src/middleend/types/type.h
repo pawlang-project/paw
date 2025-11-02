@@ -91,6 +91,7 @@ public:
     bool isString() const { return getKind() == Kind::String; }
     bool isVoid() const { return getKind() == Kind::Void; }
     bool isArray() const { return getKind() == Kind::Array; }
+    bool isSlice() const { return getKind() == Kind::Slice; }
     bool isTuple() const { return getKind() == Kind::Tuple; }
     bool isStruct() const { return getKind() == Kind::Struct; }
     bool isEnum() const { return getKind() == Kind::Enum; }

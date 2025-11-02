@@ -27,6 +27,7 @@ public:
     void visit(CharLiteral* node) override;
     void visit(StringLiteral* node) override;
     void visit(NullLiteral* node) override;
+    void visit(CastExpr* node) override;
     void visit(ClosureExpr* node) override;
     void visit(IdentifierExpr* node) override;
     void visit(SelfExpr* node) override;
@@ -47,6 +48,8 @@ public:
     // 语句访问
     void visit(ExprStmt* node) override;
     void visit(VarDecl* node) override;
+    void visit(DestructuringDecl* node) override;
+    void visit(StructDestructuringDecl* node) override;
     void visit(FunctionDecl* node) override;
     void visit(ReturnStmt* node) override;
     void visit(IfStmt* node) override;
@@ -72,6 +75,7 @@ public:
     void visit(VariablePattern* node) override;
     void visit(TuplePattern* node) override;
     void visit(EnumPattern* node) override;
+    void visit(StructPattern* node) override;
     
 private:
     TypeSystem* types_;
@@ -81,10 +85,19 @@ private:
     Type* current_function_return_type_ = nullptr;
     Type* expected_type_ = nullptr;  // 用于类型推导（向下传播expected type）
     bool in_loop_ = false;
+    Type* current_self_type_ = nullptr;  // 当前Self类型（在support上下文中）
     
     // Where约束验证
     void validateWhereConstraints(const std::vector<WhereClause>& where_clauses,
                                   const std::vector<GenericParam>& generic_params);
+    
+    // Self类型解析
+    Type* resolveSelfType(Type* type);
+    
+    // 枚举模式处理辅助方法
+    void handleResultPattern(class EnumPattern* node, class ResultType* result_type);
+    void handleOptionalPattern(class EnumPattern* node, class OptionalType* opt_type);
+    void handleEnumPattern(class EnumPattern* node, class EnumType* enum_type);
 };
 
 } // namespace pawc

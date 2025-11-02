@@ -333,6 +333,21 @@ public:
     void accept(ASTVisitor* visitor) override;
 };
 
+/// CastExpr - 类型转换表达式 expr as Type
+class CastExpr : public Expr {
+public:
+    CastExpr(ExprPtr expr, Type* target_type)
+        : expr_(std::move(expr)), target_type_(target_type) {}
+    
+    Expr* getExpr() const { return expr_.get(); }
+    Type* getTargetType() const { return target_type_; }
+    void accept(ASTVisitor* visitor) override;
+    
+private:
+    ExprPtr expr_;
+    Type* target_type_;
+};
+
 /// ClosureExpr - 闭包表达式 (x: i32, y: i32) -> i32 { body }
 class ClosureExpr : public Expr {
 public:

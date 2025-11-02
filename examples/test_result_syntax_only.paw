@@ -1,12 +1,12 @@
-// T? 语法测试（不调用）
+// T! 语法测试（不调用）
 
-fn test_syntax() -> i32? {
-    let x: i32? = ok(42);
+fn test_syntax() -> i32! {
+    let x: i32! = ok(42);
     return ok(100);
 }
 
 fn main() -> i32 {
-    println("T? syntax test");
+    println("T! syntax test");
     return 0;
 }
 

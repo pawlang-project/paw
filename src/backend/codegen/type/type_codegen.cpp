@@ -23,6 +23,8 @@ llvm::Type* TypeCodeGen::mapType(Type* paw_type) {
         llvm_type = mapPrimitiveType(paw_type);
     } else if (paw_type->isArray()) {
         llvm_type = mapArrayType(static_cast<ArrayType*>(paw_type));
+    } else if (paw_type->isSlice()) {
+        llvm_type = mapSliceType(static_cast<SliceType*>(paw_type));
     } else if (paw_type->isTuple()) {
         llvm_type = mapTupleType(static_cast<TupleType*>(paw_type));
     } else if (paw_type->isStruct()) {
@@ -96,6 +98,18 @@ llvm::Type* TypeCodeGen::mapPrimitiveType(Type* type) {
 llvm::ArrayType* TypeCodeGen::mapArrayType(ArrayType* type) {
     llvm::Type* element_type = mapType(type->getElementType());
     return llvm::ArrayType::get(element_type, type->getSize());
+}
+
+llvm::StructType* TypeCodeGen::mapSliceType(SliceType* type) {
+    // Slice<T> = { ptr data, i64 len }
+    // 切片是动态大小的数组视图（胖指针）
+    return llvm::StructType::get(
+        context_,
+        {
+            llvm::PointerType::getUnqual(context_),  // data指针
+            llvm::Type::getInt64Ty(context_)         // 长度
+        }
+    );
 }
 
 llvm::StructType* TypeCodeGen::mapTupleType(TupleType* type) {

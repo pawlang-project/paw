@@ -94,6 +94,89 @@ void StmtCodeGen::visit(VarDecl* node) {
     result_ = alloca;
 }
 
+void StmtCodeGen::visit(DestructuringDecl* node) {
+    // 元组解构: let (a, b) = tuple_expr;
+    auto& builder = context_->getBuilder();
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    
+    if (!node->getInit()) {
+        result_ = nullptr;
+        return;
+    }
+    
+    // 生成元组表达式
+    llvm::Value* tuple_value = expr_codegen_->generate(node->getInit());
+    if (!tuple_value) {
+        result_ = nullptr;
+        return;
+    }
+    
+    // 为每个变量创建alloca并提取对应的元组元素
+    for (size_t i = 0; i < node->getNames().size(); ++i) {
+        // 提取元组元素
+        llvm::Value* element = builder.CreateExtractValue(tuple_value, i, "tuple.elem." + std::to_string(i));
+        
+        // 创建变量的alloca
+        llvm::AllocaInst* alloca = context_->createEntryBlockAlloca(
+            func,
+            node->getNames()[i],
+            element->getType()
+        );
+        
+        // 存储元素值
+        builder.CreateStore(element, alloca);
+        
+        // 注册变量
+        context_->defineVariable(node->getNames()[i], alloca);
+    }
+    
+    result_ = tuple_value;
+}
+
+void StmtCodeGen::visit(StructDestructuringDecl* node) {
+    // 结构体解构: let Point { x, y } = p;
+    auto& builder = context_->getBuilder();
+    llvm::Function* func = builder.GetInsertBlock()->getParent();
+    
+    if (!node->getInit()) {
+        result_ = nullptr;
+        return;
+    }
+    
+    // 生成结构体表达式
+    llvm::Value* struct_value = expr_codegen_->generate(node->getInit());
+    if (!struct_value) {
+        result_ = nullptr;
+        return;
+    }
+    
+    // 为每个字段创建alloca并提取对应的结构体字段
+    // 使用ExtractValue而不是GEP（假设struct_value是按值传递）
+    for (size_t i = 0; i < node->getFieldNames().size(); ++i) {
+        // 直接从结构体值中提取字段
+        llvm::Value* field_value = builder.CreateExtractValue(
+            struct_value,
+            i,
+            "struct.field." + node->getFieldNames()[i]
+        );
+        
+        // 创建变量的alloca
+        llvm::AllocaInst* alloca = context_->createEntryBlockAlloca(
+            func,
+            node->getFieldNames()[i],
+            field_value->getType()
+        );
+        
+        // 存储字段值
+        builder.CreateStore(field_value, alloca);
+        
+        // 注册变量
+        context_->defineVariable(node->getFieldNames()[i], alloca);
+    }
+    
+    result_ = struct_value;
+}
+
 void StmtCodeGen::visit(FunctionDecl* node) {
     // 创建函数类型
     TypeCodeGen type_gen(context_->getLLVMContext());
@@ -365,21 +448,33 @@ void StmtCodeGen::visit(IfStmt* node) {
     // 生成then分支
     context_->getBuilder().SetInsertPoint(then_bb);
     node->getThenStmt()->accept(this);
-    if (!context_->getCurrentBlock()->getTerminator()) {
+    bool then_has_terminator = context_->getCurrentBlock()->getTerminator() != nullptr;
+    if (!then_has_terminator) {
         context_->getBuilder().CreateBr(merge_bb);
     }
     
     // 生成else分支
+    bool else_has_terminator = false;
     if (else_bb) {
         context_->getBuilder().SetInsertPoint(else_bb);
         node->getElseStmt()->accept(this);
-        if (!context_->getCurrentBlock()->getTerminator()) {
+        else_has_terminator = context_->getCurrentBlock()->getTerminator() != nullptr;
+        if (!else_has_terminator) {
             context_->getBuilder().CreateBr(merge_bb);
         }
     }
     
-    // 继续在merge块
-    context_->getBuilder().SetInsertPoint(merge_bb);
+    // 只有在merge块可达时才设置插入点
+    // 如果两个分支都有terminator（都return），merge块不可达，需要添加unreachable
+    if (then_has_terminator && else_has_terminator && else_bb) {
+        // 两个分支都有terminator，merge块不可达
+        context_->getBuilder().SetInsertPoint(merge_bb);
+        context_->getBuilder().CreateUnreachable();
+    } else {
+        // merge块可达，正常设置为插入点
+        context_->getBuilder().SetInsertPoint(merge_bb);
+    }
+    
     result_ = nullptr;
 }
 

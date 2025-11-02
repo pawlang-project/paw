@@ -7,6 +7,8 @@ namespace pawc {
 
 void ExprStmt::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void VarDecl::accept(ASTVisitor* visitor) { visitor->visit(this); }
+void DestructuringDecl::accept(ASTVisitor* visitor) { visitor->visit(this); }
+void StructDestructuringDecl::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void FunctionDecl::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void ReturnStmt::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void IfStmt::accept(ASTVisitor* visitor) { visitor->visit(this); }

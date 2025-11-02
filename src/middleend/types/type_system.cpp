@@ -110,6 +110,16 @@ GenericType* TypeSystem::getGenericType(const std::string& name) {
     return type;
 }
 
+SelfType* TypeSystem::getSelfType() {
+    // Self类型是单例，使用缓存
+    static SelfType* self_type_instance = nullptr;
+    if (!self_type_instance) {
+        self_type_instance = arena_.allocate<SelfType>();
+        type_pool_.push_back(std::unique_ptr<Type>(self_type_instance));
+    }
+    return self_type_instance;
+}
+
 // 用户定义类型注册
 void TypeSystem::registerStruct(StructType* type) {
     named_types_[type->getName()] = type;

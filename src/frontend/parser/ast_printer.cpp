@@ -104,6 +104,13 @@ void ASTPrinter::visit(NullLiteral* node) {
     printLine("NullLiteral : " + getTypeString(node->getType()));
 }
 
+void ASTPrinter::visit(CastExpr* node) {
+    printLine("CastExpr (as " + (node->getTargetType() ? node->getTargetType()->toString() : "unknown") + ") : " + getTypeString(node->getType()));
+    indent_ += 1;
+    if (node->getExpr()) node->getExpr()->accept(this);
+    indent_ -= 1;
+}
+
 void ASTPrinter::visit(IdentifierExpr* node) {
     printLine("IdentifierExpr: " + node->getName() + " : " + 
               getTypeString(node->getType()));
@@ -283,6 +290,40 @@ void ASTPrinter::visit(VarDecl* node) {
     printLine("VarDecl: " + node->getName() + " : " + 
               getTypeString(node->getType()) + 
               (node->isMutable() ? " (mut)" : ""));
+    if (node->getInit()) {
+        indent_ += 1;
+        printLine("init:");
+        indent_ += 1;
+        node->getInit()->accept(this);
+        indent_ -= 2;
+    }
+}
+
+void ASTPrinter::visit(DestructuringDecl* node) {
+    std::string names_str = "(";
+    for (size_t i = 0; i < node->getNames().size(); ++i) {
+        if (i > 0) names_str += ", ";
+        names_str += node->getNames()[i];
+    }
+    names_str += ")";
+    printLine("DestructuringDecl: " + names_str + (node->isMutable() ? " (mut)" : ""));
+    if (node->getInit()) {
+        indent_ += 1;
+        printLine("init:");
+        indent_ += 1;
+        node->getInit()->accept(this);
+        indent_ -= 2;
+    }
+}
+
+void ASTPrinter::visit(StructDestructuringDecl* node) {
+    std::string fields_str = node->getStructName() + " { ";
+    for (size_t i = 0; i < node->getFieldNames().size(); ++i) {
+        if (i > 0) fields_str += ", ";
+        fields_str += node->getFieldNames()[i];
+    }
+    fields_str += " }";
+    printLine("StructDestructuringDecl: " + fields_str + (node->isMutable() ? " (mut)" : ""));
     if (node->getInit()) {
         indent_ += 1;
         printLine("init:");
@@ -561,6 +602,18 @@ void ASTPrinter::visit(SupportDecl* node) {
         printLine("method: fn " + method->getName());
     }
     indent_ -= 1;
+}
+
+void ASTPrinter::visit(StructPattern* node) {
+    printLine("StructPattern: " + node->getStructName());
+    indent_++;
+    for (const auto& field : node->getFields()) {
+        printLine("Field: " + field.field_name);
+        indent_++;
+        field.pattern->accept(this);
+        indent_--;
+    }
+    indent_--;
 }
 
 } // namespace pawc

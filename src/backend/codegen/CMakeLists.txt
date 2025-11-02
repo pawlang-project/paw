@@ -9,6 +9,7 @@ add_library(pawc_codegen STATIC
     expr/result_codegen.cpp
     expr/closure_codegen.cpp
     expr/call_codegen.cpp
+    expr/match_codegen.cpp
     stmt/stmt_codegen.cpp
     generic/mangling.cpp
     generic/monomorphization.cpp

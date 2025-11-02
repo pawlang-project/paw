@@ -145,6 +145,30 @@ void CaptureAnalyzer::visit(VarDecl* node) {
     }
 }
 
+void CaptureAnalyzer::visit(DestructuringDecl* node) {
+    // 解构声明的所有变量都是局部变量
+    for (const auto& name : node->getNames()) {
+        local_vars_.insert(name);
+    }
+    
+    // 检查初始值
+    if (node->getInit()) {
+        node->getInit()->accept(this);
+    }
+}
+
+void CaptureAnalyzer::visit(StructDestructuringDecl* node) {
+    // 结构体解构声明的所有字段变量都是局部变量
+    for (const auto& name : node->getFieldNames()) {
+        local_vars_.insert(name);
+    }
+    
+    // 检查初始值
+    if (node->getInit()) {
+        node->getInit()->accept(this);
+    }
+}
+
 void CaptureAnalyzer::visit(ReturnStmt* node) {
     if (node->getValue()) {
         node->getValue()->accept(this);
@@ -195,6 +219,13 @@ void CaptureAnalyzer::visit(EnumPattern* node) {
     // EnumPattern可能有嵌套pattern
     if (node->getInner()) {
         node->getInner()->accept(this);
+    }
+}
+
+void CaptureAnalyzer::visit(StructPattern* node) {
+    // 结构体模式绑定字段变量
+    for (const auto& field : node->getFields()) {
+        field.pattern->accept(this);
     }
 }
 

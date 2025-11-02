@@ -80,11 +80,15 @@ private:
 class FunctionType : public Type {
 public:
     FunctionType(std::vector<Type*> params, Type* ret)
-        : params_(std::move(params)), return_(ret) {}
+        : params_(std::move(params)), return_(ret), has_captures_(false) {}
     
     Kind getKind() const override { return Kind::Function; }
     const std::vector<Type*>& getParamTypes() const { return params_; }
     Type* getReturnType() const { return return_; }
+    
+    // 闭包捕获标记（CodeGen使用）
+    bool hasCaptures() const { return has_captures_; }
+    void setHasCaptures(bool has_captures) { has_captures_ = has_captures; }
     
     bool equals(const Type* other) const override;
     std::string toString() const override;
@@ -92,6 +96,7 @@ public:
 private:
     std::vector<Type*> params_;
     Type* return_;
+    bool has_captures_;  // 闭包是否有捕获变量
 };
 
 /// InterfaceType - 接口类型

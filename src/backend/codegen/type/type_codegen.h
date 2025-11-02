@@ -38,6 +38,7 @@ public:
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     llvm::ArrayType* mapArrayType(ArrayType* type);
+    llvm::StructType* mapSliceType(SliceType* type);
     llvm::StructType* mapTupleType(TupleType* type);
     llvm::StructType* mapStructType(StructType* type);
     llvm::StructType* mapEnumType(EnumType* type);

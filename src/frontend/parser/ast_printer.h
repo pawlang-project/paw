@@ -36,6 +36,7 @@ public:
     void visit(CharLiteral* node) override;
     void visit(StringLiteral* node) override;
     void visit(NullLiteral* node) override;
+    void visit(CastExpr* node) override;
     void visit(ClosureExpr* node) override;
     void visit(IdentifierExpr* node) override;
     void visit(SelfExpr* node) override;
@@ -60,6 +61,8 @@ public:
     
     void visit(ExprStmt* node) override;
     void visit(VarDecl* node) override;
+    void visit(DestructuringDecl* node) override;
+    void visit(StructDestructuringDecl* node) override;
     void visit(FunctionDecl* node) override;
     void visit(ReturnStmt* node) override;
     void visit(IfStmt* node) override;
@@ -80,6 +83,7 @@ public:
     void visit(VariablePattern* node) override;
     void visit(TuplePattern* node) override;
     void visit(EnumPattern* node) override;
+    void visit(StructPattern* node) override;
     
 private:
     std::ostream& os_;

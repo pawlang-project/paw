@@ -53,7 +53,7 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
             // 比较运算
             case TokenType::EQ_EQ:       return builder.CreateICmpEQ(left, right, "eqtmp");
             case TokenType::NOT_EQ:      return builder.CreateICmpNE(left, right, "netmp");
-            case TokenType::LT:
+            case TokenType::LESS:
                 return type->isSignedInteger() ?
                     builder.CreateICmpSLT(left, right, "lttmp") :
                     builder.CreateICmpULT(left, right, "lttmp");
@@ -61,7 +61,7 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
                 return type->isSignedInteger() ?
                     builder.CreateICmpSLE(left, right, "letmp") :
                     builder.CreateICmpULE(left, right, "letmp");
-            case TokenType::GT:
+            case TokenType::GREATER:
                 return type->isSignedInteger() ?
                     builder.CreateICmpSGT(left, right, "gttmp") :
                     builder.CreateICmpUGT(left, right, "gttmp");
@@ -89,9 +89,9 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
                 // 比较运算仍使用LLVM指令（简单比较无ABI问题）
                 case TokenType::EQ_EQ:      return builder.CreateFCmpOEQ(left, right, "feqtmp");
                 case TokenType::NOT_EQ:     return builder.CreateFCmpONE(left, right, "fnetmp");
-                case TokenType::LT:         return builder.CreateFCmpOLT(left, right, "flttmp");
+                case TokenType::LESS:       return builder.CreateFCmpOLT(left, right, "flttmp");
                 case TokenType::LESS_EQ:    return builder.CreateFCmpOLE(left, right, "fletmp");
-                case TokenType::GT:         return builder.CreateFCmpOGT(left, right, "fgttmp");
+                case TokenType::GREATER:    return builder.CreateFCmpOGT(left, right, "fgttmp");
                 case TokenType::GREATER_EQ: return builder.CreateFCmpOGE(left, right, "fgetmp");
                 
                 default: return nullptr;
@@ -166,9 +166,9 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
             // 比较运算
             case TokenType::EQ_EQ:      return builder.CreateFCmpOEQ(left, right, "feqtmp");
             case TokenType::NOT_EQ:     return builder.CreateFCmpONE(left, right, "fnetmp");
-            case TokenType::LT:         return builder.CreateFCmpOLT(left, right, "flttmp");
+            case TokenType::LESS:       return builder.CreateFCmpOLT(left, right, "flttmp");
             case TokenType::LESS_EQ:    return builder.CreateFCmpOLE(left, right, "fletmp");
-            case TokenType::GT:         return builder.CreateFCmpOGT(left, right, "fgttmp");
+            case TokenType::GREATER:    return builder.CreateFCmpOGT(left, right, "fgttmp");
             case TokenType::GREATER_EQ: return builder.CreateFCmpOGE(left, right, "fgetmp");
             
             default: return nullptr;

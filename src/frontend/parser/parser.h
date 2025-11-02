@@ -34,8 +34,8 @@ private:
     // 语句解析
     StmtPtr parseStatement();
     StmtPtr parseVarDecl();
-    StmtPtr parseFunctionDecl();
-    StmtPtr parseTypeDecl();
+    StmtPtr parseFunctionDecl(bool is_public = false);
+    StmtPtr parseTypeDecl(bool is_public = false);
     StmtPtr parseStructDecl(const std::string& name, std::vector<GenericParam> generic_params);
     StmtPtr parseEnumDecl(const std::string& name, std::vector<GenericParam> generic_params);
     StmtPtr parseInterfaceDecl(const std::string& name, std::vector<GenericParam> generic_params);
@@ -49,11 +49,14 @@ private:
     StmtPtr parseContinueStmt();
     StmtPtr parseBlockStmt();
     StmtPtr parseExprStmt();
+    std::vector<StmtPtr> parseBlockStmtsWithImplicitReturn();
     
     // Pattern解析
     std::unique_ptr<class Pattern> parsePattern();
     std::unique_ptr<class Pattern> parseLiteralPattern();
     std::unique_ptr<class Pattern> parseVariableOrEnumPattern();
+    std::unique_ptr<class Pattern> parseStructPattern(const std::string& struct_name);
+    std::unique_ptr<class Pattern> parseEnumConstructorPattern();
     std::unique_ptr<class Pattern> parseTuplePattern();
     
     // 表达式解析（按优先级）
@@ -81,6 +84,9 @@ private:
     // 错误处理
     void error(const std::string& message);
     void synchronize();
+    
+    // 辅助方法
+    std::string normalizeEnumAlias(const std::string& alias);
     
 private:
     const std::vector<Token>& tokens_;

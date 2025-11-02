@@ -74,6 +74,7 @@ public:
     ReferenceType* getReferenceType(Type* pointee, bool is_mutable);
     FunctionType* getFunctionType(std::vector<Type*> params, Type* ret);
     GenericType* getGenericType(const std::string& name);
+    SelfType* getSelfType();
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // 用户定义类型

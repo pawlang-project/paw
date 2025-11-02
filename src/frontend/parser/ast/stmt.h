@@ -74,6 +74,44 @@ private:
     ExprPtr init_;
 };
 
+/// DestructuringDecl - 元组解构声明 let (a, b) = (1, 2)
+class DestructuringDecl : public Stmt {
+public:
+    DestructuringDecl(std::vector<std::string> names, bool is_mutable, ExprPtr init)
+        : names_(std::move(names)), is_mutable_(is_mutable), init_(std::move(init)) {}
+    
+    const std::vector<std::string>& getNames() const { return names_; }
+    bool isMutable() const { return is_mutable_; }
+    Expr* getInit() const { return init_.get(); }
+    void accept(ASTVisitor* visitor) override;
+    
+private:
+    std::vector<std::string> names_;
+    bool is_mutable_;
+    ExprPtr init_;
+};
+
+/// StructDestructuringDecl - 结构体解构声明 let Point { x, y } = p
+class StructDestructuringDecl : public Stmt {
+public:
+    StructDestructuringDecl(std::string struct_name, std::vector<std::string> field_names, 
+                           bool is_mutable, ExprPtr init)
+        : struct_name_(std::move(struct_name)), field_names_(std::move(field_names)), 
+          is_mutable_(is_mutable), init_(std::move(init)) {}
+    
+    const std::string& getStructName() const { return struct_name_; }
+    const std::vector<std::string>& getFieldNames() const { return field_names_; }
+    bool isMutable() const { return is_mutable_; }
+    Expr* getInit() const { return init_.get(); }
+    void accept(ASTVisitor* visitor) override;
+    
+private:
+    std::string struct_name_;
+    std::vector<std::string> field_names_;
+    bool is_mutable_;
+    ExprPtr init_;
+};
+
 /// FunctionDecl - 函数声明
 class FunctionDecl : public Stmt {
 public:
@@ -88,13 +126,15 @@ public:
                  std::vector<Param> params,
                  Type* return_type, 
                  StmtPtr body,
-                 std::vector<WhereClause> where_clauses = {})
+                 std::vector<WhereClause> where_clauses = {},
+                 bool is_public = false)
         : name_(name), 
           generic_params_(std::move(generic_params)),
           params_(std::move(params)),
           return_type_(return_type), 
           body_(std::move(body)),
-          where_clauses_(std::move(where_clauses)) {}
+          where_clauses_(std::move(where_clauses)),
+          is_public_(is_public) {}
     
     const std::string& getName() const { return name_; }
     const std::vector<GenericParam>& getGenericParams() const { return generic_params_; }
@@ -102,6 +142,7 @@ public:
     Type* getReturnType() const { return return_type_; }
     Stmt* getBody() const { return body_.get(); }
     const std::vector<WhereClause>& getWhereClauses() const { return where_clauses_; }
+    bool isPublic() const { return is_public_; }
     
     bool isGeneric() const { return !generic_params_.empty(); }
     void accept(ASTVisitor* visitor) override;
@@ -113,6 +154,7 @@ private:
     Type* return_type_;
     StmtPtr body_;
     std::vector<WhereClause> where_clauses_;   // where约束
+    bool is_public_;                           // pub可见性
 };
 
 /// ReturnStmt - return语句

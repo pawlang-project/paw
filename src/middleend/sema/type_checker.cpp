@@ -90,6 +90,44 @@ void TypeChecker::visit(NullLiteral* node) {
     node->setType(types_->getOptionalType(types_->getVoidType()));
 }
 
+void TypeChecker::visit(CastExpr* node) {
+    // as类型转换: expr as TargetType
+    node->getExpr()->accept(this);
+    
+    Type* source_type = node->getExpr()->getType();
+    Type* target_type = node->getTargetType();
+    
+    if (!source_type || !target_type) {
+        node->setType(types_->getVoidType());
+        return;
+    }
+    
+    // 验证类型转换的合法性
+    // 根据文档，支持：数值类型之间、数组到切片
+    bool is_valid = false;
+    
+    // 1. 数值类型之间的转换
+    if (source_type->isNumeric() && target_type->isNumeric()) {
+        is_valid = true;
+    }
+    // 2. 数组到切片
+    else if (source_type->isArray() && target_type->isSlice()) {
+        auto* array_type = static_cast<ArrayType*>(source_type);
+        auto* slice_type = static_cast<SliceType*>(target_type);
+        if (types_->equals(array_type->getElementType(), slice_type->getElementType())) {
+            is_valid = true;
+        }
+    }
+    
+    if (!is_valid) {
+        diag_->reportError("Invalid type cast from " + source_type->toString() + 
+                          " to " + target_type->toString(),
+                          node->getLocation());
+    }
+    
+    node->setType(target_type);
+}
+
 void TypeChecker::visit(SelfExpr* node) {
     // self表达式：类型由当前support块的目标类型决定
     // TODO: 从当前上下文获取self类型
@@ -343,19 +381,43 @@ void TypeChecker::visit(MemberExpr* node) {
         return;
     }
     
-    // 检查结构体成员访问
-    if (obj_type->isStruct()) {
+    const std::string& member = node->getMember();
+    
+    // 检查是否是元组字段访问（成员名是数字）
+    bool is_tuple_access = !member.empty() && std::isdigit(member[0]);
+    
+    if (is_tuple_access && obj_type->isTuple()) {
+        // 元组字段访问: tuple.0, tuple.1 等
+        auto* tuple_type = static_cast<TupleType*>(obj_type);
+        
+        // 解析字段索引
+        int field_idx = std::stoi(member);
+        
+        // 验证索引有效性
+        const auto& element_types = tuple_type->getElementTypes();
+        if (field_idx < 0 || field_idx >= static_cast<int>(element_types.size())) {
+            diag_->reportError("Tuple index out of range: " + member,
+                              node->getLocation());
+            node->setType(types_->getVoidType());
+            return;
+        }
+        
+        // 设置字段类型
+        node->setType(element_types[field_idx]);
+        
+    } else if (obj_type->isStruct()) {
+        // 结构体成员访问: struct.field_name
         auto* struct_type = static_cast<StructType*>(obj_type);
-        Type* field_type = struct_type->getFieldType(node->getMember());
+        Type* field_type = struct_type->getFieldType(member);
         if (field_type) {
             node->setType(field_type);
         } else {
-            diag_->reportError("Struct has no member: " + node->getMember(),
+            diag_->reportError("Struct has no member: " + member,
                               node->getLocation());
             node->setType(types_->getVoidType());
         }
     } else {
-        diag_->reportError("Member access on non-struct type",
+        diag_->reportError("Member access on non-struct/tuple type",
                           node->getLocation());
         node->setType(types_->getVoidType());
     }
@@ -636,6 +698,81 @@ void TypeChecker::visit(VarDecl* node) {
     }
 }
 
+void TypeChecker::visit(DestructuringDecl* node) {
+    // 元组解构: let (a, b) = tuple;
+    if (!node->getInit()) {
+        diag_->reportError("Destructuring declaration must have initializer",
+                          SourceLocation());
+        return;
+    }
+    
+    // 检查初始化表达式的类型
+    node->getInit()->accept(this);
+    Type* init_type = node->getInit()->getType();
+    
+    if (!init_type || !init_type->isTuple()) {
+        diag_->reportError("Destructuring requires tuple type",
+                          SourceLocation());
+        return;
+    }
+    
+    auto* tuple_type = static_cast<TupleType*>(init_type);
+    const auto& element_types = tuple_type->getElementTypes();
+    
+    // 验证变量数量与元组元素数量匹配
+    if (node->getNames().size() != element_types.size()) {
+        diag_->reportError("Destructuring pattern size mismatch",
+                          SourceLocation());
+        return;
+    }
+    
+    // 为每个变量定义符号
+    for (size_t i = 0; i < node->getNames().size(); ++i) {
+        symbols_->defineVariable(node->getNames()[i], element_types[i], node->isMutable());
+    }
+}
+
+void TypeChecker::visit(StructDestructuringDecl* node) {
+    // 结构体解构: let Point { x, y } = p;
+    if (!node->getInit()) {
+        diag_->reportError("Struct destructuring declaration must have initializer",
+                          SourceLocation());
+        return;
+    }
+    
+    // 检查初始化表达式的类型
+    node->getInit()->accept(this);
+    Type* init_type = node->getInit()->getType();
+    
+    if (!init_type || !init_type->isStruct()) {
+        diag_->reportError("Struct destructuring requires struct type",
+                          SourceLocation());
+        return;
+    }
+    
+    auto* struct_type = static_cast<StructType*>(init_type);
+    
+    // 验证结构体名称匹配
+    if (struct_type->getName() != node->getStructName()) {
+        diag_->reportError("Struct name mismatch in destructuring: expected " + 
+                          node->getStructName() + ", got " + struct_type->getName(),
+                          SourceLocation());
+        return;
+    }
+    
+    // 为每个字段定义变量
+    for (const auto& field_name : node->getFieldNames()) {
+        Type* field_type = struct_type->getFieldType(field_name);
+        if (!field_type) {
+            diag_->reportError("Unknown field " + field_name + " in struct " + 
+                              struct_type->getName(),
+                              SourceLocation());
+            continue;
+        }
+        symbols_->defineVariable(field_name, field_type, node->isMutable());
+    }
+}
+
 void TypeChecker::visit(FunctionDecl* node) {
     // 创建函数类型
     std::vector<Type*> param_types;
@@ -805,29 +942,26 @@ void TypeChecker::visit(ForStmt* node) {
 }
 
 void TypeChecker::visit(StructDecl* node) {
-    // 结构体定义：创建StructType并注册到TypeSystem
+    // 结构体定义：Parser阶段已经注册，这里可以做额外的语义检查
     
-    // 创建StructType
-    StructType* struct_type = new StructType(node->getName(), node->getFields());
+    // 类型已在Parser阶段注册，避免重复注册
+    // 这里可以做：
+    // - 字段类型的深度验证
+    // - 泛型约束检查
+    // - 循环引用检查
     
-    // 注册类型
-    types_->registerStruct(struct_type);
+    // 当前：跳过（Parser已处理）
 }
 
 void TypeChecker::visit(EnumDecl* node) {
-    // 枚举定义：创建EnumType并注册到TypeSystem
+    // 枚举定义：Parser阶段已经注册，这里可以做额外的语义检查
     
-    // 转换EnumVariant为EnumType需要的格式
-    std::vector<std::pair<std::string, Type*>> variants;
-    for (const auto& variant : node->getVariants()) {
-        variants.push_back({variant.name, variant.data_type});
-    }
+    // 类型已在Parser阶段注册，避免重复注册
+    // 这里可以做：
+    // - 变体类型的深度验证
+    // - 泛型约束检查
     
-    // 创建EnumType
-    EnumType* enum_type = new EnumType(node->getName(), variants);
-    
-    // 注册类型
-    types_->registerEnum(enum_type);
+    // 当前：跳过（Parser已处理）
 }
 
 void TypeChecker::visit(MatchExpr* node) {
@@ -856,8 +990,18 @@ void TypeChecker::visit(MatchExpr* node) {
     for (size_t i = 0; i < arms.size(); ++i) {
         const auto& arm = arms[i];
         
-        // 检查模式类型兼容性
-        checkPatternType(arm.pattern.get(), scrutinee_type);
+        // 进入新作用域（arm的变量绑定只在arm内有效）
+        symbols_->enterScope();
+        
+        // 设置expected_type_，让pattern知道要匹配什么类型
+        Type* saved_expected = expected_type_;
+        expected_type_ = scrutinee_type;
+        
+        // 检查pattern（会自动绑定变量）
+        arm.pattern->accept(this);
+        
+        // 恢复expected_type_
+        expected_type_ = saved_expected;
         
         // 检查是否有通配符模式
         if (dynamic_cast<WildcardPattern*>(arm.pattern.get()) ||
@@ -865,12 +1009,13 @@ void TypeChecker::visit(MatchExpr* node) {
             has_wildcard = true;
         }
         
-        // 检查分支表达式
+        // 检查分支表达式（变量已经在作用域中）
         arm.expression->accept(this);
         Type* arm_type = arm.expression->getType();
         
         if (!arm_type) {
             diag_->reportError("Match arm expression has no type", SourceLocation());
+            symbols_->exitScope();
             continue;
         }
         
@@ -884,6 +1029,9 @@ void TypeChecker::visit(MatchExpr* node) {
                 SourceLocation()
             );
         }
+        
+        // 退出arm作用域
+        symbols_->exitScope();
     }
     
     // 3. 穷尽性检查
@@ -987,6 +1135,10 @@ void TypeChecker::visit(ClosureExpr* node) {
         types_->getVoidType();
     
     FunctionType* fn_type = types_->getFunctionType(param_types, return_type);
+    
+    // 设置捕获标记（用于CodeGen判断闭包调用方式）
+    fn_type->setHasCaptures(!captured.empty());
+    
     node->setType(fn_type);
 }
 
@@ -1239,29 +1391,15 @@ bool TypeChecker::isExhaustive(const std::vector<MatchArm>& arms, Type* scrutine
 }
 
 void TypeChecker::visit(InterfaceDecl* node) {
-    // 接口定义：创建InterfaceType并注册
+    // 接口定义：Parser阶段已经注册，这里可以做额外的语义检查
     
-    // 转换方法为InterfaceType::MethodSignature格式
-    std::vector<InterfaceType::MethodSignature> methods;
-    for (const auto& method : node->getMethods()) {
-        // 创建参数类型列表
-        std::vector<Type*> param_types;
-        for (const auto& param : method.params) {
-            param_types.push_back(param.type);
-        }
-        
-        methods.push_back(InterfaceType::MethodSignature(
-            method.name, 
-            param_types, 
-            method.return_type
-        ));
-    }
+    // 类型已在Parser阶段注册，避免重复注册
+    // 这里可以做：
+    // - 方法签名的深度验证
+    // - 泛型约束检查
+    // - 接口继承检查
     
-    // 创建InterfaceType并保存方法签名
-    InterfaceType* interface_type = new InterfaceType(node->getName(), std::move(methods));
-    
-    // 注册类型
-    types_->registerInterface(interface_type);
+    // 当前：跳过（Parser已处理）
 }
 
 void TypeChecker::visit(SupportDecl* node) {
@@ -1276,6 +1414,10 @@ void TypeChecker::visit(SupportDecl* node) {
         );
         return;
     }
+    
+    // 设置Self类型上下文
+    Type* saved_self_type = current_self_type_;
+    current_self_type_ = target_type;
     
     // 2. 查找接口类型
     Type* interface_type = types_->lookupType(node->getInterfaceName());
@@ -1355,14 +1497,230 @@ void TypeChecker::visit(SupportDecl* node) {
         // TODO: 设置self类型到符号表
         impl_method->accept(this);
     }
+    
+    // 恢复Self类型上下文
+    current_self_type_ = saved_self_type;
 }
 
 // Pattern类型检查 - 这些方法在checkPatternType中调用
-void TypeChecker::visit(LiteralPattern* node) {}
-void TypeChecker::visit(WildcardPattern* node) {}
-void TypeChecker::visit(VariablePattern* node) {}
-void TypeChecker::visit(TuplePattern* node) {}
-void TypeChecker::visit(EnumPattern* node) {}
+void TypeChecker::visit(LiteralPattern* node) {
+    // 字面量模式：验证字面量与expected_type_匹配
+    // 当前简化版本：不做深入检查
+}
+
+void TypeChecker::visit(WildcardPattern* node) {
+    // 通配符模式：总是匹配，不需要类型检查
+}
+
+void TypeChecker::visit(VariablePattern* node) {
+    // 变量绑定模式：将变量绑定到expected_type_
+    if (expected_type_) {
+        symbols_->defineVariable(node->getName(), expected_type_, false);
+    } else {
+        // 如果没有expected_type_，报错或使用void
+        diag_->reportError(
+            "Cannot infer type for pattern variable '" + node->getName() + "'",
+            SourceLocation()
+        );
+    }
+}
+
+void TypeChecker::visit(TuplePattern* node) {
+    // 元组模式：递归检查每个元素
+    if (!expected_type_ || expected_type_->getKind() != Type::Kind::Tuple) {
+        return;
+    }
+    
+    TupleType* tuple_type = static_cast<TupleType*>(expected_type_);
+    const auto& elements = node->getElements();
+    const auto& element_types = tuple_type->getElementTypes();
+    
+    if (elements.size() != element_types.size()) {
+        diag_->reportError(
+            "Tuple pattern size mismatch",
+            SourceLocation()
+        );
+        return;
+    }
+    
+    for (size_t i = 0; i < elements.size(); i++) {
+        Type* saved_expected = expected_type_;
+        expected_type_ = element_types[i];
+        elements[i]->accept(this);
+        expected_type_ = saved_expected;
+    }
+}
+
+void TypeChecker::visit(EnumPattern* node) {
+    // 需要expected_type_来知道要匹配的类型
+    if (!expected_type_) {
+        diag_->reportError("Cannot infer pattern type", SourceLocation());
+        return;
+    }
+    
+    Type* scrutinee_type = expected_type_;
+    
+    // === 特殊处理 Result 类型 ===
+    if (scrutinee_type->getKind() == Type::Kind::Result) {
+        handleResultPattern(node, static_cast<ResultType*>(scrutinee_type));
+        return;
+    }
+    
+    // === 特殊处理 Optional 类型 ===
+    if (scrutinee_type->getKind() == Type::Kind::Optional) {
+        handleOptionalPattern(node, static_cast<OptionalType*>(scrutinee_type));
+        return;
+    }
+    
+    // === 处理用户定义的枚举类型 ===
+    if (scrutinee_type->getKind() == Type::Kind::Enum) {
+        handleEnumPattern(node, static_cast<EnumType*>(scrutinee_type));
+        return;
+    }
+    
+    // 错误：不是枚举类型
+    diag_->reportError(
+        "Cannot match enum pattern against non-enum type",
+        SourceLocation()
+    );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 枚举模式处理辅助方法
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+void TypeChecker::handleResultPattern(EnumPattern* node, ResultType* result_type) {
+    std::string variant = node->getVariantName();
+    
+    // Ok 变体
+    if (variant == "Ok") {
+        auto& inner_patterns = node->getInnerPatterns();
+        
+        // 检查参数数量
+        if (inner_patterns.size() != 1) {
+            diag_->reportError(
+                "Result::Ok expects exactly 1 argument",
+                SourceLocation()
+            );
+            return;
+        }
+        
+        // 递归检查内部模式，期望类型为 result_type->getOkType()
+        Type* saved_expected = expected_type_;
+        expected_type_ = result_type->getOkType();
+        inner_patterns[0]->accept(this);
+        expected_type_ = saved_expected;
+    }
+    // Err 变体
+    else if (variant == "Err") {
+        auto& inner_patterns = node->getInnerPatterns();
+        
+        if (inner_patterns.size() != 1) {
+            diag_->reportError(
+                "Result::Err expects exactly 1 argument",
+                SourceLocation()
+            );
+            return;
+        }
+        
+        // Err的参数固定为string
+        Type* saved_expected = expected_type_;
+        expected_type_ = types_->getStringType();
+        inner_patterns[0]->accept(this);
+        expected_type_ = saved_expected;
+    }
+    else {
+        diag_->reportError(
+            "Unknown Result variant: " + variant + " (expected Ok or Err)",
+            SourceLocation()
+        );
+    }
+}
+
+void TypeChecker::handleOptionalPattern(EnumPattern* node, OptionalType* opt_type) {
+    std::string variant = node->getVariantName();
+    
+    if (variant == "Some") {
+        auto& inner_patterns = node->getInnerPatterns();
+        
+        if (inner_patterns.size() != 1) {
+            diag_->reportError(
+                "Optional::Some expects exactly 1 argument",
+                SourceLocation()
+            );
+            return;
+        }
+        
+        Type* saved_expected = expected_type_;
+        expected_type_ = opt_type->getInnerType();
+        inner_patterns[0]->accept(this);
+        expected_type_ = saved_expected;
+    }
+    else if (variant == "None") {
+        // None无参数
+        if (!node->getInnerPatterns().empty()) {
+            diag_->reportError(
+                "Optional::None takes no arguments",
+                SourceLocation()
+            );
+        }
+    }
+    else {
+        diag_->reportError(
+            "Unknown Optional variant: " + variant + " (expected Some or None)",
+            SourceLocation()
+        );
+    }
+}
+
+void TypeChecker::handleEnumPattern(EnumPattern* node, EnumType* enum_type) {
+    std::string variant_name = node->getVariantName();
+    auto& inner_patterns = node->getInnerPatterns();
+    
+    // 查找匹配的变体
+    const auto& variants = enum_type->getVariants();
+    Type* variant_data_type = nullptr;
+    bool found = false;
+    
+    for (const auto& variant : variants) {
+        if (variant.first == variant_name) {
+            variant_data_type = variant.second;
+            found = true;
+            break;
+        }
+    }
+    
+    if (!found) {
+        diag_->reportError(
+            "Unknown variant '" + variant_name + "' for enum " + enum_type->getName(),
+            SourceLocation()
+        );
+        return;
+    }
+    
+    // 检查参数
+    if (variant_data_type && inner_patterns.size() != 1) {
+        diag_->reportError(
+            "Variant '" + variant_name + "' expects 1 argument",
+            SourceLocation()
+        );
+        return;
+    } else if (!variant_data_type && !inner_patterns.empty()) {
+        diag_->reportError(
+            "Variant '" + variant_name + "' takes no arguments",
+            SourceLocation()
+        );
+        return;
+    }
+    
+    // 检查参数类型
+    if (variant_data_type && !inner_patterns.empty()) {
+        Type* saved_expected = expected_type_;
+        expected_type_ = variant_data_type;
+        inner_patterns[0]->accept(this);
+        expected_type_ = saved_expected;
+    }
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Where约束验证
@@ -1399,6 +1757,118 @@ void TypeChecker::validateWhereConstraints(
         // 注意：实际的约束验证在单态化时进行
         // 这里只做基本的语法验证
     }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Self类型解析
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Type* TypeChecker::resolveSelfType(Type* type) {
+    if (!type) {
+        return nullptr;
+    }
+    
+    // 如果是SelfType，替换为当前的Self类型
+    if (type->getKind() == Type::Kind::SelfType) {
+        if (current_self_type_) {
+            return current_self_type_;
+        }
+        // 如果没有当前Self类型，报错
+        diag_->reportError("Self type used outside of support context", SourceLocation());
+        return types_->getVoidType();
+    }
+    
+    // 递归处理复合类型
+    switch (type->getKind()) {
+        case Type::Kind::Optional: {
+            auto* opt = static_cast<OptionalType*>(type);
+            Type* inner = resolveSelfType(opt->getInnerType());
+            return types_->getOptionalType(inner);
+        }
+        case Type::Kind::Result: {
+            auto* res = static_cast<ResultType*>(type);
+            Type* ok_type = resolveSelfType(res->getOkType());
+            return types_->getResultType(ok_type);
+        }
+        case Type::Kind::Array: {
+            auto* arr = static_cast<ArrayType*>(type);
+            Type* elem = resolveSelfType(arr->getElementType());
+            return types_->getArrayType(elem, arr->getSize());
+        }
+        case Type::Kind::Slice: {
+            auto* slice = static_cast<SliceType*>(type);
+            Type* elem = resolveSelfType(slice->getElementType());
+            return types_->getSliceType(elem);
+        }
+        case Type::Kind::Function: {
+            auto* func = static_cast<FunctionType*>(type);
+            std::vector<Type*> params;
+            for (auto* param : func->getParamTypes()) {
+                params.push_back(resolveSelfType(param));
+            }
+            Type* ret = resolveSelfType(func->getReturnType());
+            return types_->getFunctionType(params, ret);
+        }
+        default:
+            // 基础类型，不需要替换
+            return type;
+    }
+}
+
+void TypeChecker::visit(StructPattern* node) {
+    // 结构体模式匹配 - 完整实现
+    
+    // 1. 检查expected_type_是否为StructType
+    if (!expected_type_) {
+        diag_->reportError(
+            "Struct pattern requires a type context",
+            SourceLocation()
+        );
+        return;
+    }
+    
+    if (expected_type_->getKind() != Type::Kind::Struct) {
+        diag_->reportError(
+            "Cannot match struct pattern against non-struct type: " + expected_type_->toString(),
+            SourceLocation()
+        );
+        return;
+    }
+    
+    StructType* struct_type = static_cast<StructType*>(expected_type_);
+    
+    // 2. 检查结构体名称是否匹配
+    if (struct_type->getName() != node->getStructName()) {
+        diag_->reportError(
+            "Struct pattern name mismatch: expected " + struct_type->getName() + 
+            ", got " + node->getStructName(),
+            SourceLocation()
+        );
+        return;
+    }
+    
+    // 3. 检查每个字段模式
+    for (const auto& field_pattern : node->getFields()) {
+        const std::string& field_name = field_pattern.field_name;
+        
+        // 3.1 检查字段是否存在
+        Type* field_type = struct_type->getFieldType(field_name);
+        if (!field_type) {
+            diag_->reportError(
+                "Struct " + struct_type->getName() + " has no field named '" + field_name + "'",
+                SourceLocation()
+            );
+            continue;
+        }
+        
+        // 3.2 递归检查字段模式，期望类型为字段类型
+        Type* saved_expected = expected_type_;
+        expected_type_ = field_type;
+        field_pattern.pattern->accept(this);
+        expected_type_ = saved_expected;
+    }
+    
+    // 注意：这里不检查是否所有字段都被匹配，因为结构体模式可以部分匹配
 }
 
 } // namespace pawc

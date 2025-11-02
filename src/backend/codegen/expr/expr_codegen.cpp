@@ -91,7 +91,7 @@ void ExprCodeGen::visit(StaticAccessExpr* node) {
 }
 
 void ExprCodeGen::visit(MemberExpr* node) {
-    // 结构体成员访问: obj.field
+    // 成员访问: obj.field 或 tuple.0
     node->getObject()->accept(this);
     llvm::Value* object = result_;
     
@@ -103,468 +103,82 @@ void ExprCodeGen::visit(MemberExpr* node) {
     auto& builder = context_->getBuilder();
     TypeCodeGen type_gen(context_->getLLVMContext());
     
-    // 获取结构体类型
     Type* obj_type = node->getObject()->getType();
-    if (!obj_type || !obj_type->isStruct()) {
+    if (!obj_type) {
         result_ = nullptr;
         return;
     }
     
-    auto* struct_type = static_cast<StructType*>(obj_type);
-    llvm::Type* llvm_struct_type = type_gen.mapType(struct_type);
+    // 检查是否是元组字段访问（成员名是数字）
+    const std::string& member = node->getMember();
+    bool is_tuple_access = !member.empty() && std::isdigit(member[0]);
     
-    // 查找字段索引
-    const auto& fields = struct_type->getFields();
-    int field_idx = -1;
-    for (size_t i = 0; i < fields.size(); ++i) {
-        if (fields[i].first == node->getMember()) {
-            field_idx = static_cast<int>(i);
-            break;
-        }
-    }
-    
-    if (field_idx < 0) {
-        result_ = nullptr;
-        return;
-    }
-    
-    // 如果object是值而不是指针，需要先存储到栈上
-    llvm::Value* object_ptr = object;
-    if (!object->getType()->isPointerTy()) {
-        llvm::AllocaInst* temp = builder.CreateAlloca(object->getType(), nullptr, "struct.tmp");
-        builder.CreateStore(object, temp);
-        object_ptr = temp;
-    }
-    
-    // 使用CreateStructGEP访问字段
-    llvm::Value* field_ptr = builder.CreateStructGEP(
-        llvm_struct_type,
-        object_ptr,
-        field_idx,
-        node->getMember()
-    );
-    
-    // Load字段值
-    llvm::Type* field_type = type_gen.mapType(fields[field_idx].second);
-    result_ = builder.CreateLoad(field_type, field_ptr);
-}
-
-void ExprCodeGen::visit(MatchExpr* node) {
-    // match表达式CodeGen - 完整实现
-    
-    auto& context = context_->getLLVMContext();
-    auto& builder = context_->getBuilder();
-    
-    // 1. 计算被匹配的值
-    node->getScrutinee()->accept(this);
-    llvm::Value* scrutinee_value = result_;
-    
-    if (!scrutinee_value) {
-        result_ = nullptr;
-        return;
-    }
-    
-    // 2. 获取match表达式的结果类型
-    Type* result_type = node->getType();
-    if (!result_type) {
-        result_ = nullptr;
-        return;
-    }
-    
-    TypeCodeGen type_gen(context);
-    llvm::Type* llvm_result_type = type_gen.mapType(result_type);
-    
-    // 3. 创建结果变量（用于存储每个分支的结果）
-    llvm::AllocaInst* result_alloca = builder.CreateAlloca(
-        llvm_result_type, nullptr, "match.result");
-    
-    // 4. 创建基本块
-    llvm::Function* current_fn = builder.GetInsertBlock()->getParent();
-    llvm::BasicBlock* end_bb = llvm::BasicBlock::Create(context, "match.end", current_fn);
-    
-    // 5. 为每个分支生成代码
-    const auto& arms = node->getArms();
-    
-    for (size_t i = 0; i < arms.size(); ++i) {
-        const auto& arm = arms[i];
+    if (is_tuple_access && obj_type->isTuple()) {
+        // 元组字段访问: tuple.0, tuple.1 等
+        auto* tuple_type = static_cast<TupleType*>(obj_type);
         
-        // 创建分支的基本块
-        llvm::BasicBlock* arm_bb = llvm::BasicBlock::Create(
-            context, "match.arm." + std::to_string(i), current_fn);
-        llvm::BasicBlock* next_bb = (i < arms.size() - 1) 
-            ? llvm::BasicBlock::Create(context, "match.next." + std::to_string(i), current_fn)
-            : end_bb;
+        // 解析字段索引
+        int field_idx = std::stoi(member);
         
-        // 生成模式匹配条件
-        llvm::Value* match_cond = generatePatternMatch(
-            arm.pattern.get(), 
-            scrutinee_value, 
-            node->getScrutinee()->getType()
-        );
-        
-        if (!match_cond) {
-            // 通配符或变量绑定总是匹配
-            builder.CreateBr(arm_bb);
-        } else {
-            builder.CreateCondBr(match_cond, arm_bb, next_bb);
+        // 验证索引有效性
+        if (field_idx < 0 || field_idx >= static_cast<int>(tuple_type->getElementTypes().size())) {
+            result_ = nullptr;
+            return;
         }
         
-        // 生成分支表达式的代码
-        builder.SetInsertPoint(arm_bb);
+        // 使用CreateExtractValue提取元组元素
+        result_ = builder.CreateExtractValue(object, field_idx, "tuple.field." + member);
         
-        // 处理模式变量绑定
-        bindPatternVariables(arm.pattern.get(), scrutinee_value, node->getScrutinee()->getType());
+    } else if (obj_type->isStruct()) {
+        // 结构体成员访问: struct.field_name
+        auto* struct_type = static_cast<StructType*>(obj_type);
+        llvm::Type* llvm_struct_type = type_gen.mapType(struct_type);
         
-        // 计算分支表达式
-        arm.expression->accept(this);
-        llvm::Value* arm_value = result_;
-        
-        if (arm_value) {
-            builder.CreateStore(arm_value, result_alloca);
-        }
-        
-        builder.CreateBr(end_bb);
-        
-        // 移动到下一个分支
-        if (i < arms.size() - 1) {
-            builder.SetInsertPoint(next_bb);
-        }
-    }
-    
-    // 6. 设置到end块并加载结果
-    builder.SetInsertPoint(end_bb);
-    result_ = builder.CreateLoad(llvm_result_type, result_alloca, "match.value");
-}
-
-// 辅助方法：生成模式匹配条件
-llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* scrutinee, Type* scrutinee_type) {
-    auto& context = context_->getLLVMContext();
-    auto& builder = context_->getBuilder();
-    
-    // LiteralPattern: 字面量匹配
-    if (auto* lit = dynamic_cast<LiteralPattern*>(pattern)) {
-        switch (lit->getKind()) {
-            case LiteralPattern::Kind::Int: {
-                // 整数比较
-                llvm::Value* pattern_val = llvm::ConstantInt::get(
-                    scrutinee->getType(),
-                    std::stoll(lit->getValue())
-                );
-                return builder.CreateICmpEQ(scrutinee, pattern_val, "match.int.eq");
-            }
-            case LiteralPattern::Kind::Bool: {
-                // 布尔比较
-                llvm::Value* pattern_val = llvm::ConstantInt::get(
-                    llvm::Type::getInt1Ty(context),
-                    lit->getValue() == "true" ? 1 : 0
-                );
-                return builder.CreateICmpEQ(scrutinee, pattern_val, "match.bool.eq");
-            }
-            case LiteralPattern::Kind::String: {
-                // 字符串比较（调用runtime strcmp）
-                llvm::Function* strcmp_fn = context_->getRuntimeFunction("paw_strcmp");
-                if (!strcmp_fn) {
-                    return nullptr;
-                }
-                
-                // 创建字符串字面量
-                llvm::Value* pattern_str = builder.CreateGlobalStringPtr(lit->getValue(), "match.str.literal");
-                
-                // 调用strcmp
-                llvm::Value* cmp_result = builder.CreateCall(
-                    strcmp_fn,
-                    {scrutinee, pattern_str},
-                    "strcmp.result"
-                );
-                
-                // strcmp返回0表示相等
-                llvm::Value* zero = llvm::ConstantInt::get(
-                    llvm::Type::getInt32Ty(context),
-                    0
-                );
-                return builder.CreateICmpEQ(cmp_result, zero, "match.str.eq");
-            }
-            case LiteralPattern::Kind::Char: {
-                // 字符比较
-                llvm::Value* pattern_val = llvm::ConstantInt::get(
-                    llvm::Type::getInt8Ty(context),
-                    lit->getValue()[0]
-                );
-                return builder.CreateICmpEQ(scrutinee, pattern_val, "match.char.eq");
-            }
-            case LiteralPattern::Kind::Float: {
-                // 浮点数比较
-                llvm::APFloat ap_float(std::stod(lit->getValue()));
-                llvm::Value* pattern_val = llvm::ConstantFP::get(context, ap_float);
-                return builder.CreateFCmpOEQ(scrutinee, pattern_val, "match.float.eq");
-            }
-            default:
-                return nullptr;
-        }
-    }
-    
-    // WildcardPattern: 总是匹配
-    if (dynamic_cast<WildcardPattern*>(pattern)) {
-        return nullptr;  // nullptr表示总是匹配
-    }
-    
-    // VariablePattern: 总是匹配（绑定变量）
-    if (dynamic_cast<VariablePattern*>(pattern)) {
-        return nullptr;  // nullptr表示总是匹配
-    }
-    
-    // TuplePattern: 元组匹配
-    if (auto* tuple = dynamic_cast<TuplePattern*>(pattern)) {
-        if (!scrutinee_type || scrutinee_type->getKind() != Type::Kind::Tuple) {
-            return nullptr;
-        }
-        
-        auto* tuple_type = static_cast<TupleType*>(scrutinee_type);
-        const auto& element_types = tuple_type->getElementTypes();
-        const auto& patterns = tuple->getElements();
-        
-        if (patterns.size() != element_types.size()) {
-            return nullptr;  // 元组大小不匹配
-        }
-        
-        TypeCodeGen type_gen(context);
-        llvm::Type* llvm_tuple_type = type_gen.mapType(tuple_type);
-        
-        // 确保scrutinee是指针类型
-        llvm::Value* tuple_ptr = scrutinee;
-        if (!scrutinee->getType()->isPointerTy()) {
-            llvm::AllocaInst* temp = builder.CreateAlloca(scrutinee->getType(), nullptr, "tuple.tmp");
-            builder.CreateStore(scrutinee, temp);
-            tuple_ptr = temp;
-        }
-        
-        // 生成所有子模式的条件，并用AND连接
-        llvm::Value* result_cond = nullptr;
-        
-        for (size_t i = 0; i < patterns.size(); ++i) {
-            // 提取元组元素
-            llvm::Value* elem_ptr = builder.CreateStructGEP(
-                llvm_tuple_type,
-                tuple_ptr,
-                i,
-                "tuple.elem." + std::to_string(i)
-            );
-            
-            llvm::Type* elem_llvm_type = type_gen.mapType(element_types[i]);
-            llvm::Value* elem_value = builder.CreateLoad(
-                elem_llvm_type,
-                elem_ptr,
-                "tuple.elem.val"
-            );
-            
-            // 递归生成子模式匹配条件
-            llvm::Value* sub_cond = generatePatternMatch(
-                patterns[i].get(),
-                elem_value,
-                element_types[i]
-            );
-            
-            if (sub_cond) {
-                if (!result_cond) {
-                    result_cond = sub_cond;
-                } else {
-                    result_cond = builder.CreateAnd(result_cond, sub_cond, "tuple.match.and");
-                }
-            }
-        }
-        
-        return result_cond;  // nullptr表示所有子模式都是通配符/变量
-    }
-    
-    // EnumPattern: 枚举匹配
-    if (auto* enum_pat = dynamic_cast<EnumPattern*>(pattern)) {
-        // 枚举匹配：检查tag是否相等
-        if (!scrutinee_type || scrutinee_type->getKind() != Type::Kind::Enum) {
-            return nullptr;
-        }
-        
-        auto* enum_type = static_cast<EnumType*>(scrutinee_type);
-        const auto& variants = enum_type->getVariants();
-        
-        // 查找变体索引
-        int variant_idx = -1;
-        for (size_t i = 0; i < variants.size(); ++i) {
-            if (variants[i].first == enum_pat->getVariantName()) {
-                variant_idx = static_cast<int>(i);
+        // 查找字段索引
+        const auto& fields = struct_type->getFields();
+        int field_idx = -1;
+        for (size_t i = 0; i < fields.size(); ++i) {
+            if (fields[i].first == member) {
+                field_idx = static_cast<int>(i);
                 break;
             }
         }
         
-        if (variant_idx < 0) {
-            return nullptr;  // 变体不存在
+        if (field_idx < 0) {
+            result_ = nullptr;
+            return;
         }
         
-        // 提取enum的tag字段（第0个字段）
-        TypeCodeGen type_gen(context);
-        llvm::Type* llvm_enum_type = type_gen.mapType(enum_type);
-        
-        llvm::Value* enum_ptr = scrutinee;
-        if (!scrutinee->getType()->isPointerTy()) {
-            // 如果是值类型，需要先分配到栈上
-            llvm::AllocaInst* temp = builder.CreateAlloca(scrutinee->getType(), nullptr, "enum.tmp");
-            builder.CreateStore(scrutinee, temp);
-            enum_ptr = temp;
+        // 如果object是值而不是指针，需要先存储到栈上
+        llvm::Value* object_ptr = object;
+        if (!object->getType()->isPointerTy()) {
+            llvm::AllocaInst* temp = builder.CreateAlloca(object->getType(), nullptr, "struct.tmp");
+            builder.CreateStore(object, temp);
+            object_ptr = temp;
         }
         
-        // 提取tag字段
-        llvm::Value* tag_ptr = builder.CreateStructGEP(
-            llvm_enum_type,
-            enum_ptr,
-            0,
-            "enum.tag.ptr"
-        );
-        llvm::Value* tag_value = builder.CreateLoad(
-            llvm::Type::getInt32Ty(context),
-            tag_ptr,
-            "enum.tag"
+        // 使用CreateStructGEP访问字段
+        llvm::Value* field_ptr = builder.CreateStructGEP(
+            llvm_struct_type,
+            object_ptr,
+            field_idx,
+            member
         );
         
-        // 比较tag
-        llvm::Value* expected_tag = llvm::ConstantInt::get(
-            llvm::Type::getInt32Ty(context),
-            variant_idx
-        );
+        // Load字段值
+        llvm::Type* field_type = type_gen.mapType(fields[field_idx].second);
+        result_ = builder.CreateLoad(field_type, field_ptr);
         
-        return builder.CreateICmpEQ(tag_value, expected_tag, "match.enum.eq");
+    } else {
+        result_ = nullptr;
     }
-    
-    return nullptr;
 }
 
-// 辅助方法：绑定模式变量
-void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Type* value_type) {
-    auto& builder = context_->getBuilder();
-    
-    // VariablePattern: 创建变量绑定
-    if (auto* var = dynamic_cast<VariablePattern*>(pattern)) {
-        // 在当前作用域创建变量
-        TypeCodeGen type_gen(context_->getLLVMContext());
-        llvm::Type* var_type = type_gen.mapType(value_type);
-        
-        // 创建alloca并存储值
-        llvm::AllocaInst* var_alloca = builder.CreateAlloca(
-            var_type, nullptr, var->getName());
-        builder.CreateStore(value, var_alloca);
-        
-        // 注意：变量已通过alloca正确生成并存储
-        // CodeGen层面的变量查找通过函数作用域管理
-        // 符号表主要用于Sema阶段，CodeGen不需要额外注册
-    }
-    
-    // WildcardPattern: 不绑定任何变量
-    if (dynamic_cast<WildcardPattern*>(pattern)) {
-        return;
-    }
-    
-    // LiteralPattern: 不绑定任何变量
-    if (dynamic_cast<LiteralPattern*>(pattern)) {
-        return;
-    }
-    
-    // TuplePattern: 递归绑定元组元素
-    if (auto* tuple = dynamic_cast<TuplePattern*>(pattern)) {
-        if (!value_type || value_type->getKind() != Type::Kind::Tuple) {
-            return;
-        }
-        
-        auto* tuple_type = static_cast<TupleType*>(value_type);
-        const auto& element_types = tuple_type->getElementTypes();
-        const auto& patterns = tuple->getElements();
-        
-        TypeCodeGen type_gen(context_->getLLVMContext());
-        llvm::Type* llvm_tuple_type = type_gen.mapType(tuple_type);
-        
-        // 确保value是指针类型
-        llvm::Value* tuple_ptr = value;
-        if (!value->getType()->isPointerTy()) {
-            llvm::AllocaInst* temp = builder.CreateAlloca(value->getType(), nullptr, "tuple.tmp");
-            builder.CreateStore(value, temp);
-            tuple_ptr = temp;
-        }
-        
-        // 递归绑定每个元素
-        for (size_t i = 0; i < patterns.size() && i < element_types.size(); ++i) {
-            // 提取元组元素
-            llvm::Value* elem_ptr = builder.CreateStructGEP(
-                llvm_tuple_type,
-                tuple_ptr,
-                i,
-                "tuple.elem." + std::to_string(i)
-            );
-            
-            llvm::Type* elem_llvm_type = type_gen.mapType(element_types[i]);
-            llvm::Value* elem_value = builder.CreateLoad(
-                elem_llvm_type,
-                elem_ptr,
-                "tuple.elem.val"
-            );
-            
-            // 递归绑定
-            bindPatternVariables(patterns[i].get(), elem_value, element_types[i]);
-        }
-    }
-    
-    // EnumPattern: 绑定枚举数据
-    if (auto* enum_pat = dynamic_cast<EnumPattern*>(pattern)) {
-        if (!value_type || value_type->getKind() != Type::Kind::Enum) {
-            return;
-        }
-        
-        auto* enum_type = static_cast<EnumType*>(value_type);
-        const auto& variants = enum_type->getVariants();
-        
-        // 查找变体
-        int variant_idx = -1;
-        Type* data_type = nullptr;
-        for (size_t i = 0; i < variants.size(); ++i) {
-            if (variants[i].first == enum_pat->getVariantName()) {
-                variant_idx = static_cast<int>(i);
-                data_type = variants[i].second;
-                break;
-            }
-        }
-        
-        if (variant_idx < 0 || !data_type) {
-            return;  // 无数据的变体，或变体不存在
-        }
-        
-        // 提取enum的数据字段（第1个字段）
-        TypeCodeGen type_gen(context_->getLLVMContext());
-        llvm::Type* llvm_enum_type = type_gen.mapType(enum_type);
-        
-        llvm::Value* enum_ptr = value;
-        if (!value->getType()->isPointerTy()) {
-            llvm::AllocaInst* temp = builder.CreateAlloca(value->getType(), nullptr, "enum.tmp");
-            builder.CreateStore(value, temp);
-            enum_ptr = temp;
-        }
-        
-        // 提取data字段
-        llvm::Value* data_ptr = builder.CreateStructGEP(
-            llvm_enum_type,
-            enum_ptr,
-            1,
-            "enum.data.ptr"
-        );
-        
-        llvm::Type* data_llvm_type = type_gen.mapType(data_type);
-        llvm::Value* data_value = builder.CreateLoad(
-            data_llvm_type,
-            data_ptr,
-            "enum.data"
-        );
-        
-        // 绑定内部模式
-        if (enum_pat->getInner()) {
-            bindPatternVariables(enum_pat->getInner(), data_value, data_type);
-        }
-    }
-}
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Match表达式和模式匹配 - 已移至 match_codegen.cpp
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// visit(MatchExpr*)、generatePatternMatch()、bindPatternVariables()
+// 以及所有Pattern相关方法已移至match_codegen.cpp
 
 void ExprCodeGen::visit(IndexExpr* node) {
     // 数组/切片索引: arr[i]
@@ -908,6 +522,88 @@ void ExprCodeGen::visit(StructLiteral* node) {
     
     // 加载整个结构体
     result_ = builder.CreateLoad(llvm_st, struct_alloca, "struct");
+}
+
+void ExprCodeGen::visit(CastExpr* node) {
+    // as类型转换: expr as TargetType
+    node->getExpr()->accept(this);
+    llvm::Value* source_value = result_;
+    
+    if (!source_value) {
+        result_ = nullptr;
+        return;
+    }
+    
+    auto& builder = context_->getBuilder();
+    TypeCodeGen type_gen(context_->getLLVMContext());
+    
+    Type* source_type = node->getExpr()->getType();
+    Type* target_type = node->getTargetType();
+    
+    if (!source_type || !target_type) {
+        result_ = nullptr;
+        return;
+    }
+    
+    llvm::Type* llvm_target_type = type_gen.mapType(target_type);
+    
+    // 数值类型转换
+    if (source_type->isInteger() && target_type->isInteger()) {
+        // 整数之间的转换
+        llvm::Type* source_llvm = source_value->getType();
+        unsigned source_bits = source_llvm->getIntegerBitWidth();
+        unsigned target_bits = llvm_target_type->getIntegerBitWidth();
+        
+        if (source_bits < target_bits) {
+            // 扩展
+            if (source_type->isSignedInteger()) {
+                result_ = builder.CreateSExt(source_value, llvm_target_type, "cast.sext");
+            } else {
+                result_ = builder.CreateZExt(source_value, llvm_target_type, "cast.zext");
+            }
+        } else if (source_bits > target_bits) {
+            // 截断
+            result_ = builder.CreateTrunc(source_value, llvm_target_type, "cast.trunc");
+        } else {
+            // 位数相同，直接使用
+            result_ = source_value;
+        }
+    }
+    else if (source_type->isInteger() && target_type->isFloat()) {
+        // 整数到浮点
+        if (source_type->isSignedInteger()) {
+            result_ = builder.CreateSIToFP(source_value, llvm_target_type, "cast.sitofp");
+        } else {
+            result_ = builder.CreateUIToFP(source_value, llvm_target_type, "cast.uitofp");
+        }
+    }
+    else if (source_type->isFloat() && target_type->isInteger()) {
+        // 浮点到整数（截断）
+        if (target_type->isSignedInteger()) {
+            result_ = builder.CreateFPToSI(source_value, llvm_target_type, "cast.fptosi");
+        } else {
+            result_ = builder.CreateFPToUI(source_value, llvm_target_type, "cast.fptoui");
+        }
+    }
+    else if (source_type->isFloat() && target_type->isFloat()) {
+        // 浮点之间的转换
+        unsigned source_bits = source_value->getType()->getScalarSizeInBits();
+        unsigned target_bits = llvm_target_type->getScalarSizeInBits();
+        
+        if (source_bits < target_bits) {
+            // 扩展
+            result_ = builder.CreateFPExt(source_value, llvm_target_type, "cast.fpext");
+        } else if (source_bits > target_bits) {
+            // 截断
+            result_ = builder.CreateFPTrunc(source_value, llvm_target_type, "cast.fptrunc");
+        } else {
+            result_ = source_value;
+        }
+    }
+    else {
+        // 不支持的类型转换
+        result_ = nullptr;
+    }
 }
 
 } // namespace pawc

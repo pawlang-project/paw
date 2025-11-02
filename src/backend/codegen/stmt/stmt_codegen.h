@@ -21,6 +21,8 @@ public:
     // 语句访问
     void visit(ExprStmt* node) override;
     void visit(VarDecl* node) override;
+    void visit(DestructuringDecl* node) override;
+    void visit(StructDestructuringDecl* node) override;
     void visit(FunctionDecl* node) override;
     void visit(ReturnStmt* node) override;
     void visit(IfStmt* node) override;
@@ -42,6 +44,7 @@ public:
     void visit(CharLiteral*) override {}
     void visit(StringLiteral*) override {}
     void visit(NullLiteral*) override {}
+    void visit(CastExpr*) override {}
     void visit(ClosureExpr*) override {}
     void visit(IdentifierExpr*) override {}
     void visit(BinaryExpr*) override {}
@@ -66,6 +69,7 @@ public:
     void visit(VariablePattern*) override {}
     void visit(TuplePattern*) override {}
     void visit(EnumPattern*) override {}
+    void visit(StructPattern*) override {}
     
 private:
     ExprCodeGen* expr_codegen_;

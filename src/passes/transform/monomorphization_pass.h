@@ -82,6 +82,8 @@ public:
     // Statements
     void visit(ExprStmt* stmt) override;
     void visit(VarDecl* decl) override;
+    void visit(DestructuringDecl* decl) override;
+    void visit(StructDestructuringDecl* node) override;
     void visit(FunctionDecl* decl) override;
     void visit(ReturnStmt* stmt) override;
     void visit(IfStmt* stmt) override;
@@ -103,6 +105,7 @@ public:
     void visit(CharLiteral* expr) override;
     void visit(StringLiteral* expr) override;
     void visit(NullLiteral* expr) override;
+    void visit(CastExpr* expr) override;
     void visit(ClosureExpr* expr) override;
     void visit(ArrayLiteral* expr) override;
     void visit(TupleExpr* expr) override;
@@ -127,6 +130,7 @@ public:
     void visit(WildcardPattern* pattern) override;
     void visit(TuplePattern* pattern) override;
     void visit(EnumPattern* pattern) override;
+    void visit(StructPattern* pattern) override;
     
 private:
     PassContext* context_ = nullptr;

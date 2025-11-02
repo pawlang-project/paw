@@ -22,6 +22,11 @@ void ExprCodeGen::visit(CallExpr* node) {
     
     if (callee_type && callee_type->getKind() == Type::Kind::Function) {
         // === 闭包调用！===
+        
+        // 从FunctionType获取捕获标记（Sema设置）
+        auto* func_type_ast = static_cast<FunctionType*>(callee_type);
+        bool has_captures = func_type_ast->hasCaptures();
+        
         // 生成闭包对象/函数指针
         node->getCallee()->accept(this);
         llvm::Value* closure_value = result_;
@@ -41,74 +46,87 @@ void ExprCodeGen::visit(CallExpr* node) {
         }
         
         // === 闭包调用逻辑 ===
-        // closure_value可能是：
-        // 1. llvm::Function* - 无捕获的闭包（直接函数指针）
-        // 2. 指向闭包结构体的指针变量 - 需要load+提取函数指针+传递上下文
+        TypeCodeGen type_gen(builder.getContext());
+        
+        // 构建用户层FunctionType（不包含上下文）
+        std::vector<llvm::Type*> param_types_llvm;
+        for (Type* param_type : func_type_ast->getParamTypes()) {
+            param_types_llvm.push_back(type_gen.mapType(param_type));
+        }
+        llvm::Type* return_type_llvm = type_gen.mapType(func_type_ast->getReturnType());
         
         llvm::Value* callable = nullptr;
         llvm::FunctionType* fn_type = nullptr;
         std::vector<llvm::Value*> final_args;
         
-        // Case 1: 如果是llvm::Function*，直接使用
+        // Case 1: 直接是llvm::Function*（无捕获闭包立即调用）
         if (llvm::isa<llvm::Function>(closure_value)) {
             callable = closure_value;
             fn_type = llvm::cast<llvm::Function>(closure_value)->getFunctionType();
-            final_args = args;  // 不需要额外的上下文参数
+            final_args = args;
         }
-        // Case 2: 如果是指针（闭包结构体）
+        // Case 2: 是指针（alloca，从变量调用）
         else if (closure_value->getType()->isPointerTy()) {
-            // 获取AST类型信息
-            auto* func_type_ast = static_cast<FunctionType*>(callee_type);
-            TypeCodeGen type_gen(builder.getContext());
-            
-            // 构建用户层FunctionType（不包含上下文）
-            std::vector<llvm::Type*> param_types_llvm;
-            for (Type* param_type : func_type_ast->getParamTypes()) {
-                param_types_llvm.push_back(type_gen.mapType(param_type));
-            }
-            llvm::Type* return_type_llvm = type_gen.mapType(func_type_ast->getReturnType());
-            
-            // 关键：closure_value是指向闭包结构体指针的指针（alloca返回的）
-            // 需要先load获取实际的闭包结构体指针
-            llvm::Value* closure_struct_ptr = builder.CreateLoad(
+            // 从alloca load闭包值
+            llvm::Value* loaded_closure = builder.CreateLoad(
                 llvm::PointerType::getUnqual(builder.getContext()),
                 closure_value,
-                "closure_struct"
+                "loaded_closure"
             );
             
-            // 从闭包结构体提取函数指针（字段0）
-            llvm::Value* fn_ptr_field_addr = builder.CreateConstInBoundsGEP1_32(
-                llvm::PointerType::getUnqual(builder.getContext()),
-                closure_struct_ptr,
-                0,
-                "fn_ptr_field"
-            );
+            // 判断是无捕获闭包还是有捕获闭包
+            // 策略：
+            // - 如果明确知道有捕获（closure_expr存在且has_captures为true），作为结构体处理
+            // - 否则（无捕获或无法确定），默认作为函数指针处理
             
-            // Load函数指针
-            llvm::Value* fn_ptr = builder.CreateLoad(
-                llvm::PointerType::getUnqual(builder.getContext()),
-                fn_ptr_field_addr,
-                "closure_fn"
-            );
-            
-            callable = fn_ptr;
-            
-            // 构建FunctionType（包含上下文参数）
-            std::vector<llvm::Type*> param_types_with_ctx;
-            param_types_with_ctx.push_back(llvm::PointerType::getUnqual(builder.getContext()));
-            for (auto* pt : param_types_llvm) {
-                param_types_with_ctx.push_back(pt);
+            if (has_captures) {
+                // Case 2b: 明确有捕获 - 作为闭包结构体指针处理
+                llvm::Value* closure_struct_ptr = loaded_closure;
+                
+                // 从闭包结构体提取函数指针（字段0）
+                // 方法：将闭包结构体指针cast为ptr*（指针数组），然后取第一个元素
+                llvm::Type* ptr_ptr_type = llvm::PointerType::getUnqual(
+                    llvm::PointerType::getUnqual(builder.getContext())
+                );
+                llvm::Value* ptr_array = builder.CreateBitCast(
+                    closure_struct_ptr,
+                    ptr_ptr_type,
+                    "closure_as_ptr_array"
+                );
+                
+                // Load第一个指针（函数指针）
+                llvm::Value* fn_ptr = builder.CreateLoad(
+                    llvm::PointerType::getUnqual(builder.getContext()),
+                    ptr_array,
+                    "closure_fn"
+                );
+                
+                callable = fn_ptr;
+                
+                // 构建FunctionType（包含上下文参数）
+                std::vector<llvm::Type*> param_types_with_ctx;
+                param_types_with_ctx.push_back(llvm::PointerType::getUnqual(builder.getContext()));
+                for (auto* pt : param_types_llvm) {
+                    param_types_with_ctx.push_back(pt);
+                }
+                fn_type = llvm::FunctionType::get(return_type_llvm, param_types_with_ctx, false);
+                
+                // 传递闭包结构体指针作为第一个参数
+                final_args.push_back(closure_struct_ptr);
+                for (auto* arg : args) {
+                    final_args.push_back(arg);
+                }
             }
-            fn_type = llvm::FunctionType::get(return_type_llvm, param_types_with_ctx, false);
-            
-            // 传递闭包结构体指针作为第一个参数
-            final_args.push_back(closure_struct_ptr);
-            for (auto* arg : args) {
-                final_args.push_back(arg);
+            else {
+                // Case 2a: 无捕获或无法确定 - 默认作为函数指针处理
+                callable = loaded_closure;
+                
+                // 构建简单的FunctionType（无上下文参数）
+                fn_type = llvm::FunctionType::get(return_type_llvm, param_types_llvm, false);
+                final_args = args;
             }
         }
         else {
-            // 未知类型
             result_ = nullptr;
             return;
         }
@@ -446,7 +464,13 @@ void ExprCodeGen::visit(CallExpr* node) {
     }
     
     // 创建调用
-    result_ = builder.CreateCall(func, arg_values, "calltmp");
+    // 🔧 Bug Fix: void函数不应该有命名返回值
+    if (func->getReturnType()->isVoidTy()) {
+        builder.CreateCall(func, arg_values);
+        result_ = nullptr;  // void函数没有返回值
+    } else {
+        result_ = builder.CreateCall(func, arg_values, "calltmp");
+    }
 }
 
 } // namespace pawc

@@ -29,6 +29,7 @@ public:
     void visit(CharLiteral* node) override;
     void visit(StringLiteral* node) override;
     void visit(NullLiteral* node) override;
+    void visit(CastExpr* node) override;
     void visit(ClosureExpr* node) override;
     void visit(IdentifierExpr* node) override;
     void visit(SelfExpr* node) override;
@@ -51,9 +52,18 @@ public:
     llvm::Value* generatePatternMatch(class Pattern* pattern, llvm::Value* scrutinee, Type* scrutinee_type);
     void bindPatternVariables(class Pattern* pattern, llvm::Value* value, Type* value_type);
     
+    // Result和Optional模式匹配辅助方法
+    llvm::Value* generateResultPatternMatch(class EnumPattern* pattern, llvm::Value* scrutinee, class ResultType* type);
+    llvm::Value* generateOptionalPatternMatch(class EnumPattern* pattern, llvm::Value* scrutinee, class OptionalType* type);
+    void bindResultPatternVariables(class EnumPattern* pattern, llvm::Value* value, class ResultType* type);
+    void bindOptionalPatternVariables(class EnumPattern* pattern, llvm::Value* value, class OptionalType* type);
+    void bindStructPatternVariables(class StructPattern* pattern, llvm::Value* value, class StructType* type);
+    
     // 语句访问（未使用）
     void visit(ExprStmt*) override {}
     void visit(VarDecl*) override {}
+    void visit(DestructuringDecl*) override {}
+    void visit(StructDestructuringDecl*) override {}
     void visit(FunctionDecl*) override {}
     void visit(ReturnStmt*) override {}
     void visit(IfStmt*) override {}
@@ -74,6 +84,7 @@ public:
     void visit(VariablePattern*) override {}
     void visit(TuplePattern*) override {}
     void visit(EnumPattern*) override {}
+    void visit(StructPattern*) override {}
     
 private:
     llvm::Value* result_;
