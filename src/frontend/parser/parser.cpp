@@ -927,8 +927,32 @@ ExprPtr Parser::parsePostfix() {
                 error("Expected type name before '::'");
             }
         }
+        else if (check(TokenType::LESS) && dynamic_cast<IdentifierExpr*>(expr.get())) {
+            // 泛型函数调用: identity<i32>(42)
+            advance(); // consume '<'
+            
+            std::vector<Type*> type_args;
+            do {
+                type_args.push_back(parseType());
+            } while (match(TokenType::COMMA));
+            
+            consume(TokenType::GREATER, "Expected '>' after type arguments");
+            consume(TokenType::LPAREN, "Expected '(' after type arguments");
+            
+            std::vector<ExprPtr> args;
+            if (!check(TokenType::RPAREN)) {
+                do {
+                    args.push_back(parseExpression());
+                } while (match(TokenType::COMMA));
+            }
+            consume(TokenType::RPAREN, "Expected ')' after arguments");
+            
+            auto call_expr = std::make_unique<CallExpr>(std::move(expr), std::move(args));
+            call_expr->setTypeArgs(type_args);
+            expr = std::move(call_expr);
+        }
         else if (match(TokenType::LPAREN)) {
-            // 函数调用
+            // 普通函数调用
             std::vector<ExprPtr> args;
             if (!check(TokenType::RPAREN)) {
                 do {

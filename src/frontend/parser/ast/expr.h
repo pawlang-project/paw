@@ -129,11 +129,18 @@ public:
     
     Expr* getCallee() const { return callee_.get(); }
     const std::vector<ExprPtr>& getArgs() const { return args_; }
+    
+    // 泛型函数调用支持
+    const std::vector<Type*>& getTypeArgs() const { return type_args_; }
+    void setTypeArgs(const std::vector<Type*>& args) { type_args_ = args; }
+    bool hasTypeArgs() const { return !type_args_.empty(); }
+    
     void accept(ASTVisitor* visitor) override;
     
 private:
     ExprPtr callee_;
     std::vector<ExprPtr> args_;
+    std::vector<Type*> type_args_;  // 泛型类型参数
 };
 
 /// MemberExpr - 成员访问 a.b
