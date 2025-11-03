@@ -654,10 +654,20 @@ void TypeChecker::visit(RangeExpr* node) {
 }
 
 void TypeChecker::visit(StructLiteral* node) {
-    // 结构体字面量类型检查 Point { x: 10, y: 20 }
+    // 结构体字面量类型检查 Point { x: 10, y: 20 } 或 Box { value: 42 }
     
-    // 查找struct类型定义
+    // 🔧 泛型Struct支持：查找struct类型定义（包括实例化类型）
     Type* struct_type = types_->lookupType(node->getStructName());
+    
+    // 如果没找到，检查是否是泛型模板，从expected_type_推导
+    if (!struct_type) {
+        auto* tmpl = types_->lookupGenericTemplate(node->getStructName());
+        if (tmpl && expected_type_ && expected_type_->isStruct()) {
+            // 从expected_type_获取实例化类型
+            struct_type = expected_type_;
+        }
+    }
+    
     if (!struct_type) {
         diag_->reportError("Unknown struct type: " + node->getStructName(), 
                           SourceLocation());
