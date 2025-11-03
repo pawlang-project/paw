@@ -346,6 +346,25 @@ void TypeChecker::visit(CallExpr* node) {
             }
         }
         
+        // 特殊处理: println/print/to_string - 支持所有基本类型
+        if ((func_name == "println" || func_name == "print" || func_name == "to_string") 
+            && arg_types.size() == 1) {
+            // 验证参数类型是基本类型或已知类型
+            Type* arg_type = arg_types[0];
+            if (arg_type) {
+                // println/print 返回 void
+                if (func_name == "println" || func_name == "print") {
+                    node->setType(types_->getVoidType());
+                    return;
+                }
+                // to_string 返回 string
+                if (func_name == "to_string") {
+                    node->setType(types_->getStringType());
+                    return;
+                }
+            }
+        }
+        
         FunctionSymbol* func = symbols_->lookupFunction(func_name, arg_types);
         if (func) {
             node->setType(func->getReturnType());
@@ -359,16 +378,59 @@ void TypeChecker::visit(CallExpr* node) {
 
 void TypeChecker::visit(StaticAccessExpr* node) {
     // 静态访问: Type::Variant 或 Type::method
-    // 查找类型
+    // 🔧 M7: 支持泛型模板静态访问
+    
+    // 首先尝试查找具体类型
     Type* type = types_->lookupType(node->getTypeName());
+    
+    // 如果没找到，检查是否是泛型模板
+    if (!type) {
+        auto* tmpl = types_->lookupGenericTemplate(node->getTypeName());
+        if (tmpl && expected_type_ && expected_type_->isEnum()) {
+            // 从expected_type_获取实例化类型
+            type = expected_type_;
+        }
+    }
+    
     if (!type) {
         diag_->reportError("Unknown type: " + node->getTypeName(), node->getLocation());
         node->setType(types_->getVoidType());
         return;
     }
     
-    // TODO: 处理枚举构造器 Option::Some
-    // 暂时设置为未知类型
+    // 🔧 M7: 处理枚举构造器 Option::Some
+    if (type->isEnum()) {
+        EnumType* enum_type = static_cast<EnumType*>(type);
+        
+        // 查找variant
+        bool found = false;
+        for (const auto& variant : enum_type->getVariants()) {
+            if (variant.first == node->getMember()) {
+                // 找到variant！创建一个特殊的函数类型表示构造器
+                // Option::Some 的类型是 fn(T) -> Option<T>
+                if (variant.second) {
+                    // 有关联数据的variant
+                    std::vector<Type*> param_types = {variant.second};
+                    Type* constructor_type = types_->getFunctionType(param_types, enum_type);
+                    node->setType(constructor_type);
+                } else {
+                    // 无关联数据的variant，直接是enum类型
+                    node->setType(enum_type);
+                }
+                found = true;
+                break;
+            }
+        }
+        
+        if (!found) {
+            diag_->reportError("Unknown enum variant: " + node->getMember(), 
+                             node->getLocation());
+            node->setType(types_->getVoidType());
+        }
+        return;
+    }
+    
+    // TODO: 处理其他静态访问（接口方法等）
     node->setType(types_->getVoidType());
 }
 
@@ -1049,11 +1111,30 @@ void TypeChecker::visit(MatchExpr* node) {
 }
 
 void TypeChecker::visit(ClosureExpr* node) {
-    // 闭包类型检查：完整实现
-    // 1. 检查参数类型
-    // 2. 推导返回类型（如果未指定）
-    // 3. 创建FunctionType
-    // 4. 分析捕获变量
+    // 闭包类型检查：完整实现 + 类型推导
+    // 1. 从expected_type_推导参数类型（如果需要）
+    // 2. 检查参数类型
+    // 3. 推导返回类型（如果未指定）
+    // 4. 创建FunctionType
+    
+    // 🔧 类型推导：从expected_type_推导参数类型
+    if (expected_type_ && expected_type_->isFunction()) {
+        auto* expected_fn_type = static_cast<FunctionType*>(expected_type_);
+        const auto& expected_params = expected_fn_type->getParamTypes();
+        auto& closure_params = const_cast<std::vector<ClosureExpr::Param>&>(node->getParams());
+        
+        // 推导无类型的参数
+        for (size_t i = 0; i < closure_params.size() && i < expected_params.size(); i++) {
+            if (!closure_params[i].type) {
+                closure_params[i].type = expected_params[i];  // 推导！
+            }
+        }
+        
+        // 推导返回类型（如果未指定）
+        if (!node->getReturnType()) {
+            node->setReturnType(expected_fn_type->getReturnType());
+        }
+    }
     
     // 进入闭包作用域
     symbols_->enterScope();
@@ -1061,7 +1142,10 @@ void TypeChecker::visit(ClosureExpr* node) {
     // 添加参数到作用域
     for (const auto& param : node->getParams()) {
         if (!param.type) {
-            diag_->reportError("Closure parameter must have type annotation", SourceLocation());
+            diag_->reportError(
+                "Cannot infer closure parameter type. Please add type annotation or use in typed context",
+                SourceLocation()
+            );
             continue;
         }
         symbols_->defineVariable(param.name, param.type, param.is_mutable);

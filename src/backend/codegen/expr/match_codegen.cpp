@@ -41,8 +41,8 @@ void ExprCodeGen::visit(MatchExpr* node) {
         return;
     }
     
-    TypeCodeGen type_gen(context);
-    llvm::Type* llvm_result_type = type_gen.mapType(result_type);
+    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+    llvm::Type* llvm_result_type = context_->getLLVMType(result_type);
     
     // 3. 创建结果变量（用于存储每个分支的结果）
     llvm::AllocaInst* result_alloca = builder.CreateAlloca(
@@ -200,8 +200,8 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             return nullptr;  // 元组大小不匹配
         }
         
-        TypeCodeGen type_gen(context);
-        llvm::Type* llvm_tuple_type = type_gen.mapType(tuple_type);
+        // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+        llvm::Type* llvm_tuple_type = context_->getLLVMType(tuple_type);
         
         // 确保scrutinee是指针类型
         llvm::Value* tuple_ptr = scrutinee;
@@ -223,7 +223,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
                 "tuple.elem." + std::to_string(i)
             );
             
-            llvm::Type* elem_llvm_type = type_gen.mapType(element_types[i]);
+            llvm::Type* elem_llvm_type = context_->getLLVMType(element_types[i]);
             llvm::Value* elem_value = builder.CreateLoad(
                 elem_llvm_type,
                 elem_ptr,
@@ -283,8 +283,8 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         }
         
         // 提取enum的tag字段（第0个字段）
-        TypeCodeGen type_gen(context);
-        llvm::Type* llvm_enum_type = type_gen.mapType(enum_type);
+        // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+        llvm::Type* llvm_enum_type = context_->getLLVMType(enum_type);
         
         llvm::Value* enum_ptr = scrutinee;
         if (!scrutinee->getType()->isPointerTy()) {
@@ -334,8 +334,8 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
     // VariablePattern: 创建变量绑定
     if (auto* var = dynamic_cast<VariablePattern*>(pattern)) {
         // 在当前作用域创建变量
-        TypeCodeGen type_gen(context_->getLLVMContext());
-        llvm::Type* var_type = type_gen.mapType(value_type);
+        // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+        llvm::Type* var_type = context_->getLLVMType(value_type);
         
         // 创建alloca并存储值
         llvm::AllocaInst* var_alloca = builder.CreateAlloca(
@@ -367,8 +367,8 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
         const auto& element_types = tuple_type->getElementTypes();
         const auto& patterns = tuple->getElements();
         
-        TypeCodeGen type_gen(context_->getLLVMContext());
-        llvm::Type* llvm_tuple_type = type_gen.mapType(tuple_type);
+        // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+        llvm::Type* llvm_tuple_type = context_->getLLVMType(tuple_type);
         
         // 确保value是指针类型
         llvm::Value* tuple_ptr = value;
@@ -388,7 +388,7 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
                 "tuple.elem." + std::to_string(i)
             );
             
-            llvm::Type* elem_llvm_type = type_gen.mapType(element_types[i]);
+            llvm::Type* elem_llvm_type = context_->getLLVMType(element_types[i]);
             llvm::Value* elem_value = builder.CreateLoad(
                 elem_llvm_type,
                 elem_ptr,
@@ -438,8 +438,8 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
         }
         
         // 提取enum的数据字段（第1个字段）
-        TypeCodeGen type_gen(context_->getLLVMContext());
-        llvm::Type* llvm_enum_type = type_gen.mapType(enum_type);
+        // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+        llvm::Type* llvm_enum_type = context_->getLLVMType(enum_type);
         
         llvm::Value* enum_ptr = value;
         if (!value->getType()->isPointerTy()) {
@@ -456,7 +456,7 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
             "enum.data.ptr"
         );
         
-        llvm::Type* data_llvm_type = type_gen.mapType(data_type);
+        llvm::Type* data_llvm_type = context_->getLLVMType(data_type);
         llvm::Value* data_value = builder.CreateLoad(
             data_llvm_type,
             data_ptr,
@@ -496,8 +496,8 @@ llvm::Value* ExprCodeGen::generateResultPatternMatch(
     // Ok => is_ok == true
     // Err => is_ok == false
     
-    TypeCodeGen type_gen(ctx);
-    llvm::Type* llvm_result_type = type_gen.mapType(result_type);
+    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+    llvm::Type* llvm_result_type = context_->getLLVMType(result_type);
     
     // 如果scrutinee不是指针，先存到栈上
     llvm::Value* result_ptr = scrutinee;
@@ -544,8 +544,8 @@ llvm::Value* ExprCodeGen::generateOptionalPatternMatch(
     // Some => has_value == true
     // None => has_value == false
     
-    TypeCodeGen type_gen(ctx);
-    llvm::Type* llvm_opt_type = type_gen.mapType(opt_type);
+    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+    llvm::Type* llvm_opt_type = context_->getLLVMType(opt_type);
     
     llvm::Value* opt_ptr = scrutinee;
     if (!scrutinee->getType()->isPointerTy()) {
@@ -590,8 +590,8 @@ void ExprCodeGen::bindResultPatternVariables(
         return;  // 没有变量需要绑定
     }
     
-    TypeCodeGen type_gen(ctx);
-    llvm::Type* llvm_result_type = type_gen.mapType(result_type);
+    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+    llvm::Type* llvm_result_type = context_->getLLVMType(result_type);
     
     llvm::Value* result_ptr = value;
     if (!value->getType()->isPointerTy()) {
@@ -609,7 +609,7 @@ void ExprCodeGen::bindResultPatternVariables(
             "result.value.ptr"
         );
         
-        llvm::Type* ok_llvm_type = type_gen.mapType(result_type->getOkType());
+        llvm::Type* ok_llvm_type = context_->getLLVMType(result_type->getOkType());
         llvm::Value* ok_value = builder.CreateLoad(
             ok_llvm_type,
             value_ptr,
@@ -654,8 +654,8 @@ void ExprCodeGen::bindOptionalPatternVariables(
         return;  // None没有值需要绑定
     }
     
-    TypeCodeGen type_gen(ctx);
-    llvm::Type* llvm_opt_type = type_gen.mapType(opt_type);
+    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+    llvm::Type* llvm_opt_type = context_->getLLVMType(opt_type);
     
     llvm::Value* opt_ptr = value;
     if (!value->getType()->isPointerTy()) {
@@ -673,7 +673,7 @@ void ExprCodeGen::bindOptionalPatternVariables(
             "opt.value.ptr"
         );
         
-        llvm::Type* inner_llvm_type = type_gen.mapType(opt_type->getInnerType());
+        llvm::Type* inner_llvm_type = context_->getLLVMType(opt_type->getInnerType());
         llvm::Value* inner_value = builder.CreateLoad(
             inner_llvm_type,
             value_ptr,
@@ -693,8 +693,8 @@ void ExprCodeGen::bindStructPatternVariables(
     auto& ctx = context_->getLLVMContext();
     auto& builder = context_->getBuilder();
     
-    TypeCodeGen type_gen(ctx);
-    llvm::Type* llvm_struct_type = type_gen.mapType(struct_type);
+    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+    llvm::Type* llvm_struct_type = context_->getLLVMType(struct_type);
     
     // 确保value是指针类型
     llvm::Value* struct_ptr = value;
@@ -733,7 +733,7 @@ void ExprCodeGen::bindStructPatternVariables(
             "struct." + field_name + ".ptr"
         );
         
-        llvm::Type* field_llvm_type = type_gen.mapType(field_type);
+        llvm::Type* field_llvm_type = context_->getLLVMType(field_type);
         llvm::Value* field_value = builder.CreateLoad(
             field_llvm_type,
             field_ptr,

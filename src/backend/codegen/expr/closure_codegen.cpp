@@ -31,8 +31,6 @@ void ExprCodeGen::visit(ClosureExpr* node) {
     std::string closure_fn_name = ss.str();
     node->setGeneratedName(closure_fn_name);
     
-    TypeCodeGen type_gen(context_->getLLVMContext());
-    
     // === Phase 2: 环境捕获分析 ===
     // 捕获变量分析在Sema阶段完成（CaptureAnalyzer）
     // 优点：分离关注点，语义分析和代码生成解耦
@@ -48,12 +46,12 @@ void ExprCodeGen::visit(ClosureExpr* node) {
     // 构建参数类型（不包括闭包上下文）
     std::vector<llvm::Type*> param_types;
     for (const auto& param : node->getParams()) {
-        param_types.push_back(type_gen.mapType(param.type));
+        param_types.push_back(context_->getLLVMType(param.type));
     }
     
     // 返回类型
     llvm::Type* return_type = node->getReturnType() ?
-        type_gen.mapType(node->getReturnType()) :
+        context_->getLLVMType(node->getReturnType()) :
         builder.getVoidTy();
     
     // === 情况1: 无捕获变量 - 简单函数指针 ===
@@ -150,7 +148,7 @@ void ExprCodeGen::visit(ClosureExpr* node) {
     
     // 字段1+: 捕获的变量
     for (const auto& captured : captured_vars) {
-        closure_struct_fields.push_back(type_gen.mapType(captured.type));
+        closure_struct_fields.push_back(context_->getLLVMType(captured.type));
     }
     
     // 创建闭包结构体类型
@@ -303,7 +301,7 @@ void ExprCodeGen::visit(ClosureExpr* node) {
         
         // 加载并存储值
         llvm::Value* loaded_value = builder.CreateLoad(
-            type_gen.mapType(captured.type),
+            context_->getLLVMType(captured.type),
             var_value,
             captured.name + "_val"
         );

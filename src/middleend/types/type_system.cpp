@@ -1,6 +1,9 @@
 //===--- type_system.cpp - Type System Implementation ------------*- C++ -*-===//
 
 #include "type_system.h"
+#include "generic_template.h"
+#include "frontend/parser/ast/stmt.h"  // EnumDecl完整定义
+#include <iostream>
 
 namespace pawc {
 
@@ -157,6 +160,113 @@ bool TypeSystem::isAssignable(Type* from, Type* to) {
 bool TypeSystem::equals(Type* t1, Type* t2) {
     if (!t1 || !t2) return false;
     return t1->equals(t2);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 泛型系统实现
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+void TypeSystem::registerGenericTemplate(GenericTemplate* tmpl) {
+    if (!tmpl) return;
+    
+    // 注册模板
+    generic_templates_[tmpl->name] = tmpl;
+    template_pool_.push_back(std::unique_ptr<GenericTemplate>(tmpl));
+}
+
+GenericTemplate* TypeSystem::lookupGenericTemplate(const std::string& name) {
+    auto it = generic_templates_.find(name);
+    if (it != generic_templates_.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+Type* TypeSystem::instantiateGeneric(const std::string& template_name,
+                                     const std::vector<Type*>& type_args) {
+    // 🔧 M5: 泛型实例化算法
+    
+    // 1. 生成实例化名称: "Option" + [i32] -> "Option_i32"
+    std::string instance_name = template_name;
+    for (const auto* arg : type_args) {
+        if (arg) {
+            instance_name += "_" + arg->toString();
+        }
+    }
+    
+    // 2. 查找缓存（避免重复实例化）
+    auto it = instantiated_types_.find(instance_name);
+    if (it != instantiated_types_.end()) {
+        return it->second;
+    }
+    
+    // 3. 查找泛型模板
+    GenericTemplate* tmpl = lookupGenericTemplate(template_name);
+    if (!tmpl) {
+        return nullptr;  // 模板不存在
+    }
+    
+    // 4. 验证类型参数数量
+    if (type_args.size() != tmpl->type_params.size()) {
+        return nullptr;  // 参数数量不匹配
+    }
+    
+    // 5. 根据模板类型实例化
+    Type* instance_type = nullptr;
+    
+    if (tmpl->kind == GenericTemplate::ENUM) {
+        // 实例化Enum类型
+        EnumDecl* enum_def = tmpl->enum_def;
+        
+        // 替换类型参数：创建映射 T -> i32
+        std::unordered_map<std::string, Type*> type_substitution;
+        for (size_t i = 0; i < tmpl->type_params.size(); i++) {
+            type_substitution[tmpl->type_params[i]] = type_args[i];
+        }
+        
+        // 为每个variant替换类型参数
+        std::vector<std::pair<std::string, Type*>> instantiated_variants;
+        for (const auto& variant : enum_def->getVariants()) {
+            Type* instantiated_data_type = nullptr;
+            
+            if (variant.data_type) {
+                // 替换类型参数
+                instantiated_data_type = substituteType(variant.data_type, type_substitution);
+            }
+            
+            instantiated_variants.push_back({variant.name, instantiated_data_type});
+        }
+        
+        // 创建实例化的EnumType
+        instance_type = new EnumType(instance_name, instantiated_variants);
+    }
+    
+    // 6. 注册实例化类型
+    if (instance_type) {
+        instantiated_types_[instance_name] = instance_type;
+        registerEnum(static_cast<EnumType*>(instance_type));
+    }
+    
+    return instance_type;
+}
+
+// 类型参数替换
+Type* TypeSystem::substituteType(Type* type, 
+                                 const std::unordered_map<std::string, Type*>& substitution) {
+    if (!type) return nullptr;
+    
+    // 如果是泛型类型参数（GenericType），替换它
+    if (type->getKind() == Type::Kind::Generic) {
+        auto* generic = static_cast<GenericType*>(type);
+        auto it = substitution.find(generic->getName());
+        if (it != substitution.end()) {
+            return it->second;  // 替换！
+        }
+        return type;  // 未找到，保持原样
+    }
+    
+    // 其他类型（i32, string等）不需要替换
+    return type;
 }
 
 } // namespace pawc

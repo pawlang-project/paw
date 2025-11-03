@@ -71,8 +71,7 @@ void ExprCodeGen::visit(IntLiteral* node) {
     }
     
     // 创建LLVM常量
-    TypeCodeGen type_gen(context_->getLLVMContext());
-    llvm::Type* llvm_type = type_gen.mapType(type ? type : nullptr);
+    llvm::Type* llvm_type = type ? context_->getLLVMType(type) : nullptr;
     
     if (!llvm_type || !llvm_type->isIntegerTy()) {
         llvm_type = llvm::Type::getInt32Ty(context_->getLLVMContext());
@@ -100,12 +99,7 @@ void ExprCodeGen::visit(FloatLiteral* node) {
     }
     
     // 其他浮点类型：正常处理
-    TypeCodeGen type_gen(context_->getLLVMContext());
-    llvm::Type* llvm_type = nullptr;
-    
-    if (type) {
-        llvm_type = type_gen.mapType(type);
-    }
+    llvm::Type* llvm_type = type ? context_->getLLVMType(type) : nullptr;
     
     // 如果没有类型或类型不是浮点，默认f64
     if (!llvm_type || (!llvm_type->isFloatingPointTy() && !llvm_type->isStructTy())) {

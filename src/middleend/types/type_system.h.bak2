@@ -112,22 +112,6 @@ public:
     bool isAssignable(Type* from, Type* to);
     bool equals(Type* t1, Type* t2);
     
-private:
-    void initializePrimitiveTypes();
-    
-    Arena arena_;
-    std::unordered_map<std::string, Type*> primitive_cache_;
-    std::unordered_map<std::string, Type*> named_types_;
-    std::vector<std::unique_ptr<Type>> type_pool_;
-    
-    // 泛型系统
-    std::unordered_map<std::string, GenericTemplate*> generic_templates_;
-    std::unordered_map<std::string, Type*> instantiated_types_;
-    std::vector<std::unique_ptr<GenericTemplate>> template_pool_;
-    
-    // 泛型实例化辅助函数
-    Type* substituteType(Type* type, const std::unordered_map<std::string, Type*>& substitution);
-};
 
 } // namespace pawc
 

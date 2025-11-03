@@ -54,9 +54,8 @@ void ExprCodeGen::visit(IdentifierExpr* node) {
         }
         
         // === 普通类型：Load变量值 ===
-        TypeCodeGen type_gen(context_->getLLVMContext());
         llvm::Type* load_type = node->getType() ?
-            type_gen.mapType(node->getType()) :
+            context_->getLLVMType(node->getType()) :
             context_->getI32Type();
         
         result_ = context_->getBuilder().CreateLoad(load_type, var, node->getName());
@@ -79,14 +78,51 @@ void ExprCodeGen::visit(IdentifierExpr* node) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ExprCodeGen::visit(StaticAccessExpr* node) {
-    // 静态访问: Type::Variant（枚举构造器）
-    // 注意：当前PawLang中枚举主要用于match表达式
-    // 枚举构造器语法（如Status::Active）暂未在examples中使用
-    // 该功能已在Sema中处理，CodeGen层面暂不需要生成代码
-    // 如需要，应该：
-    //   1. 查找枚举类型和variant索引
-    //   2. 生成对应的常量值（i32）
-    //   3. 或生成带数据的枚举值（struct）
+    // 🔧 M7: 静态访问enum variant（如Option::None）
+    auto& builder = context_->getBuilder();
+    Type* type = node->getType();
+    
+    // 检查是否是enum类型（无参数variant，如Option::None）
+    if (type && type->isEnum()) {
+        EnumType* enum_type = static_cast<EnumType*>(type);
+        
+        // 查找variant索引
+        std::string variant_name = node->getMember();
+        int variant_index = -1;
+        
+        const auto& variants = enum_type->getVariants();
+        for (size_t i = 0; i < variants.size(); i++) {
+            if (variants[i].first == variant_name) {
+                variant_index = static_cast<int>(i);
+                break;
+            }
+        }
+        
+        if (variant_index < 0) {
+            result_ = nullptr;
+            return;
+        }
+        
+        // 获取enum的LLVM类型
+        llvm::Type* enum_llvm_type = context_->getLLVMType(enum_type);
+        
+        // 创建enum struct: {i32 variant_index, data}
+        llvm::Value* enum_value = llvm::UndefValue::get(enum_llvm_type);
+        
+        // 设置variant索引
+        enum_value = builder.CreateInsertValue(
+            enum_value,
+            builder.getInt32(variant_index),
+            {0}
+        );
+        
+        // None variant没有数据，data字段保持undef
+        
+        result_ = enum_value;
+        return;
+    }
+    
+    // 其他静态访问（函数类型等）
     result_ = nullptr;
 }
 
@@ -101,8 +137,6 @@ void ExprCodeGen::visit(MemberExpr* node) {
     }
     
     auto& builder = context_->getBuilder();
-    TypeCodeGen type_gen(context_->getLLVMContext());
-    
     Type* obj_type = node->getObject()->getType();
     if (!obj_type) {
         result_ = nullptr;
@@ -132,7 +166,7 @@ void ExprCodeGen::visit(MemberExpr* node) {
     } else if (obj_type->isStruct()) {
         // 结构体成员访问: struct.field_name
         auto* struct_type = static_cast<StructType*>(obj_type);
-        llvm::Type* llvm_struct_type = type_gen.mapType(struct_type);
+        llvm::Type* llvm_struct_type = context_->getLLVMType(struct_type);
         
         // 查找字段索引
         const auto& fields = struct_type->getFields();
@@ -166,7 +200,7 @@ void ExprCodeGen::visit(MemberExpr* node) {
         );
         
         // Load字段值
-        llvm::Type* field_type = type_gen.mapType(fields[field_idx].second);
+        llvm::Type* field_type = context_->getLLVMType(fields[field_idx].second);
         result_ = builder.CreateLoad(field_type, field_ptr);
         
     } else {
@@ -221,8 +255,7 @@ void ExprCodeGen::visit(IndexExpr* node) {
     // Load元素值
     Type* elem_type = node->getType();
     if (elem_type) {
-        TypeCodeGen type_gen(context_->getLLVMContext());
-        llvm::Type* llvm_elem_type = type_gen.mapType(elem_type);
+        llvm::Type* llvm_elem_type = context_->getLLVMType(elem_type);
         result_ = builder.CreateLoad(llvm_elem_type, elem_ptr);
     } else {
         result_ = nullptr;
@@ -315,7 +348,6 @@ void ExprCodeGen::visit(BlockExpr* node) {
 void ExprCodeGen::visit(ArrayLiteral* node) {
     // 数组字面量完整代码生成 [1, 2, 3]
     auto& builder = context_->getBuilder();
-    TypeCodeGen type_gen(context_->getLLVMContext());
     
     Type* array_type = node->getType();
     if (!array_type) {
@@ -323,7 +355,7 @@ void ExprCodeGen::visit(ArrayLiteral* node) {
         return;
     }
     
-    llvm::Type* llvm_array_type = type_gen.mapType(array_type);
+    llvm::Type* llvm_array_type = context_->getLLVMType(array_type);
     if (!llvm_array_type) {
         result_ = nullptr;
         return;
@@ -363,7 +395,6 @@ void ExprCodeGen::visit(ArrayLiteral* node) {
 void ExprCodeGen::visit(TupleExpr* node) {
     // 元组完整代码生成 (1, "hello", true)
     auto& builder = context_->getBuilder();
-    TypeCodeGen type_gen(context_->getLLVMContext());
     
     Type* tuple_type = node->getType();
     if (!tuple_type) {
@@ -371,7 +402,7 @@ void ExprCodeGen::visit(TupleExpr* node) {
         return;
     }
     
-    llvm::Type* llvm_tuple_type = type_gen.mapType(tuple_type);
+    llvm::Type* llvm_tuple_type = context_->getLLVMType(tuple_type);
     if (!llvm_tuple_type || !llvm_tuple_type->isStructTy()) {
         result_ = nullptr;
         return;
@@ -463,7 +494,6 @@ void ExprCodeGen::visit(RangeExpr* node) {
 void ExprCodeGen::visit(StructLiteral* node) {
     // 结构体字面量完整代码生成 Point { x: 10, y: 20 }
     auto& builder = context_->getBuilder();
-    TypeCodeGen type_gen(context_->getLLVMContext());
     
     Type* struct_type = node->getType();
     if (!struct_type || struct_type->getKind() != Type::Kind::Struct) {
@@ -471,7 +501,8 @@ void ExprCodeGen::visit(StructLiteral* node) {
         return;
     }
     
-    llvm::Type* llvm_struct_type = type_gen.mapType(struct_type);
+    // 使用CodeGenContext的类型映射确保一致性
+    llvm::Type* llvm_struct_type = context_->getLLVMType(struct_type);
     if (!llvm_struct_type || !llvm_struct_type->isStructTy()) {
         result_ = nullptr;
         return;
@@ -535,7 +566,6 @@ void ExprCodeGen::visit(CastExpr* node) {
     }
     
     auto& builder = context_->getBuilder();
-    TypeCodeGen type_gen(context_->getLLVMContext());
     
     Type* source_type = node->getExpr()->getType();
     Type* target_type = node->getTargetType();
@@ -545,7 +575,7 @@ void ExprCodeGen::visit(CastExpr* node) {
         return;
     }
     
-    llvm::Type* llvm_target_type = type_gen.mapType(target_type);
+    llvm::Type* llvm_target_type = context_->getLLVMType(target_type);
     
     // 数值类型转换
     if (source_type->isInteger() && target_type->isInteger()) {

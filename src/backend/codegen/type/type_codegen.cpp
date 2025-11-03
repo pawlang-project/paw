@@ -4,6 +4,7 @@
 #include "middleend/types/primitive_types.h"
 #include "middleend/types/composite_types.h"
 #include "middleend/types/generic_types.h"
+#include <iostream>
 
 namespace pawc {
 
@@ -121,11 +122,33 @@ llvm::StructType* TypeCodeGen::mapTupleType(TupleType* type) {
 }
 
 llvm::StructType* TypeCodeGen::mapStructType(StructType* type) {
+    // 🔧 关键修复：通过名称查找已存在类型，确保全局唯一
+    std::string struct_name = type->getName();
+    
+    // 1. 首先通过名称查找已存在的LLVM类型
+    llvm::StructType* existing_type = llvm::StructType::getTypeByName(context_, struct_name);
+    if (existing_type) {
+        // 类型已存在，直接返回
+        cache_[type] = existing_type;
+        return existing_type;
+    }
+    
+    // 2. 不存在，创建opaque类型
+    llvm::StructType* new_type = llvm::StructType::create(context_, struct_name);
+    
+    // 立即缓存
+    cache_[type] = new_type;
+    
+    // 3. 生成字段类型
     std::vector<llvm::Type*> field_types;
     for (const auto& [name, field_type] : type->getFields()) {
         field_types.push_back(mapType(field_type));
     }
-    return llvm::StructType::create(context_, field_types, type->getName());
+    
+    // 4. 设置body
+    new_type->setBody(field_types);
+    
+    return new_type;
 }
 
 llvm::StructType* TypeCodeGen::mapEnumType(EnumType* type) {

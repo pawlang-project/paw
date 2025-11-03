@@ -17,6 +17,72 @@ namespace pawc {
 void ExprCodeGen::visit(CallExpr* node) {
     auto& builder = context_->getBuilder();
     
+    // 🔧 M7: 检查是否是泛型enum构造
+    if (auto* static_access = dynamic_cast<StaticAccessExpr*>(node->getCallee())) {
+        // 这是静态访问调用：Option::Some(42)
+        Type* callee_type = static_access->getType();
+        
+        if (callee_type && callee_type->isFunction()) {
+            // 这是enum构造器！
+            FunctionType* func_type = static_cast<FunctionType*>(callee_type);
+            Type* return_type = func_type->getReturnType();
+            
+            if (return_type && return_type->isEnum()) {
+                // 构造enum值
+                EnumType* enum_type = static_cast<EnumType*>(return_type);
+                
+                // 查找variant索引
+                std::string variant_name = static_access->getMember();
+                int variant_index = -1;
+                Type* variant_data_type = nullptr;
+                
+                const auto& variants = enum_type->getVariants();
+                for (size_t i = 0; i < variants.size(); i++) {
+                    if (variants[i].first == variant_name) {
+                        variant_index = static_cast<int>(i);
+                        variant_data_type = variants[i].second;
+                        break;
+                    }
+                }
+                
+                if (variant_index < 0) {
+                    result_ = nullptr;
+                    return;
+                }
+                
+                // 获取enum的LLVM类型
+                llvm::Type* enum_llvm_type = context_->getLLVMType(enum_type);
+                
+                // 创建enum struct: {i32 variant_index, data}
+                llvm::Value* enum_value = llvm::UndefValue::get(enum_llvm_type);
+                
+                // 设置variant索引
+                enum_value = builder.CreateInsertValue(
+                    enum_value,
+                    builder.getInt32(variant_index),
+                    {0}
+                );
+                
+                // 如果有关联数据，设置数据
+                if (variant_data_type && !node->getArgs().empty()) {
+                    node->getArgs()[0]->accept(this);
+                    llvm::Value* arg_value = result_;
+                    
+                    if (arg_value) {
+                        enum_value = builder.CreateInsertValue(
+                            enum_value,
+                            arg_value,
+                            {1}
+                        );
+                    }
+                }
+                
+                result_ = enum_value;
+                return;
+            }
+        }
+    }
+    
     // === Step 1: 检查是否是闭包调用 ===
     Type* callee_type = node->getCallee()->getType();
     
@@ -46,14 +112,12 @@ void ExprCodeGen::visit(CallExpr* node) {
         }
         
         // === 闭包调用逻辑 ===
-        TypeCodeGen type_gen(builder.getContext());
-        
         // 构建用户层FunctionType（不包含上下文）
         std::vector<llvm::Type*> param_types_llvm;
         for (Type* param_type : func_type_ast->getParamTypes()) {
-            param_types_llvm.push_back(type_gen.mapType(param_type));
+            param_types_llvm.push_back(context_->getLLVMType(param_type));
         }
-        llvm::Type* return_type_llvm = type_gen.mapType(func_type_ast->getReturnType());
+        llvm::Type* return_type_llvm = context_->getLLVMType(func_type_ast->getReturnType());
         
         llvm::Value* callable = nullptr;
         llvm::FunctionType* fn_type = nullptr;
@@ -183,8 +247,7 @@ void ExprCodeGen::visit(CallExpr* node) {
         // 类型从CallExpr的类型获取（Sema已设置）
         Type* result_type_ast = node->getType();
         
-        TypeCodeGen type_gen(context_->getLLVMContext());
-        llvm::Type* result_llvm_type = type_gen.mapType(result_type_ast);
+        llvm::Type* result_llvm_type = context_->getLLVMType(result_type_ast);
         
         // 创建Result值: { i1 is_ok, T value, ptr error_message }
         llvm::Value* result_value = llvm::UndefValue::get(result_llvm_type);
@@ -214,8 +277,7 @@ void ExprCodeGen::visit(CallExpr* node) {
         // T从CallExpr的类型推导（Sema已设置）
         Type* result_type_ast = node->getType();
         
-        TypeCodeGen type_gen(context_->getLLVMContext());
-        llvm::Type* result_llvm_type = type_gen.mapType(result_type_ast);
+        llvm::Type* result_llvm_type = context_->getLLVMType(result_type_ast);
         
         // 创建Result值: { i1 is_ok, T value, ptr error_message }
         llvm::Value* result_value = llvm::UndefValue::get(result_llvm_type);
@@ -463,13 +525,49 @@ void ExprCodeGen::visit(CallExpr* node) {
         return;
     }
     
+    // 🔧 Fix: 确保参数类型与函数签名匹配
+    // 对于struct类型，如果类型不匹配，使用指针bitcast转换
+    std::vector<llvm::Value*> final_arg_values;
+    auto func_arg_it = func->arg_begin();
+    
+    for (size_t i = 0; i < arg_values.size() && func_arg_it != func->arg_end(); ++i, ++func_arg_it) {
+        llvm::Value* arg_val = arg_values[i];
+        llvm::Type* expected_type = func_arg_it->getType();
+        llvm::Type* actual_type = arg_val->getType();
+        
+        // 如果类型不匹配，需要转换
+        if (actual_type != expected_type) {
+            // 对于struct类型：使用指针bitcast（更可靠的方法）
+            if (actual_type->isStructTy() && expected_type->isStructTy()) {
+                // 检查是否有相同的元素数量和类型
+                auto* actual_struct = llvm::cast<llvm::StructType>(actual_type);
+                auto* expected_struct = llvm::cast<llvm::StructType>(expected_type);
+                
+                // 如果元素数量和类型匹配，使用指针转换
+                if (actual_struct->getNumElements() == expected_struct->getNumElements()) {
+                    // 创建临时alloca存储源值
+                    llvm::AllocaInst* temp_alloca = builder.CreateAlloca(actual_type, nullptr, "temp.struct");
+                    builder.CreateStore(arg_val, temp_alloca);
+                    
+                    // Bitcast alloca指针到目标类型的指针
+                    llvm::Type* expected_ptr_type = expected_type->getPointerTo();
+                    llvm::Value* cast_ptr = builder.CreateBitCast(temp_alloca, expected_ptr_type, "cast.ptr");
+                    
+                    // Load为期望的类型
+                    arg_val = builder.CreateLoad(expected_type, cast_ptr, "converted.struct");
+                }
+            }
+        }
+        final_arg_values.push_back(arg_val);
+    }
+    
     // 创建调用
     // 🔧 Bug Fix: void函数不应该有命名返回值
     if (func->getReturnType()->isVoidTy()) {
-        builder.CreateCall(func, arg_values);
+        builder.CreateCall(func, final_arg_values);
         result_ = nullptr;  // void函数没有返回值
     } else {
-        result_ = builder.CreateCall(func, arg_values, "calltmp");
+        result_ = builder.CreateCall(func, final_arg_values, "calltmp");
     }
 }
 

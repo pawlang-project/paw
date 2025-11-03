@@ -25,12 +25,12 @@ void ExprCodeGen::visit(NullLiteral* node) {
     // 从AST节点获取类型（Sema应该已设置）
     Type* null_type = node->getType();
     
-    TypeCodeGen type_gen(context_->getLLVMContext());
+    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
     llvm::Type* optional_llvm_type = nullptr;
     
     if (null_type && null_type->getKind() == Type::Kind::Optional) {
         // 使用Sema推导的类型
-        optional_llvm_type = type_gen.mapType(null_type);
+        optional_llvm_type = context_->getLLVMType(null_type);
     } else {
         // 兜底：创建Optional<void>
         llvm::StructType* optional_type = llvm::StructType::get(

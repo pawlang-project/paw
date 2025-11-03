@@ -4,6 +4,7 @@
 #include "type/type_codegen.h"
 #include "middleend/types/type_system.h"
 
+#include <iostream>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Support/FileSystem.h>
@@ -61,6 +62,9 @@ llvm::Type* CodeGenContext::getLLVMType(Type* paw_type) {
     } else if (paw_type->isReference()) {
         auto* ref_type = static_cast<ReferenceType*>(paw_type);
         llvm_type = getLLVMType(ref_type->getPointeeType())->getPointerTo();
+    } else if (paw_type->isEnum()) {
+        // 🔧 M7: Enum类型映射
+        llvm_type = mapEnumType(static_cast<EnumType*>(paw_type));
     } else {
         // 默认返回opaque pointer
         llvm_type = llvm::PointerType::getUnqual(context_);
@@ -120,11 +124,34 @@ llvm::Type* CodeGenContext::mapTupleType(TupleType* type) {
 }
 
 llvm::Type* CodeGenContext::mapStructType(StructType* type) {
+    // 🔧 关键修复：确保struct类型在整个编译过程中只创建一次
+    std::string struct_name = type->getName();
+    
+    // 1. 首先通过名称查找已存在的LLVM类型
+    llvm::StructType* existing_type = llvm::StructType::getTypeByName(context_, struct_name);
+    if (existing_type) {
+        // 类型已存在，直接返回（即使PawLang Type对象不同）
+        type_cache_[type] = existing_type;
+        return existing_type;
+    }
+    
+    // 2. 不存在，需要创建新类型
+    // 先创建opaque类型（只有名称，没有body）
+    llvm::StructType* new_type = llvm::StructType::create(context_, struct_name);
+    
+    // 立即缓存，防止递归定义时重复创建
+    type_cache_[type] = new_type;
+    
+    // 3. 生成字段类型
     std::vector<llvm::Type*> field_types;
     for (const auto& [name, field_type] : type->getFields()) {
         field_types.push_back(getLLVMType(field_type));
     }
-    return llvm::StructType::create(context_, field_types, type->getName());
+    
+    // 4. 设置body（填充字段）
+    new_type->setBody(field_types);
+    
+    return new_type;
 }
 
 llvm::Type* CodeGenContext::mapOptionalType(OptionalType* type) {
@@ -150,6 +177,31 @@ llvm::Type* CodeGenContext::mapFunctionType(FunctionType* type) {
         param_types.push_back(getLLVMType(param_type));
     }
     return llvm::FunctionType::get(return_type, param_types, false);
+}
+
+llvm::Type* CodeGenContext::mapEnumType(EnumType* type) {
+    // 🔧 M7: Enum类型映射为: { i32 variant_index, data }
+    // 为简化，我们使用i64作为data字段（可以存放指针或小数据）
+    
+    // 查找最大的variant数据类型
+    llvm::Type* data_type = builder_.getInt64Ty();  // 默认i64
+    
+    for (const auto& variant : type->getVariants()) {
+        if (variant.second) {
+            llvm::Type* variant_llvm_type = getLLVMType(variant.second);
+            // 如果variant类型更大，使用它
+            auto& data_layout = module_->getDataLayout();
+            if (data_layout.getTypeAllocSize(variant_llvm_type) >
+                data_layout.getTypeAllocSize(data_type)) {
+                data_type = variant_llvm_type;
+            }
+        }
+    }
+    
+    return llvm::StructType::get(context_, {
+        builder_.getInt32Ty(),  // variant_index
+        data_type               // data
+    });
 }
 
 // 基础类型快捷方法
@@ -368,6 +420,21 @@ std::string CodeGenContext::getTypeSignature(const std::vector<Type*>& types) {
             else if (kind == Type::Kind::Bool) sig += "bool";
             else if (kind == Type::Kind::Char) sig += "char";
             else if (kind == Type::Kind::String) sig += "string";
+            else if (kind == Type::Kind::Struct) {
+                // Struct类型：使用结构体名称
+                auto* struct_type = static_cast<StructType*>(types[i]);
+                sig += struct_type->getName();
+            }
+            else if (kind == Type::Kind::Optional) {
+                auto* optional_type = static_cast<OptionalType*>(types[i]);
+                sig += "optional_";
+                sig += getTypeSignature({optional_type->getInnerType()});
+            }
+            else if (kind == Type::Kind::Result) {
+                auto* result_type = static_cast<ResultType*>(types[i]);
+                sig += "result_";
+                sig += getTypeSignature({result_type->getOkType()});
+            }
             else sig += "unknown";
         }
     }
@@ -385,18 +452,31 @@ void CodeGenContext::registerAllBuiltinFunctions() {
     auto* void_type = builder_.getVoidTy();
     auto* string_type = llvm::PointerType::getUnqual(context_);
     
-    // 先只实现i32类型的print/println来测试，避免崩溃
-    Type* i32_type = type_system_->getI32Type();
-    if (!i32_type) {
-        return; // 无法获取i32类型
-    }
-    
-    std::vector<Type*> all_types = {i32_type};
+    // 获取所有18种基本类型
+    std::vector<Type*> all_types;
+    if (auto* t = type_system_->getI8Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getI16Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getI32Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getI64Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getI128Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getU8Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getU16Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getU32Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getU64Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getU128Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getF8Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getF16Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getF32Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getF64Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getF128Type()) all_types.push_back(t);
+    if (auto* t = type_system_->getBoolType()) all_types.push_back(t);
+    if (auto* t = type_system_->getCharType()) all_types.push_back(t);
+    if (auto* t = type_system_->getStringType()) all_types.push_back(t);
     
     // 为每个类型生成print/println/to_string
     for (Type* param_type : all_types) {
         std::string type_suffix = getTypeSignature({param_type});
-        llvm::Type* llvm_param_type = type_gen.mapType(param_type);
+        llvm::Type* llvm_param_type = getLLVMType(param_type);  // 使用统一的类型映射
         
         // print(T) -> void
         {

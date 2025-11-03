@@ -170,6 +170,7 @@ private:
     llvm::Type* mapOptionalType(OptionalType* type);
     llvm::Type* mapResultType(ResultType* type);
     llvm::Type* mapFunctionType(FunctionType* type);
+    llvm::Type* mapEnumType(EnumType* type);
 };
 
 } // namespace pawc

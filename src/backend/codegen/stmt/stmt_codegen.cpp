@@ -67,10 +67,9 @@ void StmtCodeGen::visit(VarDecl* node) {
     }
     
     // === 普通类型处理 ===
-    // 获取变量类型
-    TypeCodeGen type_gen(context_->getLLVMContext());
+    // 获取变量类型 - 使用CodeGenContext的统一类型映射
     llvm::Type* var_type = node->getType() ?
-        type_gen.mapType(node->getType()) :
+        context_->getLLVMType(node->getType()) :
         llvm::Type::getInt32Ty(context_->getLLVMContext());
     
     // 创建alloca
@@ -178,15 +177,13 @@ void StmtCodeGen::visit(StructDestructuringDecl* node) {
 }
 
 void StmtCodeGen::visit(FunctionDecl* node) {
-    // 创建函数类型
-    TypeCodeGen type_gen(context_->getLLVMContext());
-    
+    // 创建函数类型 - 使用CodeGenContext的类型映射确保一致性
     std::vector<llvm::Type*> param_types;
     for (const auto& param : node->getParams()) {
-        param_types.push_back(type_gen.mapType(param.type));
+        param_types.push_back(context_->getLLVMType(param.type));
     }
     
-    llvm::Type* ret_type = type_gen.mapType(node->getReturnType());
+    llvm::Type* ret_type = context_->getLLVMType(node->getReturnType());
     auto* func_type = llvm::FunctionType::get(ret_type, param_types, false);
     
     // 创建函数
@@ -220,12 +217,11 @@ void StmtCodeGen::visit(FunctionDecl* node) {
         const auto& param = node->getParams()[i];
         arg.setName(param.name);
         
-        // 创建alloca并存储参数值
-        TypeCodeGen type_gen_param(context_->getLLVMContext());
+        // 创建alloca并存储参数值 - 使用CodeGenContext的类型映射确保一致性
         llvm::AllocaInst* alloca = context_->createEntryBlockAlloca(
             func,
             param.name,
-            type_gen_param.mapType(param.type)
+            context_->getLLVMType(param.type)
         );
         context_->getBuilder().CreateStore(&arg, alloca);
         context_->defineVariable(param.name, alloca);

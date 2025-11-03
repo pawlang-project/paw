@@ -124,11 +124,12 @@ private:
     std::unordered_map<std::string, GenericTemplate*> generic_templates_;
     std::unordered_map<std::string, Type*> instantiated_types_;
     std::vector<std::unique_ptr<GenericTemplate>> template_pool_;
-    
-    // 泛型实例化辅助函数
-    Type* substituteType(Type* type, const std::unordered_map<std::string, Type*>& substitution);
 };
 
 } // namespace pawc
 
 #endif // PAW_TYPE_SYSTEM_H
+
+private:
+    // 泛型实例化辅助函数
+    Type* substituteType(Type* type, const std::unordered_map<std::string, Type*>& substitution);

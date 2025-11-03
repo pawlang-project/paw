@@ -321,18 +321,32 @@ StmtPtr Parser::parseEnumDecl(const std::string& name, std::vector<GenericParam>
     consume(TokenType::RBRACE, "Expected '}' after enum variants");
     match(TokenType::SEMICOLON);  // 分号是可选的
     
-    // ✅ Parser阶段立即注册类型
-    std::vector<std::pair<std::string, Type*>> variant_types;
-    for (const auto& v : variants) {
-        variant_types.push_back({v.name, v.data_type});
+    // 创建EnumDecl AST节点
+    auto enum_decl = std::make_unique<EnumDecl>(name, std::vector<GenericParam>(generic_params), std::move(variants));
+    
+    // 🔧 泛型系统：区分泛型enum和普通enum
+    if (!generic_params.empty()) {
+        // 这是泛型enum，注册为泛型模板（不立即实例化）
+        std::vector<std::string> type_param_names;
+        for (const auto& gp : generic_params) {
+            type_param_names.push_back(gp.name);
+        }
+        GenericTemplate* tmpl = new GenericTemplate(name, type_param_names, enum_decl.get());
+        type_system_->registerGenericTemplate(tmpl);
+    } else {
+        // 普通enum，立即注册类型
+        std::vector<std::pair<std::string, Type*>> variant_types;
+        for (const auto& v : enum_decl->getVariants()) {
+            variant_types.push_back({v.name, v.data_type});
+        }
+        EnumType* enum_type = new EnumType(name, variant_types);
+        type_system_->registerEnum(enum_type);
     }
-    EnumType* enum_type = new EnumType(name, variant_types);
-    type_system_->registerEnum(enum_type);
     
     // 恢复泛型参数上下文
     current_generic_params_ = saved_generic_params;
     
-    return std::make_unique<EnumDecl>(name, std::move(generic_params), std::move(variants));
+    return enum_decl;
 }
 
 StmtPtr Parser::parseInterfaceDecl(const std::string& name, std::vector<GenericParam> generic_params) {
@@ -1069,8 +1083,13 @@ ExprPtr Parser::parsePrimary() {
             do {
                 bool is_mutable = match(TokenType::TILDE);
                 Token param_name = consume(TokenType::IDENTIFIER, "Expected parameter name");
-                consume(TokenType::COLON, "Expected ':' after parameter name");
-                Type* param_type = parseType();
+                
+                // 🔧 类型推导支持：参数类型变为可选
+                Type* param_type = nullptr;
+                if (match(TokenType::COLON)) {
+                    param_type = parseType();
+                }
+                // 如果没有类型，param_type为nullptr，等待TypeChecker推导
                 
                 params.push_back(ClosureExpr::Param(param_name.lexeme, param_type, is_mutable));
             } while (match(TokenType::COMMA));
@@ -1241,6 +1260,43 @@ Type* Parser::parseType() {
         }
     }
     
+    // 🔧 M6: 泛型类型使用解析: Option<i32>
+    if (check(TokenType::LESS)) {
+        // 可能是泛型类型！先尝试查找泛型模板
+        auto* tmpl = type_system_->lookupGenericTemplate(type_token.lexeme);
+        
+        if (tmpl) {
+            // 是泛型模板！解析类型参数
+            match(TokenType::LESS);  // consume '<'
+            std::vector<Type*> type_args;
+            
+            do {
+                type_args.push_back(parseType());
+            } while (match(TokenType::COMMA));
+            
+            consume(TokenType::GREATER, "Expected '>' after generic type arguments");
+            
+            // 实例化泛型类型
+            Type* instance_type = type_system_->instantiateGeneric(type_token.lexeme, type_args);
+            
+            if (!instance_type) {
+                error("Failed to instantiate generic type: " + type_token.lexeme);
+                return type_system_->getVoidType();
+            }
+            
+            // 处理T? (Optional类型) 和 T! (Result类型)
+            if (match(TokenType::QUESTION)) {
+                return type_system_->getOptionalType(instance_type);
+            }
+            if (match(TokenType::BANG)) {
+                return type_system_->getResultType(instance_type);
+            }
+            
+            return instance_type;
+        }
+    }
+    
+    // 普通类型查找
     Type* base_type = type_system_->lookupType(type_token.lexeme);
     if (!base_type) {
         error("Unknown type: " + type_token.lexeme);
