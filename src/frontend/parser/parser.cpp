@@ -381,6 +381,11 @@ StmtPtr Parser::parseEnumDecl(const std::string& name, std::vector<GenericParam>
 
 StmtPtr Parser::parseInterfaceDecl(const std::string& name, std::vector<GenericParam> generic_params) {
     // interface { fn method1(); fn method2(); ... }
+    
+    // 保存当前泛型参数上下文
+    auto saved_generic_params = current_generic_params_;
+    current_generic_params_ = generic_params;
+    
     consume(TokenType::LBRACE, "Expected '{' after 'interface'");
     
     std::vector<InterfaceMethod> methods;
@@ -439,20 +444,35 @@ StmtPtr Parser::parseInterfaceDecl(const std::string& name, std::vector<GenericP
     consume(TokenType::RBRACE, "Expected '}' after interface methods");
     match(TokenType::SEMICOLON);  // 分号是可选的
     
-    // ✅ Parser阶段立即注册接口类型（完整实现）
-    std::vector<InterfaceType::MethodSignature> method_signatures;
-    for (const auto& method : methods) {
-        // 将InterfaceMethod转换为InterfaceType::MethodSignature
-        std::vector<Type*> param_types;
-        for (const auto& param : method.params) {
-            param_types.push_back(param.type);
-        }
-        method_signatures.emplace_back(method.name, std::move(param_types), method.return_type);
-    }
-    InterfaceType* interface_type = new InterfaceType(name, std::move(method_signatures));
-    type_system_->registerInterface(interface_type);
+    auto interface_decl = std::make_unique<InterfaceDecl>(name, std::move(generic_params), std::move(methods));
     
-    return std::make_unique<InterfaceDecl>(name, std::move(generic_params), std::move(methods));
+    // 🔧 G2: 泛型Interface支持
+    if (!generic_params.empty()) {
+        // 这是泛型interface，注册为泛型模板
+        std::vector<std::string> type_param_names;
+        for (const auto& gp : generic_params) {
+            type_param_names.push_back(gp.name);
+        }
+        GenericTemplate* tmpl = new GenericTemplate(name, type_param_names, interface_decl.get());
+        type_system_->registerGenericTemplate(tmpl);
+    } else {
+        // 普通interface，立即注册类型
+        std::vector<InterfaceType::MethodSignature> method_signatures;
+        for (const auto& method : interface_decl->getMethods()) {
+            std::vector<Type*> param_types;
+            for (const auto& param : method.params) {
+                param_types.push_back(param.type);
+            }
+            method_signatures.emplace_back(method.name, std::move(param_types), method.return_type);
+        }
+        InterfaceType* interface_type = new InterfaceType(name, std::move(method_signatures));
+        type_system_->registerInterface(interface_type);
+    }
+    
+    // 恢复泛型参数上下文
+    current_generic_params_ = saved_generic_params;
+    
+    return interface_decl;
 }
 
 StmtPtr Parser::parseSupportDecl() {
