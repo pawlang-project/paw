@@ -239,12 +239,39 @@ Type* TypeSystem::instantiateGeneric(const std::string& template_name,
         
         // 创建实例化的EnumType
         instance_type = new EnumType(instance_name, instantiated_variants);
+    } 
+    else if (tmpl->kind == GenericTemplate::STRUCT) {
+        // 🔧 G1: 实例化Struct类型
+        StructDecl* struct_def = tmpl->struct_def;
+        
+        // 替换类型参数：创建映射 T -> i32
+        std::unordered_map<std::string, Type*> type_substitution;
+        for (size_t i = 0; i < tmpl->type_params.size(); i++) {
+            type_substitution[tmpl->type_params[i]] = type_args[i];
+        }
+        
+        // 为每个field替换类型参数
+        std::vector<std::pair<std::string, Type*>> instantiated_fields;
+        for (const auto& field : struct_def->getFields()) {
+            // field是std::pair<string, Type*>
+            Type* instantiated_field_type = substituteType(field.second, type_substitution);
+            instantiated_fields.push_back({field.first, instantiated_field_type});
+        }
+        
+        // 创建实例化的StructType
+        instance_type = new StructType(instance_name, instantiated_fields);
     }
     
     // 6. 注册实例化类型
     if (instance_type) {
         instantiated_types_[instance_name] = instance_type;
-        registerEnum(static_cast<EnumType*>(instance_type));
+        
+        // 根据类型注册
+        if (tmpl->kind == GenericTemplate::ENUM) {
+            registerEnum(static_cast<EnumType*>(instance_type));
+        } else if (tmpl->kind == GenericTemplate::STRUCT) {
+            registerStruct(static_cast<StructType*>(instance_type));
+        }
     }
     
     return instance_type;

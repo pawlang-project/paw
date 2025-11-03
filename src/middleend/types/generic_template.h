@@ -27,10 +27,11 @@ struct GenericTemplate {
     enum Kind {
         ENUM,
         STRUCT,
-        // 未来可以添加：FUNCTION, INTERFACE等
+        FUNCTION,     // 🔧 G3: 泛型函数支持
+        INTERFACE     // 🔧 G2: 泛型接口支持
     };
     
-    std::string name;                      // "Option", "Result"
+    std::string name;                      // "Option", "Result", "identity"
     std::vector<std::string> type_params;  // ["T"], ["T", "E"]
     Kind kind;
     
@@ -38,6 +39,8 @@ struct GenericTemplate {
     union {
         EnumDecl* enum_def;
         StructDecl* struct_def;
+        class FunctionDecl* func_def;      // G3
+        class InterfaceDecl* interface_def; // G2
     };
     
     // 构造函数
@@ -48,6 +51,14 @@ struct GenericTemplate {
     GenericTemplate(std::string n, std::vector<std::string> params, StructDecl* def)
         : name(std::move(n)), type_params(std::move(params)), 
           kind(STRUCT), struct_def(def) {}
+    
+    GenericTemplate(std::string n, std::vector<std::string> params, class FunctionDecl* def)
+        : name(std::move(n)), type_params(std::move(params)), 
+          kind(FUNCTION), func_def(def) {}
+    
+    GenericTemplate(std::string n, std::vector<std::string> params, class InterfaceDecl* def)
+        : name(std::move(n)), type_params(std::move(params)), 
+          kind(INTERFACE), interface_def(def) {}
     
     // 获取类型参数数量
     size_t getParamCount() const { return type_params.size(); }

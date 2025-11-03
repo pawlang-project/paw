@@ -162,10 +162,12 @@ StmtPtr Parser::parseVarDecl() {
     // 普通变量声明
     Token name = consume(TokenType::IDENTIFIER, "Expected variable name");
     
+    // 🔧 G4: 类型推导支持 - 类型变为可选
     Type* type = nullptr;
     if (match(TokenType::COLON)) {
         type = parseType();
     }
+    // 如果没有类型，从initializer推导
     
     ExprPtr init = nullptr;
     if (match(TokenType::EQ)) {
@@ -216,10 +218,24 @@ StmtPtr Parser::parseFunctionDecl(bool is_public) {
     // 恢复泛型参数上下文
     current_generic_params_ = saved_generic_params;
     
-    return std::make_unique<FunctionDecl>(name.lexeme, std::move(generic_params),
-                                          std::move(params), return_type, 
-                                          std::move(body), std::move(where_clauses),
-                                          is_public);
+    auto func_decl = std::make_unique<FunctionDecl>(name.lexeme, std::move(generic_params),
+                                                     std::move(params), return_type, 
+                                                     std::move(body), std::move(where_clauses),
+                                                     is_public);
+    
+    // 🔧 G3: 泛型函数注册（基础支持）
+    if (!generic_params.empty()) {
+        // 这是泛型函数，注册为泛型模板
+        // 注意：实例化由Monomorphization Pass处理（future work）
+        std::vector<std::string> type_param_names;
+        for (const auto& gp : generic_params) {
+            type_param_names.push_back(gp.name);
+        }
+        GenericTemplate* tmpl = new GenericTemplate(name.lexeme, type_param_names, func_decl.get());
+        type_system_->registerGenericTemplate(tmpl);
+    }
+    
+    return func_decl;
 }
 
 StmtPtr Parser::parseTypeDecl(bool is_public) {
@@ -277,14 +293,28 @@ StmtPtr Parser::parseStructDecl(const std::string& name, std::vector<GenericPara
     consume(TokenType::RBRACE, "Expected '}' after struct fields");
     match(TokenType::SEMICOLON);  // 分号是可选的
     
-    // ✅ Parser阶段立即注册类型（使后续代码能使用此类型）
-    StructType* struct_type = new StructType(name, fields);
-    type_system_->registerStruct(struct_type);
+    // 创建StructDecl AST节点
+    auto struct_decl = std::make_unique<StructDecl>(name, std::move(generic_params), fields);
+    
+    // 🔧 G1: 泛型系统 - 区分泛型struct和普通struct
+    if (!generic_params.empty()) {
+        // 这是泛型struct，注册为泛型模板（不立即实例化）
+        std::vector<std::string> type_param_names;
+        for (const auto& gp : generic_params) {
+            type_param_names.push_back(gp.name);
+        }
+        GenericTemplate* tmpl = new GenericTemplate(name, type_param_names, struct_decl.get());
+        type_system_->registerGenericTemplate(tmpl);
+    } else {
+        // 普通struct，立即注册类型
+        StructType* struct_type = new StructType(name, fields);
+        type_system_->registerStruct(struct_type);
+    }
     
     // 恢复泛型参数上下文
     current_generic_params_ = saved_generic_params;
     
-    return std::make_unique<StructDecl>(name, std::move(generic_params), std::move(fields));
+    return struct_decl;
 }
 
 StmtPtr Parser::parseEnumDecl(const std::string& name, std::vector<GenericParam> generic_params) {
