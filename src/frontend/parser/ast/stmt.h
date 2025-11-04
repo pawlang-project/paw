@@ -304,10 +304,22 @@ private:
 /// EnumVariant - 枚举变体
 struct EnumVariant {
     std::string name;
-    Type* data_type;  // nullable，如果变体无数据
+    std::vector<Type*> data_types;  // 支持多参数：Move(i32, i32)
     
+    // 单参数构造器（向后兼容）
     EnumVariant(std::string n, Type* t = nullptr)
-        : name(std::move(n)), data_type(t) {}
+        : name(std::move(n)) {
+        if (t) data_types.push_back(t);
+    }
+    
+    // 多参数构造器
+    EnumVariant(std::string n, std::vector<Type*> types)
+        : name(std::move(n)), data_types(std::move(types)) {}
+    
+    // 辅助方法
+    bool hasData() const { return !data_types.empty(); }
+    size_t getDataCount() const { return data_types.size(); }
+    Type* getSingleDataType() const { return data_types.empty() ? nullptr : data_types[0]; }
 };
 
 /// EnumDecl - 枚举定义 type Status = enum { Active, Inactive }
@@ -332,14 +344,17 @@ private:
     std::vector<EnumVariant> variants_;
 };
 
-/// InterfaceMethod - 接口方法声明
+/// InterfaceMethod - 接口方法声明（可以有默认实现）
 struct InterfaceMethod {
     std::string name;
     std::vector<FunctionDecl::Param> params;
     Type* return_type;
+    ExprPtr body;  // 🔧 新增：可选的默认实现
     
-    InterfaceMethod(std::string n, std::vector<FunctionDecl::Param> p, Type* r)
-        : name(std::move(n)), params(std::move(p)), return_type(r) {}
+    InterfaceMethod(std::string n, std::vector<FunctionDecl::Param> p, Type* r, ExprPtr b = nullptr)
+        : name(std::move(n)), params(std::move(p)), return_type(r), body(std::move(b)) {}
+    
+    bool hasDefaultImpl() const { return body != nullptr; }
 };
 
 /// InterfaceDecl - 接口定义 type Display = interface { fn show(); }

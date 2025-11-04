@@ -1,0 +1,63 @@
+// 测试完善后的闭包作用域和捕获
+
+fn main() {
+    println("==== 闭包作用域测试 ====");
+    
+    // 1. 基础捕获
+    println("1. 基础捕获:");
+    let x = 10;
+    let y = 20;
+    let add_xy = () -> i32 { x + y };
+    println(add_xy());
+    
+    // 2. BlockExpr 作用域
+    println("2. Block 作用域:");
+    let outer = 100;
+    {
+        let inner = 50;
+        let f = () -> i32 { outer + inner };
+        println(f());
+    }
+    
+    // 3. Match arm 作用域
+    println("3. Match arm 作用域:");
+    let base = 10;
+    let opt = some(42);
+    let result = opt is {
+        some(v) => {
+            let f = () -> i32 { base + v };
+            f()
+        },
+        none => base
+    };
+    println(result);
+    
+    // 4. 多层 Block 嵌套
+    println("4. 多层嵌套:");
+    let a = 1;
+    {
+        let b = 2;
+        {
+            let c = 3;
+            let f = () -> i32 { a + b + c };
+            println(f());
+        }
+    }
+    
+    // 5. 多个闭包共享捕获
+    println("5. 共享捕获:");
+    let shared = 5;
+    let f1 = () -> i32 { shared * 2 };
+    let f2 = () -> i32 { shared + 10 };
+    println(f1());
+    println(f2());
+    
+    // 6. VarDecl 初始化表达式中的捕获
+    println("6. VarDecl 捕获:");
+    let factor = 3;
+    let triple = (x: i32) -> i32 { x * factor };
+    println(triple(7));
+    
+    println("==== 测试完成 ====");
+}
+

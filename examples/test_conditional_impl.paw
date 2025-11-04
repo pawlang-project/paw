@@ -1,0 +1,43 @@
+// 测试条件实现：support Point<T> with Display where T: Display
+
+type Display = interface {
+    fn show(&self);
+}
+
+type Point<T> = struct {
+    x: T,
+    y: T
+}
+
+// 条件实现：Point<T> 实现 Display，当 T 实现 Display
+support Point<T> with Display where T: Display {
+    fn show(&self) {
+        println("Point:");
+        self.x.show();
+        self.y.show();
+    }
+}
+
+type Int = struct {
+    value: i32
+}
+
+support Int with Display {
+    fn show(&self) {
+        println(self.value);
+    }
+}
+
+fn main() {
+    println("==== 条件实现测试 ====");
+    
+    let p = Point<Int> { 
+        x: Int { value: 10 }, 
+        y: Int { value: 20 } 
+    };
+    
+    p.show();  // ✅ 应该输出 "Point:", 10, 20
+    
+    println("==== 完成 ====");
+}
+

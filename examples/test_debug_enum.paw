@@ -1,0 +1,23 @@
+// 调试enum
+
+type Simple = enum {
+    A,
+    B(i32)
+}
+
+fn test(s: Simple) -> i32 {
+    return s is {
+        A => 100,
+        B(x) => x
+    };
+}
+
+fn main() {
+    let s1 = Simple::A;
+    let s2 = Simple::B(42);
+    
+    println(test(s1));
+    println(test(s2));
+}
+
+

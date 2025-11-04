@@ -10,7 +10,7 @@
 
 ```paw
 T         - 普通类型
-T?        - Optional<T>          // 可选值（可能null）     ⭐
+T?        - Optional<T>          // 可选值（可能为空）     ⭐
 T!        - Result<T, string>    // 错误处理（可能失败）   ⭐
 T?!       - Result<Optional<T>>  // 可失败的Optional      ⭐
 T!?       - Optional<Result<T>>  // 可选的Result          ⭐
@@ -34,33 +34,33 @@ let name: string = "Alice";
 
 ### `T?` - Optional类型（可选值） ⭐
 
-**语义**: 值可能存在，也可能为null
+**语义**: 值可能存在，也可能为空（none）
 
 **内部表示**: `Optional<T>`
 
 **结构**:
 ```
 struct Optional<T> {
-    is_some: bool,   // true=有值, false=null
-    value: T,        // 值（null时未初始化）
+    is_some: bool,   // true=有值, false=none
+    value: T,        // 值（none时未初始化）
 }
 ```
 
 **使用**:
 ```paw
 // 定义
-let name: string? = "Alice";
-let empty: i32? = null;
+let name: string? = some("Alice");
+let empty: i32? = none;
 
-// null检查
-if empty == null {
-    println("是null");
+// none检查
+if empty == none {
+    println("是none");
 }
 
 // 模式匹配
 let result = name is {
-    null => "未知",
-    value => value,  // 自动解包
+    none => "未知",
+    some(value) => value,  // 显式解包
 };
 
 // 安全访问（未来）
@@ -566,6 +566,7 @@ null支持:     ████████████████████ 100
 *更新日期: 2025-10-31*  
 *核心: T? + T! + T?! + T!?*  
 *状态: 设计完成，待实施* 🚀
+
 
 
 

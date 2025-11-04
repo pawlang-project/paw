@@ -1,0 +1,68 @@
+// 完整的枚举多参数测试
+
+type Message = enum {
+    Quit,
+    Move(i32, i32),
+    ChangeColor(i32, i32, i32),
+    Text(string)
+}
+
+fn describe(msg: Message) -> string {
+    return msg is {
+        Quit => "quit",
+        Move(x, y) => "move",
+        ChangeColor(r, g, b) => "color",
+        Text(s) => "text"
+    };
+}
+
+fn print_details(msg: Message) {
+    msg is {
+        Quit => println("退出消息"),
+        Move(x, y) => {
+            println("移动到:");
+            println(x);
+            println(y);
+        },
+        ChangeColor(r, g, b) => {
+            println("颜色:");
+            println(r);
+            println(g);
+            println(b);
+        },
+        Text(s) => {
+            println("文本:");
+            println(s);
+        }
+    };
+}
+
+fn main() {
+    println("==== 枚举多参数完整测试 ====");
+    
+    let msg1 = Message::Quit;
+    println(describe(msg1));
+    print_details(msg1);
+    
+    println("---");
+    
+    let msg2 = Message::Move(100, 200);
+    println(describe(msg2));
+    print_details(msg2);
+    
+    println("---");
+    
+    let msg3 = Message::ChangeColor(255, 128, 64);
+    println(describe(msg3));
+    print_details(msg3);
+    
+    println("---");
+    
+    let msg4 = Message::Text("Hello");
+    println(describe(msg4));
+    print_details(msg4);
+    
+    println("==== 测试完成 ====");
+}
+
+

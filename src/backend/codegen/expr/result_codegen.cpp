@@ -14,23 +14,23 @@
 namespace pawc {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// NullLiteral - null字面量生成
+// NoneLiteral - none字面量生成
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-void ExprCodeGen::visit(NullLiteral* node) {
-    // null字面量：生成正确类型的Optional
+void ExprCodeGen::visit(NoneLiteral* node) {
+    // none字面量：生成正确类型的Optional
     // Optional类型结构: { i1 has_value, T value }
     auto& builder = context_->getBuilder();
     
     // 从AST节点获取类型（Sema应该已设置）
-    Type* null_type = node->getType();
+    Type* none_type = node->getType();
     
     // TypeCodeGen统一使用CodeGenContext::getLLVMType()
     llvm::Type* optional_llvm_type = nullptr;
     
-    if (null_type && null_type->getKind() == Type::Kind::Optional) {
+    if (none_type && none_type->getKind() == Type::Kind::Optional) {
         // 使用Sema推导的类型
-        optional_llvm_type = context_->getLLVMType(null_type);
+        optional_llvm_type = context_->getLLVMType(none_type);
     } else {
         // 兜底：创建Optional<void>
         llvm::StructType* optional_type = llvm::StructType::get(

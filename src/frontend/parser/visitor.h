@@ -11,7 +11,7 @@ class FloatLiteral;
 class BoolLiteral;
 class CharLiteral;
 class StringLiteral;
-class NullLiteral;
+class NoneLiteral;
 class CastExpr;
 class ClosureExpr;
 class IdentifierExpr;
@@ -68,7 +68,7 @@ public:
     virtual void visit(BoolLiteral* node) = 0;
     virtual void visit(CharLiteral* node) = 0;
     virtual void visit(StringLiteral* node) = 0;
-    virtual void visit(NullLiteral* node) = 0;
+    virtual void visit(NoneLiteral* node) = 0;
     virtual void visit(CastExpr* node) = 0;
     virtual void visit(ClosureExpr* node) = 0;
     virtual void visit(IdentifierExpr* node) = 0;

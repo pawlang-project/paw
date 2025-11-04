@@ -31,7 +31,7 @@ public:
     void visit(BoolLiteral* node) override;
     void visit(CharLiteral* node) override;
     void visit(StringLiteral* node) override;
-    void visit(NullLiteral* node) override;
+    void visit(NoneLiteral* node) override;
     void visit(CastExpr* node) override;
     void visit(ClosureExpr* node) override;
     void visit(IdentifierExpr* node) override;
@@ -96,6 +96,9 @@ public:
     void visit(TuplePattern*) override {}
     void visit(EnumPattern*) override {}
     void visit(StructPattern*) override {}
+    
+    // 🔧 获取上次表达式的结果（供StmtCodeGen使用）
+    llvm::Value* getResult() const { return result_; }
     
 private:
     llvm::Value* result_;

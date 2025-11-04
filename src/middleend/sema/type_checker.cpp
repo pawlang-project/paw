@@ -81,8 +81,8 @@ void TypeChecker::visit(StringLiteral* node) {
     node->setType(types_->getStringType());
 }
 
-void TypeChecker::visit(NullLiteral* node) {
-    // null字面量的类型需要从上下文推导
+void TypeChecker::visit(NoneLiteral* node) {
+    // none字面量的类型需要从上下文推导
     // 如果在Optional<T>的上下文中，类型应该是Optional<T>
     // 否则默认为Optional<void>
     
@@ -146,8 +146,8 @@ void TypeChecker::visit(SelfExpr* node) {
 void TypeChecker::visit(IdentifierExpr* node) {
     const std::string& name = node->getName();
     
-    // 特殊处理: ok/err builtin（作为CallExpr的callee时不需要类型）
-    if (name == "ok" || name == "err") {
+    // 特殊处理: ok/err/some builtin（作为CallExpr的callee时不需要类型）
+    if (name == "ok" || name == "err" || name == "some") {
         // 类型由包含它的CallExpr确定
         node->setType(nullptr);  // 占位符
         return;
@@ -303,6 +303,12 @@ void TypeChecker::visit(CallExpr* node) {
         object->accept(this);
         Type* obj_type = object->getType();
         
+        // 🔧 处理引用类型：如果是引用，获取pointee类型
+        if (obj_type && obj_type->isReference()) {
+            auto* ref_type = static_cast<ReferenceType*>(obj_type);
+            obj_type = ref_type->getPointeeType();
+        }
+        
         if (obj_type && obj_type->isStruct()) {
             auto* struct_type = static_cast<StructType*>(obj_type);
             
@@ -318,13 +324,22 @@ void TypeChecker::visit(CallExpr* node) {
             
             // 如果不是字段，查找接口方法
             if (!is_field) {
-                std::string full_method_name = struct_type->getName() + "_" + method_name;
+                // 🔧 尝试多种命名方式
+                std::string full_method_name1 = struct_type->getName() + "_" + method_name;   // 旧式
+                std::string full_method_name2 = struct_type->getName() + "::" + method_name;  // 新式
                 
                 // 从符号表查找方法
-                Symbol* method_symbol = symbols_->lookup(full_method_name);
+                Symbol* method_symbol = symbols_->lookup(full_method_name1);
+                std::string full_method_name = full_method_name1;
+                
+                if (!method_symbol) {
+                    method_symbol = symbols_->lookup(full_method_name2);
+                    full_method_name = full_method_name2;
+                }
                 
                 if (method_symbol && method_symbol->getKind() == Symbol::Kind::Function) {
                     // 找到接口方法！标记为方法调用
+                    std::cerr << "[TypeChecker] Found method: " << full_method_name << std::endl;
                     node->setIsMethodCall(true);
                     node->setReceiver(object);
                     node->setMethodName(method_name);
@@ -417,6 +432,30 @@ void TypeChecker::visit(CallExpr* node) {
             // 这是泛型函数调用: identity<i32>(42)
             auto* tmpl = types_->lookupGenericTemplate(func_name);
             if (tmpl && tmpl->kind == GenericTemplate::FUNCTION) {
+                // ✅ 检查 where 约束
+                FunctionDecl* func_decl = tmpl->func_def;
+                if (func_decl) {
+                    const auto& where_clauses = func_decl->getWhereClauses();
+                    
+                    if (!where_clauses.empty()) {
+                        std::cerr << "[WhereClause] Checking constraints for generic call: " 
+                                  << func_name << std::endl;
+                        
+                        // 构建类型替换映射
+                        std::map<std::string, Type*> type_sub;
+                        const auto& type_args = node->getTypeArgs();
+                        for (size_t i = 0; i < tmpl->type_params.size() && i < type_args.size(); ++i) {
+                            type_sub[tmpl->type_params[i]] = type_args[i];
+                        }
+                        
+                        // 验证 where 约束
+                        if (!checkWhereConstraintsSatisfied(where_clauses, type_sub)) {
+                            node->setType(types_->getVoidType());
+                            return;
+                        }
+                    }
+                }
+                
                 // 实例化函数
                 Type* return_type = instantiateFunctionReturnType(tmpl, node->getTypeArgs());
                 if (return_type) {
@@ -446,6 +485,14 @@ void TypeChecker::visit(CallExpr* node) {
             
             // 如果无法推导，默认为Result<void>
             node->setType(types_->getResultType(types_->getVoidType()));
+            return;
+        }
+        
+        // 特殊处理: some(value) - Optional构造器
+        if (func_name == "some" && arg_types.size() == 1) {
+            // some(value) 返回 Optional<T>，T是value的类型
+            Type* value_type = arg_types[0];
+            node->setType(types_->getOptionalType(value_type));
             return;
         }
         
@@ -521,10 +568,21 @@ void TypeChecker::visit(StaticAccessExpr* node) {
         for (const auto& variant : enum_type->getVariants()) {
             if (variant.first == node->getMember()) {
                 // 找到variant！创建一个特殊的函数类型表示构造器
-                // Option::Some 的类型是 fn(T) -> Option<T>
                 if (variant.second) {
                     // 有关联数据的variant
-                    std::vector<Type*> param_types = {variant.second};
+                    std::vector<Type*> param_types;
+                    
+                    // 🔧 检查是否是元组类型（多参数variant）
+                    if (variant.second->isTuple()) {
+                        // 多参数：展开元组类型为多个参数
+                        // Move((i32, i32)) -> Move(i32, i32)
+                        TupleType* tuple_type = static_cast<TupleType*>(variant.second);
+                        param_types = tuple_type->getElementTypes();
+                    } else {
+                        // 单参数
+                        param_types = {variant.second};
+                    }
+                    
                     Type* constructor_type = types_->getFunctionType(param_types, enum_type);
                     node->setType(constructor_type);
                 } else {
@@ -597,9 +655,14 @@ void TypeChecker::visit(MemberExpr* node) {
             node->setType(field_type);
         } else {
             // 🔧 Bug Fix: 如果不是字段，可能是接口方法
-            // 检查是否存在对应的接口方法
-            std::string method_name = struct_type->getName() + "_" + member;
-            Symbol* method_symbol = symbols_->lookup(method_name);
+            // 尝试多种方法命名方式
+            std::string method_name1 = struct_type->getName() + "_" + member;  // 旧式
+            std::string method_name2 = struct_type->getName() + "::" + member; // 新式（support方法）
+            
+            Symbol* method_symbol = symbols_->lookup(method_name1);
+            if (!method_symbol) {
+                method_symbol = symbols_->lookup(method_name2);
+            }
             
             if (method_symbol && method_symbol->getKind() == Symbol::Kind::Function) {
                 // 这是方法！设置为方法的返回类型
@@ -892,7 +955,26 @@ void TypeChecker::visit(VarDecl* node) {
         expected_type_ = saved_expected;
         
         Type* init_type = node->getInit()->getType();
-        Type* decl_type = node->getType() ? node->getType() : init_type;
+        Type* decl_type = nullptr;
+        
+        // 🔧 类型推导：如果没有显式类型，尝试从初始化表达式推导
+        if (node->getType()) {
+            // 有显式类型，使用它
+            decl_type = node->getType();
+        } else if (init_type) {
+            // 无显式类型，使用推导的类型
+            decl_type = init_type;
+            std::cerr << "[TypeInference] Inferred type for variable '" 
+                      << node->getName() << "': " << decl_type->toString() << std::endl;
+        } else {
+            // 无法推导，报错
+            diag_->reportError(
+                "Cannot infer type for variable '" + node->getName() + 
+                "' - please provide explicit type annotation",
+                node->getLocation()
+            );
+            return;
+        }
         
         // 设置VarDecl的类型（CodeGen需要使用）
         node->setType(decl_type);
@@ -1643,15 +1725,14 @@ bool TypeChecker::isExhaustive(const std::vector<MatchArm>& arms, Type* scrutine
 }
 
 void TypeChecker::visit(InterfaceDecl* node) {
-    // 接口定义：Parser阶段已经注册，这里可以做额外的语义检查
+    // 接口定义：Parser阶段已经注册，这里跳过类型检查
     
-    // 类型已在Parser阶段注册，避免重复注册
-    // 这里可以做：
-    // - 方法签名的深度验证
-    // - 泛型约束检查
-    // - 接口继承检查
+    // 🔧 接口默认方法的 body 不在这里检查，原因：
+    // - 接口定义时，Self 是抽象类型，不知道具体的字段
+    // - 默认方法的类型检查应该在每个 support 时进行，此时知道具体类型
+    // - 当前简化：跳过默认方法 body 的类型检查（仅在 CodeGen 时使用）
     
-    // 当前：跳过（Parser已处理）
+    // 未来优化：可以在 support 时，用具体类型替换 Self，然后检查默认方法 body
 }
 
 void TypeChecker::visit(SupportDecl* node) {
@@ -1766,11 +1847,15 @@ void TypeChecker::visit(SupportDecl* node) {
         }
         
         if (!found) {
-            diag_->reportError(
-                "Method '" + required.name + "' not implemented for interface '" +
-                node->getInterfaceName() + "'",
-                SourceLocation()
-            );
+            // 🔧 检查接口方法是否有默认实现
+            if (!required.has_default_impl) {
+                diag_->reportError(
+                    "Method '" + required.name + "' not implemented for interface '" +
+                    node->getInterfaceName() + "'",
+                    SourceLocation()
+                );
+            }
+            // 如果有默认实现，不报错（将使用默认实现）
         }
     }
     
@@ -1779,6 +1864,100 @@ void TypeChecker::visit(SupportDecl* node) {
         // 在self参数作用域下检查方法体
         // TODO: 设置self类型到符号表
         impl_method->accept(this);
+    }
+    
+    // 6. ✅ 验证 where 约束（条件实现）
+    if (!node->getWhereClauses().empty()) {
+        std::cerr << "[SupportDecl] Validating where clauses for " 
+                  << node->getTypeName() << " with " << node->getInterfaceName() << std::endl;
+        
+        // 验证 where 约束语法（检查接口存在性和泛型参数有效性）
+        validateWhereConstraints(node->getWhereClauses(), node->getTypeGenericParams());
+        
+        // 注意：实际的约束满足性检查会在单态化时进行
+        // 因为泛型参数在定义时是抽象的
+    }
+    
+    // 7. 🔧 为有默认实现但未实现的方法注册函数符号并检查 body
+    for (const auto& required : required_methods) {
+        if (required.has_default_impl) {
+            // 检查是否已实现
+            bool found = false;
+            for (const auto& impl_method : implemented_methods) {
+                if (impl_method->getName() == required.name) {
+                    found = true;
+                    break;
+                }
+            }
+            
+            if (!found) {
+                std::cerr << "[TypeChecker] Processing default method: " << required.name << std::endl;
+                
+                // 注册默认方法的函数符号
+                std::string method_name = node->getTypeName() + "::" + required.name;
+                
+                // 构建函数类型
+                std::vector<Type*> param_types_with_self;
+                param_types_with_self.insert(
+                    param_types_with_self.end(),
+                    required.param_types.begin(),
+                    required.param_types.end()
+                );
+                
+                FunctionType* func_type = types_->getFunctionType(
+                    param_types_with_self,
+                    required.return_type
+                );
+                
+                symbols_->defineFunction(method_name, func_type);
+                
+                // 🔧 关键修复：对默认方法的 body 进行类型检查
+                // 此时 current_self_type_ 已经是具体类型（target_type）
+                if (required.default_body) {
+                    std::cerr << "[TypeChecker] Checking default method body with concrete type: " 
+                              << current_self_type_->toString() << std::endl;
+                    
+                    // 进入方法作用域
+                    symbols_->enterScope();
+                    
+                    // 绑定参数（包括 self）- 使用具体类型！
+                    for (size_t i = 0; i < required.param_types.size(); ++i) {
+                        Type* param_type = required.param_types[i];
+                        
+                        // 🔧 检查是否是 Self 或 &Self
+                        if (param_type->getKind() == Type::Kind::SelfType) {
+                            // Self (值) - 用具体类型替换
+                            symbols_->defineVariable("self", current_self_type_, false);
+                        } else if (param_type->getKind() == Type::Kind::Reference) {
+                            auto* ref_type = static_cast<ReferenceType*>(param_type);
+                            if (ref_type->getPointeeType()->getKind() == Type::Kind::SelfType) {
+                                // &Self (引用) - 创建具体类型的引用
+                                Type* concrete_ref = types_->getReferenceType(current_self_type_, ref_type->isMutable());
+                                symbols_->defineVariable("self", concrete_ref, false);
+                            } else {
+                                // 普通引用参数
+                                std::string param_name = "arg" + std::to_string(i);
+                                symbols_->defineVariable(param_name, param_type, false);
+                            }
+                        } else {
+                            // 其他参数
+                            std::string param_name = "arg" + std::to_string(i);
+                            symbols_->defineVariable(param_name, param_type, false);
+                        }
+                    }
+                    
+                    // 访问 body 进行类型检查（现在 Self 是具体类型）
+                    required.default_body->accept(this);
+                    
+                    // 退出作用域
+                    symbols_->exitScope();
+                    
+                    std::cerr << "[TypeChecker] Default method body checked successfully" << std::endl;
+                }
+                
+                std::cerr << "[TypeChecker] Registered default method: " << method_name << std::endl;
+            }
+        }
     }
     
     // 恢复Self类型上下文
@@ -1960,7 +2139,7 @@ void TypeChecker::handleEnumPattern(EnumPattern* node, EnumType* enum_type) {
     std::string variant_name = node->getVariantName();
     auto& inner_patterns = node->getInnerPatterns();
     
-    // 查找匹配的变体
+    // 查找variant定义
     const auto& variants = enum_type->getVariants();
     Type* variant_data_type = nullptr;
     bool found = false;
@@ -1975,29 +2154,57 @@ void TypeChecker::handleEnumPattern(EnumPattern* node, EnumType* enum_type) {
     
     if (!found) {
         diag_->reportError(
-            "Unknown variant '" + variant_name + "' for enum " + enum_type->getName(),
+            "Unknown variant '" + variant_name + "' for enum type " + enum_type->getName(),
             SourceLocation()
         );
         return;
     }
     
-    // 检查参数
-    if (variant_data_type && inner_patterns.size() != 1) {
-        diag_->reportError(
-            "Variant '" + variant_name + "' expects 1 argument",
-            SourceLocation()
-        );
-        return;
-    } else if (!variant_data_type && !inner_patterns.empty()) {
-        diag_->reportError(
-            "Variant '" + variant_name + "' takes no arguments",
-            SourceLocation()
-        );
+    // 无数据的variant
+    if (!variant_data_type) {
+        if (!inner_patterns.empty()) {
+            diag_->reportError(
+                "Variant '" + variant_name + "' takes no arguments",
+                SourceLocation()
+            );
+        }
         return;
     }
     
-    // 检查参数类型
-    if (variant_data_type && !inner_patterns.empty()) {
+    // 🔧 多参数支持：检查是否是元组类型
+    if (variant_data_type->isTuple()) {
+        // 多参数variant：展开元组为多个类型
+        TupleType* tuple_type = static_cast<TupleType*>(variant_data_type);
+        const auto& element_types = tuple_type->getElementTypes();
+        
+        // 检查pattern数量是否匹配
+        if (inner_patterns.size() != element_types.size()) {
+            diag_->reportError(
+                "Variant '" + variant_name + "' expects " + 
+                std::to_string(element_types.size()) + " arguments, got " +
+                std::to_string(inner_patterns.size()),
+                SourceLocation()
+            );
+            return;
+        }
+        
+        // 为每个内部pattern设置正确的类型
+        Type* saved_expected = expected_type_;
+        for (size_t i = 0; i < inner_patterns.size(); ++i) {
+            expected_type_ = element_types[i];
+            inner_patterns[i]->accept(this);
+        }
+        expected_type_ = saved_expected;
+    } else {
+        // 单参数variant
+        if (inner_patterns.size() != 1) {
+            diag_->reportError(
+                "Variant '" + variant_name + "' expects exactly 1 argument",
+                SourceLocation()
+            );
+            return;
+        }
+        
         Type* saved_expected = expected_type_;
         expected_type_ = variant_data_type;
         inner_patterns[0]->accept(this);
@@ -2015,7 +2222,7 @@ void TypeChecker::validateWhereConstraints(
     
     // 对于每个where约束
     for (const auto& clause : where_clauses) {
-        // 检查type_param是否是泛型参数
+        // 1. 检查type_param是否是泛型参数
         bool found = false;
         for (const auto& param : generic_params) {
             if (param.name == clause.type_param) {
@@ -2030,16 +2237,113 @@ void TypeChecker::validateWhereConstraints(
             continue;
         }
         
-        // TODO: 检查接口是否存在
-        // Type* interface_type = types_->lookupType(clause.interface_name);
-        // if (!interface_type) {
-        //     diag_->reportError("Unknown interface in where clause: " + 
-        //                       clause.interface_name, SourceLocation());
-        // }
+        // 2. ✅ 检查接口是否存在
+        Type* interface_type = types_->lookupType(clause.interface_name);
+        if (!interface_type) {
+            diag_->reportError("Unknown interface in where clause: " + 
+                              clause.interface_name, SourceLocation());
+            continue;
+        }
         
-        // 注意：实际的约束验证在单态化时进行
-        // 这里只做基本的语法验证
+        if (interface_type->getKind() != Type::Kind::Interface) {
+            diag_->reportError("'" + clause.interface_name + 
+                              "' is not an interface in where clause", 
+                              SourceLocation());
+            continue;
+        }
+        
+        std::cerr << "[WhereClause] Validated: " << clause.type_param 
+                  << " : " << clause.interface_name << std::endl;
     }
+}
+
+// ✅ 检查类型是否实现了接口
+bool TypeChecker::typeImplementsInterface(Type* type, Type* interface_type) {
+    if (!type || !interface_type) {
+        return false;
+    }
+    
+    if (interface_type->getKind() != Type::Kind::Interface) {
+        return false;
+    }
+    
+    auto* iface = static_cast<InterfaceType*>(interface_type);
+    std::string interface_name = iface->getName();
+    
+    // 检查类型是否有对应的 support 实现
+    // 通过检查符号表中是否存在 TypeName::MethodName 形式的方法
+    
+    if (!type->isStruct() && !type->isEnum()) {
+        return false;  // 只有 struct 和 enum 可以实现接口
+    }
+    
+    std::string type_name;
+    if (type->isStruct()) {
+        type_name = static_cast<StructType*>(type)->getName();
+    } else if (type->isEnum()) {
+        type_name = static_cast<EnumType*>(type)->getName();
+    }
+    
+    // 检查接口的所有方法是否都被实现
+    const auto& methods = iface->getMethods();
+    for (const auto& method : methods) {
+        // 尝试两种命名方式
+        std::string method_name1 = type_name + "_" + method.name;
+        std::string method_name2 = type_name + "::" + method.name;
+        
+        Symbol* method_symbol = symbols_->lookup(method_name1);
+        if (!method_symbol) {
+            method_symbol = symbols_->lookup(method_name2);
+        }
+        
+        // 如果方法没有实现且没有默认实现，则不满足
+        if (!method_symbol && !method.has_default_impl) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// ✅ 验证where约束是否满足
+bool TypeChecker::checkWhereConstraintsSatisfied(
+    const std::vector<WhereClause>& where_clauses,
+    const std::map<std::string, Type*>& type_substitution) {
+    
+    for (const auto& clause : where_clauses) {
+        // 获取实际类型（从替换映射中）
+        auto it = type_substitution.find(clause.type_param);
+        if (it == type_substitution.end()) {
+            std::cerr << "[WhereClause] Type parameter not found in substitution: " 
+                      << clause.type_param << std::endl;
+            continue;
+        }
+        
+        Type* actual_type = it->second;
+        Type* interface_type = types_->lookupType(clause.interface_name);
+        
+        if (!interface_type) {
+            diag_->reportError("Unknown interface in where clause: " + 
+                              clause.interface_name, SourceLocation());
+            return false;
+        }
+        
+        // 检查类型是否实现了接口
+        if (!typeImplementsInterface(actual_type, interface_type)) {
+            diag_->reportError(
+                "Type '" + actual_type->toString() + 
+                "' does not implement interface '" + clause.interface_name + 
+                "' required by where clause",
+                SourceLocation()
+            );
+            return false;
+        }
+        
+        std::cerr << "[WhereClause] Constraint satisfied: " 
+                  << actual_type->toString() << " : " << clause.interface_name << std::endl;
+    }
+    
+    return true;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

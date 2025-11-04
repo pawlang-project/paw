@@ -1,0 +1,83 @@
+// 接口默认方法完整测试（Rust/Java 风格）
+
+type Drawable = interface {
+    fn draw(&self);
+    fn get_name(&self) -> string;
+    fn get_size(&self) -> i32;
+    
+    // 默认方法1：调用单个接口方法
+    fn render(&self) {
+        println("Rendering...");
+        self.draw();
+    }
+    
+    // 默认方法2：调用多个接口方法
+    fn show_info(&self) {
+        let name = self.get_name();
+        println(name);
+        let size = self.get_size();
+        println(size);
+    }
+    
+    // 默认方法3：返回常量
+    fn get_version(&self) -> i32 {
+        1
+    }
+    
+    // 默认方法4：复杂逻辑
+    fn describe(&self) {
+        let name = self.get_name();
+        let size = self.get_size();
+        println("Name:");
+        println(name);
+        println("Size:");
+        println(size);
+        self.draw();
+    }
+}
+
+type Circle = struct {
+    name: string,
+    radius: i32
+}
+
+support Circle with Drawable {
+    fn draw(&self) {
+        println("Drawing circle");
+    }
+    
+    fn get_name(&self) -> string {
+        self.name
+    }
+    
+    fn get_size(&self) -> i32 {
+        self.radius
+    }
+    
+    // render, show_info, get_version, describe 都使用默认实现
+}
+
+fn main() {
+    println("==== 接口默认方法完整测试 ====\n");
+    
+    let c = Circle { name: "MyCircle", radius: 10 };
+    
+    println("1. 直接调用实现的方法:");
+    c.draw();
+    
+    println("\n2. 调用默认方法 render:");
+    c.render();
+    
+    println("\n3. 调用默认方法 show_info:");
+    c.show_info();
+    
+    println("\n4. 调用默认方法 get_version:");
+    let ver = c.get_version();
+    println(ver);
+    
+    println("\n5. 调用默认方法 describe:");
+    c.describe();
+    
+    println("\n==== 测试完成 ====");
+}
+

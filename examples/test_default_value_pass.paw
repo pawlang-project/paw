@@ -1,0 +1,24 @@
+// 测试默认方法参数传递
+
+type ValueGetter = interface {
+    fn get(&self) -> i32 {
+        5  // 返回常量
+    }
+}
+
+type Box = struct {
+    value: i32
+}
+
+support Box with ValueGetter {}
+
+fn main() {
+    println("==== 测试参数传递 ====");
+    
+    let b = Box { value: 42 };
+    let r = b.get();
+    println(r);  // 应该输出 5（不涉及 self 访问）
+    
+    println("==== 完成 ====");
+}
+

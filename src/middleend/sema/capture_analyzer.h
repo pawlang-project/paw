@@ -31,7 +31,7 @@ public:
     void visit(BoolLiteral* node) override {}
     void visit(CharLiteral* node) override {}
     void visit(StringLiteral* node) override {}
-    void visit(NullLiteral* node) override {}
+    void visit(NoneLiteral* node) override {}
     void visit(CastExpr* node) override { if (node->getExpr()) node->getExpr()->accept(this); }
     void visit(IdentifierExpr* node) override;
     void visit(SelfExpr* node) override {}
@@ -80,8 +80,14 @@ public:
     
 private:
     SymbolTable* symbols_;
-    std::set<std::string> local_vars_;  // 闭包内定义的局部变量
+    std::vector<std::set<std::string>> local_vars_stack_;  // 作用域栈：每层作用域的局部变量
     std::set<std::string> captured_vars_;  // 捕获的外部变量
+    int closure_depth_;  // 嵌套闭包深度
+    
+    // 辅助方法
+    void enterScope();
+    void exitScope();
+    bool isLocalVariable(const std::string& name) const;
 };
 
 } // namespace pawc

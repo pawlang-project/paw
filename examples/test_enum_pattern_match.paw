@@ -1,0 +1,32 @@
+// 测试枚举多参数模式匹配
+
+type Message = enum {
+    Quit,
+    Move(i32, i32),
+    ChangeColor(i32, i32, i32)
+}
+
+fn process(msg: Message) -> string {
+    return msg is {
+        Quit => "quit",
+        Move(x, y) => "move",
+        ChangeColor(r, g, b) => "color"
+    };
+}
+
+fn main() {
+    println("==== 模式匹配测试 ====");
+    
+    let msg1 = Message::Quit;
+    println(process(msg1));
+    
+    let msg2 = Message::Move(10, 20);
+    println(process(msg2));
+    
+    let msg3 = Message::ChangeColor(255, 128, 0);
+    println(process(msg3));
+    
+    println("==== 测试完成 ====");
+}
+
+

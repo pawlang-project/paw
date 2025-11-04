@@ -463,9 +463,46 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
             "enum.data"
         );
         
-        // 绑定内部模式
-        if (enum_pat->getInner()) {
-            bindPatternVariables(enum_pat->getInner(), data_value, data_type);
+        // 🔧 多参数支持：检查是否需要解包元组
+        auto& inner_patterns = enum_pat->getInnerPatterns();
+        
+        if (inner_patterns.empty()) {
+            return;  // 无内部模式
+        }
+        
+        if (data_type->isTuple()) {
+            // 多参数：从元组中提取每个元素并绑定
+            TupleType* tuple_type = static_cast<TupleType*>(data_type);
+            const auto& element_types = tuple_type->getElementTypes();
+            
+            // 将元组值存到临时变量（用于GEP）
+            llvm::AllocaInst* tuple_tmp = builder.CreateAlloca(
+                data_llvm_type, nullptr, "enum.tuple.tmp");
+            builder.CreateStore(data_value, tuple_tmp);
+            
+            // 为每个内部pattern提取元组元素并绑定
+            for (size_t i = 0; i < inner_patterns.size() && i < element_types.size(); ++i) {
+                // 提取元组元素
+                llvm::Value* elem_ptr = builder.CreateStructGEP(
+                    data_llvm_type,
+                    tuple_tmp,
+                    i,
+                    "tuple.elem." + std::to_string(i) + ".ptr"
+                );
+                
+                llvm::Type* elem_llvm_type = context_->getLLVMType(element_types[i]);
+                llvm::Value* elem_value = builder.CreateLoad(
+                    elem_llvm_type,
+                    elem_ptr,
+                    "tuple.elem." + std::to_string(i)
+                );
+                
+                // 递归绑定变量
+                bindPatternVariables(inner_patterns[i].get(), elem_value, element_types[i]);
+            }
+        } else {
+            // 单参数：直接绑定
+            bindPatternVariables(inner_patterns[0].get(), data_value, data_type);
         }
         return;
     }

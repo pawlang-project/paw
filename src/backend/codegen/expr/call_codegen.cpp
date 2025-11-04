@@ -20,21 +20,29 @@ void ExprCodeGen::visit(CallExpr* node) {
     
     // === 🔧 Bug Fix: 处理接口方法调用 ===
     if (node->isMethodCall()) {
+        std::cerr << "[MethodCall] Calling method: " << node->getMethodTarget() << std::endl;
+        
         // 查找方法函数
         llvm::Function* method = context_->getModule()->getFunction(node->getMethodTarget());
         if (!method) {
+            std::cerr << "[MethodCall] Method not found!" << std::endl;
             result_ = nullptr;
             return;
         }
+        
+        std::cerr << "[MethodCall] Method found, generating receiver" << std::endl;
         
         // 生成receiver（self）
         node->getReceiver()->accept(this);
         llvm::Value* receiver = result_;
         
         if (!receiver) {
+            std::cerr << "[MethodCall] Receiver is null!" << std::endl;
             result_ = nullptr;
             return;
         }
+        
+        std::cerr << "[MethodCall] Receiver generated, is pointer: " << receiver->getType()->isPointerTy() << std::endl;
         
         // 🔧 引用类型支持：检查方法的第一个参数是否是引用类型
         // 如果是引用类型，需要传递指针而不是值
@@ -145,8 +153,33 @@ void ExprCodeGen::visit(CallExpr* node) {
                 
                 // 如果有关联数据，设置数据
                 if (variant_data_type && !node->getArgs().empty()) {
-                    node->getArgs()[0]->accept(this);
-                    llvm::Value* arg_value = result_;
+                    llvm::Value* arg_value = nullptr;
+                    
+                    // 🔧 多参数支持：检查是否需要包装为元组
+                    if (variant_data_type->isTuple()) {
+                        // 多参数：包装为元组
+                        TupleType* tuple_type = static_cast<TupleType*>(variant_data_type);
+                        std::vector<llvm::Value*> tuple_values;
+                        
+                        for (size_t i = 0; i < node->getArgs().size(); ++i) {
+                            node->getArgs()[i]->accept(this);
+                            tuple_values.push_back(result_);
+                        }
+                        
+                        // 构造元组值
+                        llvm::Type* tuple_llvm_type = context_->getLLVMType(tuple_type);
+                        llvm::Value* tuple_val = llvm::UndefValue::get(tuple_llvm_type);
+                        
+                        for (size_t i = 0; i < tuple_values.size(); ++i) {
+                            tuple_val = builder.CreateInsertValue(tuple_val, tuple_values[i], {static_cast<unsigned>(i)});
+                        }
+                        
+                        arg_value = tuple_val;
+                    } else {
+                        // 单参数
+                        node->getArgs()[0]->accept(this);
+                        arg_value = result_;
+                    }
                     
                     if (arg_value) {
                         enum_value = builder.CreateInsertValue(
@@ -373,6 +406,29 @@ void ExprCodeGen::visit(CallExpr* node) {
         result_value = builder.CreateInsertValue(result_value, arg_values[0], 2);
         
         result_ = result_value;
+        return;
+    }
+    
+    // === 特殊处理: some(value) - Optional构造器 ===
+    if (func_name == "some" && arg_values.size() == 1) {
+        // some(value) 返回 Optional<T> = { true, value }
+        // T从value的类型推导（Sema已设置）
+        Type* optional_type_ast = node->getType();
+        
+        llvm::Type* optional_llvm_type = context_->getLLVMType(optional_type_ast);
+        
+        // 创建Optional值: { i1 has_value, T value }
+        llvm::Value* optional_value = llvm::UndefValue::get(optional_llvm_type);
+        
+        // 设置has_value = true
+        optional_value = builder.CreateInsertValue(optional_value,
+            llvm::ConstantInt::get(builder.getInt1Ty(), 1),  // true
+            0);
+        
+        // 设置value
+        optional_value = builder.CreateInsertValue(optional_value, arg_values[0], 1);
+        
+        result_ = optional_value;
         return;
     }
     

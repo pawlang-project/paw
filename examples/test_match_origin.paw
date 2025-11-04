@@ -1,0 +1,19 @@
+// 测试匹配Origin
+
+type Point = enum {
+    Origin,
+    At(i32, i32)
+}
+
+fn main() {
+    let p = Point::Origin;
+    
+    let result = p is {
+        Origin => 1,
+        At(x, y) => 2
+    };
+    
+    println(result);
+}
+
+

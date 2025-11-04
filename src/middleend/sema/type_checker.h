@@ -27,7 +27,7 @@ public:
     void visit(BoolLiteral* node) override;
     void visit(CharLiteral* node) override;
     void visit(StringLiteral* node) override;
-    void visit(NullLiteral* node) override;
+    void visit(NoneLiteral* node) override;
     void visit(CastExpr* node) override;
     void visit(ClosureExpr* node) override;
     void visit(IdentifierExpr* node) override;
@@ -92,6 +92,13 @@ private:
     // Where约束验证
     void validateWhereConstraints(const std::vector<WhereClause>& where_clauses,
                                   const std::vector<GenericParam>& generic_params);
+    
+    // ✅ 检查类型是否实现了接口
+    bool typeImplementsInterface(Type* type, Type* interface_type);
+    
+    // ✅ 验证where约束是否满足
+    bool checkWhereConstraintsSatisfied(const std::vector<WhereClause>& where_clauses,
+                                       const std::map<std::string, Type*>& type_substitution);
     
     // Self类型解析
     Type* resolveSelfType(Type* type);

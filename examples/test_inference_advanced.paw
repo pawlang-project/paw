@@ -1,0 +1,39 @@
+// 高级类型推导测试
+
+type Point = struct {
+    x: i32,
+    y: i32
+}
+
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn main() {
+    println("==== 高级类型推导 ====");
+    
+    // 结构体字面量推导
+    let p = Point { x: 10, y: 20 };
+    println(p.x);
+    println(p.y);
+    
+    // 函数调用返回类型推导
+    let result = add(5, 10);
+    println(result);
+    
+    // if 表达式推导
+    let max = if result > 10 { result } else { 10 };
+    println(max);
+    
+    // some() 推导
+    let opt = some(42);
+    let value = opt is {
+        some(v) => v,
+        none => 0
+    };
+    println(value);
+    
+    println("==== 测试完成 ====");
+}
+
+

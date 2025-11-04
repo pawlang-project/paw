@@ -1,0 +1,54 @@
+// 测试枚举多参数 variant
+
+type Message = enum {
+    Quit,
+    Move(i32, i32),              // 双参数
+    ChangeColor(i32, i32, i32),  // 三参数
+    Text(string)                  // 单参数（向后兼容）
+}
+
+fn process_message(msg: Message) {
+    // 模式匹配测试
+    msg is {
+        Quit => println("退出"),
+        Move(x, y) => {
+            println("移动到:");
+            println(x);
+            println(y);
+        },
+        ChangeColor(r, g, b) => {
+            println("改变颜色:");
+            println(r);
+            println(g);
+            println(b);
+        },
+        Text(s) => {
+            println("文本:");
+            println(s);
+        }
+    };
+}
+
+fn main() {
+    println("==== 枚举多参数测试 ====");
+    
+    // 测试无参数
+    let msg1 = Message::Quit;
+    process_message(msg1);
+    
+    // 测试双参数
+    let msg2 = Message::Move(10, 20);
+    process_message(msg2);
+    
+    // 测试三参数
+    let msg3 = Message::ChangeColor(255, 128, 0);
+    process_message(msg3);
+    
+    // 测试单参数
+    let msg4 = Message::Text("Hello");
+    process_message(msg4);
+    
+    println("==== 测试完成 ====");
+}
+
+

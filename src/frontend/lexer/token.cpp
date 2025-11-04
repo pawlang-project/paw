@@ -28,7 +28,7 @@ const char* tokenTypeToString(TokenType type) {
         case TokenType::IS: return "IS";
         case TokenType::LET: return "LET";
         case TokenType::LOOP: return "LOOP";
-        case TokenType::NULL_KW: return "NULL_KW";
+        case TokenType::NULL_KW: return "NULL_KW (deprecated)";
         case TokenType::OK: return "OK";
         case TokenType::ERR: return "ERR";
         case TokenType::PUB: return "PUB";

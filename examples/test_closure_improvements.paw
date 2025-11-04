@@ -1,0 +1,65 @@
+// 测试完善后的闭包系统
+
+fn main() {
+    println("==== 闭包系统测试 ====");
+    
+    // 1. 基础闭包捕获
+    println("1. 基础闭包捕获:");
+    let x = 10;
+    let f1 = fn() -> i32 { x + 5 };
+    println(f1());  // 应输出 15
+    
+    // 2. 嵌套闭包捕获
+    println("2. 嵌套闭包捕获:");
+    let y = 20;
+    let f2 = fn() -> fn() -> i32 {
+        fn() -> i32 { y + 10 }  // 内层闭包捕获外部变量 y
+    };
+    let inner = f2();
+    println(inner());  // 应输出 30
+    
+    // 3. 多层嵌套闭包
+    println("3. 多层嵌套闭包:");
+    let z = 100;
+    let f3 = fn() -> fn() -> i32 {
+        let a = 50;
+        fn() -> i32 { z + a }  // 捕获外部的 z 和闭包的 a
+    };
+    let inner2 = f3();
+    println(inner2());  // 应输出 150
+    
+    // 4. 闭包作为返回值
+    println("4. 闭包作为返回值:");
+    let multiplier = make_multiplier(3);
+    println(multiplier(7));  // 应输出 21
+    
+    // 5. 作用域测试 - BlockExpr
+    println("5. 作用域测试:");
+    let outer = 1;
+    let f5 = fn() -> i32 {
+        let temp = 2;
+        {
+            let inner_var = 3;
+            outer + temp + inner_var  // 捕获 outer 和 temp（不是 inner_var，因为它在同一闭包内）
+        }
+    };
+    println(f5());  // 应输出 6
+    
+    // 6. Match arm 作用域测试
+    println("6. Match arm 作用域:");
+    let val = some(42);
+    let f6 = fn() -> i32 {
+        val is {
+            some(v) => v + 10,  // v 是局部变量，不应被捕获
+            none => 0
+        }
+    };
+    println(f6());  // 应输出 52
+    
+    println("==== 测试完成 ====");
+}
+
+fn make_multiplier(factor: i32) -> fn(i32) -> i32 {
+    fn(x: i32) -> i32 { factor * x }  // 捕获 factor
+}
+

@@ -1,0 +1,26 @@
+// 测试 + 语法：where T: Display + Debug
+
+type Display = interface {
+    fn show(&self);
+}
+
+type Debug = interface {
+    fn debug(&self);
+}
+
+type Point<T> = struct {
+    x: T,
+    y: T
+}
+
+// 测试：T: Display + Debug
+support Point<T> with Display where T: Display + Debug {
+    fn show(&self) {
+        println("Point with Display + Debug");
+    }
+}
+
+fn main() {
+    println("测试 + 语法");
+}
+

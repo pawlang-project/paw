@@ -378,14 +378,21 @@ StmtPtr Parser::parseEnumDecl(const std::string& name, std::vector<GenericParam>
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
         Token variant_name = consume(TokenType::IDENTIFIER, "Expected variant name");
         
-        Type* data_type = nullptr;
-        // 检查是否有关联数据: Variant(Type)
+        // 检查是否有关联数据: Variant(Type1, Type2, ...)
+        std::vector<Type*> data_types;
         if (match(TokenType::LPAREN)) {
-            data_type = parseType();
-            consume(TokenType::RPAREN, "Expected ')' after variant type");
+            // 解析第一个类型
+            data_types.push_back(parseType());
+            
+            // 解析后续类型（如果有逗号）
+            while (match(TokenType::COMMA)) {
+                data_types.push_back(parseType());
+            }
+            
+            consume(TokenType::RPAREN, "Expected ')' after variant types");
         }
         
-        variants.push_back(EnumVariant(variant_name.lexeme, data_type));
+        variants.push_back(EnumVariant(variant_name.lexeme, data_types));
         
         // 逗号是可选的
         if (!match(TokenType::COMMA)) {
@@ -414,7 +421,17 @@ StmtPtr Parser::parseEnumDecl(const std::string& name, std::vector<GenericParam>
         // 普通enum，立即注册类型
         std::vector<std::pair<std::string, Type*>> variant_types;
         for (const auto& v : enum_decl->getVariants()) {
-            variant_types.push_back({v.name, v.data_type});
+            // 多参数变体包装为元组类型
+            Type* variant_type = nullptr;
+            if (v.data_types.empty()) {
+                variant_type = nullptr;
+            } else if (v.data_types.size() == 1) {
+                variant_type = v.data_types[0];
+            } else {
+                // 多参数：包装成元组
+                variant_type = type_system_->getTupleType(v.data_types);
+            }
+            variant_types.push_back({v.name, variant_type});
         }
         EnumType* enum_type = new EnumType(name, variant_types);
         type_system_->registerEnum(enum_type);
@@ -523,10 +540,17 @@ StmtPtr Parser::parseInterfaceDecl(const std::string& name, std::vector<GenericP
             return_type = parseType();
         }
         
-        // 接口方法声明以分号结束
-        consume(TokenType::SEMICOLON, "Expected ';' after interface method");
+        // 🔧 新增：支持默认方法实现
+        ExprPtr body = nullptr;
+        if (check(TokenType::LBRACE)) {
+            // 有方法体（默认实现）
+            body = parsePrimary();  // BlockExpr
+        } else {
+            // 无方法体（纯声明）
+            consume(TokenType::SEMICOLON, "Expected ';' after interface method");
+        }
         
-        methods.push_back(InterfaceMethod(method_name.lexeme, std::move(params), return_type));
+        methods.push_back(InterfaceMethod(method_name.lexeme, std::move(params), return_type, std::move(body)));
     }
     
     consume(TokenType::RBRACE, "Expected '}' after interface methods");
@@ -551,7 +575,14 @@ StmtPtr Parser::parseInterfaceDecl(const std::string& name, std::vector<GenericP
             for (const auto& param : method.params) {
                 param_types.push_back(param.type);
             }
-            method_signatures.emplace_back(method.name, std::move(param_types), method.return_type);
+            // 🔧 传递默认实现信息
+            method_signatures.emplace_back(
+                method.name, 
+                std::move(param_types), 
+                method.return_type,
+                method.hasDefaultImpl(),      // has_default_impl
+                method.body.get()             // default_body
+            );
         }
         
         // 提取泛型参数名称（如果有）
@@ -1204,9 +1235,9 @@ ExprPtr Parser::parsePrimary() {
         return std::make_unique<CharLiteral>(tokens_[current_ - 1].lexeme[0]);
     }
     
-    // null字面量
-    if (match(TokenType::NULL_KW)) {
-        return std::make_unique<NullLiteral>();
+    // none 字面量 - Optional 空值
+    if (match(TokenType::NONE)) {
+        return std::make_unique<NoneLiteral>();
     }
     
     // ok(value) 构造器
@@ -1235,6 +1266,21 @@ ExprPtr Parser::parsePrimary() {
         
         return std::make_unique<CallExpr>(
             std::make_unique<IdentifierExpr>("err"),
+            std::move(args)
+        );
+    }
+    
+    // some(value) 构造器 - Optional值
+    if (match(TokenType::SOME)) {
+        consume(TokenType::LPAREN, "Expected '(' after 'some'");
+        auto value = parseExpression();
+        consume(TokenType::RPAREN, "Expected ')' after some value");
+        
+        std::vector<ExprPtr> args;
+        args.push_back(std::move(value));
+        
+        return std::make_unique<CallExpr>(
+            std::make_unique<IdentifierExpr>("some"),
             std::move(args)
         );
     }
@@ -1669,6 +1715,17 @@ std::vector<WhereClause> Parser::parseWhereClauses() {
         // 添加where子句
         clauses.push_back(WhereClause(type_param.lexeme, interface_name.lexeme));
         
+        // 🔧 支持 + 语法：T: Display + Debug
+        // 如果有 +，继续解析更多接口
+        while (match(TokenType::PLUS)) {
+            if (!check(TokenType::IDENTIFIER)) {
+                error("Expected interface name after '+'");
+                break;
+            }
+            Token next_interface = advance();
+            clauses.push_back(WhereClause(type_param.lexeme, next_interface.lexeme));
+        }
+        
         // 检查是否有更多约束（逗号分隔）
         if (!match(TokenType::COMMA)) {
             // 没有逗号，where子句结束
@@ -1706,7 +1763,8 @@ std::unique_ptr<Pattern> Parser::parsePattern() {
     }
     
     // 枚举构造器关键字: ok(...), err(...), some(...), none
-    if (check(TokenType::OK) || check(TokenType::ERR)) {
+    if (check(TokenType::OK) || check(TokenType::ERR) || 
+        check(TokenType::SOME) || check(TokenType::NONE)) {
         return parseEnumConstructorPattern();
     }
     
@@ -1749,9 +1807,9 @@ std::unique_ptr<Pattern> Parser::parseLiteralPattern() {
     throw std::runtime_error("Parse error");
 }
 
-// 解析枚举构造器关键字模式: ok(...), err(...)
+// 解析枚举构造器关键字模式: ok(...), err(...), some(...), none
 std::unique_ptr<Pattern> Parser::parseEnumConstructorPattern() {
-    Token constructor = advance();  // OK or ERR
+    Token constructor = advance();  // OK, ERR, SOME, or NONE
     
     // 映射关键字到标准枚举变体名
     std::string variant_name;
@@ -1759,9 +1817,23 @@ std::unique_ptr<Pattern> Parser::parseEnumConstructorPattern() {
         variant_name = "Ok";
     } else if (constructor.type == TokenType::ERR) {
         variant_name = "Err";
+    } else if (constructor.type == TokenType::SOME) {
+        variant_name = "Some";
+    } else if (constructor.type == TokenType::NONE) {
+        variant_name = "None";
     }
     
-    // 必须有参数列表
+    // none 特殊处理：无参数variant
+    if (constructor.type == TokenType::NONE) {
+        // none 没有参数，直接返回
+        return std::make_unique<EnumPattern>(
+            "Option",  // 假设类型名为 Option
+            variant_name,
+            std::vector<std::unique_ptr<Pattern>>()
+        );
+    }
+    
+    // 其他构造器必须有参数列表
     consume(TokenType::LPAREN, "Expected '(' after enum constructor");
     
     // 解析内部模式

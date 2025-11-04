@@ -270,8 +270,9 @@ bool Compiler::processResults() {
         Linker linker;
         linker.setVerbose(options_.verbose);
         
-        // 设置runtime库路径
-        linker.setRuntimePath("./build/src/runtime");
+        // 设置runtime库路径（相对于当前工作目录）
+        // 从 build/ 目录运行时，路径应该是 src/runtime
+        linker.setRuntimePath("src/runtime");
         
         // 执行链接
         if (!linker.link({object_file}, options_.output_file, 

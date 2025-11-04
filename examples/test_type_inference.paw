@@ -1,0 +1,42 @@
+// 测试类型推导系统
+
+fn main() {
+    println("==== 类型推导测试 ====");
+    
+    // 1. 字面量推导
+    let x = 42;           // 应推导为 i32
+    let y = 3.14;         // 应推导为 f64
+    let flag = true;      // 应推导为 bool
+    let ch = 'A';         // 应推导为 char
+    let name = "Alice";   // 应推导为 string
+    
+    println("字面量推导:");
+    println(x);
+    println(y);
+    println(flag);
+    println(ch);
+    println(name);
+    
+    // 2. 数组推导
+    let arr = [1, 2, 3];  // 应推导为 [i32; 3]
+    println("数组:");
+    println(arr[0]);
+    
+    // 3. 元组推导
+    let pair = (10, 20);  // 应推导为 (i32, i32)
+    println("元组:");
+    let (a, b) = pair;
+    println(a);
+    println(b);
+    
+    // 4. 二元运算推导
+    let sum = 10 + 20;    // 应推导为 i32
+    let cmp = x > 10;     // 应推导为 bool
+    println("运算:");
+    println(sum);
+    println(cmp);
+    
+    println("==== 测试完成 ====");
+}
+
+

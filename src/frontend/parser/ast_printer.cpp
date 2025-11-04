@@ -100,8 +100,8 @@ void ASTPrinter::visit(StringLiteral* node) {
               getTypeString(node->getType()));
 }
 
-void ASTPrinter::visit(NullLiteral* node) {
-    printLine("NullLiteral : " + getTypeString(node->getType()));
+void ASTPrinter::visit(NoneLiteral* node) {
+    printLine("NoneLiteral (none) : " + getTypeString(node->getType()));
 }
 
 void ASTPrinter::visit(CastExpr* node) {
@@ -462,8 +462,13 @@ void ASTPrinter::visit(EnumDecl* node) {
     indent_ += 1;
     for (const auto& variant : node->getVariants()) {
         std::string var_str = "variant: " + variant.name;
-        if (variant.data_type) {
-            var_str += "(" + variant.data_type->toString() + ")";
+        if (!variant.data_types.empty()) {
+            var_str += "(";
+            for (size_t i = 0; i < variant.data_types.size(); ++i) {
+                if (i > 0) var_str += ", ";
+                var_str += variant.data_types[i]->toString();
+            }
+            var_str += ")";
         }
         printLine(var_str);
     }

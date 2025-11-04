@@ -1,11 +1,35 @@
-// Where约束测试
+// Where 约束测试
 
+type Display = interface {
+    fn show(&self);
+}
+
+type Point = struct {
+    x: i32,
+    y: i32
+}
+
+support Point with Display {
+    fn show(&self) {
+        println("Point");
+    }
+}
+
+// 泛型函数with where约束
 fn print_value<T>(value: T) where T: Display {
-    // 这里假设T实现了Display接口
-    return;
+    value.show();
 }
 
 fn main() {
-    println("Where clause test!");
+    println("==== Where 约束测试 ====");
+    
+    let p = Point { x: 10, y: 20 };
+    
+    // ✅ 应该成功：Point 实现了 Display
+    print_value<Point>(p);
+    
+    // ❌ 应该失败：i32 没有实现 Display
+    // print_value<i32>(42);  // 取消注释应该报错
+    
+    println("==== 测试完成 ====");
 }
-

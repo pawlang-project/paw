@@ -14,6 +14,7 @@ namespace pawc {
 
 class Pattern;
 class Type;
+class EnumType;
 class MatchExpr;
 
 /// PatternChecker - 模式检查器
@@ -40,6 +41,16 @@ public:
     /// 收集模式中的变量
     void collectPatternVariables(Pattern* pattern, 
                                 std::vector<std::pair<std::string, Type*>>& variables);
+
+private:
+    /// 检查枚举穷尽性
+    bool checkEnumExhaustiveness(const std::vector<Pattern*>& patterns, EnumType* enum_type);
+    
+    /// 检查布尔穷尽性
+    bool checkBoolExhaustiveness(const std::vector<Pattern*>& patterns);
+    
+    /// 检查Optional穷尽性
+    bool checkOptionalExhaustiveness(const std::vector<Pattern*>& patterns);
 };
 
 } // namespace pawc

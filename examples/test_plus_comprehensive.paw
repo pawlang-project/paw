@@ -1,0 +1,74 @@
+// 测试完整的 + 语法
+
+type Display = interface {
+    fn show(&self);
+}
+
+type Debug = interface {
+    fn debug(&self);
+}
+
+type Clone = interface {
+    fn clone(&self);
+}
+
+// ============= 测试1: 单类型 + 两约束 =============
+
+type Point<T> = struct {
+    x: T,
+    y: T
+}
+
+// T: Display + Debug
+support Point<T> with Display where T: Display + Debug {
+    fn show(&self) {
+        println("Point (Display + Debug)");
+    }
+}
+
+// ============= 测试2: 单类型 + 三约束 =============
+
+type Vec<T> = struct {
+    items: i32
+}
+
+// T: Display + Debug + Clone
+support Vec<T> with Display where T: Display + Debug + Clone {
+    fn show(&self) {
+        println("Vec (Display + Debug + Clone)");
+    }
+}
+
+// ============= 测试3: 混合语法 =============
+
+type Map<K, V> = struct {
+    size: i32
+}
+
+// K: Display + Debug, V: Clone
+support Map<K, V> with Display where K: Display + Debug, V: Clone {
+    fn show(&self) {
+        println("Map (mixed syntax)");
+    }
+}
+
+// ============= 测试4: 复杂混合 =============
+
+type Cache<K, V> = struct {
+    capacity: i32
+}
+
+// K: Display + Clone, V: Debug + Clone
+support Cache<K, V> with Display where K: Display + Clone, V: Debug + Clone {
+    fn show(&self) {
+        println("Cache (complex)");
+    }
+}
+
+// ============= 主函数 =============
+
+fn main() {
+    println("==== + 语法测试 ====");
+    println("✅ 编译成功说明 + 语法支持！");
+}
+

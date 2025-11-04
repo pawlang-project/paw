@@ -3,10 +3,13 @@
 #include "stmt_codegen.h"
 #include "../expr/expr_codegen.h"
 #include "../type/type_codegen.h"
+#include "middleend/types/generic_types.h"
+#include "middleend/types/type_system.h"
 
 #include <llvm/IR/Function.h>
 #include <llvm/IR/BasicBlock.h>
 #include <iostream>
+#include <set>
 
 namespace pawc {
 
@@ -31,7 +34,9 @@ llvm::Value* StmtCodeGen::generate(ASTNode* node) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void StmtCodeGen::visit(ExprStmt* node) {
+    std::cerr << "[ExprStmt] Generating expression statement" << std::endl;
     result_ = expr_codegen_->generate(node->getExpr());
+    std::cerr << "[ExprStmt] Result: " << (result_ ? "valid" : "null") << std::endl;
 }
 
 void StmtCodeGen::visit(VarDecl* node) {
@@ -727,15 +732,216 @@ void StmtCodeGen::visit(SupportDecl* node) {
     std::string saved_support_type = current_support_type_;
     current_support_type_ = node->getTypeName();
     
-    // 生成所有方法（它们会自动使用修饰后的名称）
+    // 1. 生成用户实现的方法
     for (const auto& method : node->getMethods()) {
         method->accept(this);
+    }
+    
+    // 2. 🔧 生成接口默认方法的包装
+    Type* interface_type = context_->getTypeSystem()->lookupType(node->getInterfaceName());
+    if (interface_type && interface_type->getKind() == Type::Kind::Interface) {
+        auto* iface = static_cast<InterfaceType*>(interface_type);
+        
+        // 获取已实现的方法名列表
+        std::set<std::string> implemented_methods;
+        for (const auto& method : node->getMethods()) {
+            implemented_methods.insert(method->getName());
+        }
+        
+        // 查找有默认实现但未被实现的方法
+        for (const auto& iface_method : iface->getMethods()) {
+            if (iface_method.has_default_impl && 
+                implemented_methods.find(iface_method.name) == implemented_methods.end()) {
+                // 生成默认方法的包装
+                generateDefaultMethod(node->getTypeName(), iface_method);
+            }
+        }
     }
     
     // 恢复上下文
     current_support_type_ = saved_support_type;
     
     result_ = nullptr;
+}
+
+void StmtCodeGen::generateDefaultMethod(const std::string& type_name, 
+                                        const InterfaceType::MethodSignature& method) {
+    // 🔧 为类型生成接口默认方法的包装
+    // 方法名格式: type_name::method_name (与其他方法一致)
+    
+    auto& builder = context_->getBuilder();
+    std::string mangled_name = type_name + "::" + method.name;
+    
+    // 检查是否已存在
+    if (context_->getModule()->getFunction(mangled_name)) {
+        return;  // 已存在，跳过
+    }
+    
+    std::cerr << "[DefaultMethod] Generating default method: " << mangled_name << std::endl;
+    
+    // 构建函数类型
+    std::vector<llvm::Type*> param_types;
+    
+    // 第一个参数：self（类型为 type_name）
+    Type* self_type = context_->getTypeSystem()->lookupType(type_name);
+    if (!self_type) {
+        std::cerr << "[DefaultMethod] Error: Type not found: " << type_name << std::endl;
+        return;
+    }
+    
+    // 根据第一个参数的类型确定 self 的传递方式
+    bool is_self_ref = false;
+    bool is_self_mut = false;
+    
+    if (!method.param_types.empty() && method.param_types[0]->getKind() == Type::Kind::Reference) {
+        is_self_ref = true;
+        auto* ref_type = static_cast<ReferenceType*>(method.param_types[0]);
+        is_self_mut = ref_type->isMutable();
+    }
+    
+    if (is_self_ref) {
+        // self 是引用类型，传递指针
+        param_types.push_back(llvm::PointerType::getUnqual(builder.getContext()));
+    } else {
+        // self 是值类型
+        param_types.push_back(context_->getLLVMType(self_type));
+    }
+    
+    // 其他参数
+    for (size_t i = 1; i < method.param_types.size(); ++i) {
+        param_types.push_back(context_->getLLVMType(method.param_types[i]));
+    }
+    
+    // 返回类型
+    llvm::Type* return_type = context_->getLLVMType(method.return_type);
+    
+    // 创建函数
+    auto* fn_type = llvm::FunctionType::get(return_type, param_types, false);
+    llvm::Function* wrapper_fn = llvm::Function::Create(
+        fn_type,
+        llvm::Function::ExternalLinkage,
+        mangled_name,
+        context_->getModule()
+    );
+    
+    // 保存当前插入点
+    llvm::BasicBlock* saved_bb = builder.GetInsertBlock();
+    
+    // 创建函数体
+    llvm::BasicBlock* entry_bb = llvm::BasicBlock::Create(
+        builder.getContext(),
+        "entry",
+        wrapper_fn
+    );
+    builder.SetInsertPoint(entry_bb);
+    
+    // 🔧 关键：生成调用默认实现的代码
+    // 进入作用域
+    context_->enterScope();
+    
+    // 绑定参数到符号表（包括 self）
+    auto args_iter = wrapper_fn->arg_begin();
+    
+    // 第一个参数是 self
+    args_iter->setName("self");
+    std::cerr << "[DefaultMethod] Self arg type: " << (args_iter->getType()->isPointerTy() ? "pointer" : "value") << std::endl;
+    
+    llvm::AllocaInst* self_alloca = context_->createEntryBlockAlloca(
+        wrapper_fn,
+        "self",
+        args_iter->getType()
+    );
+    builder.CreateStore(&(*args_iter), self_alloca);
+    context_->defineVariable("self", self_alloca);
+    
+    std::cerr << "[DefaultMethod] Self variable defined" << std::endl;
+    ++args_iter;
+    
+    // 其他参数
+    size_t param_idx = 1;  // 跳过 self
+    for (; args_iter != wrapper_fn->arg_end(); ++args_iter, ++param_idx) {
+        std::string param_name = "arg" + std::to_string(param_idx);
+        args_iter->setName(param_name);
+        
+        llvm::AllocaInst* param_alloca = context_->createEntryBlockAlloca(
+            wrapper_fn,
+            param_name,
+            args_iter->getType()
+        );
+        builder.CreateStore(&(*args_iter), param_alloca);
+        context_->defineVariable(param_name, param_alloca);
+    }
+    
+    // 生成默认实现的 body
+    if (method.default_body) {
+        std::cerr << "[DefaultMethod] Generating body..." << std::endl;
+        
+        // 🔧 检查 body 是否是 BlockExpr
+        if (auto* block_expr = dynamic_cast<BlockExpr*>(method.default_body)) {
+            std::cerr << "[DefaultMethod] Body is BlockExpr with " << block_expr->getStmts().size() << " statements" << std::endl;
+            
+            // BlockExpr 包含多个语句，需要逐个执行
+            llvm::Value* last_value = nullptr;
+            for (size_t i = 0; i < block_expr->getStmts().size(); ++i) {
+                const auto& stmt = block_expr->getStmts()[i];
+                bool is_last = (i == block_expr->getStmts().size() - 1);
+                
+                stmt->accept(this);  // 使用 StmtCodeGen 执行语句
+                
+                // 🔧 最后一个语句的返回值作为BlockExpr的返回值
+                if (is_last) {
+                    last_value = result_;  // 从 StmtCodeGen 的 result_ 获取
+                }
+            }
+            
+            // 返回最后一个表达式的值
+            if (last_value && !return_type->isVoidTy()) {
+                std::cerr << "[DefaultMethod] Returning last value from BlockExpr" << std::endl;
+                builder.CreateRet(last_value);
+            } else if (return_type->isVoidTy()) {
+                builder.CreateRetVoid();
+            } else {
+                builder.CreateRet(llvm::Constant::getNullValue(return_type));
+            }
+        } else {
+            // 单个表达式
+            method.default_body->accept(expr_codegen_);
+            llvm::Value* body_result = expr_codegen_->getResult();
+            
+            std::cerr << "[DefaultMethod] Body result: " << (body_result ? "valid" : "null") << std::endl;
+            
+            // 返回结果
+            if (body_result && !return_type->isVoidTy()) {
+                std::cerr << "[DefaultMethod] Returning body result" << std::endl;
+                builder.CreateRet(body_result);
+            } else if (return_type->isVoidTy()) {
+                std::cerr << "[DefaultMethod] Returning void" << std::endl;
+                builder.CreateRetVoid();
+            } else {
+                std::cerr << "[DefaultMethod] Returning null value" << std::endl;
+                // 如果没有结果，返回零值
+                builder.CreateRet(llvm::Constant::getNullValue(return_type));
+            }
+        }
+    } else {
+        std::cerr << "[DefaultMethod] No body!" << std::endl;
+        // 没有 body（不应该发生）
+        if (return_type->isVoidTy()) {
+            builder.CreateRetVoid();
+        } else {
+            builder.CreateRet(llvm::Constant::getNullValue(return_type));
+        }
+    }
+    
+    // 退出作用域
+    context_->exitScope();
+    
+    // 恢复插入点
+    if (saved_bb) {
+        builder.SetInsertPoint(saved_bb);
+    }
+    
+    std::cerr << "[DefaultMethod] Generated: " << mangled_name << std::endl;
 }
 
 } // namespace pawc

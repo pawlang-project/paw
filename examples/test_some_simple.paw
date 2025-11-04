@@ -1,0 +1,8 @@
+// 最简单的 some 测试
+
+fn main() {
+    let x: i32? = some(42);
+    println("测试完成");
+}
+
+

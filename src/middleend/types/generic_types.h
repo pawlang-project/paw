@@ -13,6 +13,9 @@
 
 namespace pawc {
 
+// 前向声明
+class Expr;
+
 /// GenericType - 泛型参数类型 T
 class GenericType : public Type {
 public:
@@ -106,9 +109,12 @@ public:
         std::string name;
         std::vector<Type*> param_types;
         Type* return_type;
+        bool has_default_impl;  // 🔧 新增：是否有默认实现
+        Expr* default_body;     // 🔧 新增：默认实现的body（不拥有所有权）
         
-        MethodSignature(std::string n, std::vector<Type*> p, Type* r)
-            : name(std::move(n)), param_types(std::move(p)), return_type(r) {}
+        MethodSignature(std::string n, std::vector<Type*> p, Type* r, bool has_default = false, Expr* body = nullptr)
+            : name(std::move(n)), param_types(std::move(p)), return_type(r), 
+              has_default_impl(has_default), default_body(body) {}
     };
     
     InterfaceType(const std::string& name, std::vector<MethodSignature> methods,

@@ -1,0 +1,38 @@
+// 对比测试 null vs none
+
+fn main() {
+    println("========================================");
+    println("测试 null vs none");
+    println("========================================");
+    
+    // 测试 null (应该工作)
+    let x1: i32? = null;
+    println("null 方式成功");
+    
+    // 测试 some()  (已验证工作)
+    let x2: i32? = some(42);
+    println("some() 方式成功");
+    
+    // 测试 null 模式匹配
+    let r1 = x1 is {
+        null => "null分支",
+        value => "value分支"
+    };
+    println(r1);
+    
+    // 测试 some 模式匹配
+    let r2 = x2 is {
+        some(v) => {
+            println(v);
+            "some分支"
+        },
+        none => "none分支"
+    };
+    println(r2);
+    
+    println("========================================");
+    println("测试完成！");
+    println("========================================");
+}
+
+

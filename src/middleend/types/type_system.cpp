@@ -235,11 +235,21 @@ Type* TypeSystem::instantiateGeneric(const std::string& template_name,
         // 为每个variant替换类型参数
         std::vector<std::pair<std::string, Type*>> instantiated_variants;
         for (const auto& variant : enum_def->getVariants()) {
+            // TODO: 支持多参数variant需要修改EnumType结构
+            // 当前简化为单个类型（元组）
             Type* instantiated_data_type = nullptr;
             
-            if (variant.data_type) {
-                // 替换类型参数
-                instantiated_data_type = substituteType(variant.data_type, type_substitution);
+            if (!variant.data_types.empty()) {
+                // 如果有多个参数，包装成元组类型
+                if (variant.data_types.size() == 1) {
+                    instantiated_data_type = substituteType(variant.data_types[0], type_substitution);
+                } else {
+                    std::vector<Type*> tuple_types;
+                    for (Type* t : variant.data_types) {
+                        tuple_types.push_back(substituteType(t, type_substitution));
+                    }
+                    instantiated_data_type = getTupleType(tuple_types);
+                }
             }
             
             instantiated_variants.push_back({variant.name, instantiated_data_type});

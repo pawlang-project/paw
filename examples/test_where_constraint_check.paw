@@ -1,0 +1,38 @@
+// Where 约束检查测试（不调用方法）
+
+type Displayable = interface {
+    fn show(&self);
+}
+
+type Point = struct {
+    x: i32,
+    y: i32
+}
+
+support Point with Displayable {
+    fn show(&self) {
+        println("Point");
+    }
+}
+
+// 泛型函数 with where 约束
+// 注意：函数体为空，避免类型检查问题
+fn requires_display<T>(value: T) where T: Displayable {
+    // 函数体为空
+}
+
+fn main() {
+    println("==== Where 约束检查测试 ====");
+    
+    let p = Point { x: 10, y: 20 };
+    
+    // ✅ 应该成功：Point 实现了 Displayable
+    requires_display<Point>(p);
+    println("Test 1 passed!");
+    
+    // ❌ 如果取消注释，应该报错：i32 没有实现 Displayable
+    // requires_display<i32>(42);
+    
+    println("==== 测试完成 ====");
+}
+

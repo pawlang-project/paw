@@ -1,0 +1,18 @@
+// 简化的枚举多参数测试
+
+type Message = enum {
+    Quit,
+    Move(i32, i32)
+}
+
+fn main() {
+    println("==== 测试开始 ====");
+    
+    // 测试构造
+    let msg = Message::Move(10, 20);
+    
+    println("构造成功");
+    println("==== 测试完成 ====");
+}
+
+

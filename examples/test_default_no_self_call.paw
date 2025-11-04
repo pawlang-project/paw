@@ -1,0 +1,33 @@
+// 测试不调用self的默认方法
+
+type Printer = interface {
+    fn show(&self);
+    
+    // 默认方法：不调用self
+    fn print_msg() {
+        println("Default message!");
+    }
+}
+
+type Box = struct {
+    value: i32
+}
+
+support Box with Printer {
+    fn show(&self) {
+        println("Showing box");
+    }
+    
+    // print_msg 使用默认实现
+}
+
+fn main() {
+    println("==== 无Self调用的默认方法 ====");
+    
+    let b = Box { value: 10 };
+    b.show();
+    Printer::print_msg();  // 静态调用
+    
+    println("==== 完成 ====");
+}
+

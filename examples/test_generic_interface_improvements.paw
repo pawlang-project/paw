@@ -1,0 +1,205 @@
+// PawLang 泛型和接口系统完善测试
+// 测试新实现的接口验证和泛型单态化功能
+
+// ============================================
+// 1. 接口定义测试 - 验证重复方法检测
+// ============================================
+
+type Display = interface {
+    fn show(&self) -> void;
+}
+
+type Debug = interface {
+    fn debug(&self) -> void;
+    fn format(&self) -> string;
+}
+
+// ============================================
+// 2. 泛型结构体与接口
+// ============================================
+
+type Box<T> = struct {
+    value: T
+}
+
+type Pair<T, U> = struct {
+    first: T,
+    second: U
+}
+
+// ============================================
+// 3. Support 实现 - 测试方法完整性验证
+// ============================================
+
+type Point = struct {
+    x: i32,
+    y: i32
+}
+
+// 实现Display接口
+support Point with Display {
+    fn show(&self) -> void {
+        println("Point");
+    }
+}
+
+// 实现Debug接口（测试多接口实现）
+support Point with Debug {
+    fn debug(&self) -> void {
+        println("Point { x, y }");
+    }
+    
+    fn format(&self) -> string {
+        return "Point";
+    }
+}
+
+// ============================================
+// 4. 泛型类型实现接口 - 测试where约束
+// ============================================
+
+support Box<T> with Display where T: Display {
+    fn show(&self) -> void {
+        println("Box contains:");
+        self.value.show();
+    }
+}
+
+support Pair<T, U> with Display where T: Display, U: Display {
+    fn show(&self) -> void {
+        println("Pair:");
+        self.first.show();
+        self.second.show();
+    }
+}
+
+// ============================================
+// 5. 泛型枚举测试
+// ============================================
+
+type Option<T> = enum {
+    Some(T),
+    None
+}
+
+type Result<T, E> = enum {
+    Ok(T),
+    Err(E)
+}
+
+// ============================================
+// 6. 泛型函数测试
+// ============================================
+
+fn identity<T>(x: T) -> T {
+    return x;
+}
+
+fn wrap<T>(value: T) -> Box<T> {
+    return Box { value: value };
+}
+
+fn unwrap_or<T>(opt: Option<T>, default: T) -> T {
+    return opt is {
+        Some(v) => v,
+        None => default,
+    };
+}
+
+// ============================================
+// 7. 复杂泛型场景 - 嵌套泛型
+// ============================================
+
+fn double_wrap<T>(value: T) -> Box<Box<T>> {
+    return Box { 
+        value: Box { value: value } 
+    };
+}
+
+// ============================================
+// 8. 接口约束的泛型函数
+// ============================================
+
+fn print_value<T>(value: T) where T: Display {
+    value.show();
+}
+
+fn print_and_debug<T>(value: T) where T: Display, T: Debug {
+    value.show();
+    value.debug();
+}
+
+// ============================================
+// 9. Match表达式与泛型枚举
+// ============================================
+
+fn process_option<T>(opt: Option<T>, default: T) -> T {
+    return opt is {
+        Some(value) => value,
+        None => default,
+    };
+}
+
+fn process_result<T>(res: Result<T, string>) -> T {
+    return res is {
+        Ok(value) => value,
+        Err(msg) => {
+            println(msg);
+            panic("Error occurred");
+        },
+    };
+}
+
+// ============================================
+// 10. 主测试函数
+// ============================================
+
+fn main() {
+    println("========================================");
+    println("泛型和接口系统完善测试");
+    println("========================================");
+    
+    // 测试基本接口实现
+    let p = Point { x: 10, y: 20 };
+    p.show();
+    p.debug();
+    
+    // 测试泛型结构体
+    let box_int = Box { value: 42 };
+    let box_str = Box { value: "hello" };
+    
+    // 测试泛型函数
+    let id1 = identity(100);
+    let id2 = identity("test");
+    
+    // 测试泛型包装
+    let wrapped = wrap(42);
+    
+    // 测试嵌套泛型
+    let double_boxed = double_wrap(100);
+    
+    // 测试泛型枚举
+    let some_val = Option::Some(42);
+    let none_val: Option<i32> = Option::None;
+    
+    let unwrapped1 = unwrap_or(some_val, 0);
+    let unwrapped2 = unwrap_or(none_val, -1);
+    
+    // 测试Result
+    let ok_result = Result::Ok(100);
+    let err_result: Result<i32, string> = Result::Err("error");
+    
+    // 测试接口约束的泛型函数
+    print_value(p);
+    print_and_debug(p);
+    
+    // 测试Pair
+    let pair = Pair { first: p, second: p };
+    pair.show();
+    
+    println("========================================");
+    println("所有测试完成!");
+    println("========================================");
+}
+
+

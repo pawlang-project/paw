@@ -1,0 +1,51 @@
+// 正确的接口默认方法使用方式
+
+type Drawable = interface {
+    fn draw(&self);
+    fn get_name(&self) -> string;
+    
+    fn render(&self) {
+        println("Rendering...");
+        self.draw();
+    }
+    
+    fn show_info(&self) {
+        let name = self.get_name();
+        println(name);
+    }
+}
+
+type Circle = struct {
+    name: string,
+    radius: i32
+}
+
+support Circle with Drawable {
+    fn draw(&self) {
+        println("Drawing circle");
+    }
+    
+    fn get_name(&self) -> string {
+        self.name
+    }
+    
+    // render 和 show_info 使用默认实现
+}
+
+fn main() {
+    println("==== 正确的接口默认方法测试 ====");
+    
+    let c = Circle { name: "MyCircle", radius: 5 };
+    
+    println("调用 draw:");
+    c.draw();
+    
+    println("调用 render (默认实现):");
+    c.render();
+    
+    println("调用 show_info (默认实现):");
+    c.show_info();
+    
+    println("==== 完成 ====");
+}
+

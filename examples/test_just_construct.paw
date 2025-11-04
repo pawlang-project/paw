@@ -1,0 +1,15 @@
+// 只测试构造
+
+type Point = enum {
+    Origin,
+    At(i32, i32)
+}
+
+fn main() {
+    let p1 = Point::Origin;
+    let p2 = Point::At(10, 20);
+    
+    println("构造完成");
+}
+
+

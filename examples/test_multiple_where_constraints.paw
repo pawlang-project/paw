@@ -1,0 +1,110 @@
+// 测试多个 where 约束
+
+type Display = interface {
+    fn show(&self);
+}
+
+type Clone = interface {
+    fn clone(&self) -> Self;
+}
+
+type Debug = interface {
+    fn debug(&self);
+}
+
+// ============= 测试1: 双约束 =============
+
+type Pair<T, U> = struct {
+    first: T,
+    second: U
+}
+
+// T 和 U 都要实现 Display
+support Pair<T, U> with Display where T: Display, U: Display {
+    fn show(&self) {
+        println("Pair:");
+        println("  first: ...");
+        println("  second: ...");
+    }
+}
+
+// ============= 测试2: 单类型多约束 =============
+
+type Point<T> = struct {
+    x: T,
+    y: T
+}
+
+// T 同时实现 Display 和 Clone
+support Point<T> with Display where T: Display, T: Clone {
+    fn show(&self) {
+        println("Point (with Display + Clone)");
+    }
+}
+
+// ============= 测试3: 复杂约束 =============
+
+type Triple<T, U, V> = struct {
+    a: T,
+    b: U,
+    c: V
+}
+
+// 三个类型参数，不同的约束
+support Triple<T, U, V> with Display where T: Display, U: Clone, V: Debug {
+    fn show(&self) {
+        println("Triple with multiple constraints");
+    }
+}
+
+// ============= 辅助类型 =============
+
+type Int = struct {
+    value: i32
+}
+
+support Int with Display {
+    fn show(&self) {
+        println(self.value);
+    }
+}
+
+support Int with Clone {
+    fn clone(&self) -> Self {
+        Int { value: self.value }
+    }
+}
+
+support Int with Debug {
+    fn debug(&self) {
+        println("Int debug");
+    }
+}
+
+// ============= 主函数 =============
+
+fn main() {
+    println("==== 多约束测试 ====");
+    
+    let p = Pair<Int, Int> { 
+        first: Int { value: 1 }, 
+        second: Int { value: 2 } 
+    };
+    p.show();
+    
+    let pt = Point<Int> { 
+        x: Int { value: 10 }, 
+        y: Int { value: 20 } 
+    };
+    pt.show();
+    
+    let t = Triple<Int, Int, Int> {
+        a: Int { value: 1 },
+        b: Int { value: 2 },
+        c: Int { value: 3 }
+    };
+    t.show();
+    
+    println("==== 完成 ====");
+}
+

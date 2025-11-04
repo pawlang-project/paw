@@ -28,6 +28,10 @@ private:
     static void registerAssert(SymbolTable* st, TypeSystem* ts);
     static void registerDebugAssert(SymbolTable* st, TypeSystem* ts);
     static void registerUnreachable(SymbolTable* st, TypeSystem* ts);
+    
+    // Optional 构造器
+    static void registerSome(SymbolTable* st, TypeSystem* ts);
+    static void registerNone(SymbolTable* st, TypeSystem* ts);
 };
 
 } // namespace pawc

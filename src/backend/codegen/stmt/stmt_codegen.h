@@ -43,7 +43,7 @@ public:
     void visit(BoolLiteral*) override {}
     void visit(CharLiteral*) override {}
     void visit(StringLiteral*) override {}
-    void visit(NullLiteral*) override {}
+    void visit(NoneLiteral*) override {}
     void visit(CastExpr*) override {}
     void visit(ClosureExpr*) override {}
     void visit(IdentifierExpr*) override {}
@@ -84,6 +84,9 @@ private:
     
     /// 为所有main()生成C ABI兼容的wrapper
     void generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_return_type);
+    
+    /// 🔧 生成接口默认方法的包装
+    void generateDefaultMethod(const std::string& type_name, const class InterfaceType::MethodSignature& method);
 };
 
 } // namespace pawc

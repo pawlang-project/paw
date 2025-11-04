@@ -1,0 +1,32 @@
+// 测试多参数提取
+
+type Point = enum {
+    Origin,
+    At(i32, i32)
+}
+
+fn get_x(p: Point) -> i32 {
+    return p is {
+        Origin => 0,
+        At(x, y) => x
+    };
+}
+
+fn get_y(p: Point) -> i32 {
+    return p is {
+        Origin => 0,
+        At(x, y) => y
+    };
+}
+
+fn main() {
+    let p = Point::At(10, 20);
+    
+    let x = get_x(p);
+    let y = get_y(p);
+    
+    println(x);
+    println(y);
+}
+
+

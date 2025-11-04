@@ -1,0 +1,8 @@
+// 最简单的 none 测试
+
+fn main() {
+    let y: i32? = none;
+    println("测试完成");
+}
+
+

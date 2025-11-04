@@ -1,0 +1,21 @@
+// 测试匹配At
+
+type Point = enum {
+    Origin,
+    At(i32, i32)
+}
+
+fn test_match(p: Point) -> i32 {
+    return p is {
+        Origin => 0,
+        At(x, y) => 1
+    };
+}
+
+fn main() {
+    let p = Point::At(10, 20);
+    let result = test_match(p);
+    println(result);
+}
+
+

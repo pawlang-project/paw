@@ -1,0 +1,64 @@
+// 测试多个 where 约束
+
+type Display = interface {
+    fn show(&self);
+}
+
+type Clone = interface {
+    fn clone(&self);
+}
+
+type Debug = interface {
+    fn debug(&self);
+}
+
+// ============= 测试1: 双约束（两个类型参数） =============
+
+type Pair<T, U> = struct {
+    first: i32,
+    second: i32
+}
+
+// T 和 U 都要实现 Display
+support Pair<T, U> with Display where T: Display, U: Display {
+    fn show(&self) {
+        println("Pair with two constraints");
+    }
+}
+
+// ============= 测试2: 单类型多约束 =============
+
+type Point<T> = struct {
+    x: i32,
+    y: i32
+}
+
+// T 同时实现 Display 和 Clone
+support Point<T> with Display where T: Display, T: Clone {
+    fn show(&self) {
+        println("Point with multiple constraints on T");
+    }
+}
+
+// ============= 测试3: 三个约束 =============
+
+type Triple<T, U, V> = struct {
+    a: i32,
+    b: i32,
+    c: i32
+}
+
+// 三个类型参数，不同的约束
+support Triple<T, U, V> with Display where T: Display, U: Clone, V: Debug {
+    fn show(&self) {
+        println("Triple with three different constraints");
+    }
+}
+
+// ============= 主函数 =============
+
+fn main() {
+    println("==== 多约束语法测试 ====");
+    println("✅ 如果编译成功，说明多约束语法已支持！");
+}
+

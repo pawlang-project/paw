@@ -1,0 +1,23 @@
+// 测试单参数（应该工作正常）
+
+type Option = enum {
+    None,
+    Some(i32)
+}
+
+fn get_value(opt: Option) -> i32 {
+    return opt is {
+        None => 0,
+        Some(x) => x
+    };
+}
+
+fn main() {
+    let opt1 = Option::None;
+    let opt2 = Option::Some(42);
+    
+    println(get_value(opt1));
+    println(get_value(opt2));
+}
+
+

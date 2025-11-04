@@ -99,16 +99,21 @@ void ExprCodeGen::visit(ClosureExpr* node) {
         }
         
         // 3. 生成闭包body
+        llvm::Value* body_result = nullptr;
         if (node->getBody()) {
             node->getBody()->accept(this);
+            body_result = result_;  // 🔧 保存body的返回值
         }
         
         // 4. 如果没有终止指令，添加默认return
         if (!builder.GetInsertBlock()->getTerminator()) {
             if (return_type->isVoidTy()) {
                 builder.CreateRetVoid();
+            } else if (body_result) {
+                // 🔧 如果body产生了值，返回它（隐式返回）
+                builder.CreateRet(body_result);
             } else {
-                // 如果body应该返回值但没有return，返回零值
+                // 如果body没有产生值，返回零值
                 llvm::Value* zero = llvm::Constant::getNullValue(return_type);
                 builder.CreateRet(zero);
             }
@@ -226,14 +231,19 @@ void ExprCodeGen::visit(ClosureExpr* node) {
     }
     
     // 4. 生成闭包body
+    llvm::Value* body_result = nullptr;
     if (node->getBody()) {
         node->getBody()->accept(this);
+        body_result = result_;  // 🔧 保存body的返回值
     }
     
     // 5. 如果没有终止指令，添加默认return
     if (!builder.GetInsertBlock()->getTerminator()) {
         if (return_type->isVoidTy()) {
             builder.CreateRetVoid();
+        } else if (body_result) {
+            // 🔧 如果body产生了值，返回它（隐式返回）
+            builder.CreateRet(body_result);
         } else {
             llvm::Value* zero = llvm::Constant::getNullValue(return_type);
             builder.CreateRet(zero);

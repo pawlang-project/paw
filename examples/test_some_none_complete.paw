@@ -1,0 +1,30 @@
+// 完整测试 some() 和 none
+
+fn main() {
+    println("测试开始");
+    
+    // 测试 some()
+    let x: i32? = some(42);
+    println("some(42) 成功");
+    
+    // 测试 none
+    let y: i32? = none;
+    println("none 成功");
+    
+    // 测试模式匹配
+    let r1 = x is {
+        some(v) => v,
+        none => 0
+    };
+    println(r1);
+    
+    let r2 = y is {
+        some(v) => v,
+        none => -1
+    };
+    println(r2);
+    
+    println("测试完成！");
+}
+
+

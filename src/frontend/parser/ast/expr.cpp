@@ -14,7 +14,7 @@ void FloatLiteral::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void BoolLiteral::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void CharLiteral::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void StringLiteral::accept(ASTVisitor* visitor) { visitor->visit(this); }
-void NullLiteral::accept(ASTVisitor* visitor) { visitor->visit(this); }
+void NoneLiteral::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void CastExpr::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void IdentifierExpr::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void SelfExpr::accept(ASTVisitor* visitor) { visitor->visit(this); }

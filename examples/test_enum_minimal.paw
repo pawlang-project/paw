@@ -1,0 +1,19 @@
+// 最小测试
+
+type Msg = enum {
+    A,
+    B(i32, i32)
+}
+
+fn main() {
+    let m = Msg::A;
+    
+    let result = m is {
+        A => 1,
+        B(x, y) => 2
+    };
+    
+    println(result);
+}
+
+

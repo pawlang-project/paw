@@ -1,0 +1,38 @@
+// 正确的接口默认方法测试（Rust/Java 风格）
+
+type Drawable = interface {
+    fn draw(&self);
+    
+    // 默认方法：调用接口中的其他方法
+    fn render(&self) {
+        println("Rendering...");
+        self.draw();  // 调用接口方法
+    }
+}
+
+type Circle = struct {
+    radius: i32
+}
+
+support Circle with Drawable {
+    fn draw(&self) {
+        println("Drawing circle");
+    }
+    
+    // render 使用默认实现
+}
+
+fn main() {
+    println("==== 接口默认方法测试 ====");
+    
+    let c = Circle { radius: 5 };
+    
+    println("1. 直接调用 draw:");
+    c.draw();
+    
+    println("\n2. 调用默认方法 render:");
+    c.render();
+    
+    println("\n==== 完成 ====");
+}
+

@@ -1,0 +1,22 @@
+// 测试条件实现的错误检查
+
+type Display = interface {
+    fn show(&self);
+}
+
+type Point<T> = struct {
+    x: T,
+    y: T
+}
+
+// ❌ 错误：Unknown 接口不存在
+support Point<T> with Display where T: Unknown {
+    fn show(&self) {
+        println("Point");
+    }
+}
+
+fn main() {
+    println("测试错误检查");
+}
+

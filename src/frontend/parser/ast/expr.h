@@ -352,10 +352,10 @@ private:
     TokenType operator_;  // QUESTION(?) for Optional, BANG(!) for Result
 };
 
-/// NullLiteral - null字面量
-class NullLiteral : public Expr {
+/// NoneLiteral - none字面量 (Optional空值)
+class NoneLiteral : public Expr {
 public:
-    NullLiteral() = default;
+    NoneLiteral() = default;
     void accept(ASTVisitor* visitor) override;
 };
 

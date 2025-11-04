@@ -41,12 +41,14 @@ enum class TokenType {
     IS,              // is (match模式匹配)
     LET,             // let
     LOOP,            // loop (统一的循环)
+    NONE,            // none (Optional空值构造器)
     NULL_KW,         // null (Optional字面量)
     OK,              // ok (Result成功构造器)
     PUB,             // pub (公开可见性)
     RETURN,          // return
     SELF_LOWER,      // self
     SELF_UPPER,      // Self
+    SOME,            // some (Optional值构造器函数名)
     STRUCT,          // struct
     SUPPORT,         // support (接口实现)
     TRUE,            // true

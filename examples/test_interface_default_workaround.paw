@@ -1,0 +1,33 @@
+// 接口默认方法 - Workaround 方案
+
+type Drawable = interface {
+    fn draw(self);
+}
+
+type Circle = struct {
+    radius: i32
+}
+
+// 方案1: 手动实现所有方法
+support Circle with Drawable {
+    fn draw(self) {
+        println("Drawing circle");
+    }
+    
+    // 手动实现 render（相当于使用默认实现的逻辑）
+    fn render(self) {
+        println("Rendering...");
+        self.draw();
+    }
+}
+
+fn main() {
+    println("==== 接口方法测试 ====");
+    
+    let c = Circle { radius: 5 };
+    c.draw();
+    c.render();  // ✅ 现在可以工作
+    
+    println("==== 测试完成 ====");
+}
+

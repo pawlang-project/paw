@@ -1,16 +1,41 @@
-// 闭包系统 - 基础测试
-// 测试闭包语法解析和类型检查
+// 测试基础闭包捕获
 
-fn main() -> i32 {
-    println("=== Closure System Test ===");
+fn main() {
+    println("==== 闭包捕获测试 ====");
     
-    // 测试1: 简单闭包（语句版本）
-    let add = (x: i32, y: i32) -> i32 {
-        return x + y;
+    // 1. 基础捕获
+    println("1. 基础捕获:");
+    let x = 10;
+    let y = 20;
+    let add_xy = fn() -> i32 { return x + y; };
+    println(add_xy());
+    
+    // 2. 作用域测试
+    println("2. 作用域测试:");
+    let outer = 100;
+    {
+        let inner = 50;
+        let f = fn() -> i32 { return outer + inner; };
+        println(f());
+    }
+    
+    // 3. Match arm 作用域
+    println("3. Match arm 作用域:");
+    let base = 10;
+    let opt = some(42);
+    let result = opt is {
+        some(v) => base + v,
+        none => base
     };
+    println(result);
     
-    println("Closure test passed");
+    // 4. 多个闭包共享捕获
+    println("4. 多个闭包共享捕获:");
+    let shared = 5;
+    let f1 = fn() -> i32 { return shared * 2; };
+    let f2 = fn() -> i32 { return shared + 10; };
+    println(f1());
+    println(f2());
     
-    return 0;
+    println("==== 测试完成 ====");
 }
-

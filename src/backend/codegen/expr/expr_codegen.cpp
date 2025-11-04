@@ -17,9 +17,25 @@ ExprCodeGen::ExprCodeGen(CodeGenContext* context)
 
 llvm::Value* ExprCodeGen::generate(ASTNode* node) {
     if (auto* expr = dynamic_cast<Expr*>(node)) {
+        // 🔧 调试：打印表达式类型
+        if (dynamic_cast<BinaryExpr*>(expr)) {
+            std::cerr << "[ExprCodeGen::generate] BinaryExpr" << std::endl;
+        } else if (dynamic_cast<MemberExpr*>(expr)) {
+            std::cerr << "[ExprCodeGen::generate] MemberExpr" << std::endl;
+        } else if (dynamic_cast<SelfExpr*>(expr)) {
+            std::cerr << "[ExprCodeGen::generate] SelfExpr" << std::endl;
+        } else if (dynamic_cast<IntLiteral*>(expr)) {
+            std::cerr << "[ExprCodeGen::generate] IntLiteral" << std::endl;
+        } else {
+            std::cerr << "[ExprCodeGen::generate] Other expression type" << std::endl;
+        }
+        
+        result_ = nullptr;  // 重置
         expr->accept(this);
+        std::cerr << "[ExprCodeGen::generate] Result: " << (result_ ? "valid" : "null") << std::endl;
         return result_;
     }
+    std::cerr << "[ExprCodeGen::generate] Not an expression!" << std::endl;
     return nullptr;
 }
 
@@ -35,20 +51,53 @@ void ExprCodeGen::visit(SelfExpr* node) {
     // self表达式：在函数参数中查找self
     llvm::Value* self_var = context_->lookupVariable("self");
     if (self_var) {
-        // self_var是alloca，存储的是指针类型（因为是引用参数）
-        // Load它得到指针值（%Point*）
-        result_ = context_->getBuilder().CreateLoad(
-            context_->getVoidType()->getPointerTo(),
-            self_var, 
-            "self"
-        );
+        // 🔧 关键修复：正确处理引用类型的 self
+        // self_var 是 alloca，需要 Load
+        // 但 Load 的类型取决于 self 是值还是引用
+        
+        Type* self_paw_type = node->getType();
+        
+        if (self_paw_type) {
+            auto& builder = context_->getBuilder();
+            
+            // 🔧 检查 self 的类型是否是引用
+            if (self_paw_type->isReference()) {
+                // self 是引用类型 (&self)
+                // self_var alloca 存储的是指针
+                // Load 得到指针
+                result_ = builder.CreateLoad(
+                    llvm::PointerType::getUnqual(builder.getContext()),
+                    self_var,
+                    "self.ptr"
+                );
+            } else {
+                // self 是值类型（self）
+                // self_var alloca 存储的是值
+                // Load 得到值
+                llvm::Type* self_llvm_type = context_->getLLVMType(self_paw_type);
+                result_ = builder.CreateLoad(
+                    self_llvm_type,
+                    self_var,
+                    "self.val"
+                );
+            }
+        } else {
+            // 后备方案：假设是指针
+            result_ = context_->getBuilder().CreateLoad(
+                llvm::PointerType::getUnqual(context_->getBuilder().getContext()),
+                self_var,
+                "self"
+            );
+        }
     } else {
         result_ = nullptr;
     }
 }
 
 void ExprCodeGen::visit(IdentifierExpr* node) {
-    llvm::Value* var = context_->lookupVariable(node->getName());
+    const std::string& name = node->getName();
+    
+    llvm::Value* var = context_->lookupVariable(name);
     if (var) {
         // === 特殊处理：FunctionType（闭包）===
         // 闭包变量存储的是函数指针，直接返回alloca（指针），不load
@@ -63,7 +112,7 @@ void ExprCodeGen::visit(IdentifierExpr* node) {
             context_->getLLVMType(node->getType()) :
             context_->getI32Type();
         
-        result_ = context_->getBuilder().CreateLoad(load_type, var, node->getName());
+        result_ = context_->getBuilder().CreateLoad(load_type, var, name);
     } else {
         result_ = nullptr;
     }
@@ -133,20 +182,28 @@ void ExprCodeGen::visit(StaticAccessExpr* node) {
 
 void ExprCodeGen::visit(MemberExpr* node) {
     // 成员访问: obj.field 或 tuple.0
+    std::cerr << "[MemberExpr] Visiting member: " << node->getMember() << std::endl;
+    
     node->getObject()->accept(this);
     llvm::Value* object = result_;
     
     if (!object) {
+        std::cerr << "[MemberExpr] Object is null!" << std::endl;
         result_ = nullptr;
         return;
     }
     
+    std::cerr << "[MemberExpr] Object generated successfully" << std::endl;
+    
     auto& builder = context_->getBuilder();
     Type* obj_type = node->getObject()->getType();
     if (!obj_type) {
+        std::cerr << "[MemberExpr] Object type is null!" << std::endl;
         result_ = nullptr;
         return;
     }
+    
+    std::cerr << "[MemberExpr] Object type: " << obj_type->toString() << std::endl;
     
     // 🔧 引用类型处理：如果对象是引用类型，获取pointee类型
     if (obj_type->isReference()) {
@@ -179,6 +236,9 @@ void ExprCodeGen::visit(MemberExpr* node) {
         auto* struct_type = static_cast<StructType*>(obj_type);
         llvm::Type* llvm_struct_type = context_->getLLVMType(struct_type);
         
+        std::cerr << "[MemberExpr] Accessing field '" << member << "' on struct " << struct_type->getName() << std::endl;
+        std::cerr << "[MemberExpr] Object is pointer: " << object->getType()->isPointerTy() << std::endl;
+        
         // 查找字段索引
         const auto& fields = struct_type->getFields();
         int field_idx = -1;
@@ -190,13 +250,17 @@ void ExprCodeGen::visit(MemberExpr* node) {
         }
         
         if (field_idx < 0) {
+            std::cerr << "[MemberExpr] Field not found!" << std::endl;
             result_ = nullptr;
             return;
         }
         
+        std::cerr << "[MemberExpr] Field index: " << field_idx << std::endl;
+        
         // 如果object是值而不是指针，需要先存储到栈上
         llvm::Value* object_ptr = object;
         if (!object->getType()->isPointerTy()) {
+            std::cerr << "[MemberExpr] Object is value, creating temp alloca" << std::endl;
             llvm::AllocaInst* temp = builder.CreateAlloca(object->getType(), nullptr, "struct.tmp");
             builder.CreateStore(object, temp);
             object_ptr = temp;
@@ -209,6 +273,8 @@ void ExprCodeGen::visit(MemberExpr* node) {
             field_idx,
             member
         );
+        
+        std::cerr << "[MemberExpr] Got field pointer" << std::endl;
         
         // Load字段值
         llvm::Type* field_type = context_->getLLVMType(fields[field_idx].second);

@@ -1,0 +1,25 @@
+// 测试闭包直接调用 vs 变量调用
+
+fn main() {
+    println("==== 闭包调用测试 ====");
+    
+    // 测试1: 无参数闭包直接调用
+    println("测试1: 直接调用");
+    let result1 = (() -> i32 { 42 })();
+    println(result1);
+    
+    // 测试2: 无参数闭包变量调用
+    println("测试2: 变量调用");
+    let f = () -> i32 { 100 };
+    let result2 = f();
+    println(result2);
+    
+    // 测试3: 有参数闭包
+    println("测试3: 有参数");
+    let add5 = (x: i32) -> i32 { x + 5 };
+    let result3 = add5(10);
+    println(result3);
+    
+    println("==== 完成 ====");
+}
+

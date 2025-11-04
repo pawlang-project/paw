@@ -169,7 +169,15 @@ llvm::Type* CodeGenContext::mapStructType(StructType* type) {
 llvm::Type* CodeGenContext::mapOptionalType(OptionalType* type) {
     // Optional<T> = { i1 has_value, T value }
     // Optional使用匿名类型（LLVM会内部去重相同结构的类型）
-    llvm::Type* inner_type = getLLVMType(type->getInnerType());
+    Type* inner_paw_type = type->getInnerType();
+    llvm::Type* inner_type = getLLVMType(inner_paw_type);
+    
+    // 特殊处理: Optional<void> - void不能作为结构体字段
+    if (inner_paw_type->isVoid()) {
+        // 使用 i8 作为占位符
+        inner_type = builder_.getInt8Ty();
+    }
+    
     return llvm::StructType::get(context_, {builder_.getInt1Ty(), inner_type});
 }
 

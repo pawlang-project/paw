@@ -1,19 +1,24 @@
-// 闭包系统 - 简单测试
-// 测试闭包语法解析
+// 最简单的闭包测试
 
-fn main() -> i32 {
-    // 测试1: 简单闭包
-    let add = (x: i32, y: i32) -> i32 {
-        return x + y;
-    };
+fn main() {
+    println("==== 简单闭包测试 ====");
     
-    // 测试2: 返回类型推导
-    let multiply = (x: i32, y: i32) {
-        x * y
-    };
+    // 测试1: 无捕获
+    println("测试1: 无捕获");
+    let f1 = () -> i32 { 42 };
+    println(f1());
     
-    println("Closure test");
+    // 测试2: 单变量捕获
+    println("测试2: 单变量捕获");
+    let x = 10;
+    let f2 = () -> i32 { x };
+    println(f2());
     
-    return 0;
+    // 测试3: 简单运算
+    println("测试3: 简单运算");
+    let y = 20;
+    let f3 = () -> i32 { y + 5 };
+    println(f3());
+    
+    println("==== 完成 ====");
 }
-

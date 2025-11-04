@@ -371,18 +371,18 @@ struct Optional<T> {
 **示例**:
 ```paw
 // 定义Optional类型
-let name: string? = "Alice";
-let empty: i32? = null;
+let name: string? = some("Alice");
+let empty: i32? = none;
 
-// null检查
-if empty == null {
-    println("是null");
+// none检查
+if empty == none {
+    println("是none");
 }
 
 // 模式匹配
 let result = name is {
-    null => "未知",
-    value => value,  // 自动解包
+    none => "未知",
+    some(value) => value,  // 显式解包
 };
 ```
 

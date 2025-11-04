@@ -1,0 +1,45 @@
+// 测试 some() 和 none 构造器
+
+fn main() {
+    println("========================================");
+    println("测试 some() 和 none Optional 构造器");
+    println("========================================");
+    
+    // 测试 some() 构造器
+    let x: i32? = some(42);
+    println("创建 some(42) 成功");
+    
+    // 测试 none 构造器
+    let y: i32? = none;
+    println("创建 none 成功");
+    
+    // 测试模式匹配
+    let result1 = x is {
+        some(val) => {
+            println("some 分支");
+            println(val);
+            val
+        },
+        none => {
+            println("none 分支");
+            0
+        }
+    };
+    
+    let result2 = y is {
+        some(val) => {
+            println("some 分支");
+            val
+        },
+        none => {
+            println("none 分支 - 正确!");
+            -1
+        }
+    };
+    
+    println("========================================");
+    println("测试完成！");
+    println("========================================");
+}
+
+

@@ -22,12 +22,14 @@ const std::unordered_map<std::string, TokenType> Lexer::keywords_ = {
     {"is", TokenType::IS},
     {"let", TokenType::LET},
     {"loop", TokenType::LOOP},
-    {"null", TokenType::NULL_KW},
+    {"none", TokenType::NONE},         // Optional空值构造器
+    // {"null", TokenType::NULL_KW},   // 已移除，统一使用 none
     {"ok", TokenType::OK},
     {"pub", TokenType::PUB},
     {"return", TokenType::RETURN},
     {"self", TokenType::SELF_LOWER},
     {"Self", TokenType::SELF_UPPER},
+    {"some", TokenType::SOME},         // Optional值构造器
     {"struct", TokenType::STRUCT},
     {"support", TokenType::SUPPORT},
     {"true", TokenType::TRUE},

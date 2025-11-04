@@ -1,0 +1,23 @@
+// 测试条件实现：support Point<T> with Display where T: Display
+
+type Display = interface {
+    fn show(&self);
+}
+
+type Point<T> = struct {
+    x: T,
+    y: T
+}
+
+// ✅ 条件实现：Point<T> 实现 Display，当 T 实现 Display
+support Point<T> with Display where T: Display {
+    fn show(&self) {
+        println("Point: (?, ?)");
+    }
+}
+
+fn main() {
+    println("==== 条件实现语法测试 ====");
+    println("✅ 编译通过说明语法支持！");
+}
+

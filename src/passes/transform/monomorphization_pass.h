@@ -104,7 +104,7 @@ public:
     void visit(BoolLiteral* expr) override;
     void visit(CharLiteral* expr) override;
     void visit(StringLiteral* expr) override;
-    void visit(NullLiteral* expr) override;
+    void visit(NoneLiteral* expr) override;
     void visit(CastExpr* expr) override;
     void visit(ClosureExpr* expr) override;
     void visit(ArrayLiteral* expr) override;
