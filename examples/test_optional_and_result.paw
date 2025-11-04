@@ -1,0 +1,94 @@
+// Optional和Result类型完整测试
+// 测试some(), none, ok(), err()构造器
+
+fn test_optional_some() {
+    let x: i32? = some(42);
+    println("Optional some test passed!");
+}
+
+fn test_optional_none() {
+    let y: i32? = none;
+    println("Optional none test passed!");
+}
+
+fn test_optional_match() {
+    let x: i32? = some(100);
+
+    let result = x is {
+        some(val) => {
+            println(val);
+            1
+        },
+        none => {
+            println("Empty");
+            0
+        }
+    };
+
+    println("Optional match test passed!");
+}
+
+fn test_result_ok() {
+    let r: i32! = ok(42);
+    println("Result ok test passed!");
+}
+
+fn test_result_err() {
+    let r: i32! = err("Error message");
+    println("Result err test passed!");
+}
+
+fn divide(a: i32, b: i32) -> i32! {
+    if b == 0 {
+        return err("Division by zero");
+    }
+    return ok(a / b);
+}
+
+fn test_result_function() {
+    let result1 = divide(10, 2);
+    let result2 = divide(10, 0);
+
+    let r1 = result1 is {
+        ok(val) => {
+            println(val);
+            val
+        },
+        err(msg) => {
+            println("Error");
+            0
+        }
+    };
+
+    let r2 = result2 is {
+        ok(val) => {
+            println(val);
+            val
+        },
+        err(msg) => {
+            println("Error caught");
+            0
+        }
+    };
+
+    println("Result function test passed!");
+}
+
+fn main() {
+    println("╔════════════════════════════════════════╗");
+    println("║  Optional and Result Type Test        ║");
+    println("╚════════════════════════════════════════╝");
+    println("");
+
+    test_optional_some();
+    test_optional_none();
+    test_optional_match();
+    test_result_ok();
+    test_result_err();
+    test_result_function();
+
+    println("");
+    println("╔════════════════════════════════════════╗");
+    println("║  All Optional/Result Tests Passed! ✨ ║");
+    println("╚════════════════════════════════════════╝");
+}

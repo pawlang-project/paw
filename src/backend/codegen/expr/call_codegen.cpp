@@ -10,12 +10,92 @@
 #include "frontend/parser/ast/expr.h"
 #include "middleend/types/composite_types.h"
 #include "middleend/types/generic_types.h"
+#include "middleend/types/type_system.h"
 #include <iostream>
 
 namespace pawc {
 
 void ExprCodeGen::visit(CallExpr* node) {
     auto& builder = context_->getBuilder();
+    
+    // === 🔧 Bug Fix: 处理接口方法调用 ===
+    if (node->isMethodCall()) {
+        // 查找方法函数
+        llvm::Function* method = context_->getModule()->getFunction(node->getMethodTarget());
+        if (!method) {
+            result_ = nullptr;
+            return;
+        }
+        
+        // 生成receiver（self）
+        node->getReceiver()->accept(this);
+        llvm::Value* receiver = result_;
+        
+        if (!receiver) {
+            result_ = nullptr;
+            return;
+        }
+        
+        // 🔧 引用类型支持：检查方法的第一个参数是否是引用类型
+        // 如果是引用类型，需要传递指针而不是值
+        llvm::Value* receiver_arg = receiver;
+        
+        if (method->arg_size() > 0) {
+            llvm::Type* first_param_type = method->getArg(0)->getType();
+            
+            // 如果第一个参数是指针类型（引用），需要获取receiver的地址
+            if (first_param_type->isPointerTy() && !receiver->getType()->isPointerTy()) {
+                // receiver是值，但参数需要指针
+                // 创建一个临时变量存储receiver，并传递其地址
+                auto& builder = context_->getBuilder();
+                llvm::AllocaInst* temp = builder.CreateAlloca(receiver->getType(), nullptr, "receiver.tmp");
+                builder.CreateStore(receiver, temp);
+                receiver_arg = temp;
+            } else if (!first_param_type->isPointerTy() && receiver->getType()->isPointerTy()) {
+                // receiver是指针，但参数需要值
+                // Load值（LLVM 21不透明指针，需要从receiver类型推导）
+                auto& builder = context_->getBuilder();
+                // 从Paw类型系统获取实际类型
+                Type* receiver_paw_type = node->getReceiver()->getType();
+                llvm::Type* receiver_llvm_type = context_->getLLVMType(receiver_paw_type);
+                receiver_arg = builder.CreateLoad(receiver_llvm_type, receiver, "receiver.val");
+            }
+        }
+        
+        // 生成参数列表
+        std::vector<llvm::Value*> args;
+        
+        // 🔧 智能参数传递：只在方法期望receiver时才传递
+        // 如果方法有参数（期望receiver），传递receiver作为第一个参数
+        if (method->arg_size() > 0) {
+            args.push_back(receiver_arg);
+        }
+        
+        // 添加其他参数
+        for (const auto& arg : node->getArgs()) {
+            arg->accept(this);
+            if (result_) {
+                args.push_back(result_);
+            }
+        }
+        
+        // 调用方法
+        result_ = builder.CreateCall(method, args);
+        return;
+    }
+    
+    // 🔧 泛型函数调用处理
+    if (node->hasTypeArgs()) {
+        if (auto* ident = dynamic_cast<IdentifierExpr*>(node->getCallee())) {
+            // 泛型函数调用: identity<i32>(42)
+            std::cerr << "[DEBUG] 检测到泛型函数调用: " << ident->getName() << std::endl;
+            result_ = generateGenericFunctionCall(ident->getName(), 
+                                                  node->getTypeArgs(), 
+                                                  node->getArgs());
+            std::cerr << "[DEBUG] 泛型函数调用完成" << std::endl;
+            return;
+        }
+    }
     
     // 🔧 M7: 检查是否是泛型enum构造
     if (auto* static_access = dynamic_cast<StaticAccessExpr*>(node->getCallee())) {
@@ -571,5 +651,167 @@ void ExprCodeGen::visit(CallExpr* node) {
     }
 }
 
-} // namespace pawc
+// 泛型函数调用CodeGen
+llvm::Value* ExprCodeGen::generateGenericFunctionCall(
+    const std::string& func_name,
+    const std::vector<Type*>& type_args,
+    const std::vector<std::unique_ptr<Expr>>& args) {
+    
+    auto& builder = context_->getBuilder();
+    
+    // 1. 查找泛型模板
+    auto* tmpl = context_->getTypeSystem()->lookupGenericTemplate(func_name);
+    if (!tmpl || tmpl->kind != GenericTemplate::FUNCTION) {
+        return nullptr;
+    }
+    
+    // 2. 生成实例化函数名
+    std::string instance_name = func_name;
+    for (const auto* type_arg : type_args) {
+        instance_name += "_" + type_arg->toString();
+    }
+    
+    // 3. 检查函数是否已生成
+    llvm::Function* llvm_func = context_->getModule()->getFunction(instance_name);
+    
+    if (!llvm_func) {
+        // 4. 生成实例化函数
+        llvm_func = generateGenericFunctionInstance(func_name, type_args, tmpl);
+        if (!llvm_func) {
+            return nullptr;
+        }
+    }
+    
+    // 5. 评估参数
+    std::vector<llvm::Value*> arg_values;
+    for (const auto& arg : args) {
+        arg->accept(this);
+        if (result_) {
+            arg_values.push_back(result_);
+        }
+    }
+    
+    // 6. 调用实例化函数
+    return builder.CreateCall(llvm_func, arg_values);
+}
 
+// 生成泛型函数实例
+llvm::Function* ExprCodeGen::generateGenericFunctionInstance(
+    const std::string& func_name,
+    const std::vector<Type*>& type_args,
+    GenericTemplate* tmpl) {
+    
+    FunctionDecl* func_def = tmpl->func_def;
+    
+    // 1. 创建类型替换映射
+    std::unordered_map<std::string, Type*> type_substitution;
+    for (size_t i = 0; i < tmpl->type_params.size() && i < type_args.size(); i++) {
+        type_substitution[tmpl->type_params[i]] = type_args[i];
+    }
+    
+    // 2. 替换参数类型和返回类型
+    TypeSystem* type_system = context_->getTypeSystem();
+    
+    std::vector<llvm::Type*> param_types_llvm;
+    for (const auto& param : func_def->getParams()) {
+        Type* param_type = param.type;
+        Type* substituted_type = type_system->substituteType(
+            param_type, type_substitution);
+        param_types_llvm.push_back(context_->getLLVMType(substituted_type));
+    }
+    
+    Type* return_type = func_def->getReturnType();
+    Type* substituted_return_type = type_system->substituteType(
+        return_type, type_substitution);
+    llvm::Type* return_type_llvm = context_->getLLVMType(substituted_return_type);
+    
+    // 3. 创建函数类型和函数
+    llvm::FunctionType* func_type = llvm::FunctionType::get(
+        return_type_llvm, param_types_llvm, false);
+    
+    std::string instance_name = func_name;
+    for (const auto* type_arg : type_args) {
+        instance_name += "_" + type_arg->toString();
+    }
+    
+    llvm::Function* llvm_func = llvm::Function::Create(
+        func_type,
+        llvm::Function::ExternalLinkage,
+        instance_name,
+        context_->getModule()
+    );
+    
+    // 4. 生成函数体
+    // 保存当前基本块和插入点
+    auto& builder = context_->getBuilder();
+    llvm::BasicBlock* saved_bb = builder.GetInsertBlock();
+    
+    // 创建entry块
+    llvm::BasicBlock* entry_bb = llvm::BasicBlock::Create(
+        context_->getLLVMContext(), "entry", llvm_func);
+    builder.SetInsertPoint(entry_bb);
+    
+    // 5. 绑定参数
+    // 进入新的作用域
+    context_->enterScope();
+    
+    size_t idx = 0;
+    for (auto& arg : llvm_func->args()) {
+        if (idx < func_def->getParams().size()) {
+            const std::string& param_name = func_def->getParams()[idx].name;
+            Type* param_type = func_def->getParams()[idx].type;
+            Type* substituted_param_type = type_system->substituteType(
+                param_type, type_substitution);
+            
+            // 创建alloca并存储参数
+            llvm::Type* param_llvm_type = context_->getLLVMType(substituted_param_type);
+            llvm::Value* alloca = builder.CreateAlloca(param_llvm_type, nullptr, param_name);
+            builder.CreateStore(&arg, alloca);
+            
+            // 在作用域中定义变量
+            context_->defineVariable(param_name, alloca);
+            idx++;
+        }
+    }
+    
+    // 6. 生成函数体语句
+    if (func_def->getBody()) {
+        // 使用StmtCodeGen来生成函数体
+        // 需要创建一个临时的类型映射环境来处理泛型参数
+        
+        // 对于简单情况：如果body只有一个return语句
+        // 我们可以内联生成
+        auto* block_stmt = dynamic_cast<BlockStmt*>(func_def->getBody());
+        if (!block_stmt) {
+            context_->exitScope();
+            if (saved_bb) builder.SetInsertPoint(saved_bb);
+            return llvm_func;
+        }
+        
+        const auto& statements = block_stmt->getStmts();
+        
+        // 简化：只处理单个return语句
+        if (statements.size() == 1) {
+            if (auto* ret_stmt = dynamic_cast<ReturnStmt*>(statements[0].get())) {
+                if (ret_stmt->getValue()) {
+                    // 生成return表达式
+                    ret_stmt->getValue()->accept(this);
+                    if (result_) {
+                        builder.CreateRet(result_);
+                    }
+                }
+            }
+        }
+    }
+    
+    // 7. 恢复作用域和插入点
+    context_->exitScope();
+    
+    if (saved_bb) {
+        builder.SetInsertPoint(saved_bb);
+    }
+    
+    return llvm_func;
+}
+
+} // namespace pawc

@@ -48,14 +48,15 @@ public:
             return PassResult{false, "Failed to lookup target: " + error};
         }
         
-        // 创建TargetMachine
+        // 创建TargetMachine - 🔧 Bug Fix: 使用unique_ptr管理生命周期
         llvm::StringRef cpu = "generic";
         llvm::StringRef features = "";
         llvm::TargetOptions opt;
         auto cm = llvm::CodeModel::Small;
         
-        auto* target_machine = target->createTargetMachine(
-            target_triple, cpu, features, opt, std::nullopt, cm);
+        std::unique_ptr<llvm::TargetMachine> target_machine(
+            target->createTargetMachine(target_triple, cpu, features, opt, std::nullopt, cm)
+        );
         
         if (!target_machine) {
             return PassResult{false, "Failed to create TargetMachine"};
@@ -69,7 +70,6 @@ public:
         llvm::raw_fd_ostream dest(output_file, ec, llvm::sys::fs::OF_None);
         
         if (ec) {
-            delete target_machine;
             return PassResult{false, "Failed to open output file: " + ec.message()};
         }
         
@@ -78,7 +78,6 @@ public:
         auto file_type = llvm::CodeGenFileType::ObjectFile;
         
         if (target_machine->addPassesToEmitFile(pass, dest, nullptr, file_type)) {
-            delete target_machine;
             return PassResult{false, "TargetMachine can't emit object file"};
         }
         
@@ -86,7 +85,7 @@ public:
         pass.run(*module);
         dest.flush();
         
-        delete target_machine;
+        // target_machine会在函数结束时自动释放
         
         // 缓存对象文件路径供链接器使用
         context->cacheAnalysisResult("object_file", output_file);

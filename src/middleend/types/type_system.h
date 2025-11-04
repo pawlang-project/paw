@@ -29,7 +29,7 @@ namespace pawc {
 class TypeSystem {
 public:
     TypeSystem();
-    ~TypeSystem() = default;
+    ~TypeSystem();  // 需要自定义析构来清理Arena中的对象
     
     // Non-copyable
     TypeSystem(const TypeSystem&) = delete;
@@ -105,6 +105,9 @@ public:
     Type* instantiateGeneric(const std::string& template_name,
                             const std::vector<Type*>& type_args);
     
+    /// 类型参数替换（公开，供TypeChecker使用）
+    Type* substituteType(Type* type, const std::unordered_map<std::string, Type*>& substitution);
+    
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // 类型查询
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -124,9 +127,6 @@ private:
     std::unordered_map<std::string, GenericTemplate*> generic_templates_;
     std::unordered_map<std::string, Type*> instantiated_types_;
     std::vector<std::unique_ptr<GenericTemplate>> template_pool_;
-    
-    // 泛型实例化辅助函数
-    Type* substituteType(Type* type, const std::unordered_map<std::string, Type*>& substitution);
 };
 
 } // namespace pawc

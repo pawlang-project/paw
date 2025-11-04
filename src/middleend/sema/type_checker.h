@@ -9,6 +9,7 @@
 #include "middleend/types/type_system.h"
 #include "middleend/symbol/symbol_table.h"
 #include "diagnostics/diagnostic_engine.h"
+#include <map>
 
 namespace pawc {
 
@@ -86,6 +87,7 @@ private:
     Type* expected_type_ = nullptr;  // 用于类型推导（向下传播expected type）
     bool in_loop_ = false;
     Type* current_self_type_ = nullptr;  // 当前Self类型（在support上下文中）
+    Type* current_self_param_type_ = nullptr;  // 当前self参数的实际类型（可能是引用）
     
     // Where约束验证
     void validateWhereConstraints(const std::vector<WhereClause>& where_clauses,
@@ -94,10 +96,16 @@ private:
     // Self类型解析
     Type* resolveSelfType(Type* type);
     
+    // 泛型参数替换
+    Type* substituteGenericType(Type* type, const std::map<std::string, Type*>& substitution);
+    
     // 枚举模式处理辅助方法
     void handleResultPattern(class EnumPattern* node, class ResultType* result_type);
     void handleOptionalPattern(class EnumPattern* node, class OptionalType* opt_type);
     void handleEnumPattern(class EnumPattern* node, class EnumType* enum_type);
+    
+    // 泛型函数辅助方法
+    Type* instantiateFunctionReturnType(GenericTemplate* tmpl, const std::vector<Type*>& type_args);
 };
 
 } // namespace pawc

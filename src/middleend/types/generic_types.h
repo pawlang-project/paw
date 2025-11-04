@@ -111,14 +111,18 @@ public:
             : name(std::move(n)), param_types(std::move(p)), return_type(r) {}
     };
     
-    InterfaceType(const std::string& name, std::vector<MethodSignature> methods)
-        : name_(name), methods_(std::move(methods)) {}
+    InterfaceType(const std::string& name, std::vector<MethodSignature> methods,
+                  std::vector<std::string> generic_param_names = {})
+        : name_(name), methods_(std::move(methods)), generic_param_names_(std::move(generic_param_names)) {}
     
     explicit InterfaceType(const std::string& name) : name_(name) {}
     
     Kind getKind() const override { return Kind::Interface; }
     const std::string& getName() const { return name_; }
     const std::vector<MethodSignature>& getMethods() const { return methods_; }
+    const std::vector<std::string>& getGenericParamNames() const { return generic_param_names_; }
+    
+    bool isGeneric() const { return !generic_param_names_.empty(); }
     
     bool equals(const Type* other) const override;
     std::string toString() const override;
@@ -126,6 +130,7 @@ public:
 private:
     std::string name_;
     std::vector<MethodSignature> methods_;
+    std::vector<std::string> generic_param_names_;  // 泛型参数名称: ["T", "U", ...]
 };
 
 /// SelfType - Self类型（用于接口方法）

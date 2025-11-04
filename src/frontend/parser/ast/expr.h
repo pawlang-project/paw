@@ -130,17 +130,36 @@ public:
     Expr* getCallee() const { return callee_.get(); }
     const std::vector<ExprPtr>& getArgs() const { return args_; }
     
-    // 泛型函数调用支持
+    // 🔧 泛型函数支持：类型参数
     const std::vector<Type*>& getTypeArgs() const { return type_args_; }
-    void setTypeArgs(const std::vector<Type*>& args) { type_args_ = args; }
+    void setTypeArgs(const std::vector<Type*>& type_args) { type_args_ = type_args; }
     bool hasTypeArgs() const { return !type_args_.empty(); }
+    
+    // 🔧 接口方法调用支持
+    bool isMethodCall() const { return is_method_call_; }
+    void setIsMethodCall(bool is) { is_method_call_ = is; }
+    
+    Expr* getReceiver() const { return receiver_; }
+    void setReceiver(Expr* recv) { receiver_ = recv; }
+    
+    const std::string& getMethodName() const { return method_name_; }
+    void setMethodName(const std::string& name) { method_name_ = name; }
+    
+    const std::string& getMethodTarget() const { return method_target_; }
+    void setMethodTarget(const std::string& target) { method_target_ = target; }
     
     void accept(ASTVisitor* visitor) override;
     
 private:
     ExprPtr callee_;
     std::vector<ExprPtr> args_;
-    std::vector<Type*> type_args_;  // 泛型类型参数
+    std::vector<Type*> type_args_;  // 泛型类型参数（如<i32>）
+    
+    // 方法调用支持（由TypeChecker设置）
+    bool is_method_call_ = false;
+    Expr* receiver_ = nullptr;  // 不拥有，只是引用MemberExpr中的object
+    std::string method_name_;
+    std::string method_target_;  // 完整的目标函数名（Type_method）
 };
 
 /// MemberExpr - 成员访问 a.b

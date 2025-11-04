@@ -36,7 +36,7 @@ class CodeGenContext {
 public:
     CodeGenContext(const std::string& module_name, TypeSystem* type_system,
                    SymbolTable* symbol_table);
-    ~CodeGenContext() = default;
+    ~CodeGenContext();  // 🔧 Bug Fix: 显式析构以控制LLVM对象析构顺序
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // LLVM Core Objects
@@ -45,6 +45,7 @@ public:
     llvm::LLVMContext& getLLVMContext() { return context_; }
     llvm::Module* getModule() { return module_.get(); }
     llvm::IRBuilder<>& getBuilder() { return builder_; }
+    TypeSystem* getTypeSystem() { return type_system_; }
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // Type Mapping (28种类型 → LLVM类型)
@@ -139,6 +140,8 @@ public:
     
 private:
     // LLVM核心对象
+    // 注意：context_ 必须首先声明，这样它会最后析构
+    // Module 和 IRBuilder 依赖于 LLVMContext，所以 context_ 必须比它们活得更久
     llvm::LLVMContext context_;
     std::unique_ptr<llvm::Module> module_;
     llvm::IRBuilder<> builder_;

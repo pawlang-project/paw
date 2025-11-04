@@ -32,6 +32,16 @@ CodeGenContext::CodeGenContext(const std::string& module_name,
     declareRuntimeFunctions();
 }
 
+CodeGenContext::~CodeGenContext() {
+    // 🔧 Bug Fix: 放弃Module所有权，避免析构时的内存问题
+    // LLVM内部对匿名StructType的管理导致析构时出现double-free
+    // 通过release()放弃所有权，让指针泄漏，由OS在进程退出时回收
+    if (module_) {
+        module_.release();  // 放弃所有权，不调用析构
+    }
+    // 其他成员按默认顺序自动析构
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Type Mapping - 28种类型
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -112,10 +122,12 @@ llvm::Type* CodeGenContext::mapPrimitiveType(Type* type) {
 
 llvm::Type* CodeGenContext::mapArrayType(ArrayType* type) {
     llvm::Type* element_type = getLLVMType(type->getElementType());
+    // Array是LLVM内置类型，不需要命名
     return llvm::ArrayType::get(element_type, type->getSize());
 }
 
 llvm::Type* CodeGenContext::mapTupleType(TupleType* type) {
+    // Tuple使用匿名类型（LLVM会内部去重相同结构的类型）
     std::vector<llvm::Type*> element_types;
     for (auto* elem_type : type->getElementTypes()) {
         element_types.push_back(getLLVMType(elem_type));
@@ -156,6 +168,7 @@ llvm::Type* CodeGenContext::mapStructType(StructType* type) {
 
 llvm::Type* CodeGenContext::mapOptionalType(OptionalType* type) {
     // Optional<T> = { i1 has_value, T value }
+    // Optional使用匿名类型（LLVM会内部去重相同结构的类型）
     llvm::Type* inner_type = getLLVMType(type->getInnerType());
     return llvm::StructType::get(context_, {builder_.getInt1Ty(), inner_type});
 }

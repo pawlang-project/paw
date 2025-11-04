@@ -184,32 +184,38 @@ private:
 /// SupportDecl - 接口实现 support Point with Display { methods }
 class SupportDecl : public Stmt {
 public:
-    SupportDecl(std::string type_name, 
+    SupportDecl(std::string type_name,
+                std::vector<GenericParam> type_generic_params,
                 std::string interface_name,
+                std::vector<GenericParam> interface_generic_params,
                 std::vector<std::unique_ptr<FunctionDecl>> methods,
-                std::vector<GenericParam> generic_params = {},
                 std::vector<WhereClause> where_clauses = {})
         : type_name_(std::move(type_name)),
+          type_generic_params_(std::move(type_generic_params)),
           interface_name_(std::move(interface_name)),
+          interface_generic_params_(std::move(interface_generic_params)),
           methods_(std::move(methods)),
-          generic_params_(std::move(generic_params)),
           where_clauses_(std::move(where_clauses)) {}
     
     const std::string& getTypeName() const { return type_name_; }
     const std::string& getInterfaceName() const { return interface_name_; }
     const std::vector<std::unique_ptr<FunctionDecl>>& getMethods() const { return methods_; }
-    const std::vector<GenericParam>& getGenericParams() const { return generic_params_; }
+    const std::vector<GenericParam>& getGenericParams() const { return type_generic_params_; }  // 向后兼容
+    const std::vector<GenericParam>& getTypeGenericParams() const { return type_generic_params_; }
+    const std::vector<GenericParam>& getInterfaceGenericParams() const { return interface_generic_params_; }
     const std::vector<WhereClause>& getWhereClauses() const { return where_clauses_; }
     
-    bool isGeneric() const { return !generic_params_.empty(); }
+    bool isGeneric() const { return !type_generic_params_.empty(); }
+    bool isInterfaceGeneric() const { return !interface_generic_params_.empty(); }
     
     void accept(ASTVisitor* visitor) override;
     
 private:
     std::string type_name_;
+    std::vector<GenericParam> type_generic_params_;        // 类型的泛型参数: support Box<T>
     std::string interface_name_;
+    std::vector<GenericParam> interface_generic_params_;   // 接口的泛型参数: with Comparable<T>
     std::vector<std::unique_ptr<FunctionDecl>> methods_;
-    std::vector<GenericParam> generic_params_;
     std::vector<WhereClause> where_clauses_;
 };
 

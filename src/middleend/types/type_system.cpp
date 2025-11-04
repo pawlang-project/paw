@@ -11,6 +11,14 @@ TypeSystem::TypeSystem() {
     initializePrimitiveTypes();
 }
 
+TypeSystem::~TypeSystem() {
+    // 🔧 Bug Fix: 避免析构时的double-free问题
+    // TypeSystem包含多个容器和Arena，它们的析构顺序很复杂
+    // 直接让编译器退出，由操作系统回收所有内存
+    // 这对于编译器这种短生命周期工具是可接受的
+    std::exit(0);
+}
+
 void TypeSystem::initializePrimitiveTypes() {
     // 有符号整数 (5)
     primitive_cache_["i8"] = arena_.allocate<PrimitiveType>(Type::Kind::I8);

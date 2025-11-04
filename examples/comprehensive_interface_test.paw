@@ -1,0 +1,104 @@
+// PawLang 接口系统综合测试
+// 测试所有接口功能
+
+// ==============================================================================
+// 测试1: Self类型返回
+// ==============================================================================
+
+type Cloneable = interface {
+    fn clone() -> Self;
+};
+
+type Point = struct { x: i32, y: i32 };
+
+support Point with Cloneable {
+    fn clone() -> Self {
+        return Point { x: 100, y: 200 };
+    }
+}
+
+// ==============================================================================
+// 测试2: self参数（按值）
+// ==============================================================================
+
+type Printer = interface {
+    fn print(self) -> void;
+    fn get_value(self) -> i32;
+};
+
+type Number = struct { value: i32 };
+
+support Number with Printer {
+    fn print(self) -> void {
+        println("Number printer");
+    }
+    
+    fn get_value(self) -> i32 {
+        return 999;
+    }
+}
+
+// ==============================================================================
+// 测试3: self参数（按引用）
+// ==============================================================================
+
+type Display = interface {
+    fn show(&self) -> void;
+};
+
+support Point with Display {
+    fn show(&self) -> void {
+        println("Point display");
+    }
+}
+
+// ==============================================================================
+// 测试4: 无参数方法（向后兼容）
+// ==============================================================================
+
+type Greeter = interface {
+    fn greet() -> void;
+};
+
+support Point with Greeter {
+    fn greet() -> void {
+        println("Hello from Point!");
+    }
+}
+
+// ==============================================================================
+// Main测试
+// ==============================================================================
+
+fn main() -> void {
+    println("=== Comprehensive Interface Test ===");
+    println("");
+    
+    // 测试1: Self类型返回
+    println("Test 1: Self return type");
+    let p1 = Point { x: 10, y: 20 };
+    let p2 = p1.clone();
+    println("Clone: OK");
+    println("");
+    
+    // 测试2: self参数（按值）
+    println("Test 2: self parameter (by value)");
+    let n = Number { value: 42 };
+    n.print();
+    let val = n.get_value();
+    println(val);
+    println("");
+    
+    // 测试3: self参数（按引用）
+    println("Test 3: self parameter (by reference)");
+    p1.show();
+    println("");
+    
+    // 测试4: 无参数方法
+    println("Test 4: parameterless method");
+    p1.greet();
+    println("");
+    
+    println("=== All Tests Complete ===");
+}
+

@@ -25,7 +25,7 @@ namespace pawc {
 class Compiler {
 public:
     explicit Compiler(const CompilerOptions& options);
-    ~Compiler();
+    ~Compiler();  // 显式析构以清理PassContext缓存
     
     /// 编译源文件
     /// \param source_file 源文件路径

@@ -4,6 +4,7 @@
 #include "capture_analyzer.h"
 #include "frontend/parser/ast/pattern.h"
 #include <set>
+#include <map>
 
 namespace pawc {
 
@@ -129,10 +130,17 @@ void TypeChecker::visit(CastExpr* node) {
 }
 
 void TypeChecker::visit(SelfExpr* node) {
-    // self表达式：类型由当前support块的目标类型决定
-    // TODO: 从当前上下文获取self类型
-    // 暂时设置为nullptr，需要在SupportDecl处理时设置上下文
-    node->setType(nullptr);
+    // self表达式：使用self参数的实际类型（可能是引用类型）
+    if (current_self_param_type_) {
+        // 🔧 解析Self类型：如果是 &Self，解析为 &Point
+        Type* resolved_type = resolveSelfType(current_self_param_type_);
+        node->setType(resolved_type);
+    } else if (current_self_type_) {
+        // Fallback: 使用current_self_type_（可能不准确）
+        node->setType(current_self_type_);
+    } else {
+        node->setType(nullptr);
+    }
 }
 
 void TypeChecker::visit(IdentifierExpr* node) {
@@ -147,6 +155,16 @@ void TypeChecker::visit(IdentifierExpr* node) {
     
     Symbol* sym = symbols_->lookup(name);
     if (!sym) {
+        // 🔧 特殊处理: self标识符（如果在符号表中找不到）
+        if (name == "self" && current_self_type_) {
+            // self的类型是当前support的类型
+            // 但如果是引用参数，需要返回引用类型
+            std::cerr << "⚠️ [TypeChecker] self not in symbol table, using current_self_type_: "
+                      << current_self_type_->toString() << std::endl;
+            node->setType(current_self_type_);
+            return;
+        }
+        
         diag_->reportError("Undefined identifier: " + name,
                           node->getLocation());
         node->setType(types_->getVoidType());
@@ -155,7 +173,8 @@ void TypeChecker::visit(IdentifierExpr* node) {
     
     if (sym->getKind() == Symbol::Kind::Variable) {
         auto* var_sym = static_cast<VariableSymbol*>(sym);
-        node->setType(var_sym->getType());
+        Type* var_type = var_sym->getType();
+        node->setType(var_type);
     } else {
         node->setType(types_->getVoidType());
     }
@@ -174,7 +193,19 @@ void TypeChecker::visit(BinaryExpr* node) {
         op == TokenType::LT || op == TokenType::LESS_EQ ||
         op == TokenType::GT || op == TokenType::GREATER_EQ) {
         
-        if (!types_->equals(left_type, right_type)) {
+        // 特殊处理: Optional<T> 与 null 的比较
+        // null 的类型是 Optional<void>，但可以与任何 Optional<T> 比较
+        bool is_optional_null_comparison = false;
+        if ((left_type->isOptional() && right_type->isOptional())) {
+            auto* left_opt = static_cast<OptionalType*>(left_type);
+            auto* right_opt = static_cast<OptionalType*>(right_type);
+            // 如果其中一个是 Optional<void> (null)，允许比较
+            if (left_opt->getInnerType()->isVoid() || right_opt->getInnerType()->isVoid()) {
+                is_optional_null_comparison = true;
+            }
+        }
+        
+        if (!types_->equals(left_type, right_type) && !is_optional_null_comparison) {
             diag_->reportError("Type mismatch in comparison", node->getLocation());
         }
         node->setType(types_->getBoolType());
@@ -262,6 +293,75 @@ void TypeChecker::visit(UnaryExpr* node) {
 }
 
 void TypeChecker::visit(CallExpr* node) {
+    // === 🔧 Bug Fix: 检查是否是接口方法调用 ===
+    // 方法调用形式: obj.method() 被解析为 CallExpr(MemberExpr(obj, "method"), args)
+    if (auto* member_expr = dynamic_cast<MemberExpr*>(node->getCallee())) {
+        Expr* object = member_expr->getObject();
+        const std::string& method_name = member_expr->getMember();
+        
+        // 先检查object的类型
+        object->accept(this);
+        Type* obj_type = object->getType();
+        
+        if (obj_type && obj_type->isStruct()) {
+            auto* struct_type = static_cast<StructType*>(obj_type);
+            
+            // 检查是否是字段（而不是方法）
+            const auto& fields = struct_type->getFields();
+            bool is_field = false;
+            for (const auto& field : fields) {
+                if (field.first == method_name) {
+                    is_field = true;
+                    break;
+                }
+            }
+            
+            // 如果不是字段，查找接口方法
+            if (!is_field) {
+                std::string full_method_name = struct_type->getName() + "_" + method_name;
+                
+                // 从符号表查找方法
+                Symbol* method_symbol = symbols_->lookup(full_method_name);
+                
+                if (method_symbol && method_symbol->getKind() == Symbol::Kind::Function) {
+                    // 找到接口方法！标记为方法调用
+                    node->setIsMethodCall(true);
+                    node->setReceiver(object);
+                    node->setMethodName(method_name);
+                    node->setMethodTarget(full_method_name);
+                    
+                    // 类型检查参数
+                    std::vector<Type*> arg_types;
+                    for (const auto& arg : node->getArgs()) {
+                        arg->accept(this);
+                        arg_types.push_back(arg->getType());
+                    }
+                    
+                    // 验证方法签名
+                    auto* func_symbol = static_cast<FunctionSymbol*>(method_symbol);
+                    FunctionType* func_type = func_symbol->getType();
+                    const auto& func_params = func_type->getParamTypes();
+                    
+                    // 🔧 Self参数支持：方法第一个参数是self，用户调用时不传递
+                    // 所以arg_types的数量应该比func_params少1（跳过self）
+                    size_t expected_args = func_params.empty() ? 0 : func_params.size() - 1;
+                    if (arg_types.size() != expected_args) {
+                        diag_->reportError(
+                            "Method call argument count mismatch: expected " +
+                            std::to_string(expected_args) + ", got " +
+                            std::to_string(arg_types.size()),
+                            SourceLocation()
+                        );
+                    }
+                    
+                    // 设置返回类型
+                    node->setType(func_type->getReturnType());
+                    return;
+                }
+            }
+        }
+    }
+    
     node->getCallee()->accept(this);
     
     // 收集参数类型
@@ -311,6 +411,20 @@ void TypeChecker::visit(CallExpr* node) {
     // Case 2: 普通函数调用 - callee是IdentifierExpr
     if (auto* ident = dynamic_cast<IdentifierExpr*>(node->getCallee())) {
         const std::string& func_name = ident->getName();
+        
+        // 🔧 泛型函数调用处理
+        if (node->hasTypeArgs()) {
+            // 这是泛型函数调用: identity<i32>(42)
+            auto* tmpl = types_->lookupGenericTemplate(func_name);
+            if (tmpl && tmpl->kind == GenericTemplate::FUNCTION) {
+                // 实例化函数
+                Type* return_type = instantiateFunctionReturnType(tmpl, node->getTypeArgs());
+                if (return_type) {
+                    node->setType(return_type);
+                    return;
+                }
+            }
+        }
         
         // 特殊处理: ok(value) - Result构造器
         if (func_name == "ok" && arg_types.size() == 1) {
@@ -443,6 +557,14 @@ void TypeChecker::visit(MemberExpr* node) {
         return;
     }
     
+    // 🔧 引用类型处理：如果对象是引用类型，获取它的pointee类型
+    if (obj_type->isReference()) {
+        auto* ref_type = static_cast<ReferenceType*>(obj_type);
+        obj_type = ref_type->getPointeeType();
+        // 🔧 Self类型解析：如果pointee是Self，解析为实际类型
+        obj_type = resolveSelfType(obj_type);
+    }
+    
     const std::string& member = node->getMember();
     
     // 检查是否是元组字段访问（成员名是数字）
@@ -474,9 +596,23 @@ void TypeChecker::visit(MemberExpr* node) {
         if (field_type) {
             node->setType(field_type);
         } else {
-            diag_->reportError("Struct has no member: " + member,
-                              node->getLocation());
-            node->setType(types_->getVoidType());
+            // 🔧 Bug Fix: 如果不是字段，可能是接口方法
+            // 检查是否存在对应的接口方法
+            std::string method_name = struct_type->getName() + "_" + member;
+            Symbol* method_symbol = symbols_->lookup(method_name);
+            
+            if (method_symbol && method_symbol->getKind() == Symbol::Kind::Function) {
+                // 这是方法！设置为方法的返回类型
+                // 注意：MemberExpr单独出现时，实际上会被包在CallExpr中
+                // 这里设置类型主要是为了防止报错
+                auto* func_symbol = static_cast<FunctionSymbol*>(method_symbol);
+                node->setType(func_symbol->getType()->getReturnType());
+            } else {
+                // 既不是字段也不是方法，才报错
+                diag_->reportError("Struct has no member: " + member,
+                                  node->getLocation());
+                node->setType(types_->getVoidType());
+            }
         }
     } else {
         diag_->reportError("Member access on non-struct/tuple type",
@@ -849,22 +985,44 @@ void TypeChecker::visit(FunctionDecl* node) {
     // 创建函数类型
     std::vector<Type*> param_types;
     for (const auto& param : node->getParams()) {
-        param_types.push_back(param.type);
+        // 🔧 Fix: 解析Self类型为实际类型
+        param_types.push_back(resolveSelfType(param.type));
     }
     
-    FunctionType* func_type = types_->getFunctionType(param_types, node->getReturnType());
-    symbols_->defineFunction(node->getName(), func_type);
+    // 🔧 Fix: 解析返回类型中的Self
+    Type* resolved_return_type = resolveSelfType(node->getReturnType());
+    FunctionType* func_type = types_->getFunctionType(param_types, resolved_return_type);
+    
+    // 🔧 Self类型支持：保存解析后的类型到AST节点，供CodeGen使用
+    node->setResolvedTypes(param_types, resolved_return_type);
+    
+    // 🔧 Bug Fix: 如果在接口实现上下文中（current_self_type_非空），
+    // 使用修饰后的方法名 TypeName_methodName
+    std::string func_name = node->getName();
+    if (current_self_type_) {
+        func_name = current_self_type_->toString() + "_" + node->getName();
+    }
+    
+    symbols_->defineFunction(func_name, func_type);
     
     // 验证where约束
     validateWhereConstraints(node->getWhereClauses(), node->getGenericParams());
     
     // 检查函数体
     symbols_->enterScope();
-    current_function_return_type_ = node->getReturnType();
+    // 🔧 Fix: 使用解析后的返回类型
+    current_function_return_type_ = resolved_return_type;
     
     // 添加参数到作用域
-    for (const auto& param : node->getParams()) {
-        symbols_->defineVariable(param.name, param.type, param.is_mutable);
+    for (size_t i = 0; i < node->getParams().size(); ++i) {
+        const auto& param = node->getParams()[i];
+        // 🔧 Fix: 使用解析后的参数类型
+        symbols_->defineVariable(param.name, param_types[i], param.is_mutable);
+        
+        // 🔧 Self参数类型记录：如果参数名是self，记录它的实际类型（可能是引用）
+        if (param.name == "self") {
+            current_self_param_type_ = param_types[i];
+        }
     }
     
     if (node->getBody()) {
@@ -1525,6 +1683,25 @@ void TypeChecker::visit(SupportDecl* node) {
     
     auto* iface = static_cast<InterfaceType*>(interface_type);
     
+    // 🔧 泛型接口支持：创建泛型参数替换映射
+    // 如果接口是泛型的（如Comparable<T>），且有实例化参数（如<Number>）
+    // 需要将T替换为Number
+    std::map<std::string, Type*> generic_substitution;
+    
+    if (iface->isGeneric() && node->isInterfaceGeneric()) {
+        const auto& interface_def_param_names = iface->getGenericParamNames();
+        const auto& interface_inst_params = node->getInterfaceGenericParams();
+        
+        // 构建替换映射：T -> Number
+        for (size_t i = 0; i < interface_def_param_names.size() && i < interface_inst_params.size(); ++i) {
+            // 查找实例化的类型
+            Type* concrete_type = types_->lookupType(interface_inst_params[i].name);
+            if (concrete_type) {
+                generic_substitution[interface_def_param_names[i]] = concrete_type;
+            }
+        }
+    }
+    
     // 3. 获取接口定义中的所有方法
     const auto& required_methods = iface->getMethods();
     const auto& implemented_methods = node->getMethods();
@@ -1550,23 +1727,35 @@ void TypeChecker::visit(SupportDecl* node) {
                     );
                 }
                 
-                // 检查参数类型
+                // 检查参数类型（应用泛型参数替换）
                 for (size_t i = 0; i < impl_params.size() && i < required.param_types.size(); ++i) {
-                    if (!types_->equals(impl_params[i].type, required.param_types[i])) {
+                    Type* expected_type = required.param_types[i];
+                    
+                    // 🔧 泛型接口：替换泛型参数
+                    if (!generic_substitution.empty()) {
+                        expected_type = substituteGenericType(expected_type, generic_substitution);
+                    }
+                    
+                    if (!types_->equals(impl_params[i].type, expected_type)) {
                         diag_->reportError(
                             "Method '" + required.name + "' parameter " + std::to_string(i) +
-                            " type mismatch: expected " + required.param_types[i]->toString() +
+                            " type mismatch: expected " + expected_type->toString() +
                             ", got " + impl_params[i].type->toString(),
                             SourceLocation()
                         );
                     }
                 }
                 
-                // 检查返回类型
-                if (!types_->equals(impl_method->getReturnType(), required.return_type)) {
+                // 检查返回类型（应用泛型参数替换）
+                Type* expected_return = required.return_type;
+                if (!generic_substitution.empty()) {
+                    expected_return = substituteGenericType(expected_return, generic_substitution);
+                }
+                
+                if (!types_->equals(impl_method->getReturnType(), expected_return)) {
                     diag_->reportError(
                         "Method '" + required.name + "' return type mismatch: " +
-                        "expected " + required.return_type->toString() +
+                        "expected " + expected_return->toString() +
                         ", got " + impl_method->getReturnType()->toString(),
                         SourceLocation()
                     );
@@ -1903,10 +2092,36 @@ Type* TypeChecker::resolveSelfType(Type* type) {
             Type* ret = resolveSelfType(func->getReturnType());
             return types_->getFunctionType(params, ret);
         }
+        case Type::Kind::Reference: {
+            // 🔧 引用类型：解析pointee中的Self
+            auto* ref = static_cast<ReferenceType*>(type);
+            Type* pointee = resolveSelfType(ref->getPointeeType());
+            return types_->getReferenceType(pointee, ref->isMutable());
+        }
         default:
             // 基础类型，不需要替换
             return type;
     }
+}
+
+// 泛型参数替换辅助函数
+Type* TypeChecker::substituteGenericType(Type* type, const std::map<std::string, Type*>& substitution) {
+    if (!type) return nullptr;
+    
+    // 如果是泛型类型，查找替换
+    if (type->getKind() == Type::Kind::Generic) {
+        auto* generic = static_cast<GenericType*>(type);
+        auto it = substitution.find(generic->getName());
+        if (it != substitution.end()) {
+            return it->second;  // 返回替换后的类型
+        }
+        return type;  // 没有找到替换，保持原样
+    }
+    
+    // 递归处理复合类型
+    // TODO: 如果需要支持更复杂的情况（如Pair<T, U>），需要递归处理
+    
+    return type;
 }
 
 void TypeChecker::visit(StructPattern* node) {
@@ -1963,6 +2178,25 @@ void TypeChecker::visit(StructPattern* node) {
     }
     
     // 注意：这里不检查是否所有字段都被匹配，因为结构体模式可以部分匹配
+}
+
+// 泛型函数返回类型实例化
+Type* TypeChecker::instantiateFunctionReturnType(GenericTemplate* tmpl, 
+                                                  const std::vector<Type*>& type_args) {
+    if (!tmpl || tmpl->kind != GenericTemplate::FUNCTION) {
+        return nullptr;
+    }
+    
+    FunctionDecl* func_def = tmpl->func_def;
+    
+    // 创建类型替换映射
+    std::unordered_map<std::string, Type*> substitution;
+    for (size_t i = 0; i < tmpl->type_params.size() && i < type_args.size(); i++) {
+        substitution[tmpl->type_params[i]] = type_args[i];
+    }
+    
+    // 替换返回类型中的类型参数
+    return types_->substituteType(func_def->getReturnType(), substitution);
 }
 
 } // namespace pawc

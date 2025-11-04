@@ -1,0 +1,22 @@
+// 接口方法调用测试
+
+type Display = interface {
+    fn show();
+};
+
+type Point = struct {
+    x: i32,
+    y: i32
+};
+
+support Point with Display {
+    fn show() {
+        println("Point(x, y)");
+    }
+}
+
+fn main() {
+    let p = Point { x: 10, y: 20 };
+    p.show();
+    println("Interface method call test passed!");
+}

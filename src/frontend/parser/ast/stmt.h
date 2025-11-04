@@ -145,6 +145,17 @@ public:
     bool isPublic() const { return is_public_; }
     
     bool isGeneric() const { return !generic_params_.empty(); }
+    
+    // 🔧 Self类型支持：解析后的类型（由TypeChecker设置）
+    void setResolvedTypes(const std::vector<Type*>& params, Type* ret) {
+        resolved_param_types_ = params;
+        resolved_return_type_ = ret;
+    }
+    
+    bool hasResolvedTypes() const { return resolved_return_type_ != nullptr; }
+    const std::vector<Type*>& getResolvedParamTypes() const { return resolved_param_types_; }
+    Type* getResolvedReturnType() const { return resolved_return_type_; }
+    
     void accept(ASTVisitor* visitor) override;
     
 private:
@@ -155,6 +166,10 @@ private:
     StmtPtr body_;
     std::vector<WhereClause> where_clauses_;   // where约束
     bool is_public_;                           // pub可见性
+    
+    // 🔧 Self类型支持：解析后的类型（Self -> 实际类型）
+    std::vector<Type*> resolved_param_types_;
+    Type* resolved_return_type_ = nullptr;
 };
 
 /// ReturnStmt - return语句
@@ -371,6 +386,10 @@ public:
     const std::vector<GenericParam>& getInterfaceGenericParams() const { return interface_generic_params_; }
     const std::vector<std::unique_ptr<FunctionDecl>>& getMethods() const { return methods_; }
     const std::vector<WhereClause>& getWhereClauses() const { return where_clauses_; }
+    
+    bool isGeneric() const { return !type_generic_params_.empty(); }
+    bool isInterfaceGeneric() const { return !interface_generic_params_.empty(); }
+    
     void accept(ASTVisitor* visitor) override;
     
 private:

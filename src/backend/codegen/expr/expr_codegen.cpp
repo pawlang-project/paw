@@ -8,6 +8,7 @@
 
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/GlobalVariable.h>
+#include <iostream>
 
 namespace pawc {
 
@@ -31,12 +32,16 @@ llvm::Value* ExprCodeGen::generate(ASTNode* node) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ExprCodeGen::visit(SelfExpr* node) {
-    // self表达式：返回self参数（函数的第一个参数）
-    llvm::Function* current_fn = context_->getBuilder().GetInsertBlock()->getParent();
-    
-    if (current_fn && current_fn->arg_size() > 0) {
-        // 假设self是第一个参数
-        result_ = current_fn->arg_begin();
+    // self表达式：在函数参数中查找self
+    llvm::Value* self_var = context_->lookupVariable("self");
+    if (self_var) {
+        // self_var是alloca，存储的是指针类型（因为是引用参数）
+        // Load它得到指针值（%Point*）
+        result_ = context_->getBuilder().CreateLoad(
+            context_->getVoidType()->getPointerTo(),
+            self_var, 
+            "self"
+        );
     } else {
         result_ = nullptr;
     }
@@ -141,6 +146,12 @@ void ExprCodeGen::visit(MemberExpr* node) {
     if (!obj_type) {
         result_ = nullptr;
         return;
+    }
+    
+    // 🔧 引用类型处理：如果对象是引用类型，获取pointee类型
+    if (obj_type->isReference()) {
+        auto* ref_type = static_cast<ReferenceType*>(obj_type);
+        obj_type = ref_type->getPointeeType();
     }
     
     // 检查是否是元组字段访问（成员名是数字）

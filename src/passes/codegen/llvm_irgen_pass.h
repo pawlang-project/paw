@@ -29,7 +29,7 @@ public:
             return PassResult{false, "No AST available for code generation"};
         }
         
-        // 创建CodeGen上下文（使用shared_ptr保持生命周期）
+        // 创建CodeGenContext
         auto codegen_ctx = std::make_shared<CodeGenContext>(
             "main_module",
             context->getTypeSystem(),
@@ -59,16 +59,17 @@ public:
             return PassResult{false, "Invalid LLVM IR: " + error_msg};
         }
         
-        // 缓存整个CodeGenContext（保持生命周期）
-        context->cacheAnalysisResult("codegen_context", codegen_ctx);
-        
-        // 同时缓存Module指针供快速访问
-        context->cacheAnalysisResult("llvm_module", codegen_ctx->getModule());
-        
         // 输出LLVM IR（如果verbose）
         if (context->isVerbose()) {
             codegen_ctx->dump();
         }
+        
+        // 🔧 Bug Fix: 必须缓存shared_ptr以保持CodeGenContext的生命周期
+        // 否则runImpl结束后CodeGenContext会被销毁，Module指针会失效
+        context->cacheAnalysisResult("codegen_context", codegen_ctx);
+        
+        // 同时缓存Module裸指针供快速访问
+        context->cacheAnalysisResult("llvm_module", codegen_ctx->getModule());
         
         return PassResult{true, "LLVM IR generated and verified successfully"};
     }

@@ -23,7 +23,25 @@ Compiler::Compiler(const CompilerOptions& options)
     initialize();
 }
 
-Compiler::~Compiler() = default;
+Compiler::~Compiler() {
+    // 按正确的顺序清理资源
+    
+    // 1. 首先清理Pass管理器
+    pass_manager_.reset();
+    
+    // 2. 清理PassContext（包含CodeGenContext）
+    if (pass_context_) {
+        pass_context_->clearCache();
+    }
+    pass_context_.reset();
+    
+    // 3. 清理符号表和类型系统
+    symbol_table_.reset();
+    type_system_.reset();
+    
+    // 4. 最后清理诊断引擎
+    diagnostics_.reset();
+}
 
 void Compiler::initialize() {
     // 创建核心组件

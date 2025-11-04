@@ -6,6 +6,7 @@
 
 #include <llvm/IR/Function.h>
 #include <llvm/IR/BasicBlock.h>
+#include <iostream>
 
 namespace pawc {
 
@@ -179,11 +180,23 @@ void StmtCodeGen::visit(StructDestructuringDecl* node) {
 void StmtCodeGen::visit(FunctionDecl* node) {
     // 创建函数类型 - 使用CodeGenContext的类型映射确保一致性
     std::vector<llvm::Type*> param_types;
-    for (const auto& param : node->getParams()) {
-        param_types.push_back(context_->getLLVMType(param.type));
+    llvm::Type* ret_type = nullptr;
+    
+    // 🔧 Self类型支持：优先使用TypeChecker解析后的类型（Self已替换为实际类型）
+    if (node->hasResolvedTypes()) {
+        // 使用解析后的类型（Self已经被替换）
+        for (auto* type : node->getResolvedParamTypes()) {
+            param_types.push_back(context_->getLLVMType(type));
+        }
+        ret_type = context_->getLLVMType(node->getResolvedReturnType());
+    } else {
+        // Fallback：使用原始类型
+        for (const auto& param : node->getParams()) {
+            param_types.push_back(context_->getLLVMType(param.type));
+        }
+        ret_type = context_->getLLVMType(node->getReturnType());
     }
     
-    llvm::Type* ret_type = context_->getLLVMType(node->getReturnType());
     auto* func_type = llvm::FunctionType::get(ret_type, param_types, false);
     
     // 创建函数
@@ -193,6 +206,11 @@ void StmtCodeGen::visit(FunctionDecl* node) {
     
     std::string func_name = (node->getName() == "main") ? 
         "paw.main" : node->getName();
+    
+    // 🔧 Self/support上下文：如果在support块中，使用修饰后的名称
+    if (!current_support_type_.empty()) {
+        func_name = current_support_type_ + "_" + node->getName();
+    }
     
     llvm::Function* func = llvm::Function::Create(
         func_type,
@@ -217,11 +235,17 @@ void StmtCodeGen::visit(FunctionDecl* node) {
         const auto& param = node->getParams()[i];
         arg.setName(param.name);
         
+        // 🔧 Fix: 使用resolved_param_types（如果可用）来创建alloca
+        Type* param_type = param.type;
+        if (node->hasResolvedTypes() && i < node->getResolvedParamTypes().size()) {
+            param_type = node->getResolvedParamTypes()[i];
+        }
+        
         // 创建alloca并存储参数值 - 使用CodeGenContext的类型映射确保一致性
         llvm::AllocaInst* alloca = context_->createEntryBlockAlloca(
             func,
             param.name,
-            context_->getLLVMType(param.type)
+            context_->getLLVMType(param_type)
         );
         context_->getBuilder().CreateStore(&arg, alloca);
         context_->defineVariable(param.name, alloca);
@@ -698,32 +722,18 @@ void StmtCodeGen::visit(InterfaceDecl* node) {
 
 void StmtCodeGen::visit(SupportDecl* node) {
     // support块：生成接口方法实现
-    // 方法名使用 TypeName.MethodName 格式
+    // 🔧 Self/support上下文：设置当前类型名，让方法使用修饰后的名称
     
+    std::string saved_support_type = current_support_type_;
+    current_support_type_ = node->getTypeName();
+    
+    // 生成所有方法（它们会自动使用修饰后的名称）
     for (const auto& method : node->getMethods()) {
-        // 保存原始函数名
-        std::string original_name = method->getName();
-        
-        // 生成带类型前缀的方法名
-        std::string mangled_name = node->getTypeName() + "." + original_name;
-        
-        // 临时修改函数名（用于CodeGen）
-        // 注意：这是一个hack，理想情况应该在FunctionDecl中支持重命名
-        
-        // 生成方法（作为普通函数）
         method->accept(this);
-        
-        // 在method_table_中注册
-        llvm::Function* method_fn = context_->lookupFunction(original_name);
-        if (method_fn) {
-            // 重命名函数（包含类型名，避免冲突）
-            method_fn->setName(mangled_name);
-            
-            // 注意：方法已通过重命名机制正确生成
-            // 接口调用通过函数名查找实现静态分发
-            // 动态分发（vtable）可作为未来优化
-        }
     }
+    
+    // 恢复上下文
+    current_support_type_ = saved_support_type;
     
     result_ = nullptr;
 }

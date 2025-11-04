@@ -79,6 +79,9 @@ private:
     llvm::BasicBlock* break_target_ = nullptr;
     llvm::BasicBlock* continue_target_ = nullptr;
     
+    // 🔧 Self/support上下文管理
+    std::string current_support_type_;  // 当前support的类型名（用于方法名修饰）
+    
     /// 为所有main()生成C ABI兼容的wrapper
     void generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_return_type);
 };

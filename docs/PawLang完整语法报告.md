@@ -59,7 +59,9 @@
 | 关键字 | 用途 | 示例 |
 |-------|------|------|
 | `Self` | 当前类型 | `fn new() -> Self { }` |
-| `self` | 当前实例 | `fn method(self) { }` |
+| `self` | 当前实例（值传递） | `fn consume(self) { }` |
+| `&self` | 不可变引用 | `fn get(&self) -> i32 { }` |
+| `&~self` | 可变引用 | `fn mutate(&~self) { }` |
 | `as` | 类型转换 | `x as i64` |
 
 ### 字面量关键字
@@ -222,32 +224,29 @@ type Result<T, E> = enum {
 ```paw
 // 基本接口
 type Display = interface {
-    fn show();
+    fn show(&self) -> void;  // self参数语法糖
 }
 
-// 带默认方法
-type Printable = interface {
-    fn print();
-    
-    fn println() {  // 默认实现
-        self.print();
-        println("");
-    }
+// self参数的三种形式
+type Example = interface {
+    fn consume(self) -> i32;      // 值传递
+    fn read(&self) -> i32;        // 不可变引用
+    fn modify(&~self) -> void;    // 可变引用
 }
 
 // 泛型接口
 type Container<T> = interface {
-    fn get() -> T;
-    fn set(value: T);
+    fn get(&self) -> T;
+    fn set(&~self, value: T) -> void;
 }
 
 // 多接口定义
 type Display = interface {
-    fn show();
+    fn show(&self) -> void;
 }
 
 type Debug = interface {
-    fn debug();
+    fn debug(&self) -> void;
 }
 ```
 
@@ -256,25 +255,42 @@ type Debug = interface {
 ```paw
 // 基本实现
 support Point with Display {
-    fn show() {
-        println("Point");
+    fn show(&self) -> void {
+        println("Point: ");
+        println(self.x);  // ✅ self字段访问
+        println(self.y);
+    }
+}
+
+// self参数的三种用法
+support Counter with Operations {
+    fn get(&self) -> i32 {
+        return self.value;  // 只读访问
+    }
+    
+    fn increment(&~self) -> void {
+        self.value = self.value + 1;  // 修改
+    }
+    
+    fn consume(self) -> i32 {
+        return self.value;  // 消耗对象
     }
 }
 
 // 泛型类型实现接口
 support Box<T> with Display where T: Display {
-    fn show() {
+    fn show(&self) -> void {
         self.value.show();
     }
 }
 
 // 实现多个接口
 support Point with Display {
-    fn show() { }
+    fn show(&self) -> void { }
 }
 
 support Point with Debug {
-    fn debug() { }
+    fn debug(&self) -> void { }
 }
 ```
 
@@ -915,7 +931,7 @@ fn read_file(path: string) -> string! {
 ```paw
 // 定义接口
 type Display = interface {
-    fn show();
+    fn show(&self) -> void;  // ✅ self语法糖
 }
 
 // 定义泛型结构体
@@ -925,8 +941,8 @@ type Box<T> = struct {
 
 // 实现接口（带where约束）
 support Box<T> with Display where T: Display {
-    fn show() {
-        self.value.show();
+    fn show(&self) -> void {
+        self.value.show();  // ✅ self字段访问
     }
 }
 
@@ -1074,7 +1090,7 @@ x is {
 }
 ```
 
-### Self类型
+### Self类型和self参数
 
 ```paw
 type Point = struct {
@@ -1082,11 +1098,46 @@ type Point = struct {
     y: i32
 }
 
-support Point {
-    fn new() -> Self {  // Self表示Point类型
+type PointOps = interface {
+    fn new() -> Self;            // Self = 当前类型
+    fn get_x(&self) -> i32;      // &self = 不可变引用
+    fn set_x(&~self, x: i32);    // &~self = 可变引用
+    fn clone(self) -> Self;      // self = 值传递
+}
+
+support Point with PointOps {
+    fn new() -> Self {
         return Point { x: 0, y: 0 };
     }
+    
+    fn get_x(&self) -> i32 {
+        return self.x;  // 字段访问
+    }
+    
+    fn set_x(&~self, x: i32) {
+        self.x = x;  // 修改字段
+    }
+    
+    fn clone(self) -> Self {
+        return Point { x: self.x, y: self.y };
+    }
 }
+```
+
+**self参数语法**：
+- ✅ `self` → 值传递（`Self`）
+- ✅ `&self` → 不可变引用（`&Self`）
+- ✅ `&~self` → 可变引用（`&~Self`）
+- ❌ **不支持**显式注解：`self: Self`、`self: &Self`等
+- ✅ 只能使用三种简写形式
+- ✅ 自动从self参数访问字段：`self.field`
+
+```paw
+// ❌ 错误 - 不支持显式注解
+fn method(self: &Self) { }
+
+// ✅ 正确 - 使用简写
+fn method(&self) { }
 ```
 
 ### 构造器语法

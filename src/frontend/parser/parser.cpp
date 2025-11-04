@@ -194,12 +194,59 @@ StmtPtr Parser::parseFunctionDecl(bool is_public) {
     std::vector<FunctionDecl::Param> params;
     if (!check(TokenType::RPAREN)) {
         do {
-            bool is_mutable = match(TokenType::TILDE);
-            Token param_name = consume(TokenType::IDENTIFIER, "Expected parameter name");
-            consume(TokenType::COLON, "Expected ':' after parameter name");
-            Type* param_type = parseType();
-            
-            params.push_back({param_name.lexeme, param_type, is_mutable});
+            // 🔧 Self类型支持：检查是否是self参数简写
+            // 支持三种形式：self, &self, &~self
+            if (check(TokenType::AMP) || check(TokenType::SELF_LOWER)) {
+                bool is_ref = false;
+                bool is_mut = false;
+                
+                // 检查引用前缀：&~self 或 &self
+                if (match(TokenType::AMP)) {
+                    is_ref = true;
+                    is_mut = match(TokenType::TILDE);  // &~
+                }
+                
+                // 现在应该是self
+                if (match(TokenType::SELF_LOWER)) {
+                    Type* self_type = nullptr;
+                    
+                    // ⛔ 禁止显式类型注解
+                    if (check(TokenType::COLON)) {
+                        error("self parameter does not support explicit type annotation. Use: self, &self, or &~self");
+                        return nullptr;
+                    }
+                    
+                    // 🔧 根据前缀推断类型
+                    if (is_ref) {
+                        // &self 或 &~self
+                        self_type = type_system_->getReferenceType(
+                            type_system_->getSelfType(), 
+                            is_mut
+                        );
+                    } else {
+                        // self（值传递）
+                        self_type = type_system_->getSelfType();
+                    }
+                    
+                    params.push_back({"self", self_type, false});
+                } else {
+                    // 如果遇到&但不是self，回退并按普通参数处理
+                    current_--;
+                    bool is_mutable = match(TokenType::TILDE);
+                    Token param_name = consume(TokenType::IDENTIFIER, "Expected parameter name");
+                    consume(TokenType::COLON, "Expected ':' after parameter name");
+                    Type* param_type = parseType();
+                    params.push_back({param_name.lexeme, param_type, is_mutable});
+                }
+            } else {
+                // 普通参数
+                bool is_mutable = match(TokenType::TILDE);
+                Token param_name = consume(TokenType::IDENTIFIER, "Expected parameter name");
+                consume(TokenType::COLON, "Expected ':' after parameter name");
+                Type* param_type = parseType();
+                
+                params.push_back({param_name.lexeme, param_type, is_mutable});
+            }
         } while (match(TokenType::COMMA));
     }
     
@@ -400,10 +447,51 @@ StmtPtr Parser::parseInterfaceDecl(const std::string& name, std::vector<GenericP
         // 解析参数
         std::vector<FunctionDecl::Param> params;
         if (!check(TokenType::RPAREN)) {
-            // 第一个参数可能是self
-            if (check(TokenType::SELF_LOWER)) {
-                advance(); // consume 'self'
-                // self不需要类型注解，类型由support块推导
+            // 🔧 Self类型支持：检查是否是self参数简写
+            // 支持三种形式：self, &self, &~self
+            if (check(TokenType::AMP) || check(TokenType::SELF_LOWER)) {
+                bool is_ref = false;
+                bool is_mut = false;
+                
+                // 检查引用前缀：&~self 或 &self
+                if (match(TokenType::AMP)) {
+                    is_ref = true;
+                    is_mut = match(TokenType::TILDE);  // &~
+                }
+                
+                // 现在应该是self
+                if (match(TokenType::SELF_LOWER)) {
+                    Type* self_type = nullptr;
+                    
+                    // ⛔ 禁止显式类型注解
+                    if (check(TokenType::COLON)) {
+                        error("self parameter does not support explicit type annotation. Use: self, &self, or &~self");
+                        return nullptr;
+                    }
+                    
+                    // 🔧 根据前缀推断类型
+                    if (is_ref) {
+                        // &self 或 &~self
+                        self_type = type_system_->getReferenceType(
+                            type_system_->getSelfType(), 
+                            is_mut
+                        );
+                    } else {
+                        // self（值传递）
+                        self_type = type_system_->getSelfType();
+                    }
+                    
+                    params.push_back({"self", self_type, false});
+                } else {
+                    // 如果遇到&但不是self，回退并按普通参数处理
+                    current_--;
+                    bool is_mutable = match(TokenType::TILDE);
+                    Token param_name = consume(TokenType::IDENTIFIER, "Expected parameter name");
+                    consume(TokenType::COLON, "Expected ':' after parameter name");
+                    Type* param_type = parseType();
+                    params.push_back({param_name.lexeme, param_type, is_mutable});
+                }
+                
                 // 如果有更多参数，需要逗号
                 if (match(TokenType::COMMA) && !check(TokenType::RPAREN)) {
                     do {
@@ -465,7 +553,14 @@ StmtPtr Parser::parseInterfaceDecl(const std::string& name, std::vector<GenericP
             }
             method_signatures.emplace_back(method.name, std::move(param_types), method.return_type);
         }
-        InterfaceType* interface_type = new InterfaceType(name, std::move(method_signatures));
+        
+        // 提取泛型参数名称（如果有）
+        std::vector<std::string> generic_param_names;
+        for (const auto& gp : generic_params) {
+            generic_param_names.push_back(gp.name);
+        }
+        
+        InterfaceType* interface_type = new InterfaceType(name, std::move(method_signatures), std::move(generic_param_names));
         type_system_->registerInterface(interface_type);
     }
     
@@ -508,11 +603,52 @@ StmtPtr Parser::parseSupportDecl() {
         bool has_self = false;
         
         if (!check(TokenType::RPAREN)) {
-            // 第一个参数可能是self
-            if (check(TokenType::SELF_LOWER)) {
-                advance(); // consume 'self'
-                has_self = true;
-                // self参数将由TypeChecker推导类型
+            // 🔧 Self类型支持：检查是否是self参数简写
+            // 支持三种形式：self, &self, &~self
+            if (check(TokenType::AMP) || check(TokenType::SELF_LOWER)) {
+                bool is_ref = false;
+                bool is_mut = false;
+                
+                // 检查引用前缀：&~self 或 &self
+                if (match(TokenType::AMP)) {
+                    is_ref = true;
+                    is_mut = match(TokenType::TILDE);  // &~
+                }
+                
+                // 现在应该是self
+                if (match(TokenType::SELF_LOWER)) {
+                    has_self = true;
+                    Type* self_type = nullptr;
+                    
+                    // ⛔ 禁止显式类型注解
+                    if (check(TokenType::COLON)) {
+                        error("self parameter does not support explicit type annotation. Use: self, &self, or &~self");
+                        return nullptr;
+                    }
+                    
+                    // 🔧 根据前缀推断类型
+                    if (is_ref) {
+                        // &self 或 &~self
+                        self_type = type_system_->getReferenceType(
+                            type_system_->getSelfType(), 
+                            is_mut
+                        );
+                    } else {
+                        // self（值传递）
+                        self_type = type_system_->getSelfType();
+                    }
+                    
+                    params.push_back({"self", self_type, false});
+                } else {
+                    // 如果遇到&但不是self，回退并按普通参数处理
+                    current_--;
+                    bool is_mutable = match(TokenType::TILDE);
+                    Token param_name = consume(TokenType::IDENTIFIER, "Expected parameter name");
+                    consume(TokenType::COLON, "Expected ':' after parameter name");
+                    Type* param_type = parseType();
+                    params.push_back({param_name.lexeme, param_type, is_mutable});
+                }
+                
                 // 如果有更多参数，需要逗号
                 if (match(TokenType::COMMA) && !check(TokenType::RPAREN)) {
                     do {
@@ -525,6 +661,7 @@ StmtPtr Parser::parseSupportDecl() {
                     } while (match(TokenType::COMMA));
                 }
             } else {
+                // 普通参数
                 do {
                     bool is_mutable = match(TokenType::TILDE);
                     Token param_name = consume(TokenType::IDENTIFIER, "Expected parameter name");
@@ -927,32 +1064,45 @@ ExprPtr Parser::parsePostfix() {
                 error("Expected type name before '::'");
             }
         }
-        else if (check(TokenType::LESS) && dynamic_cast<IdentifierExpr*>(expr.get())) {
-            // 泛型函数调用: identity<i32>(42)
-            advance(); // consume '<'
-            
-            std::vector<Type*> type_args;
-            do {
-                type_args.push_back(parseType());
-            } while (match(TokenType::COMMA));
-            
-            consume(TokenType::GREATER, "Expected '>' after type arguments");
-            consume(TokenType::LPAREN, "Expected '(' after type arguments");
-            
-            std::vector<ExprPtr> args;
-            if (!check(TokenType::RPAREN)) {
+        else if (check(TokenType::LESS)) {
+            // 🔧 泛型函数调用: f<i32>(x)
+            // 检查是否是泛型类型参数（而不是比较运算符）
+            // 简单策略：如果expr是IdentifierExpr且后面是<，尝试解析类型参数
+            if (auto* id = dynamic_cast<IdentifierExpr*>(expr.get())) {
+                // 可能是泛型函数调用
+                match(TokenType::LESS);  // consume '<'
+                
+                std::vector<Type*> type_args;
                 do {
-                    args.push_back(parseExpression());
+                    type_args.push_back(parseType());
                 } while (match(TokenType::COMMA));
+                
+                consume(TokenType::GREATER, "Expected '>' after generic type arguments");
+                
+                // 现在应该有函数调用 '('
+                if (match(TokenType::LPAREN)) {
+                    std::vector<ExprPtr> args;
+                    if (!check(TokenType::RPAREN)) {
+                        do {
+                            args.push_back(parseExpression());
+                        } while (match(TokenType::COMMA));
+                    }
+                    consume(TokenType::RPAREN, "Expected ')' after arguments");
+                    
+                    // 创建泛型函数调用（保存类型参数）
+                    auto call_expr = std::make_unique<CallExpr>(std::move(expr), std::move(args));
+                    call_expr->setTypeArgs(type_args);  // 保存类型参数
+                    expr = std::move(call_expr);
+                } else {
+                    error("Expected '(' after generic type arguments");
+                }
+            } else {
+                // 不是泛型调用，跳出
+                break;
             }
-            consume(TokenType::RPAREN, "Expected ')' after arguments");
-            
-            auto call_expr = std::make_unique<CallExpr>(std::move(expr), std::move(args));
-            call_expr->setTypeArgs(type_args);
-            expr = std::move(call_expr);
         }
         else if (match(TokenType::LPAREN)) {
-            // 普通函数调用
+            // 普通函数调用（无类型参数）
             std::vector<ExprPtr> args;
             if (!check(TokenType::RPAREN)) {
                 do {
@@ -1252,6 +1402,39 @@ ExprPtr Parser::parsePrimary() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Type* Parser::parseType() {
+    // === 🔧 元组类型: (T1, T2, T3, ...) ===
+    if (match(TokenType::LPAREN)) {
+        std::vector<Type*> element_types;
+        
+        // 解析元组元素类型
+        if (!check(TokenType::RPAREN)) {
+            do {
+                element_types.push_back(parseType());
+            } while (match(TokenType::COMMA));
+        }
+        
+        consume(TokenType::RPAREN, "Expected ')' after tuple type");
+        
+        // 创建元组类型
+        if (element_types.empty()) {
+            // ()表示void/unit类型
+            return type_system_->getVoidType();
+        }
+        return type_system_->getTupleType(element_types);
+    }
+    
+    // === 🔧 引用类型: &T, &~T ===
+    if (match(TokenType::AMP)) {
+        // 检查是否是可变引用 &~T
+        bool is_mutable = match(TokenType::TILDE);
+        
+        // 解析被引用的类型
+        Type* pointee_type = parseType();
+        
+        // 创建引用类型
+        return type_system_->getReferenceType(pointee_type, is_mutable);
+    }
+    
     // === 切片类型: [T] ===
     // 注意：PawLang使用[T]表示切片（动态大小），[T; N]表示数组（固定大小）
     if (match(TokenType::LBRACKET)) {

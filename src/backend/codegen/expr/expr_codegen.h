@@ -7,6 +7,9 @@
 #include "frontend/parser/visitor.h"
 #include "frontend/parser/ast/expr.h"
 
+#include "frontend/parser/ast/stmt.h"
+#include "backend/codegen/codegen_context.h"
+#include "middleend/types/generic_template.h"
 namespace pawc {
 
 // Forward declaration
@@ -58,6 +61,14 @@ public:
     void bindResultPatternVariables(class EnumPattern* pattern, llvm::Value* value, class ResultType* type);
     void bindOptionalPatternVariables(class EnumPattern* pattern, llvm::Value* value, class OptionalType* type);
     void bindStructPatternVariables(class StructPattern* pattern, llvm::Value* value, class StructType* type);
+    
+    // 泛型函数CodeGen
+    llvm::Value* generateGenericFunctionCall(const std::string& func_name,
+                                            const std::vector<Type*>& type_args,
+                                            const std::vector<std::unique_ptr<Expr>>& args);
+    llvm::Function* generateGenericFunctionInstance(const std::string& func_name,
+                                                    const std::vector<Type*>& type_args,
+                                                    GenericTemplate* tmpl);
     
     // 语句访问（未使用）
     void visit(ExprStmt*) override {}

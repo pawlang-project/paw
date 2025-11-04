@@ -1,0 +1,90 @@
+// 接口系统综合测试
+
+// 定义基础接口
+type Display = interface {
+    fn show();
+};
+
+type Debug = interface {
+    fn debug();
+};
+
+// 定义结构体
+type Point = struct {
+    x: i32,
+    y: i32
+};
+
+type Rectangle = struct {
+    width: i32,
+    height: i32
+};
+
+// Point 实现 Display
+support Point with Display {
+    fn show() {
+        println("Point");
+    }
+}
+
+// Point 实现 Debug
+support Point with Debug {
+    fn debug() {
+        println("Point debug");
+    }
+}
+
+// Rectangle 实现 Display
+support Rectangle with Display {
+    fn show() {
+        println("Rectangle");
+    }
+}
+
+// Rectangle 实现 Debug
+support Rectangle with Debug {
+    fn debug() {
+        println("Rectangle debug");
+    }
+}
+
+// 泛型函数使用接口约束
+fn print_display<T>(item: T) where T: Display {
+    item.show();
+}
+
+fn print_debug<T>(item: T) where T: Debug {
+    item.debug();
+}
+
+fn main() {
+    println("╔════════════════════════════════════════╗");
+    println("║  Interface Comprehensive Test         ║");
+    println("╚════════════════════════════════════════╝");
+    println("");
+
+    let p = Point { x: 10, y: 20 };
+    let r = Rectangle { width: 100, height: 200 };
+
+    println("Testing Display interface:");
+    p.show();
+    r.show();
+
+    println("");
+    println("Testing Debug interface:");
+    p.debug();
+    r.debug();
+
+    println("");
+    println("Testing generic functions with constraints:");
+    print_display(p);
+    print_display(r);
+
+    print_debug(p);
+    print_debug(r);
+
+    println("");
+    println("╔════════════════════════════════════════╗");
+    println("║  All Interface Tests Passed! ✨        ║");
+    println("╚════════════════════════════════════════╝");
+}

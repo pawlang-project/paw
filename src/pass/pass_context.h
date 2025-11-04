@@ -69,7 +69,16 @@ public:
     }
     
     /// 清除缓存
-    void clearCache() { analysis_cache_.clear(); }
+    void clearCache() {
+        // 先清除llvm_module裸指针，避免悬空指针
+        analysis_cache_.erase("llvm_module");
+        
+        // 然后清除codegen_context (shared_ptr会正确析构)
+        analysis_cache_.erase("codegen_context");
+        
+        // 最后清除其他所有缓存
+        analysis_cache_.clear();
+    }
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // 编译选项
