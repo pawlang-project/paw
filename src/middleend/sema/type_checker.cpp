@@ -1315,6 +1315,22 @@ void TypeChecker::visit(MatchExpr* node) {
         // 恢复expected_type_
         expected_type_ = saved_expected;
         
+        // 检查守卫条件 (if guard)
+        if (arm.guard) {
+            arm.guard->accept(this);
+            Type* guard_type = arm.guard->getType();
+            
+            if (!guard_type) {
+                diag_->reportError("Guard condition has no type", SourceLocation());
+            } else if (guard_type->getKind() != Type::Kind::Bool) {
+                diag_->reportError(
+                    "Guard condition must be a boolean expression, got: " + 
+                    guard_type->toString(),
+                    SourceLocation()
+                );
+            }
+        }
+        
         // 检查是否有通配符模式
         if (dynamic_cast<WildcardPattern*>(arm.pattern.get()) ||
             dynamic_cast<VariablePattern*>(arm.pattern.get())) {

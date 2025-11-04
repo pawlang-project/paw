@@ -73,18 +73,51 @@ void ExprCodeGen::visit(MatchExpr* node) {
             node->getScrutinee()->getType()
         );
         
-        if (!match_cond) {
-            // 通配符或变量绑定总是匹配
-            builder.CreateBr(arm_bb);
+        // 如果有守卫条件，需要先匹配模式，再检查守卫
+        if (arm.guard) {
+            // 创建临时块来绑定变量和检查守卫
+            llvm::BasicBlock* guard_bb = llvm::BasicBlock::Create(
+                context, "match.guard." + std::to_string(i), current_fn);
+            
+            if (!match_cond) {
+                // 模式总是匹配，直接跳到守卫检查
+                builder.CreateBr(guard_bb);
+            } else {
+                // 模式匹配成功才检查守卫
+                builder.CreateCondBr(match_cond, guard_bb, next_bb);
+            }
+            
+            // 在守卫块中绑定变量并检查条件
+            builder.SetInsertPoint(guard_bb);
+            bindPatternVariables(arm.pattern.get(), scrutinee_value, node->getScrutinee()->getType());
+            
+            // 计算守卫条件
+            arm.guard->accept(this);
+            llvm::Value* guard_cond = result_;
+            
+            if (guard_cond) {
+                // 守卫为真才执行分支体
+                builder.CreateCondBr(guard_cond, arm_bb, next_bb);
+            } else {
+                builder.CreateBr(next_bb);
+            }
         } else {
-            builder.CreateCondBr(match_cond, arm_bb, next_bb);
+            // 无守卫，按原逻辑
+            if (!match_cond) {
+                // 通配符或变量绑定总是匹配
+                builder.CreateBr(arm_bb);
+            } else {
+                builder.CreateCondBr(match_cond, arm_bb, next_bb);
+            }
         }
         
         // 生成分支表达式的代码
         builder.SetInsertPoint(arm_bb);
         
-        // 处理模式变量绑定
-        bindPatternVariables(arm.pattern.get(), scrutinee_value, node->getScrutinee()->getType());
+        // 处理模式变量绑定（如果没有守卫，在这里绑定；有守卫时已在guard_bb中绑定）
+        if (!arm.guard) {
+            bindPatternVariables(arm.pattern.get(), scrutinee_value, node->getScrutinee()->getType());
+        }
         
         // 计算分支表达式
         arm.expression->accept(this);

@@ -1171,6 +1171,12 @@ ExprPtr Parser::parsePostfix() {
                 // 解析模式
                 auto pattern = parsePattern();
                 
+                // 检查是否有守卫条件 (if condition)
+                ExprPtr guard = nullptr;
+                if (match(TokenType::IF)) {
+                    guard = parseExpression();
+                }
+                
                 // 消费 =>
                 consume(TokenType::FAT_ARROW, "Expected '=>' after pattern");
                 
@@ -1178,7 +1184,7 @@ ExprPtr Parser::parsePostfix() {
                 ExprPtr arm_expr = parseExpression();
                 
                 // 创建分支
-                arms.push_back(MatchArm(std::move(pattern), std::move(arm_expr)));
+                arms.push_back(MatchArm(std::move(pattern), std::move(arm_expr), std::move(guard)));
                 
                 // 逗号是可选的
                 if (!match(TokenType::COMMA)) {

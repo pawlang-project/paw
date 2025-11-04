@@ -314,10 +314,11 @@ private:
 /// MatchArm - match表达式的一个分支 (pattern => expression)
 struct MatchArm {
     std::unique_ptr<class Pattern> pattern;
+    ExprPtr guard;       // 守卫条件 (可选, if condition)
     ExprPtr expression;
     
-    MatchArm(std::unique_ptr<class Pattern> p, ExprPtr e)
-        : pattern(std::move(p)), expression(std::move(e)) {}
+    MatchArm(std::unique_ptr<class Pattern> p, ExprPtr e, ExprPtr g = nullptr)
+        : pattern(std::move(p)), guard(std::move(g)), expression(std::move(e)) {}
 };
 
 /// MatchExpr - match表达式 value is { pattern => expr, ... }
