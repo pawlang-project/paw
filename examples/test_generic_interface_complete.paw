@@ -1,0 +1,56 @@
+// 泛型接口完整测试
+
+type Comparable<T> = interface {
+    fn compare(&self, other: T) -> i32;
+    
+    // 默认方法1：返回常量
+    fn get_type(&self) -> i32 {
+        42
+    }
+    
+    // 默认方法2：简单逻辑
+    fn is_positive(&self) -> bool {
+        true
+    }
+}
+
+type Number = struct {
+    value: i32
+}
+
+support Number with Comparable<Number> {
+    fn compare(&self, other: Number) -> i32 {
+        if self.value > other.value {
+            1
+        } else if self.value < other.value {
+            -1
+        } else {
+            0
+        }
+    }
+}
+
+fn main() {
+    println("==== 泛型接口完整测试 ====\n");
+    
+    let n1 = Number { value: 10 };
+    let n2 = Number { value: 20 };
+    
+    println("1. 调用实现的方法:");
+    let cmp = n1.compare(n2);
+    println("  compare:");
+    println(cmp);
+    
+    println("\n2. 调用默认方法 get_type:");
+    let t = n1.get_type();
+    println("  get_type:");
+    println(t);
+    
+    println("\n3. 调用默认方法 is_positive:");
+    let p = n1.is_positive();
+    println("  is_positive:");
+    println(p);
+    
+    println("\n==== 完成 ====");
+}
+

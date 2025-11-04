@@ -1,0 +1,33 @@
+// 简化测试：泛型接口 + 默认方法
+
+type Comparable<T> = interface {
+    fn compare(&self, other: T) -> i32;
+    
+    fn is_equal(&self, other: T) -> bool {
+        println("In is_equal");
+        true  // 先简化，不调用 compare
+    }
+}
+
+type Number = struct {
+    value: i32
+}
+
+support Number with Comparable<Number> {
+    fn compare(&self, other: Number) -> i32 {
+        0
+    }
+}
+
+fn main() {
+    println("==== 泛型默认方法简化测试 ====");
+    
+    let n1 = Number { value: 10 };
+    let n2 = Number { value: 20 };
+    
+    let eq = n1.is_equal(n2);
+    println(eq);
+    
+    println("==== 完成 ====");
+}
+

@@ -1773,14 +1773,25 @@ void TypeChecker::visit(SupportDecl* node) {
         const auto& interface_def_param_names = iface->getGenericParamNames();
         const auto& interface_inst_params = node->getInterfaceGenericParams();
         
+        std::cerr << "[GenericInterface] Building substitution map:" << std::endl;
+        std::cerr << "  Interface: " << node->getInterfaceName() << std::endl;
+        std::cerr << "  Generic params: " << interface_def_param_names.size() << std::endl;
+        std::cerr << "  Instance params: " << interface_inst_params.size() << std::endl;
+        
         // 构建替换映射：T -> Number
         for (size_t i = 0; i < interface_def_param_names.size() && i < interface_inst_params.size(); ++i) {
             // 查找实例化的类型
             Type* concrete_type = types_->lookupType(interface_inst_params[i].name);
             if (concrete_type) {
                 generic_substitution[interface_def_param_names[i]] = concrete_type;
+                std::cerr << "  Mapping: " << interface_def_param_names[i] 
+                          << " -> " << concrete_type->toString() << std::endl;
             }
         }
+    } else {
+        std::cerr << "[GenericInterface] No substitution:" << std::endl;
+        std::cerr << "  isGeneric: " << iface->isGeneric() << std::endl;
+        std::cerr << "  isInterfaceGeneric: " << node->isInterfaceGeneric() << std::endl;
     }
     
     // 3. 获取接口定义中的所有方法
@@ -1849,11 +1860,11 @@ void TypeChecker::visit(SupportDecl* node) {
         if (!found) {
             // 🔧 检查接口方法是否有默认实现
             if (!required.has_default_impl) {
-                diag_->reportError(
-                    "Method '" + required.name + "' not implemented for interface '" +
-                    node->getInterfaceName() + "'",
-                    SourceLocation()
-                );
+            diag_->reportError(
+                "Method '" + required.name + "' not implemented for interface '" +
+                node->getInterfaceName() + "'",
+                SourceLocation()
+            );
             }
             // 如果有默认实现，不报错（将使用默认实现）
         }
@@ -1920,33 +1931,41 @@ void TypeChecker::visit(SupportDecl* node) {
                     // 进入方法作用域
                     symbols_->enterScope();
                     
-                    // 绑定参数（包括 self）- 使用具体类型！
+                    // 绑定参数（包括 self）- 使用具体类型 + 泛型替换！
                     for (size_t i = 0; i < required.param_types.size(); ++i) {
                         Type* param_type = required.param_types[i];
+                        std::string param_name = (i < required.param_names.size()) 
+                                               ? required.param_names[i] 
+                                               : ("arg" + std::to_string(i));
+                        
+                        // 🔧 泛型接口：应用泛型参数替换（T -> Number）
+                        if (!generic_substitution.empty()) {
+                            param_type = substituteGenericType(param_type, generic_substitution);
+                            std::cerr << "[GenericInterface] Substituted param " << param_name 
+                                      << " type to " << param_type->toString() << std::endl;
+                        }
                         
                         // 🔧 检查是否是 Self 或 &Self
                         if (param_type->getKind() == Type::Kind::SelfType) {
                             // Self (值) - 用具体类型替换
-                            symbols_->defineVariable("self", current_self_type_, false);
+                            symbols_->defineVariable(param_name, current_self_type_, false);
                         } else if (param_type->getKind() == Type::Kind::Reference) {
                             auto* ref_type = static_cast<ReferenceType*>(param_type);
                             if (ref_type->getPointeeType()->getKind() == Type::Kind::SelfType) {
                                 // &Self (引用) - 创建具体类型的引用
                                 Type* concrete_ref = types_->getReferenceType(current_self_type_, ref_type->isMutable());
-                                symbols_->defineVariable("self", concrete_ref, false);
+                                symbols_->defineVariable(param_name, concrete_ref, false);
                             } else {
-                                // 普通引用参数
-                                std::string param_name = "arg" + std::to_string(i);
+                                // 普通参数（已应用泛型替换）
                                 symbols_->defineVariable(param_name, param_type, false);
                             }
                         } else {
-                            // 其他参数
-                            std::string param_name = "arg" + std::to_string(i);
+                            // 其他参数（已应用泛型替换）
                             symbols_->defineVariable(param_name, param_type, false);
                         }
                     }
                     
-                    // 访问 body 进行类型检查（现在 Self 是具体类型）
+                    // 访问 body 进行类型检查（现在 Self 是具体类型，泛型参数已替换）
                     required.default_body->accept(this);
                     
                     // 退出作用域
@@ -2163,10 +2182,10 @@ void TypeChecker::handleEnumPattern(EnumPattern* node, EnumType* enum_type) {
     // 无数据的variant
     if (!variant_data_type) {
         if (!inner_patterns.empty()) {
-            diag_->reportError(
+        diag_->reportError(
                 "Variant '" + variant_name + "' takes no arguments",
-                SourceLocation()
-            );
+            SourceLocation()
+        );
         }
         return;
     }
@@ -2179,15 +2198,15 @@ void TypeChecker::handleEnumPattern(EnumPattern* node, EnumType* enum_type) {
         
         // 检查pattern数量是否匹配
         if (inner_patterns.size() != element_types.size()) {
-            diag_->reportError(
+        diag_->reportError(
                 "Variant '" + variant_name + "' expects " + 
                 std::to_string(element_types.size()) + " arguments, got " +
                 std::to_string(inner_patterns.size()),
-                SourceLocation()
-            );
-            return;
-        }
-        
+            SourceLocation()
+        );
+        return;
+    }
+    
         // 为每个内部pattern设置正确的类型
         Type* saved_expected = expected_type_;
         for (size_t i = 0; i < inner_patterns.size(); ++i) {

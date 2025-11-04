@@ -108,12 +108,13 @@ public:
     struct MethodSignature {
         std::string name;
         std::vector<Type*> param_types;
+        std::vector<std::string> param_names;  // 🔧 新增：参数名
         Type* return_type;
         bool has_default_impl;  // 🔧 新增：是否有默认实现
         Expr* default_body;     // 🔧 新增：默认实现的body（不拥有所有权）
         
-        MethodSignature(std::string n, std::vector<Type*> p, Type* r, bool has_default = false, Expr* body = nullptr)
-            : name(std::move(n)), param_types(std::move(p)), return_type(r), 
+        MethodSignature(std::string n, std::vector<Type*> p, Type* r, bool has_default = false, Expr* body = nullptr, std::vector<std::string> pnames = {})
+            : name(std::move(n)), param_types(std::move(p)), param_names(std::move(pnames)), return_type(r), 
               has_default_impl(has_default), default_body(body) {}
     };
     

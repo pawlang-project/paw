@@ -749,11 +749,25 @@ void StmtCodeGen::visit(SupportDecl* node) {
         }
         
         // 查找有默认实现但未被实现的方法
+        // 🔧 构建泛型参数替换映射（用于默认方法）
+        std::map<std::string, Type*> generic_substitution;
+        if (iface->isGeneric() && node->isInterfaceGeneric()) {
+            const auto& interface_def_param_names = iface->getGenericParamNames();
+            const auto& interface_inst_params = node->getInterfaceGenericParams();
+            
+            for (size_t i = 0; i < interface_def_param_names.size() && i < interface_inst_params.size(); ++i) {
+                Type* concrete_type = context_->getTypeSystem()->lookupType(interface_inst_params[i].name);
+                if (concrete_type) {
+                    generic_substitution[interface_def_param_names[i]] = concrete_type;
+                }
+            }
+        }
+        
         for (const auto& iface_method : iface->getMethods()) {
             if (iface_method.has_default_impl && 
                 implemented_methods.find(iface_method.name) == implemented_methods.end()) {
-                // 生成默认方法的包装
-                generateDefaultMethod(node->getTypeName(), iface_method);
+                // 生成默认方法的包装（传递泛型替换映射）
+                generateDefaultMethod(node->getTypeName(), iface_method, generic_substitution);
             }
         }
     }
@@ -765,7 +779,8 @@ void StmtCodeGen::visit(SupportDecl* node) {
 }
 
 void StmtCodeGen::generateDefaultMethod(const std::string& type_name, 
-                                        const InterfaceType::MethodSignature& method) {
+                                        const InterfaceType::MethodSignature& method,
+                                        const std::map<std::string, Type*>& generic_substitution) {
     // 🔧 为类型生成接口默认方法的包装
     // 方法名格式: type_name::method_name (与其他方法一致)
     
@@ -778,9 +793,13 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
     }
     
     std::cerr << "[DefaultMethod] Generating default method: " << mangled_name << std::endl;
+    if (!generic_substitution.empty()) {
+        std::cerr << "[DefaultMethod] Using generic substitution" << std::endl;
+    }
     
     // 构建函数类型
     std::vector<llvm::Type*> param_types;
+    std::vector<Type*> paw_param_types;  // 保存 PawLang 类型（用于绑定参数）
     
     // 第一个参数：self（类型为 type_name）
     Type* self_type = context_->getTypeSystem()->lookupType(type_name);
@@ -802,14 +821,33 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
     if (is_self_ref) {
         // self 是引用类型，传递指针
         param_types.push_back(llvm::PointerType::getUnqual(builder.getContext()));
+        paw_param_types.push_back(context_->getTypeSystem()->getReferenceType(self_type, is_self_mut));
     } else {
         // self 是值类型
         param_types.push_back(context_->getLLVMType(self_type));
+        paw_param_types.push_back(self_type);
     }
     
-    // 其他参数
+    // 🔧 其他参数 - 应用泛型替换！
     for (size_t i = 1; i < method.param_types.size(); ++i) {
-        param_types.push_back(context_->getLLVMType(method.param_types[i]));
+        Type* param_type = method.param_types[i];
+        
+        // 应用泛型替换
+        if (!generic_substitution.empty()) {
+            // 简单替换：如果是泛型类型，从映射中查找替换
+            if (param_type->getKind() == Type::Kind::Generic) {
+                auto* generic = static_cast<GenericType*>(param_type);
+                auto it = generic_substitution.find(generic->getName());
+                if (it != generic_substitution.end()) {
+                    param_type = it->second;
+                    std::cerr << "[DefaultMethod] Substituted param type: " << generic->getName() 
+                              << " -> " << param_type->toString() << std::endl;
+                }
+            }
+        }
+        
+        paw_param_types.push_back(param_type);
+        param_types.push_back(context_->getLLVMType(param_type));
     }
     
     // 返回类型
@@ -857,10 +895,13 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
     std::cerr << "[DefaultMethod] Self variable defined" << std::endl;
     ++args_iter;
     
-    // 其他参数
+    // 🔧 其他参数 - 使用真实参数名！
     size_t param_idx = 1;  // 跳过 self
     for (; args_iter != wrapper_fn->arg_end(); ++args_iter, ++param_idx) {
-        std::string param_name = "arg" + std::to_string(param_idx);
+        // 🔧 使用真实参数名（如 "other"）
+        std::string param_name = (param_idx < method.param_names.size()) 
+                               ? method.param_names[param_idx] 
+                               : ("arg" + std::to_string(param_idx));
         args_iter->setName(param_name);
         
         llvm::AllocaInst* param_alloca = context_->createEntryBlockAlloca(
@@ -870,6 +911,8 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
         );
         builder.CreateStore(&(*args_iter), param_alloca);
         context_->defineVariable(param_name, param_alloca);
+        
+        std::cerr << "[DefaultMethod] Bound parameter: " << param_name << std::endl;
     }
     
     // 生成默认实现的 body

@@ -556,43 +556,43 @@ StmtPtr Parser::parseInterfaceDecl(const std::string& name, std::vector<GenericP
     consume(TokenType::RBRACE, "Expected '}' after interface methods");
     match(TokenType::SEMICOLON);  // 分号是可选的
     
+    // 🔧 先提取泛型参数名称（在 move 之前！）
+    std::vector<std::string> generic_param_names;
+    for (const auto& gp : generic_params) {
+        generic_param_names.push_back(gp.name);
+    }
+    
+    // 🔧 G2: 泛型Interface支持 - 统一处理
+    // 构建方法签名
+    std::vector<InterfaceType::MethodSignature> method_signatures;
+    for (const auto& method : methods) {
+        std::vector<Type*> param_types;
+        std::vector<std::string> param_names;  // 🔧 新增：保存参数名
+        for (const auto& param : method.params) {
+            param_types.push_back(param.type);
+            param_names.push_back(param.name);  // 🔧 保存参数名
+        }
+        // 🔧 传递默认实现信息（包括参数名）
+        method_signatures.emplace_back(
+            method.name, 
+            std::move(param_types), 
+            method.return_type,
+            method.hasDefaultImpl(),      // has_default_impl
+            method.body.get(),            // default_body
+            std::move(param_names)        // 🔧 param_names
+        );
+    }
+    
     auto interface_decl = std::make_unique<InterfaceDecl>(name, std::move(generic_params), std::move(methods));
     
-    // 🔧 G2: 泛型Interface支持
-    if (!generic_params.empty()) {
-        // 这是泛型interface，注册为泛型模板
-        std::vector<std::string> type_param_names;
-        for (const auto& gp : generic_params) {
-            type_param_names.push_back(gp.name);
-        }
-        GenericTemplate* tmpl = new GenericTemplate(name, type_param_names, interface_decl.get());
+    // ✅ 总是注册 InterfaceType（无论是否泛型）
+    InterfaceType* interface_type = new InterfaceType(name, std::move(method_signatures), generic_param_names);
+    type_system_->registerInterface(interface_type);
+    
+    // 如果是泛型，额外注册为模板（供单态化使用）
+    if (!generic_param_names.empty()) {
+        GenericTemplate* tmpl = new GenericTemplate(name, generic_param_names, interface_decl.get());
         type_system_->registerGenericTemplate(tmpl);
-    } else {
-        // 普通interface，立即注册类型
-        std::vector<InterfaceType::MethodSignature> method_signatures;
-        for (const auto& method : interface_decl->getMethods()) {
-            std::vector<Type*> param_types;
-            for (const auto& param : method.params) {
-                param_types.push_back(param.type);
-            }
-            // 🔧 传递默认实现信息
-            method_signatures.emplace_back(
-                method.name, 
-                std::move(param_types), 
-                method.return_type,
-                method.hasDefaultImpl(),      // has_default_impl
-                method.body.get()             // default_body
-            );
-        }
-        
-        // 提取泛型参数名称（如果有）
-        std::vector<std::string> generic_param_names;
-        for (const auto& gp : generic_params) {
-            generic_param_names.push_back(gp.name);
-        }
-        
-        InterfaceType* interface_type = new InterfaceType(name, std::move(method_signatures), std::move(generic_param_names));
-        type_system_->registerInterface(interface_type);
     }
     
     // 恢复泛型参数上下文

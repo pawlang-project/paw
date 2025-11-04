@@ -1,0 +1,33 @@
+// 测试泛型接口 - 简化版
+
+type Comparable<T> = interface {
+    fn compare(&self, other: T) -> i32;
+}
+
+type Number = struct {
+    value: i32
+}
+
+// 实现泛型接口
+support Number with Comparable<Number> {
+    fn compare(&self, other: Number) -> i32 {
+        if self.value > other.value {
+            1
+        } else {
+            0
+        }
+    }
+}
+
+fn main() {
+    println("==== 泛型接口简化测试 ====");
+    
+    let n1 = Number { value: 10 };
+    let n2 = Number { value: 20 };
+    
+    let result = n1.compare(n2);
+    println(result);
+    
+    println("==== 完成 ====");
+}
+

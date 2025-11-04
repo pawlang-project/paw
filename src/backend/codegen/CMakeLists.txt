@@ -30,3 +30,5 @@ target_link_libraries(pawc_codegen PUBLIC
     pawc_parser
     ${llvm_libs}
 )
+
+add_dependencies(pawc_codegen LLVMCore LLVMSupport)

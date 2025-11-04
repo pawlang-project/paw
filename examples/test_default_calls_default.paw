@@ -1,0 +1,52 @@
+// 测试默认方法调用默认方法
+
+type Drawable = interface {
+    fn draw(&self);
+    
+    fn render(&self) {
+        println("Rendering...");
+        self.draw();
+    }
+    
+    // 🟡 测试：默认方法调用默认方法
+    fn display(&self) {
+        println("Display:");
+        self.render();  // 调用另一个默认方法
+        println("Done");
+    }
+    
+    fn show_twice(&self) {
+        println("First:");
+        self.display();  // 调用上面的默认方法
+        println("Second:");
+        self.display();
+    }
+}
+
+type Circle = struct {
+    radius: i32
+}
+
+support Circle with Drawable {
+    fn draw(&self) {
+        println("  Drawing circle");
+    }
+}
+
+fn main() {
+    println("==== 默认方法调用默认方法测试 ====\n");
+    
+    let c = Circle { radius: 10 };
+    
+    println("1. 调用 render:");
+    c.render();
+    
+    println("\n2. 调用 display (调用 render):");
+    c.display();
+    
+    println("\n3. 调用 show_twice (调用 display 两次):");
+    c.show_twice();
+    
+    println("\n==== 完成 ====");
+}
+

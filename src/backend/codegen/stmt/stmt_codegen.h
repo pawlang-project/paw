@@ -3,6 +3,7 @@
 #ifndef PAW_STMT_CODEGEN_H
 #define PAW_STMT_CODEGEN_H
 
+#include <map>  // 🔧 新增：泛型接口默认方法需要
 #include "../codegen_base.h"
 #include "frontend/parser/visitor.h"
 #include "frontend/parser/ast/stmt.h"
@@ -86,7 +87,9 @@ private:
     void generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_return_type);
     
     /// 🔧 生成接口默认方法的包装
-    void generateDefaultMethod(const std::string& type_name, const class InterfaceType::MethodSignature& method);
+    void generateDefaultMethod(const std::string& type_name, 
+                               const class InterfaceType::MethodSignature& method,
+                               const std::map<std::string, Type*>& generic_substitution = {});
 };
 
 } // namespace pawc

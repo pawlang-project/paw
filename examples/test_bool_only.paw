@@ -1,0 +1,30 @@
+// 测试泛型接口默认方法返回bool
+
+type Comparable<T> = interface {
+    fn compare(&self, other: T) -> i32;
+    
+    fn is_zero(&self) -> bool {
+        true  // 简单返回
+    }
+}
+
+type Number = struct {
+    value: i32
+}
+
+support Number with Comparable<Number> {
+    fn compare(&self, other: Number) -> i32 {
+        0
+    }
+}
+
+fn main() {
+    println("==== 测试 ====");
+    
+    let n1 = Number { value: 10 };
+    let result = n1.is_zero();
+    println(result);
+    
+    println("==== 完成 ====");
+}
+

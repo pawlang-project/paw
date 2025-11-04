@@ -1,0 +1,53 @@
+// 测试默认方法覆盖
+
+type Drawable = interface {
+    fn draw(&self);
+    
+    fn render(&self) {
+        println("Default: Rendering...");
+        self.draw();
+    }
+}
+
+type Circle = struct {
+    radius: i32
+}
+
+support Circle with Drawable {
+    fn draw(&self) {
+        println("Drawing circle");
+    }
+    
+    // 🟡 测试：覆盖默认方法
+    fn render(&self) {
+        println("Custom: Rendering circle...");
+        self.draw();
+    }
+}
+
+type Square = struct {
+    size: i32
+}
+
+support Square with Drawable {
+    fn draw(&self) {
+        println("Drawing square");
+    }
+    
+    // 使用默认实现（不覆盖）
+}
+
+fn main() {
+    println("==== 默认方法覆盖测试 ====\n");
+    
+    let c = Circle { radius: 10 };
+    println("Circle render (覆盖):");
+    c.render();
+    
+    println("\nSquare render (默认):");
+    let s = Square { size: 5 };
+    s.render();
+    
+    println("\n==== 完成 ====");
+}
+

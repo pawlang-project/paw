@@ -225,11 +225,16 @@ endif()
 
 add_executable(pawc src/driver/main.cpp)
 
-target_link_libraries(pawc PRIVATE
+set(pawc_all_libs
     pawc_driver
     pawc_pass
     pawc_runtime
     ${llvm_libs}
+)
+list(REMOVE_DUPLICATES pawc_all_libs)
+
+target_link_libraries(pawc PRIVATE
+    ${pawc_all_libs}
 )
 
 target_include_directories(pawc PRIVATE

@@ -1,0 +1,63 @@
+// 测试泛型接口
+
+type Comparable<T> = interface {
+    fn compare(&self, other: &T) -> i32;
+    
+    // 默认方法：基于 compare
+    fn is_equal(&self, other: &T) -> bool {
+        self.compare(other) == 0
+    }
+    
+    fn is_greater(&self, other: &T) -> bool {
+        self.compare(other) > 0
+    }
+    
+    fn is_less(&self, other: &T) -> bool {
+        self.compare(other) < 0
+    }
+}
+
+type Number = struct {
+    value: i32
+}
+
+// 实现泛型接口
+support Number with Comparable<Number> {
+    fn compare(&self, other: &Number) -> i32 {
+        if self.value > other.value {
+            1
+        } else if self.value < other.value {
+            -1
+        } else {
+            0
+        }
+    }
+}
+
+fn main() {
+    println("==== 泛型接口测试 ====\n");
+    
+    let n1 = Number { value: 10 };
+    let n2 = Number { value: 20 };
+    
+    println("比较 10 和 20:");
+    
+    let cmp = n1.compare(&n2);
+    println("compare:");
+    println(cmp);
+    
+    let eq = n1.is_equal(&n2);
+    println("is_equal:");
+    println(eq);
+    
+    let gt = n1.is_greater(&n2);
+    println("is_greater:");
+    println(gt);
+    
+    let lt = n1.is_less(&n2);
+    println("is_less:");
+    println(lt);
+    
+    println("\n==== 完成 ====");
+}
+
