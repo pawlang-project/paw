@@ -1,0 +1,187 @@
+// 压力测试：边界情况与极限测试
+
+// 1. 最大整数
+fn test_int_limits() {
+    let max_i32 = 2147483647;
+    let min_i32 = -2147483648;
+    let zero = 0;
+    
+    println("Int limits:");
+    println(max_i32);
+    println(min_i32);
+    println(zero);
+}
+
+// 2. 空结构体
+type Empty = struct {}
+
+fn test_empty_struct() {
+    let e = Empty {};
+    println("✅ 空结构体测试通过");
+}
+
+// 3. 单字段结构体
+type Wrapper = struct {
+    value: i32
+}
+
+fn test_single_field_struct() {
+    let w = Wrapper { value: 42 };
+    println("✅ 单字段结构体测试通过");
+}
+
+// 4. 大量字段
+type BigStruct = struct {
+    f1: i32,
+    f2: i32,
+    f3: i32,
+    f4: i32,
+    f5: i32,
+    f6: i32,
+    f7: i32,
+    f8: i32,
+    f9: i32,
+    f10: i32
+}
+
+fn test_many_fields() {
+    let b = BigStruct {
+        f1: 1, f2: 2, f3: 3, f4: 4, f5: 5,
+        f6: 6, f7: 7, f8: 8, f9: 9, f10: 10
+    };
+    println("✅ 大量字段测试通过");
+}
+
+// 5. 单变体枚举
+type Single = enum {
+    only(i32)
+}
+
+fn test_single_variant() {
+    let s = Single::only(42);
+    s is {
+        only(x) => {
+            println("✅ 单变体枚举测试通过");
+        }
+    };
+}
+
+// 6. 无数据枚举
+type Flag = enum {
+    red,
+    green,
+    blue
+}
+
+fn test_unit_variants() {
+    let f = Flag::red;
+    f is {
+        red => { println("Red"); },
+        green => { println("Green"); },
+        blue => { println("Blue"); }
+    };
+    println("✅ 无数据枚举测试通过");
+}
+
+// 7. 深度递归类型（通过 Box 避免无限大小）
+type List<T> = enum {
+    cons(T, i32),  // 简化：用 i32 代替 Box<List<T>>
+    nil
+}
+
+fn test_recursive_type() {
+    let l = List<i32>::cons(1, 0);
+    println("✅ 递归类型测试通过");
+}
+
+// 8. 自引用方法
+type Counter = struct {
+    count: i32
+}
+
+type Incrementable = interface {
+    fn increment(&self) -> Self;
+}
+
+support Counter with Incrementable {
+    fn increment(&self) -> Self {
+        Counter { count: self.count + 1 }
+    }
+}
+
+fn test_self_returning() {
+    let c1 = Counter { count: 0 };
+    let c2 = c1.increment();
+    println("✅ Self 返回测试通过");
+}
+
+// 9. 空元组
+fn test_unit_type() {
+    let u = ();
+    println("✅ 空元组测试通过");
+}
+
+// 10. 布尔所有值
+fn test_boolean_exhaustive() {
+    let b = true;
+    b is {
+        true => { println("True case"); },
+        false => { println("False case"); }
+    };
+    
+    let b2 = false;
+    b2 is {
+        true => { println("True"); },
+        false => { println("False case"); }
+    };
+    
+    println("✅ 布尔穷尽测试通过");
+}
+
+// 11. 零大小类型
+type ZeroSized = struct {}
+
+fn test_zero_sized() {
+    let z1 = ZeroSized {};
+    let z2 = ZeroSized {};
+    println("✅ 零大小类型测试通过");
+}
+
+// 12. 长标识符
+type VeryLongTypeNameToTestIdentifierLengthLimits = struct {
+    veryLongFieldNameToTestIdentifierLengthLimits: i32
+}
+
+fn test_long_identifiers() {
+    let x = VeryLongTypeNameToTestIdentifierLengthLimits {
+        veryLongFieldNameToTestIdentifierLengthLimits: 42
+    };
+    println("✅ 长标识符测试通过");
+}
+
+fn main() {
+    println("==== 边界情况压力测试 ====\n");
+    
+    println("1. 整数边界:");
+    test_int_limits();
+    
+    println("\n2. 结构体边界:");
+    test_empty_struct();
+    test_single_field_struct();
+    test_many_fields();
+    
+    println("\n3. 枚举边界:");
+    test_single_variant();
+    test_unit_variants();
+    test_recursive_type();
+    
+    println("\n4. 类型系统边界:");
+    test_self_returning();
+    test_unit_type();
+    test_boolean_exhaustive();
+    test_zero_sized();
+    test_long_identifiers();
+    
+    println("\n==== 所有边界测试通过！====");
+}
+

@@ -317,7 +317,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         return result_cond;  // nullptr表示所有子模式都是通配符/变量
     }
     
-    // SlicePattern: 切片匹配（支持 Array 和 Slice）
+    // SlicePattern: 切片匹配（支持 Array 和 Slice，包括后缀）
     if (auto* slice_pat = dynamic_cast<SlicePattern*>(pattern)) {
         // Slice 模式可以匹配 Array 或 Slice 类型
         if (!scrutinee_type) {
@@ -325,13 +325,16 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         }
         
         Type* elem_type = nullptr;
+        size_t array_size = 0;
         
         if (scrutinee_type->getKind() == Type::Kind::Array) {
             auto* array_type = static_cast<ArrayType*>(scrutinee_type);
             elem_type = array_type->getElementType();
+            array_size = array_type->getSize();
             
-            // 检查前缀长度
-            if (slice_pat->getPrefix().size() > array_type->getSize()) {
+            // 检查前缀+后缀长度
+            size_t min_size = slice_pat->getPrefix().size() + slice_pat->getSuffix().size();
+            if (min_size > array_size) {
                 return nullptr;
             }
         } else if (scrutinee_type->getKind() == Type::Kind::Slice) {
@@ -340,11 +343,6 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         } else {
             return nullptr;  // 类型不匹配
         }
-        
-        // Slice 模式匹配：检查长度是否足够
-        // 对于 [first, ..rest]，需要至少 1 个元素
-        // 对于 Array 类型，在编译时已知大小，总是满足
-        // 对于 Slice 类型，需要运行时检查长度
         
         llvm::Type* llvm_scrutinee_type = context_->getLLVMType(scrutinee_type);
         
@@ -358,24 +356,23 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         // 生成前缀元素的匹配条件
         llvm::Value* result_cond = nullptr;
         
+        // 匹配前缀
         for (size_t i = 0; i < slice_pat->getPrefix().size(); ++i) {
             llvm::Value* elem_value = nullptr;
             
             if (scrutinee_type->getKind() == Type::Kind::Array) {
-                // Array: 使用 GEP 提取
                 llvm::Value* indices[] = {
                     llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
                     llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), i)
                 };
                 llvm::Value* elem_ptr = builder.CreateGEP(
                     llvm_scrutinee_type, scrutinee_ptr, indices,
-                    "slice.elem." + std::to_string(i)
+                    "slice.prefix." + std::to_string(i)
                 );
                 llvm::Type* elem_llvm_type = context_->getLLVMType(elem_type);
-                elem_value = builder.CreateLoad(elem_llvm_type, elem_ptr, "slice.elem.val");
+                elem_value = builder.CreateLoad(elem_llvm_type, elem_ptr, "slice.prefix.val");
             }
             
-            // 递归生成子模式匹配
             if (elem_value) {
                 llvm::Value* sub_cond = generatePatternMatch(
                     slice_pat->getPrefix()[i].get(),
@@ -389,6 +386,129 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
                     } else {
                         result_cond = builder.CreateAnd(result_cond, sub_cond, "slice.match.and");
                     }
+                }
+            }
+        }
+        
+        // 匹配后缀 ([a, .., z] 的 z)
+        for (size_t i = 0; i < slice_pat->getSuffix().size(); ++i) {
+            llvm::Value* elem_value = nullptr;
+            
+            if (scrutinee_type->getKind() == Type::Kind::Array) {
+                // 后缀索引从数组末尾倒数
+                size_t index = array_size - slice_pat->getSuffix().size() + i;
+                llvm::Value* indices[] = {
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), index)
+                };
+                llvm::Value* elem_ptr = builder.CreateGEP(
+                    llvm_scrutinee_type, scrutinee_ptr, indices,
+                    "slice.suffix." + std::to_string(i)
+                );
+                llvm::Type* elem_llvm_type = context_->getLLVMType(elem_type);
+                elem_value = builder.CreateLoad(elem_llvm_type, elem_ptr, "slice.suffix.val");
+            }
+            
+            if (elem_value) {
+                llvm::Value* sub_cond = generatePatternMatch(
+                    slice_pat->getSuffix()[i].get(),
+                    elem_value,
+                    elem_type
+                );
+                
+                if (sub_cond) {
+                    if (!result_cond) {
+                        result_cond = sub_cond;
+                    } else {
+                        result_cond = builder.CreateAnd(result_cond, sub_cond, "slice.match.and");
+                    }
+                }
+            }
+        }
+        
+        return result_cond;
+    }
+    
+    // RangePattern: 范围匹配
+    if (auto* range_pat = dynamic_cast<RangePattern*>(pattern)) {
+        // 获取范围的起始和结束值
+        auto* start_lit = dynamic_cast<LiteralPattern*>(range_pat->getStart());
+        auto* end_lit = dynamic_cast<LiteralPattern*>(range_pat->getEnd());
+        
+        if (!start_lit || !end_lit) {
+            return nullptr;  // 范围边界必须是字面量
+        }
+        
+        // 生成范围检查: value >= start && value <= end (或 value < end)
+        llvm::Value* start_val = nullptr;
+        llvm::Value* end_val = nullptr;
+        
+        if (start_lit->getKind() == LiteralPattern::Kind::Int) {
+            start_val = llvm::ConstantInt::get(
+                scrutinee->getType(),
+                std::stoll(start_lit->getValue())
+            );
+            end_val = llvm::ConstantInt::get(
+                scrutinee->getType(),
+                std::stoll(end_lit->getValue())
+            );
+            
+            // value >= start
+            llvm::Value* ge_cond = builder.CreateICmpSGE(scrutinee, start_val, "range.ge");
+            
+            // value <= end (包含) 或 value < end (排除)
+            llvm::Value* le_cond;
+            if (range_pat->isInclusive()) {
+                le_cond = builder.CreateICmpSLE(scrutinee, end_val, "range.le");
+            } else {
+                le_cond = builder.CreateICmpSLT(scrutinee, end_val, "range.lt");
+            }
+            
+            // 合并条件
+            return builder.CreateAnd(ge_cond, le_cond, "range.match");
+            
+        } else if (start_lit->getKind() == LiteralPattern::Kind::Char) {
+            // 字符范围: 'a'..'z'
+            start_val = llvm::ConstantInt::get(
+                llvm::Type::getInt8Ty(context),
+                static_cast<uint8_t>(start_lit->getValue()[0])
+            );
+            end_val = llvm::ConstantInt::get(
+                llvm::Type::getInt8Ty(context),
+                static_cast<uint8_t>(end_lit->getValue()[0])
+            );
+            
+            llvm::Value* ge_cond = builder.CreateICmpUGE(scrutinee, start_val, "range.ge");
+            llvm::Value* le_cond;
+            if (range_pat->isInclusive()) {
+                le_cond = builder.CreateICmpULE(scrutinee, end_val, "range.le");
+            } else {
+                le_cond = builder.CreateICmpULT(scrutinee, end_val, "range.lt");
+            }
+            
+            return builder.CreateAnd(ge_cond, le_cond, "range.match");
+        }
+        
+        return nullptr;
+    }
+    
+    // OrPattern: OR匹配
+    if (auto* or_pat = dynamic_cast<OrPattern*>(pattern)) {
+        // 生成所有分支的匹配条件，用 OR 连接
+        llvm::Value* result_cond = nullptr;
+        
+        for (const auto& alt : or_pat->getAlternatives()) {
+            llvm::Value* alt_cond = generatePatternMatch(
+                alt.get(),
+                scrutinee,
+                scrutinee_type
+            );
+            
+            if (alt_cond) {
+                if (!result_cond) {
+                    result_cond = alt_cond;
+                } else {
+                    result_cond = builder.CreateOr(result_cond, alt_cond, "or.pattern");
                 }
             }
         }
@@ -639,16 +759,44 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
                 
                 llvm::Value* elem_ptr = builder.CreateGEP(
                     llvm_value_type, value_ptr, indices,
-                    "slice.elem." + std::to_string(i)
+                    "slice.prefix.elem." + std::to_string(i)
                 );
                 
                 llvm::Type* elem_llvm_type = context_->getLLVMType(elem_type);
                 llvm::Value* elem_value = builder.CreateLoad(
-                    elem_llvm_type, elem_ptr, "slice.elem.val"
+                    elem_llvm_type, elem_ptr, "slice.prefix.val"
                 );
                 
                 // 递归绑定
                 bindPatternVariables(slice_pat->getPrefix()[i].get(), elem_value, elem_type);
+            }
+        }
+        
+        // 绑定后缀元素 ([a, .., z] 的 z)
+        if (value_type->getKind() == Type::Kind::Array) {
+            auto* array_type = static_cast<ArrayType*>(value_type);
+            size_t array_size = array_type->getSize();
+            
+            for (size_t i = 0; i < slice_pat->getSuffix().size(); ++i) {
+                // 后缀索引从数组末尾倒数
+                size_t index = array_size - slice_pat->getSuffix().size() + i;
+                llvm::Value* indices[] = {
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), 0),
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), index)
+                };
+                
+                llvm::Value* elem_ptr = builder.CreateGEP(
+                    llvm_value_type, value_ptr, indices,
+                    "slice.suffix.elem." + std::to_string(i)
+                );
+                
+                llvm::Type* elem_llvm_type = context_->getLLVMType(elem_type);
+                llvm::Value* elem_value = builder.CreateLoad(
+                    elem_llvm_type, elem_ptr, "slice.suffix.val"
+                );
+                
+                // 递归绑定
+                bindPatternVariables(slice_pat->getSuffix()[i].get(), elem_value, elem_type);
             }
         }
         
@@ -659,7 +807,8 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
             if (value_type->getKind() == Type::Kind::Array) {
                 auto* array_type = static_cast<ArrayType*>(value_type);
                 size_t prefix_size = slice_pat->getPrefix().size();
-                size_t rest_size = array_type->getSize() - prefix_size;
+                size_t suffix_size = slice_pat->getSuffix().size();
+                size_t rest_size = array_type->getSize() - prefix_size - suffix_size;
                 
                 // 创建 Slice 类型的 LLVM 表示: { ptr, i64 }
                 llvm::StructType* slice_struct_type = llvm::StructType::get(

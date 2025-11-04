@@ -1,0 +1,28 @@
+// 测试浮点数模式匹配
+
+fn main() -> void {
+    println("━━━ 浮点数模式匹配测试 ━━━");
+    
+    let f32_val: f32 = 3.14;
+    let f64_val: f64 = 2.718;
+    
+    // f32 模式匹配
+    f32_val is {
+        3.14 => { println("✅ f32 literal match"); },
+        _ => { println("❌ f32 match failed"); }
+    };
+    
+    // f64 模式匹配
+    f64_val is {
+        2.718 => { println("✅ f64 literal match"); },
+        _ => { println("❌ f64 match failed"); }
+    };
+    
+    // 通配符模式
+    f64_val is {
+        _ => { println("✅ f64 wildcard match"); }
+    };
+    
+    println("━━━ 测试完成 ━━━");
+}
+

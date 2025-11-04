@@ -1,0 +1,26 @@
+// 测试数组模式匹配解构
+
+fn main() -> void {
+    println("━━━ 数组模式匹配测试 ━━━");
+    
+    // 测试1: 简单数组解构
+    let arr: [i32; 3] = [1, 2, 3];
+    
+    arr is {
+        [a, b, c] => {
+            println("✅ Array destructuring OK");
+            println(a);
+            println(b);
+            println(c);
+        }
+    };
+    
+    // 测试2: 数组大小不匹配应该失败
+    // arr is {
+    //     [x, y] => { println("Should not match"); },
+    //     _ => { println("Size mismatch correctly caught"); }
+    // };
+    
+    println("━━━ 测试完成 ━━━");
+}
+

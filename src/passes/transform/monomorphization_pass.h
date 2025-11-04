@@ -133,6 +133,8 @@ public:
     void visit(StructPattern* pattern) override;
     void visit(ArrayPattern* pattern) override;
     void visit(SlicePattern* pattern) override;
+    void visit(RangePattern* pattern) override;
+    void visit(OrPattern* pattern) override;
     
 private:
     PassContext* context_ = nullptr;

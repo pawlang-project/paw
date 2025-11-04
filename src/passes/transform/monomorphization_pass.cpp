@@ -1168,14 +1168,38 @@ void MonomorphizationPass::visit(ArrayPattern* pattern) {
 }
 
 void MonomorphizationPass::visit(SlicePattern* pattern) {
-    // Slice模式：遍历前缀和rest
+    // Slice模式：遍历前缀、后缀和rest
     for (const auto& prefix : pattern->getPrefix()) {
         if (prefix) {
             prefix->accept(this);
         }
     }
+    for (const auto& suffix : pattern->getSuffix()) {
+        if (suffix) {
+            suffix->accept(this);
+        }
+    }
     if (pattern->hasRest()) {
         pattern->getRest()->accept(this);
+    }
+}
+
+void MonomorphizationPass::visit(RangePattern* pattern) {
+    // Range模式：遍历起始和结束模式
+    if (pattern->getStart()) {
+        pattern->getStart()->accept(this);
+    }
+    if (pattern->getEnd()) {
+        pattern->getEnd()->accept(this);
+    }
+}
+
+void MonomorphizationPass::visit(OrPattern* pattern) {
+    // OR模式：遍历所有分支
+    for (const auto& alt : pattern->getAlternatives()) {
+        if (alt) {
+            alt->accept(this);
+        }
     }
 }
 

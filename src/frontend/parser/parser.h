@@ -53,11 +53,13 @@ private:
     
     // Pattern解析
     std::unique_ptr<class Pattern> parsePattern();
+    std::unique_ptr<class Pattern> parseBasePattern();
     std::unique_ptr<class Pattern> parseLiteralPattern();
     std::unique_ptr<class Pattern> parseVariableOrEnumPattern();
     std::unique_ptr<class Pattern> parseStructPattern(const std::string& struct_name);
     std::unique_ptr<class Pattern> parseArrayPattern();
     std::unique_ptr<class Pattern> parseSlicePattern(std::vector<std::unique_ptr<class Pattern>> prefix);
+    std::unique_ptr<class Pattern> parseRangePattern(std::unique_ptr<class Pattern> start);
     std::unique_ptr<class Pattern> parseEnumConstructorPattern();
     std::unique_ptr<class Pattern> parseTuplePattern();
     

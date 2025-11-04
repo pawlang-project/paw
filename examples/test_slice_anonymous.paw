@@ -1,0 +1,19 @@
+// 测试 Slice 匿名形式（不使用 rest 变量）
+
+fn main() -> void {
+    println("━━━ Slice 匿名模式测试 ━━━");
+    
+    // 测试 1: 简单匿名
+    println("测试 1: [first, ..]");
+    let arr1: [i32; 5] = [1, 2, 3, 4, 5];
+    
+    arr1 is {
+        [first, ..] => {
+            println("Match OK");
+            println(first);
+        }
+    };
+    
+    println("━━━ 测试完成 ━━━");
+}
+

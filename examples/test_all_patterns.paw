@@ -1,0 +1,80 @@
+// PawLang v0.2.2 - 高级模式匹配综合测试
+
+fn main() -> void {
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("高级模式匹配综合测试");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("");
+    
+    test_range();
+    test_or();
+    test_middle_rest();
+    test_nested();
+    test_combined();
+    
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("✅ 所有测试通过！");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+}
+
+fn test_range() -> void {
+    println("1. 范围模式");
+    let x = 85;
+    let r = x is {
+        90..100 => 4,
+        80..90 => 3,
+        _ => 2
+    };
+    println(r);  // 3
+}
+
+fn test_or() -> void {
+    println("2. OR 模式");
+    let x = 2;
+    let r = x is {
+        1 | 2 | 3 => 100,
+        _ => 200
+    };
+    println(r);  // 100
+}
+
+fn test_middle_rest() -> void {
+    println("3. 中间 Rest 模式");
+    let arr: [i32; 5] = [1, 2, 3, 4, 5];
+    let r = arr is {
+        [first, .., last] => first + last,
+        _ => 0
+    };
+    println(r);  // 6
+}
+
+fn test_nested() -> void {
+    println("4. 嵌套模式");
+    let t = ((1, 2), (3, 4));
+    let r = t is {
+        ((a, b), (c, d)) => a + b + c + d,
+        _ => 0
+    };
+    println(r);  // 10
+}
+
+fn test_combined() -> void {
+    println("5. 组合模式");
+    
+    // 范围 + OR
+    let x = 85;
+    let r1 = x is {
+        80..90 | 70..80 => 100,
+        _ => 200
+    };
+    println(r1);  // 100
+    
+    // 中间 Rest + 嵌套
+    let arr_tuple: [(i32, i32); 3] = [(1, 2), (3, 4), (5, 6)];
+    let r2 = arr_tuple is {
+        [(a, b), .., (y, z)] => a + b + y + z,
+        _ => 0
+    };
+    println(r2);  // 1 + 2 + 5 + 6 = 14
+}
+

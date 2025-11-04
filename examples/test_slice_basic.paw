@@ -1,0 +1,11 @@
+// 测试 Slice 基本功能
+
+fn main() -> void {
+    println("Slice test");
+    
+    let arr = [1, 2, 3, 4, 5];
+    // let slice: [i32] = arr[1..4];  // [2, 3, 4]
+    
+    println("Done");
+}
+

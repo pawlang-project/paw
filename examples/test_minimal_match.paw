@@ -1,0 +1,13 @@
+// 最小化测试
+
+fn main() -> void {
+    println("Test start");
+    
+    let x = 42;
+    x is {
+        42 => { println("Match!"); }
+    };
+    
+    println("Test done");
+}
+

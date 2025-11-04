@@ -1,0 +1,18 @@
+// 逐步测试
+
+fn test_literal() -> void {
+    println("Test literal");
+    let x = 42;
+    let r = x is {
+        42 => "match",
+        _ => "no"
+    };
+    println(r);
+}
+
+fn main() -> void {
+    println("Start");
+    test_literal();
+    println("End");
+}
+

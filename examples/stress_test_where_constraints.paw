@@ -1,0 +1,195 @@
+// 压力测试：Where 约束复杂组合
+
+type Display = interface {
+    fn show(&self);
+}
+
+type Clone = interface {
+    fn clone(&self) -> Self;
+}
+
+type Debug = interface {
+    fn debug(&self);
+}
+
+type Hash = interface {
+    fn hash(&self) -> i32;
+}
+
+type Eq = interface {
+    fn equals(&self, other: Self) -> bool;
+}
+
+// 辅助类型
+type Int = struct {
+    value: i32
+}
+
+support Int with Display {
+    fn show(&self) {
+        println(self.value);
+    }
+}
+
+support Int with Clone {
+    fn clone(&self) -> Self {
+        Int { value: self.value }
+    }
+}
+
+support Int with Debug {
+    fn debug(&self) {
+        println("Int debug");
+    }
+}
+
+support Int with Hash {
+    fn hash(&self) -> i32 {
+        self.value
+    }
+}
+
+support Int with Eq {
+    fn equals(&self, other: Self) -> bool {
+        self.value == other.value
+    }
+}
+
+// 1. 单约束
+type Box<T> = struct {
+    value: T
+}
+
+support Box<T> with Display where T: Display {
+    fn show(&self) {
+        println("Box:");
+    }
+}
+
+// 2. 双约束（+ 语法）
+type Pair<T, U> = struct {
+    first: T,
+    second: U
+}
+
+support Pair<T, U> with Display where T: Display + Clone, U: Display {
+    fn show(&self) {
+        println("Pair");
+    }
+}
+
+// 3. 三约束
+type Triple<T, U, V> = struct {
+    a: T,
+    b: U,
+    c: V
+}
+
+support Triple<T, U, V> with Display where T: Display + Clone, U: Debug, V: Hash {
+    fn show(&self) {
+        println("Triple");
+    }
+}
+
+// 4. 相同类型多约束
+type Container<T> = struct {
+    data: T
+}
+
+support Container<T> with Display where T: Display + Clone + Debug + Hash {
+    fn show(&self) {
+        println("Container (4 constraints)");
+    }
+}
+
+// 5. 嵌套泛型 + Where
+type Wrapper<T> = struct {
+    inner: Box<T>
+}
+
+support Wrapper<T> with Display where T: Display + Clone {
+    fn show(&self) {
+        println("Wrapper");
+    }
+}
+
+// 6. 混合约束
+type Complex<K, V> = struct {
+    key: K,
+    value: V
+}
+
+support Complex<K, V> with Display where K: Display + Hash + Eq, V: Display + Clone + Debug {
+    fn show(&self) {
+        println("Complex (mixed)");
+    }
+}
+
+// 7. 极限测试：5个类型参数
+type Mega<A, B, C, D, E> = struct {
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+    e: E
+}
+
+support Mega<A, B, C, D, E> with Display 
+where A: Display, B: Clone, C: Debug, D: Hash, E: Eq {
+    fn show(&self) {
+        println("Mega (5 type params)");
+    }
+}
+
+fn main() {
+    println("==== Where 约束压力测试 ====\n");
+    
+    println("1. 单约束:");
+    let b = Box<Int> { value: Int { value: 1 } };
+    b.show();
+    
+    println("\n2. 双约束:");
+    let p = Pair<Int, Int> { 
+        first: Int { value: 1 }, 
+        second: Int { value: 2 } 
+    };
+    p.show();
+    
+    println("\n3. 三约束:");
+    let t = Triple<Int, Int, Int> {
+        a: Int { value: 1 },
+        b: Int { value: 2 },
+        c: Int { value: 3 }
+    };
+    t.show();
+    
+    println("\n4. 四约束:");
+    let c = Container<Int> { data: Int { value: 42 } };
+    c.show();
+    
+    println("\n5. 嵌套泛型:");
+    let w = Wrapper<Int> { 
+        inner: Box<Int> { value: Int { value: 99 } } 
+    };
+    w.show();
+    
+    println("\n6. 混合约束:");
+    let cx = Complex<Int, Int> {
+        key: Int { value: 1 },
+        value: Int { value: 2 }
+    };
+    cx.show();
+    
+    println("\n7. 极限测试 (5 类型参数):");
+    let m = Mega<Int, Int, Int, Int, Int> {
+        a: Int { value: 1 },
+        b: Int { value: 2 },
+        c: Int { value: 3 },
+        d: Int { value: 4 },
+        e: Int { value: 5 }
+    };
+    m.show();
+    
+    println("\n==== 所有 Where 约束测试通过！====");
+}
+

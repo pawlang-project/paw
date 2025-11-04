@@ -1,0 +1,11 @@
+// 最简单的浮点数测试
+
+fn main() -> void {
+    println("Float test");
+    
+    let f: f32 = 3.14;
+    println(f);
+    
+    println("Done");
+}
+

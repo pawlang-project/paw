@@ -1,0 +1,23 @@
+// 增量测试
+
+fn test1() -> void {
+    println("Test 1: literal");
+    let x = 42;
+    let r = x is { 42 => "ok", _ => "no" };
+    println(r);
+}
+
+fn test2() -> void {
+    println("Test 2: tuple");
+    let t = (1, 2, 3);
+    let r = t is { (a,b,c) => a+b+c, _ => 0 };
+    println(r);
+}
+
+fn main() -> void {
+    println("=== Start ===");
+    test1();
+    test2();
+    println("=== End ===");
+}
+

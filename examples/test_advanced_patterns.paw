@@ -1,0 +1,173 @@
+// PawLang v0.2.2 - 高级模式匹配测试
+
+fn main() -> void {
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("PawLang v0.2.2 - 高级模式匹配测试");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("");
+    
+    test_range_patterns();
+    test_or_patterns();
+    test_middle_rest_patterns();
+    test_nested_patterns();
+    
+    println("");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("✅ 所有高级模式测试通过！");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 1. 范围模式
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+fn test_range_patterns() -> void {
+    println("━━━ 范围模式 ━━━");
+    
+    // 测试 1: 整数范围 (排除式 ..)
+    let score = 85;
+    let grade = score is {
+        90..100 => "A",
+        80..90 => "B",
+        70..80 => "C",
+        60..70 => "D",
+        _ => "F"
+    };
+    println(grade);  // B
+    
+    // 测试 2: 整数范围 (包含式 ..=)
+    let age = 18;
+    let category = age is {
+        0..=12 => "child",
+        13..=17 => "teen",
+        18..=65 => "adult",
+        _ => "senior"
+    };
+    println(category);  // adult
+    
+    // 测试 3: 字符范围
+    let ch = 'g';
+    let type_ch = ch is {
+        'a'..'z' => "lowercase",
+        'A'..'Z' => "uppercase",
+        '0'..'9' => "digit",
+        _ => "other"
+    };
+    println(type_ch);  // lowercase
+    
+    println("✅ 范围模式测试通过");
+    println("");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 2. OR 模式
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+fn test_or_patterns() -> void {
+    println("━━━ OR 模式 ━━━");
+    
+    // 测试 1: 整数 OR
+    let x = 2;
+    let result1 = x is {
+        1 | 2 | 3 => "small",
+        4 | 5 | 6 => "medium",
+        _ => "large"
+    };
+    println(result1);  // small
+    
+    // 测试 2: 字符串 OR
+    let lang = "rust";
+    let result2 = lang is {
+        "rust" | "go" | "c++" => "system",
+        "python" | "ruby" | "js" => "script",
+        _ => "other"
+    };
+    println(result2);  // system
+    
+    // 测试 3: 布尔 OR
+    let flag = true;
+    let result3 = flag is {
+        true | false => "valid",
+        _ => "invalid"
+    };
+    println(result3);  // valid
+    
+    println("✅ OR 模式测试通过");
+    println("");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 3. 中间 Rest 模式
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+fn test_middle_rest_patterns() -> void {
+    println("━━━ 中间 Rest 模式 ━━━");
+    
+    // 测试 1: [first, .., last]
+    let arr1: [i32; 5] = [1, 2, 3, 4, 5];
+    let result1 = arr1 is {
+        [first, .., last] => first + last,
+        _ => 0
+    };
+    println(result1);  // 1 + 5 = 6
+    
+    // 测试 2: [a, b, .., y, z]
+    let arr2: [i32; 6] = [10, 20, 30, 40, 50, 60];
+    let result2 = arr2 is {
+        [a, b, .., y, z] => a + b + y + z,
+        _ => 0
+    };
+    println(result2);  // 10 + 20 + 50 + 60 = 140
+    
+    // 测试 3: [.., last]
+    let arr3: [i32; 3] = [1, 2, 3];
+    let result3 = arr3 is {
+        [.., last] => last,
+        _ => 0
+    };
+    println(result3);  // 3
+    
+    println("✅ 中间 Rest 模式测试通过");
+    println("");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 4. 嵌套模式
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type Point = struct {
+    x: i32,
+    y: i32
+};
+
+fn test_nested_patterns() -> void {
+    println("━━━ 嵌套模式 ━━━");
+    
+    // 测试 1: 嵌套元组
+    let nested_tuple = ((1, 2), (3, 4));
+    let result1 = nested_tuple is {
+        ((a, b), (c, d)) => a + b + c + d,
+        _ => 0
+    };
+    println(result1);  // 10
+    
+    // 测试 2: 元组中的数组
+    let tuple_with_arr = ([1, 2], [3, 4]);
+    let result2 = tuple_with_arr is {
+        ([a, b], [c, d]) => a + b + c + d,
+        _ => 0
+    };
+    println(result2);  // 10
+    
+    // 测试 3: 数组中的元组
+    let arr_of_tuple: [(i32, i32); 2] = [(1, 2), (3, 4)];
+    let result3 = arr_of_tuple is {
+        [(a, b), (c, d)] => a + b + c + d,
+        _ => 0
+    };
+    println(result3);  // 10
+    
+    println("✅ 嵌套模式测试通过");
+    println("");
+}
+

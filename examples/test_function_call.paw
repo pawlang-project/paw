@@ -1,0 +1,12 @@
+// 测试函数调用
+
+fn test_func() -> void {
+    println("Inside test_func");
+}
+
+fn main() -> void {
+    println("Before call");
+    test_func();
+    println("After call");
+}
+

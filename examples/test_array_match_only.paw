@@ -1,0 +1,13 @@
+// 最简单的数组 match 测试
+
+fn main() -> void {
+    println("Start");
+    
+    let arr: [i32; 3] = [1, 2, 3];
+    
+    let x = arr[0];
+    println(x);
+    
+    println("Done");
+}
+

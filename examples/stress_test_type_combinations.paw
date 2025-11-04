@@ -1,0 +1,165 @@
+// 压力测试：类型组合与边界情况
+
+// 1. Optional 嵌套
+fn test_nested_optional() {
+    // Option<Option<i32>>
+    let o1 = some(some(42));
+    let o2 = some(none);
+    let o3 = none;
+    
+    println("✅ 嵌套 Optional 测试通过");
+}
+
+// 2. Result 嵌套
+fn test_nested_result() {
+    // Result<Result<i32>>
+    let r1 = ok(ok(42));
+    let r2 = ok(err("inner error"));
+    let r3 = err("outer error");
+    
+    println("✅ 嵌套 Result 测试通过");
+}
+
+// 3. Optional + Result 组合
+fn test_optional_result_mix() {
+    // Option<Result<i32>>
+    let or1 = some(ok(42));
+    let or2 = some(err("error"));
+    let or3 = none;
+    
+    // Result<Option<i32>>
+    let ro1 = ok(some(42));
+    let ro2 = ok(none);
+    let ro3 = err("error");
+    
+    println("✅ Optional + Result 组合测试通过");
+}
+
+// 4. 泛型 + Optional/Result
+type Box<T> = struct {
+    value: T
+}
+
+fn test_generic_optional() {
+    // Box<Option<i32>>
+    let b1 = Box<i32> { value: some(42) };
+    let b2 = Box<i32> { value: none };
+    
+    // Option<Box<i32>>
+    let o1 = some(Box<i32> { value: 42 });
+    let o2 = none;
+    
+    println("✅ 泛型 + Optional 测试通过");
+}
+
+// 5. 复杂元组
+fn test_complex_tuples() {
+    // 空元组
+    let t0 = ();
+    
+    // 单元素（实际就是值本身）
+    let t1 = 42;
+    
+    // 双元素
+    let t2 = (1, 2);
+    
+    // 三元素
+    let t3 = (1, true, "test");
+    
+    // 嵌套元组
+    let t4 = ((1, 2), (3, 4));
+    
+    // 元组包含泛型
+    let t5 = (Box<i32> { value: 1 }, Box<bool> { value: true });
+    
+    println("✅ 复杂元组测试通过");
+}
+
+// 6. 枚举变体组合
+type Result<T> = enum {
+    ok(T),
+    err(string)
+}
+
+type Complex = enum {
+    none,
+    single(i32),
+    pair(i32, i32),
+    triple(i32, i32, i32),
+    nested(Box<i32>)
+}
+
+fn test_enum_variants() {
+    let c1 = Complex::none;
+    let c2 = Complex::single(1);
+    let c3 = Complex::pair(1, 2);
+    let c4 = Complex::triple(1, 2, 3);
+    let c5 = Complex::nested(Box<i32> { value: 999 });
+    
+    println("✅ 枚举变体测试通过");
+}
+
+// 7. 模式匹配深度测试
+fn test_deep_pattern_matching() {
+    let t = (1, (2, 3));
+    
+    t is {
+        (a, (b, c)) => {
+            println("Matched nested tuple");
+        },
+        _ => {
+            println("No match");
+        }
+    };
+    
+    let r = ok((42, true));
+    r is {
+        ok((x, y)) => {
+            println("Matched nested result");
+        },
+        err(e) => {
+            println("Error");
+        }
+    };
+    
+    println("✅ 深度模式匹配测试通过");
+}
+
+// 8. 类型推导压力测试
+fn test_type_inference() {
+    // 简单推导
+    let x = 42;
+    let y = true;
+    let z = "test";
+    
+    // 表达式推导
+    let sum = x + 100;
+    let result = if y { 1 } else { 0 };
+    
+    // 泛型推导
+    let b = Box<i32> { value: x };
+    let p = (x, y);
+    
+    // 嵌套推导
+    let nested = Box<Box<i32>> {
+        value: Box<i32> { value: x }
+    };
+    
+    println("✅ 类型推导测试通过");
+}
+
+fn main() {
+    println("==== 类型组合压力测试 ====\n");
+    
+    test_nested_optional();
+    test_nested_result();
+    test_optional_result_mix();
+    test_generic_optional();
+    test_complex_tuples();
+    test_enum_variants();
+    test_deep_pattern_matching();
+    test_type_inference();
+    
+    println("\n==== 所有压力测试通过！====");
+}
+

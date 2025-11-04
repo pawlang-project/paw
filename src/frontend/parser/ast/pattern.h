@@ -152,20 +152,54 @@ private:
     size_t expected_size_;              // 期望的数组大小
 };
 
-/// SlicePattern - 切片解构模式 (例如: [first, ...rest])
+/// SlicePattern - 切片解构模式 (例如: [first, ..rest], [first, .., last])
 class SlicePattern : public Pattern {
 public:
-    SlicePattern(std::vector<PatternPtr> prefix, PatternPtr rest = nullptr)
-        : prefix_(std::move(prefix)), rest_(std::move(rest)) {}
+    SlicePattern(std::vector<PatternPtr> prefix, PatternPtr rest = nullptr, 
+                 std::vector<PatternPtr> suffix = {})
+        : prefix_(std::move(prefix)), rest_(std::move(rest)), suffix_(std::move(suffix)) {}
     
     const std::vector<PatternPtr>& getPrefix() const { return prefix_; }
     Pattern* getRest() const { return rest_.get(); }
     bool hasRest() const { return rest_ != nullptr; }
+    const std::vector<PatternPtr>& getSuffix() const { return suffix_; }
+    bool hasSuffix() const { return !suffix_.empty(); }
     void accept(ASTVisitor* visitor) override;
     
 private:
     std::vector<PatternPtr> prefix_;  // 前缀元素模式
-    PatternPtr rest_;                 // 剩余部分 (可选, ...rest)
+    PatternPtr rest_;                 // 剩余部分 (可选, ..rest)
+    std::vector<PatternPtr> suffix_;  // 后缀元素模式（用于 [a, .., z]）
+};
+
+/// RangePattern - 范围模式 (例如: 1..10, 'a'..'z', 1..=10)
+class RangePattern : public Pattern {
+public:
+    RangePattern(PatternPtr start, PatternPtr end, bool inclusive)
+        : start_(std::move(start)), end_(std::move(end)), inclusive_(inclusive) {}
+    
+    Pattern* getStart() const { return start_.get(); }
+    Pattern* getEnd() const { return end_.get(); }
+    bool isInclusive() const { return inclusive_; }
+    void accept(ASTVisitor* visitor) override;
+    
+private:
+    PatternPtr start_;     // 起始值（通常是 LiteralPattern）
+    PatternPtr end_;       // 结束值
+    bool inclusive_;       // 是否包含结束值（.. 或 ..=）
+};
+
+/// OrPattern - OR模式 (例如: 1 | 2 | 3, Color::red | Color::blue)
+class OrPattern : public Pattern {
+public:
+    explicit OrPattern(std::vector<PatternPtr> alternatives)
+        : alternatives_(std::move(alternatives)) {}
+    
+    const std::vector<PatternPtr>& getAlternatives() const { return alternatives_; }
+    void accept(ASTVisitor* visitor) override;
+    
+private:
+    std::vector<PatternPtr> alternatives_;  // 多个可选模式
 };
 
 } // namespace pawc

@@ -79,6 +79,8 @@ public:
     void visit(StructPattern* node) override;
     void visit(ArrayPattern* node) override;
     void visit(SlicePattern* node) override;
+    void visit(RangePattern* node) override {}
+    void visit(OrPattern* node) override;
     
 private:
     SymbolTable* symbols_;

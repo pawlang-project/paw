@@ -1,0 +1,234 @@
+// 压力测试：模式匹配深度与复杂度
+
+type Result<T> = enum {
+    ok(T),
+    err(string)
+}
+
+type Option<T> = enum {
+    some(T),
+    none
+}
+
+// 1. 深度嵌套模式
+fn test_deep_nesting() {
+    let nested = ok((1, (2, (3, 4))));
+    
+    nested is {
+        ok((a, (b, (c, d)))) => {
+            println("深度嵌套匹配成功");
+        },
+        err(e) => {
+            println("Error");
+        }
+    };
+}
+
+// 2. 复杂枚举模式
+type Color = enum {
+    rgb(i32, i32, i32),
+    rgba(i32, i32, i32, i32),
+    named(string),
+    none
+}
+
+fn test_enum_patterns() {
+    let colors = [
+        Color::rgb(255, 0, 0),
+        Color::rgba(0, 255, 0, 128),
+        Color::named("blue"),
+        Color::none
+    ];
+    
+    // 注意：暂时手动展开，因为 for 循环未实现
+    let c1 = Color::rgb(255, 0, 0);
+    c1 is {
+        rgb(r, g, b) => {
+            println("RGB color");
+        },
+        rgba(r, g, b, a) => {
+            println("RGBA color");
+        },
+        named(n) => {
+            println("Named color");
+        },
+        none => {
+            println("No color");
+        }
+    };
+    
+    let c2 = Color::rgba(0, 255, 0, 128);
+    c2 is {
+        rgb(r, g, b) => {
+            println("RGB");
+        },
+        rgba(r, g, b, a) => {
+            println("RGBA color");
+        },
+        named(n) => {
+            println("Named");
+        },
+        none => {
+            println("None");
+        }
+    };
+}
+
+// 3. 元组解构
+fn test_tuple_destructuring() {
+    let t1 = (1, 2);
+    t1 is {
+        (a, b) => {
+            println("Tuple (a, b)");
+        }
+    };
+    
+    let t2 = (1, 2, 3);
+    t2 is {
+        (x, y, z) => {
+            println("Tuple (x, y, z)");
+        }
+    };
+    
+    let t3 = ((1, 2), (3, 4));
+    t3 is {
+        ((a, b), (c, d)) => {
+            println("Nested tuple");
+        }
+    };
+}
+
+// 4. 结构体模式
+type Point = struct {
+    x: i32,
+    y: i32
+}
+
+type Circle = struct {
+    center: Point,
+    radius: i32
+}
+
+fn test_struct_patterns() {
+    let p = Point { x: 10, y: 20 };
+    p is {
+        Point { x, y } => {
+            println("Point matched");
+        }
+    };
+    
+    let c = Circle { 
+        center: Point { x: 0, y: 0 }, 
+        radius: 5 
+    };
+    c is {
+        Circle { center, radius } => {
+            println("Circle matched");
+        }
+    };
+}
+
+// 5. 混合模式
+fn test_mixed_patterns() {
+    // Result<(i32, i32)>
+    let r1 = ok((10, 20));
+    r1 is {
+        ok((x, y)) => {
+            println("Ok with tuple");
+        },
+        err(e) => {
+            println("Error");
+        }
+    };
+    
+    // Option<Point>
+    let o1 = some(Point { x: 1, y: 2 });
+    o1 is {
+        some(Point { x, y }) => {
+            println("Some with struct");
+        },
+        none => {
+            println("None");
+        }
+    };
+    
+    // Result<Option<i32>>
+    let ro = ok(some(42));
+    ro is {
+        ok(some(v)) => {
+            println("Ok(Some)");
+        },
+        ok(none) => {
+            println("Ok(None)");
+        },
+        err(e) => {
+            println("Err");
+        }
+    };
+}
+
+// 6. 通配符和字面量组合
+fn test_wildcard_literal() {
+    let x = 42;
+    
+    x is {
+        0 => { println("Zero"); },
+        1 => { println("One"); },
+        42 => { println("The answer"); },
+        _ => { println("Other"); }
+    };
+    
+    let b = true;
+    b is {
+        true => { println("True"); },
+        false => { println("False"); }
+    };
+}
+
+// 7. 穷尽性检查
+type Status = enum {
+    pending,
+    running,
+    completed,
+    failed(string)
+}
+
+fn test_exhaustiveness() {
+    let s = Status::pending;
+    
+    // 必须覆盖所有情况
+    s is {
+        pending => { println("Pending"); },
+        running => { println("Running"); },
+        completed => { println("Completed"); },
+        failed(msg) => { println("Failed"); }
+    };
+}
+
+fn main() {
+    println("==== 模式匹配压力测试 ====\n");
+    
+    println("1. 深度嵌套:");
+    test_deep_nesting();
+    
+    println("\n2. 枚举模式:");
+    test_enum_patterns();
+    
+    println("\n3. 元组解构:");
+    test_tuple_destructuring();
+    
+    println("\n4. 结构体模式:");
+    test_struct_patterns();
+    
+    println("\n5. 混合模式:");
+    test_mixed_patterns();
+    
+    println("\n6. 通配符:");
+    test_wildcard_literal();
+    
+    println("\n7. 穷尽性:");
+    test_exhaustiveness();
+    
+    println("\n==== 所有模式匹配测试通过！====");
+}
+

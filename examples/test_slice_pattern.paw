@@ -1,0 +1,36 @@
+// 测试 Slice 模式匹配 - 使用 .. 语法
+
+fn main() -> void {
+    println("━━━ Slice 模式匹配测试 ━━━");
+    
+    // 测试 1: 匿名形式 [first, ..]
+    println("测试 1: 匿名形式");
+    let arr1: [i32; 5] = [1, 2, 3, 4, 5];
+    
+    arr1 is {
+        [first, ..] => {
+            println("✅ 匿名 slice 模式匹配");
+            println(first);  // 1
+        }
+    };
+    
+    // 测试 2: 命名形式 [first, ..rest]
+    // 注意：这需要 rest 是 Slice 类型，当前 TypeChecker 支持但 CodeGen 待实现
+    
+    // 测试 3: 多个前缀 + 匿名
+    println("");
+    println("测试 2: 多个前缀 + 匿名");
+    let arr2: [i32; 5] = [10, 20, 30, 40, 50];
+    
+    arr2 is {
+        [a, b, ..] => {
+            println("✅ 多前缀 slice 模式匹配");
+            println(a);   // 10
+            println(b);   // 20
+        }
+    };
+    
+    println("");
+    println("━━━ 测试完成 ━━━");
+}
+

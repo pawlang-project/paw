@@ -1,0 +1,16 @@
+// 最简单的 match 测试
+
+fn main() -> void {
+    println("Start");
+    
+    let x = 42;
+    
+    let result = x is {
+        42 => "Match 42",
+        _ => "Other"
+    };
+    
+    println(result);
+    println("Done");
+}
+

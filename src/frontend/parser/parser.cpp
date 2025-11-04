@@ -1743,18 +1743,43 @@ std::vector<WhereClause> Parser::parseWhereClauses() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 std::unique_ptr<Pattern> Parser::parsePattern() {
+    // 解析基础模式
+    auto pattern = parseBasePattern();
+    
+    // 检查是否是 OR 模式: pattern | pattern | pattern
+    if (match(TokenType::PIPE)) {
+        std::vector<std::unique_ptr<Pattern>> alternatives;
+        alternatives.push_back(std::move(pattern));
+        
+        do {
+            alternatives.push_back(parseBasePattern());
+        } while (match(TokenType::PIPE));
+        
+        return std::make_unique<OrPattern>(std::move(alternatives));
+    }
+    
+    return pattern;
+}
+
+std::unique_ptr<Pattern> Parser::parseBasePattern() {
     // 通配符模式 _
-    // 在PawLang中，_作为标识符使用
     if (check(TokenType::IDENTIFIER) && peek().lexeme == "_") {
         advance();
         return std::make_unique<WildcardPattern>();
     }
     
-    // 字面量模式
+    // 字面量模式（可能后跟范围）
     if (check(TokenType::INT_LITERAL) || check(TokenType::FLOAT_LITERAL) ||
         check(TokenType::STRING_LITERAL) || check(TokenType::CHAR_LITERAL) ||
         check(TokenType::TRUE) || check(TokenType::FALSE)) {
-        return parseLiteralPattern();
+        auto lit = parseLiteralPattern();
+        
+        // 检查是否是范围模式: 1..10 或 1..=10
+        if (check(TokenType::DOT_DOT)) {
+            return parseRangePattern(std::move(lit));
+        }
+        
+        return lit;
     }
     
     // 数组模式 [pattern, pattern, ...]
@@ -1812,49 +1837,81 @@ std::unique_ptr<Pattern> Parser::parseLiteralPattern() {
     throw std::runtime_error("Parse error");
 }
 
-// 解析数组/切片模式: [pattern, pattern, ...] 或 [pattern, ..] 或 [pattern, ..rest]
+// 解析范围模式: start..end 或 start..=end
+std::unique_ptr<Pattern> Parser::parseRangePattern(std::unique_ptr<Pattern> start) {
+    bool inclusive = false;
+    
+    // 消费 ..
+    if (!match(TokenType::DOT_DOT)) {
+        error("Expected '..' for range pattern");
+        return nullptr;
+    }
+    
+    // 检查是否是 ..= (包含式范围)
+    if (match(TokenType::EQ)) {
+        inclusive = true;
+    }
+    
+    // 解析结束值
+    auto end = parseLiteralPattern();
+    
+    return std::make_unique<RangePattern>(std::move(start), std::move(end), inclusive);
+}
+
+// 解析数组/切片模式: [pattern, ..] / [pattern, ..rest] / [a, .., z]
 std::unique_ptr<Pattern> Parser::parseArrayPattern() {
-    std::vector<std::unique_ptr<Pattern>> elements;
+    std::vector<std::unique_ptr<Pattern>> prefix;
+    std::unique_ptr<Pattern> rest = nullptr;
+    std::vector<std::unique_ptr<Pattern>> suffix;
+    bool has_rest = false;
     
     if (!check(TokenType::RBRACKET)) {
         do {
             // 检查 rest pattern: .. 或 ..rest
             if (match(TokenType::DOT_DOT)) {
+                has_rest = true;
+                
                 // 检查是否有名字
                 if (check(TokenType::IDENTIFIER)) {
-                    // 命名形式: [a, ..rest]
+                    // 命名形式: [a, ..rest] 或 [a, ..rest, z]
                     Token rest_name = advance();
-                    consume(TokenType::RBRACKET, "Expected ']' after slice pattern");
-                    
-                    auto rest_pattern = std::make_unique<VariablePattern>(rest_name.lexeme);
-                    return std::make_unique<SlicePattern>(
-                        std::move(elements), 
-                        std::move(rest_pattern)
-                    );
-                } else if (check(TokenType::RBRACKET)) {
-                    // 匿名形式: [a, ..]
-                    consume(TokenType::RBRACKET, "Expected ']' after '..'");
-                    
-                    return std::make_unique<SlicePattern>(
-                        std::move(elements), 
-                        nullptr  // 无名字，表示忽略剩余部分
-                    );
+                    rest = std::make_unique<VariablePattern>(rest_name.lexeme);
                 } else {
-                    error("Expected identifier or ']' after '..'");
-                    break;
+                    // 匿名形式: [a, ..] 或 [a, .., z]
+                    rest = nullptr;
                 }
+                
+                // 检查是否有后缀元素
+                if (match(TokenType::COMMA) && !check(TokenType::RBRACKET)) {
+                    // 有后缀: [a, .., z] 或 [a, ..rest, z]
+                    do {
+                        suffix.push_back(parseBasePattern());
+                    } while (match(TokenType::COMMA) && !check(TokenType::RBRACKET));
+                }
+                
+                break;  // rest 后面不能再有 ..
             }
             
-            elements.push_back(parsePattern());
+            // 普通元素
+            prefix.push_back(parseBasePattern());
         } while (match(TokenType::COMMA) && !check(TokenType::RBRACKET));
     }
     
     consume(TokenType::RBRACKET, "Expected ']'");
     
-    // 固定大小数组模式
+    // 如果有 rest，返回 SlicePattern
+    if (has_rest) {
+        return std::make_unique<SlicePattern>(
+            std::move(prefix), 
+            std::move(rest),
+            std::move(suffix)
+        );
+    }
+    
+    // 否则返回固定大小 ArrayPattern
     return std::make_unique<ArrayPattern>(
-        std::move(elements), 
-        elements.size()
+        std::move(prefix), 
+        prefix.size()
     );
 }
 

@@ -76,6 +76,8 @@ public:
     void visit(StructPattern*) override {}
     void visit(ArrayPattern*) override {}
     void visit(SlicePattern*) override {}
+    void visit(RangePattern*) override {}
+    void visit(OrPattern*) override {}
     
 private:
     ExprCodeGen* expr_codegen_;

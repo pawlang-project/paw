@@ -1,0 +1,51 @@
+// 测试 Slice rest 变量绑定
+
+fn main() -> void {
+    println("━━━ Slice Rest 变量绑定测试 ━━━");
+    
+    // 测试 1: 简单 rest 绑定
+    println("测试 1: [first, ..rest]");
+    let arr: [i32; 5] = [1, 2, 3, 4, 5];
+    
+    arr is {
+        [first, ..rest] => {
+            println("✅ Rest 变量绑定成功");
+            println(first);
+            // rest 是 [i32] 类型，包含 [2, 3, 4, 5]
+            // 注意：rest 是 Slice 类型，需要实现 Slice 的访问方法
+        }
+    };
+    
+    // 测试 2: 多前缀 + rest
+    println("");
+    println("测试 2: [a, b, ..tail]");
+    let arr2: [i32; 5] = [10, 20, 30, 40, 50];
+    
+    arr2 is {
+        [a, b, ..tail] => {
+            println("✅ 多前缀 rest 绑定成功");
+            println(a);
+            println(b);
+            // tail 是 [i32] 类型，包含 [30, 40, 50]
+        }
+    };
+    
+    // 测试 3: 空 rest
+    println("");
+    println("测试 3: 精确匹配，rest为空");
+    let arr3: [i32; 3] = [1, 2, 3];
+    
+    arr3 is {
+        [x, y, z, ..empty] => {
+            println("✅ 空 rest 绑定成功");
+            println(x);
+            println(y);
+            println(z);
+            // empty 是空的 Slice
+        }
+    };
+    
+    println("");
+    println("━━━ 测试完成 ━━━");
+}
+

@@ -2546,12 +2546,92 @@ void TypeChecker::visit(SlicePattern* node) {
         expected_type_ = saved_expected;
     }
     
+    // 检查后缀元素
+    for (const auto& suffix_pattern : node->getSuffix()) {
+        Type* saved_expected = expected_type_;
+        expected_type_ = elem_type;
+        suffix_pattern->accept(this);
+        expected_type_ = saved_expected;
+    }
+    
+    // 检查数组大小是否足够（如果是 Array 类型）
+    if (expected_type_->getKind() == Type::Kind::Array) {
+        auto* array_type = static_cast<ArrayType*>(expected_type_);
+        size_t min_size = node->getPrefix().size() + node->getSuffix().size();
+        
+        if (min_size > array_type->getSize()) {
+            diag_->reportError(
+                "Slice pattern requires at least " + std::to_string(min_size) +
+                " elements, but array size is " + std::to_string(array_type->getSize()),
+                SourceLocation()
+            );
+            return;
+        }
+    }
+    
     // 检查 rest 部分
     if (node->hasRest()) {
         Type* saved_expected = expected_type_;
         expected_type_ = rest_type;
         node->getRest()->accept(this);
         expected_type_ = saved_expected;
+    }
+}
+
+void TypeChecker::visit(RangePattern* node) {
+    // 范围模式：验证起始和结束值类型一致
+    
+    if (!expected_type_) {
+        diag_->reportError(
+            "Range pattern requires a type context",
+            SourceLocation()
+        );
+        return;
+    }
+    
+    // 范围模式只支持整数和字符类型
+    if (!expected_type_->isInteger() && expected_type_->getKind() != Type::Kind::Char) {
+        diag_->reportError(
+            "Range pattern only supports integer and char types, got: " + 
+            expected_type_->toString(),
+            SourceLocation()
+        );
+        return;
+    }
+    
+    // 检查起始和结束模式
+    if (node->getStart()) {
+        Type* saved = expected_type_;
+        expected_type_ = expected_type_;
+        node->getStart()->accept(this);
+        expected_type_ = saved;
+    }
+    
+    if (node->getEnd()) {
+        Type* saved = expected_type_;
+        expected_type_ = expected_type_;
+        node->getEnd()->accept(this);
+        expected_type_ = saved;
+    }
+}
+
+void TypeChecker::visit(OrPattern* node) {
+    // OR模式：所有分支必须类型一致
+    
+    if (!expected_type_) {
+        diag_->reportError(
+            "Or pattern requires a type context",
+            SourceLocation()
+        );
+        return;
+    }
+    
+    // 检查每个分支
+    for (const auto& alt : node->getAlternatives()) {
+        Type* saved = expected_type_;
+        expected_type_ = expected_type_;
+        alt->accept(this);
+        expected_type_ = saved;
     }
 }
 

@@ -325,8 +325,18 @@ void CaptureAnalyzer::visit(SlicePattern* node) {
     for (const auto& prefix : node->getPrefix()) {
         prefix->accept(this);
     }
+    for (const auto& suffix : node->getSuffix()) {
+        suffix->accept(this);
+    }
     if (node->hasRest()) {
         node->getRest()->accept(this);
+    }
+}
+
+void CaptureAnalyzer::visit(OrPattern* node) {
+    // OR模式：遍历所有分支
+    for (const auto& alt : node->getAlternatives()) {
+        alt->accept(this);
     }
 }
 

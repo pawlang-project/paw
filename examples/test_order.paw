@@ -1,0 +1,14 @@
+// 测试函数定义顺序
+
+// main 在前面
+fn main() -> void {
+    println("Main");
+    test_func();
+    println("After");
+}
+
+// 函数定义在后面
+fn test_func() -> void {
+    println("Test func");
+}
+

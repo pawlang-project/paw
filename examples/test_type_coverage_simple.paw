@@ -1,0 +1,87 @@
+// 简单类型覆盖测试
+
+fn test_integers() -> void {
+    println("━━━ 整数类型 ━━━");
+    let i8_v: i8 = 127;
+    let i16_v: i16 = 32767;
+    let i32_v: i32 = 2147483647;
+    let u8_v: u8 = 255;
+    let u16_v: u16 = 65535;
+    
+    println(i32_v);
+    println("✅ 整数类型支持");
+}
+
+fn test_basic() -> void {
+    println("━━━ 基础类型 ━━━");
+    let b: bool = true;
+    let s: string = "PawLang";
+    
+    println(s);
+    println("✅ 基础类型支持");
+}
+
+type Point = struct {
+    x: i32,
+    y: i32
+};
+
+fn test_struct() -> void {
+    println("━━━ 结构体 ━━━");
+    let p = Point { x: 10, y: 20 };
+    println(p.x);
+    println("✅ 结构体支持");
+}
+
+type Color = enum {
+    red,
+    green,
+    blue
+};
+
+fn test_enum() -> void {
+    println("━━━ 枚举 ━━━");
+    let c = Color::red;
+    c is {
+        Color::red => { println("✅ 枚举支持"); }
+    };
+}
+
+fn test_optional() -> void {
+    println("━━━ Optional ━━━");
+    let opt: i32? = some(42);
+    opt is {
+        some(x) => { println("✅ Optional支持"); }
+    };
+}
+
+type Box<T> = struct {
+    value: T
+};
+
+fn test_generic() -> void {
+    println("━━━ 泛型 ━━━");
+    let box1 = Box { value: 42 };
+    println(box1.value);
+    println("✅ 泛型支持");
+}
+
+fn main() -> void {
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("PawLang v0.2.2 - 类型系统快速验证");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("");
+    
+    test_integers();
+    test_basic();
+    test_struct();
+    test_enum();
+    test_optional();
+    test_generic();
+    
+    println("");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("✅ 核心类型 100% 支持");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+}
+

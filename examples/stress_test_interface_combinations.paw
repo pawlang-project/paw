@@ -1,0 +1,157 @@
+// 压力测试：接口组合与多重实现
+
+// 定义多个接口
+type Display = interface {
+    fn show(&self);
+}
+
+type Clone = interface {
+    fn clone(&self) -> Self;
+}
+
+type Debug = interface {
+    fn debug(&self);
+}
+
+type Comparable<T> = interface {
+    fn compare(&self, other: T) -> i32;
+}
+
+type Default = interface {
+    fn default() -> Self;
+}
+
+// 1. 单一类型实现多个接口
+type Point = struct {
+    x: i32,
+    y: i32
+}
+
+support Point with Display {
+    fn show(&self) {
+        println("Point");
+    }
+}
+
+support Point with Clone {
+    fn clone(&self) -> Self {
+        Point { x: self.x, y: self.y }
+    }
+}
+
+support Point with Debug {
+    fn debug(&self) {
+        println("Point debug");
+    }
+}
+
+support Point with Comparable<Point> {
+    fn compare(&self, other: Point) -> i32 {
+        if self.x > other.x {
+            1
+        } else if self.x < other.x {
+            -1
+        } else {
+            0
+        }
+    }
+}
+
+// 2. 泛型类型实现接口
+type Container<T> = struct {
+    value: T
+}
+
+support Container<i32> with Display {
+    fn show(&self) {
+        println("Container<i32>");
+    }
+}
+
+support Container<bool> with Display {
+    fn show(&self) {
+        println("Container<bool>");
+    }
+}
+
+support Container<string> with Display {
+    fn show(&self) {
+        println("Container<string>");
+    }
+}
+
+// 3. 条件实现
+type Wrapper<T> = struct {
+    data: T
+}
+
+support Wrapper<T> with Display where T: Display {
+    fn show(&self) {
+        println("Wrapper:");
+    }
+}
+
+support Wrapper<T> with Clone where T: Clone {
+    fn clone(&self) -> Self {
+        Wrapper<T> { data: self.data }
+    }
+}
+
+// 4. 多约束条件实现
+type Complex<K, V> = struct {
+    key: K,
+    value: V
+}
+
+support Complex<K, V> with Display where K: Display, V: Display {
+    fn show(&self) {
+        println("Complex");
+    }
+}
+
+support Complex<K, V> with Debug where K: Debug + Clone, V: Debug {
+    fn debug(&self) {
+        println("Complex debug");
+    }
+}
+
+fn main() {
+    println("==== 接口组合压力测试 ====\n");
+    
+    // 测试1: 单类型多接口
+    println("1. Point 实现 4 个接口:");
+    let p1 = Point { x: 10, y: 20 };
+    p1.show();
+    let p2 = p1.clone();
+    p1.debug();
+    let cmp = p1.compare(p2);
+    println("Compare result:");
+    println(cmp);
+    
+    // 测试2: 泛型特化
+    println("\n2. 泛型特化:");
+    let c1 = Container<i32> { value: 42 };
+    c1.show();
+    let c2 = Container<bool> { value: true };
+    c2.show();
+    let c3 = Container<string> { value: "test" };
+    c3.show();
+    
+    // 测试3: 条件实现
+    println("\n3. 条件实现:");
+    let w1 = Wrapper<Point> { data: Point { x: 1, y: 2 } };
+    w1.show();
+    let w2 = w1.clone();
+    
+    // 测试4: 多约束
+    println("\n4. 多约束:");
+    let cx = Complex<Point, Point> { 
+        key: Point { x: 1, y: 2 }, 
+        value: Point { x: 3, y: 4 } 
+    };
+    cx.show();
+    cx.debug();
+    
+    println("\n==== 所有接口测试通过！====");
+}
+

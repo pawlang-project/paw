@@ -1,0 +1,122 @@
+// 压力测试：深度嵌套泛型
+
+// 1. 深度嵌套的泛型类型
+type Box<T> = struct {
+    value: T
+}
+
+type Pair<T, U> = struct {
+    first: T,
+    second: U
+}
+
+type Triple<T, U, V> = struct {
+    a: T,
+    b: U,
+    c: V
+}
+
+// 2. 测试深度嵌套：Box<Pair<Triple<i32, bool, string>, Box<i32>>>
+fn test_deep_nesting() {
+    // Level 1: Box<i32>
+    let b1 = Box<i32> { value: 42 };
+    
+    // Level 2: Pair<i32, bool>
+    let p1 = Pair<i32, bool> { first: 10, second: true };
+    
+    // Level 3: Triple<i32, bool, string>
+    let t1 = Triple<i32, bool, string> { 
+        a: 1, 
+        b: false, 
+        c: "hello" 
+    };
+    
+    // Level 4: Box<Triple<i32, bool, string>>
+    let b2 = Box<Triple<i32, bool, string>> { 
+        value: Triple<i32, bool, string> { 
+            a: 2, 
+            b: true, 
+            c: "world" 
+        } 
+    };
+    
+    // Level 5: Pair<Triple<i32, bool, string>, Box<i32>>
+    let p2 = Pair<Triple<i32, bool, string>, Box<i32>> {
+        first: Triple<i32, bool, string> { a: 3, b: false, c: "test" },
+        second: Box<i32> { value: 100 }
+    };
+    
+    println("✅ 深度嵌套泛型测试通过");
+}
+
+// 3. 多泛型参数组合
+type Quad<A, B, C, D> = struct {
+    a: A,
+    b: B,
+    c: C,
+    d: D
+}
+
+fn test_many_type_params() {
+    let q = Quad<i32, bool, string, i32> {
+        a: 1,
+        b: true,
+        c: "test",
+        d: 2
+    };
+    
+    println("✅ 多泛型参数测试通过");
+}
+
+// 4. 泛型类型作为参数
+fn identity<T>(x: T) -> T {
+    x
+}
+
+fn wrap<T>(x: T) -> Box<T> {
+    Box<T> { value: x }
+}
+
+fn unwrap<T>(b: Box<T>) -> T {
+    b.value
+}
+
+fn test_generic_functions() {
+    let x = identity<i32>(42);
+    let b = wrap<i32>(100);
+    let y = unwrap<i32>(b);
+    
+    println("✅ 泛型函数测试通过");
+}
+
+// 5. 组合测试
+fn test_combinations() {
+    // Box<Box<Box<i32>>>
+    let b3 = Box<Box<Box<i32>>> {
+        value: Box<Box<i32>> {
+            value: Box<i32> {
+                value: 999
+            }
+        }
+    };
+    
+    // Pair<Box<i32>, Pair<bool, string>>
+    let complex = Pair<Box<i32>, Pair<bool, string>> {
+        first: Box<i32> { value: 42 },
+        second: Pair<bool, string> { first: true, second: "nested" }
+    };
+    
+    println("✅ 组合测试通过");
+}
+
+fn main() {
+    println("==== 深度泛型压力测试 ====\n");
+    
+    test_deep_nesting();
+    test_many_type_params();
+    test_generic_functions();
+    test_combinations();
+    
+    println("\n==== 所有测试通过！====");
+}
+

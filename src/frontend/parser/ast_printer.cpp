@@ -632,16 +632,51 @@ void ASTPrinter::visit(ArrayPattern* node) {
 
 void ASTPrinter::visit(SlicePattern* node) {
     printLine("SlicePattern [prefix=" + std::to_string(node->getPrefix().size()) + 
-              ", has_rest=" + (node->hasRest() ? "true" : "false") + "]");
+              ", has_rest=" + (node->hasRest() ? "true" : "false") + 
+              ", suffix=" + std::to_string(node->getSuffix().size()) + "]");
+    indent_++;
+    printLine("Prefix:");
     indent_++;
     for (const auto& prefix : node->getPrefix()) {
         prefix->accept(this);
     }
+    indent_--;
     if (node->hasRest()) {
         printLine("Rest:");
         indent_++;
         node->getRest()->accept(this);
         indent_--;
+    }
+    if (node->hasSuffix()) {
+        printLine("Suffix:");
+        indent_++;
+        for (const auto& suf : node->getSuffix()) {
+            suf->accept(this);
+        }
+        indent_--;
+    }
+    indent_--;
+}
+
+void ASTPrinter::visit(RangePattern* node) {
+    printLine("RangePattern [inclusive=" + std::string(node->isInclusive() ? "true" : "false") + "]");
+    indent_++;
+    printLine("Start:");
+    indent_++;
+    node->getStart()->accept(this);
+    indent_--;
+    printLine("End:");
+    indent_++;
+    node->getEnd()->accept(this);
+    indent_--;
+    indent_--;
+}
+
+void ASTPrinter::visit(OrPattern* node) {
+    printLine("OrPattern [alternatives=" + std::to_string(node->getAlternatives().size()) + "]");
+    indent_++;
+    for (const auto& alt : node->getAlternatives()) {
+        alt->accept(this);
     }
     indent_--;
 }

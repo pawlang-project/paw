@@ -1,0 +1,12 @@
+// 最简化的测试
+
+fn test_literal_patterns() -> void {
+    println("Test start");
+}
+
+fn main() -> void {
+    println("Main start");
+    test_literal_patterns();
+    println("Main end");
+}
+
