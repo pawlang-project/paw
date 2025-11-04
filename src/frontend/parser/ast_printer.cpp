@@ -621,5 +621,30 @@ void ASTPrinter::visit(StructPattern* node) {
     indent_--;
 }
 
+void ASTPrinter::visit(ArrayPattern* node) {
+    printLine("ArrayPattern [size=" + std::to_string(node->getExpectedSize()) + "]");
+    indent_++;
+    for (const auto& elem : node->getElements()) {
+        elem->accept(this);
+    }
+    indent_--;
+}
+
+void ASTPrinter::visit(SlicePattern* node) {
+    printLine("SlicePattern [prefix=" + std::to_string(node->getPrefix().size()) + 
+              ", has_rest=" + (node->hasRest() ? "true" : "false") + "]");
+    indent_++;
+    for (const auto& prefix : node->getPrefix()) {
+        prefix->accept(this);
+    }
+    if (node->hasRest()) {
+        printLine("Rest:");
+        indent_++;
+        node->getRest()->accept(this);
+        indent_--;
+    }
+    indent_--;
+}
+
 } // namespace pawc
 

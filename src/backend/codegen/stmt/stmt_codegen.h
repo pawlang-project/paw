@@ -19,6 +19,9 @@ public:
     
     llvm::Value* generate(ASTNode* node) override;
     
+    /// 🔧 生成函数声明（仅签名，不生成函数体）
+    void generateFunctionDeclaration(FunctionDecl* node);
+    
     // 语句访问
     void visit(ExprStmt* node) override;
     void visit(VarDecl* node) override;
@@ -71,6 +74,8 @@ public:
     void visit(TuplePattern*) override {}
     void visit(EnumPattern*) override {}
     void visit(StructPattern*) override {}
+    void visit(ArrayPattern*) override {}
+    void visit(SlicePattern*) override {}
     
 private:
     ExprCodeGen* expr_codegen_;

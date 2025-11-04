@@ -96,6 +96,8 @@ public:
     void visit(TuplePattern*) override {}
     void visit(EnumPattern*) override {}
     void visit(StructPattern*) override {}
+    void visit(ArrayPattern*) override {}
+    void visit(SlicePattern*) override {}
     
     // 🔧 获取上次表达式的结果（供StmtCodeGen使用）
     llvm::Value* getResult() const { return result_; }

@@ -84,6 +84,8 @@ public:
     void visit(TuplePattern* node) override;
     void visit(EnumPattern* node) override;
     void visit(StructPattern* node) override;
+    void visit(ArrayPattern* node) override;
+    void visit(SlicePattern* node) override;
     
 private:
     std::ostream& os_;

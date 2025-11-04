@@ -1158,5 +1158,26 @@ void MonomorphizationPass::visit(StructPattern* pattern) {
     }
 }
 
+void MonomorphizationPass::visit(ArrayPattern* pattern) {
+    // 数组模式：遍历元素模式
+    for (const auto& elem : pattern->getElements()) {
+        if (elem) {
+            elem->accept(this);
+        }
+    }
+}
+
+void MonomorphizationPass::visit(SlicePattern* pattern) {
+    // Slice模式：遍历前缀和rest
+    for (const auto& prefix : pattern->getPrefix()) {
+        if (prefix) {
+            prefix->accept(this);
+        }
+    }
+    if (pattern->hasRest()) {
+        pattern->getRest()->accept(this);
+    }
+}
+
 } // namespace pawc
 

@@ -15,5 +15,7 @@ void VariablePattern::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void TuplePattern::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void EnumPattern::accept(ASTVisitor* visitor) { visitor->visit(this); }
 void StructPattern::accept(ASTVisitor* visitor) { visitor->visit(this); }
+void ArrayPattern::accept(ASTVisitor* visitor) { visitor->visit(this); }
+void SlicePattern::accept(ASTVisitor* visitor) { visitor->visit(this); }
 
 } // namespace pawc

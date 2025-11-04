@@ -2447,6 +2447,114 @@ Type* TypeChecker::substituteGenericType(Type* type, const std::map<std::string,
     return type;
 }
 
+void TypeChecker::visit(ArrayPattern* node) {
+    // 数组模式匹配 - 完整实现
+    
+    // 1. 检查expected_type_是否为ArrayType
+    if (!expected_type_) {
+        diag_->reportError(
+            "Array pattern requires a type context",
+            SourceLocation()
+        );
+        return;
+    }
+    
+    if (expected_type_->getKind() != Type::Kind::Array) {
+        diag_->reportError(
+            "Cannot match array pattern against non-array type: " + expected_type_->toString(),
+            SourceLocation()
+        );
+        return;
+    }
+    
+    ArrayType* array_type = static_cast<ArrayType*>(expected_type_);
+    
+    // 2. 检查数组大小是否匹配
+    if (array_type->getSize() != node->getExpectedSize()) {
+        diag_->reportError(
+            "Array pattern size mismatch: expected " + 
+            std::to_string(array_type->getSize()) + 
+            ", got " + std::to_string(node->getExpectedSize()),
+            SourceLocation()
+        );
+        return;
+    }
+    
+    // 3. 递归检查每个元素模式
+    Type* elem_type = array_type->getElementType();
+    for (const auto& elem_pattern : node->getElements()) {
+        Type* saved_expected = expected_type_;
+        expected_type_ = elem_type;
+        elem_pattern->accept(this);
+        expected_type_ = saved_expected;
+    }
+}
+
+void TypeChecker::visit(SlicePattern* node) {
+    // Slice模式匹配 - 支持 Array 和 Slice 类型
+    
+    if (!expected_type_) {
+        diag_->reportError(
+            "Slice pattern requires a type context",
+            SourceLocation()
+        );
+        return;
+    }
+    
+    Type* elem_type = nullptr;
+    Type* rest_type = nullptr;
+    
+    // 支持 Array 和 Slice 两种类型
+    if (expected_type_->getKind() == Type::Kind::Array) {
+        auto* array_type = static_cast<ArrayType*>(expected_type_);
+        elem_type = array_type->getElementType();
+        
+        // 检查前缀数量不超过数组大小
+        if (node->getPrefix().size() > array_type->getSize()) {
+            diag_->reportError(
+                "Slice pattern prefix too long: array size is " +
+                std::to_string(array_type->getSize()) +
+                ", but pattern requires at least " +
+                std::to_string(node->getPrefix().size()) + " elements",
+                SourceLocation()
+            );
+            return;
+        }
+        
+        // rest 部分是 Slice 类型
+        rest_type = types_->getSliceType(elem_type);
+        
+    } else if (expected_type_->getKind() == Type::Kind::Slice) {
+        auto* slice_type = static_cast<SliceType*>(expected_type_);
+        elem_type = slice_type->getElementType();
+        rest_type = slice_type;  // rest 也是 Slice 类型
+        
+    } else {
+        diag_->reportError(
+            "Cannot match slice pattern against non-array/slice type: " + 
+            expected_type_->toString(),
+            SourceLocation()
+        );
+        return;
+    }
+    
+    // 检查前缀元素
+    for (const auto& prefix_pattern : node->getPrefix()) {
+        Type* saved_expected = expected_type_;
+        expected_type_ = elem_type;
+        prefix_pattern->accept(this);
+        expected_type_ = saved_expected;
+    }
+    
+    // 检查 rest 部分
+    if (node->hasRest()) {
+        Type* saved_expected = expected_type_;
+        expected_type_ = rest_type;
+        node->getRest()->accept(this);
+        expected_type_ = saved_expected;
+    }
+}
+
 void TypeChecker::visit(StructPattern* node) {
     // 结构体模式匹配 - 完整实现
     

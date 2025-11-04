@@ -131,6 +131,8 @@ public:
     void visit(TuplePattern* pattern) override;
     void visit(EnumPattern* pattern) override;
     void visit(StructPattern* pattern) override;
+    void visit(ArrayPattern* pattern) override;
+    void visit(SlicePattern* pattern) override;
     
 private:
     PassContext* context_ = nullptr;

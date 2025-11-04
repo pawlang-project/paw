@@ -1,0 +1,16 @@
+// Array 模式匹配 - 有返回值的版本
+
+fn main() -> void {
+    println("━━━ Array 模式匹配测试 ━━━");
+    
+    let arr: [i32; 3] = [1, 2, 3];
+    
+    let result = arr is {
+        [a, b, c] => a + b + c,
+        _ => 0
+    };
+    
+    println(result);  // 应该输出 6
+    println("✅ Array 模式匹配成功");
+}
+

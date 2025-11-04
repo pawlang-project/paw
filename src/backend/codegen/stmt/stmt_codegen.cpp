@@ -182,20 +182,29 @@ void StmtCodeGen::visit(StructDestructuringDecl* node) {
     result_ = struct_value;
 }
 
-void StmtCodeGen::visit(FunctionDecl* node) {
-    // 创建函数类型 - 使用CodeGenContext的类型映射确保一致性
+// 🔧 生成函数声明（仅签名，支持前向引用）
+void StmtCodeGen::generateFunctionDeclaration(FunctionDecl* node) {
+    // 检查函数是否已存在
+    std::string check_name = (node->getName() == "main") ? "paw.main" : node->getName();
+    if (!current_support_type_.empty()) {
+        check_name = current_support_type_ + "_" + node->getName();
+    }
+    
+    if (context_->getModule()->getFunction(check_name)) {
+        // 函数已存在，跳过
+        return;
+    }
+    
+    // 创建函数类型
     std::vector<llvm::Type*> param_types;
     llvm::Type* ret_type = nullptr;
     
-    // 🔧 Self类型支持：优先使用TypeChecker解析后的类型（Self已替换为实际类型）
     if (node->hasResolvedTypes()) {
-        // 使用解析后的类型（Self已经被替换）
         for (auto* type : node->getResolvedParamTypes()) {
             param_types.push_back(context_->getLLVMType(type));
         }
         ret_type = context_->getLLVMType(node->getResolvedReturnType());
     } else {
-        // Fallback：使用原始类型
         for (const auto& param : node->getParams()) {
             param_types.push_back(context_->getLLVMType(param.type));
         }
@@ -204,18 +213,11 @@ void StmtCodeGen::visit(FunctionDecl* node) {
     
     auto* func_type = llvm::FunctionType::get(ret_type, param_types, false);
     
-    // 创建函数
-    // 注意：如果是main函数，使用内部链接，稍后生成C ABI wrapper
+    // 创建函数（仅声明，不生成函数体）
     llvm::Function::LinkageTypes linkage = (node->getName() == "main") ?
         llvm::Function::InternalLinkage : llvm::Function::ExternalLinkage;
     
-    std::string func_name = (node->getName() == "main") ? 
-        "paw.main" : node->getName();
-    
-    // 🔧 Self/support上下文：如果在support块中，使用修饰后的名称
-    if (!current_support_type_.empty()) {
-        func_name = current_support_type_ + "_" + node->getName();
-    }
+    std::string func_name = check_name;
     
     llvm::Function* func = llvm::Function::Create(
         func_type,
@@ -224,12 +226,39 @@ void StmtCodeGen::visit(FunctionDecl* node) {
         context_->getModule()
     );
     
-    // 注册函数
+    // 注册函数到上下文
     context_->registerFunction(node->getName(), func);
+}
+
+void StmtCodeGen::visit(FunctionDecl* node) {
+    // 查找已创建的函数（第一遍扫描时创建）
+    std::string func_name = (node->getName() == "main") ? "paw.main" : node->getName();
     
-    // 创建entry基本块
-    llvm::BasicBlock* entry = context_->createBasicBlock("entry", func);
-    context_->getBuilder().SetInsertPoint(entry);
+    if (!current_support_type_.empty()) {
+        func_name = current_support_type_ + "_" + node->getName();
+    }
+    
+    llvm::Function* func = context_->getModule()->getFunction(func_name);
+    
+    if (!func) {
+        // 如果第一遍扫描被跳过（如在support块中），现在创建
+        generateFunctionDeclaration(node);
+        func = context_->getModule()->getFunction(func_name);
+    }
+    
+    if (!func) {
+        result_ = nullptr;
+        return;
+    }
+    
+    // 创建entry基本块（如果还没有）
+    if (func->empty()) {
+        llvm::BasicBlock* entry = context_->createBasicBlock("entry", func);
+        context_->getBuilder().SetInsertPoint(entry);
+    } else {
+        // 已有基本块，设置插入点到第一个块
+        context_->getBuilder().SetInsertPoint(&func->getEntryBlock());
+    }
     
     // 进入函数作用域
     context_->enterScope();
@@ -265,7 +294,8 @@ void StmtCodeGen::visit(FunctionDecl* node) {
     
     // 如果没有return，添加默认return
     if (!context_->getCurrentBlock()->getTerminator()) {
-        if (func_type->getReturnType()->isVoidTy()) {
+        llvm::Type* return_type = func->getReturnType();
+        if (return_type->isVoidTy()) {
             context_->getBuilder().CreateRetVoid();
         }
     }
@@ -275,7 +305,7 @@ void StmtCodeGen::visit(FunctionDecl* node) {
     
     // 特殊处理：为所有main()生成C ABI wrapper
     if (node->getName() == "main") {
-        generateMainWrapper(func, func_type->getReturnType());
+        generateMainWrapper(func, func->getReturnType());
     }
     
     result_ = func;

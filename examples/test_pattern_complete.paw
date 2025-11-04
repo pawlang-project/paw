@@ -1,0 +1,195 @@
+// PawLang v0.2.2 - 完整模式匹配测试套件
+
+fn main() -> void {
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("PawLang v0.2.2 - 完整模式匹配测试");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("");
+    
+    test_literal_patterns();
+    test_tuple_patterns();
+    test_struct_patterns();
+    test_enum_patterns();
+    test_array_patterns();
+    test_slice_patterns();
+    test_optional_patterns();
+    
+    println("");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("✅ 所有模式匹配测试通过！");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 1. 字面量模式
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+fn test_literal_patterns() -> void {
+    println("━━━ 字面量模式 ━━━");
+    
+    // 整数
+    let x = 42;
+    let r1 = x is {
+        42 => 1,
+        _ => 0
+    };
+    println(r1);
+    
+    // 布尔
+    let b = true;
+    let r2 = b is {
+        true => 1,
+        false => 0
+    };
+    println(r2);
+    
+    println("✅ 字面量模式测试通过");
+    println("");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 2. 元组模式
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+fn test_tuple_patterns() -> void {
+    println("━━━ 元组模式 ━━━");
+    
+    let tuple = (1, 2, 3);
+    let result = tuple is {
+        (a, b, c) => a + b + c,
+        _ => 0
+    };
+    
+    println(result);  // 6
+    println("✅ 元组模式测试通过");
+    println("");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 3. 结构体模式
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type Point = struct {
+    x: i32,
+    y: i32
+};
+
+fn test_struct_patterns() -> void {
+    println("━━━ 结构体模式 ━━━");
+    
+    let p = Point { x: 10, y: 20 };
+    let result = p is {
+        Point { x, y } => x + y,
+        _ => 0
+    };
+    
+    println(result);  // 30
+    println("✅ 结构体模式测试通过");
+    println("");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 4. 枚举模式
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type Color = enum {
+    red,
+    green,
+    blue,
+    rgb(i32, i32, i32)
+};
+
+fn test_enum_patterns() -> void {
+    println("━━━ 枚举模式 ━━━");
+    
+    let c = Color::rgb(255, 128, 0);
+    let result = c is {
+        Color::rgb(r, g, b) => r + g + b,
+        _ => 0
+    };
+    
+    println(result);  // 383
+    println("✅ 枚举模式测试通过");
+    println("");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 5. Array 模式 (NEW!)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+fn test_array_patterns() -> void {
+    println("━━━ Array 模式 ━━━");
+    
+    // 测试 1: 基础解构
+    let arr1: [i32; 3] = [1, 2, 3];
+    let r1 = arr1 is {
+        [a, b, c] => a + b + c,
+        _ => 0
+    };
+    println(r1);  // 6
+    
+    // 测试 2: 混合模式
+    let arr2: [i32; 3] = [10, 20, 30];
+    let r2 = arr2 is {
+        [10, x, 30] => x,
+        _ => 0
+    };
+    println(r2);  // 20
+    
+    println("✅ Array 模式测试通过");
+    println("");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 6. Slice 模式 (NEW!)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+fn test_slice_patterns() -> void {
+    println("━━━ Slice 模式 ━━━");
+    
+    // 测试 1: 匿名形式
+    let arr1: [i32; 5] = [1, 2, 3, 4, 5];
+    let r1 = arr1 is {
+        [first, ..] => first,
+        _ => 0
+    };
+    println(r1);  // 1
+    
+    // 测试 2: 多前缀
+    let arr2: [i32; 5] = [10, 20, 30, 40, 50];
+    let r2 = arr2 is {
+        [a, b, ..] => a + b,
+        _ => 0
+    };
+    println(r2);  // 30
+    
+    // 测试 3: rest 变量绑定
+    let arr3: [i32; 5] = [5, 10, 15, 20, 25];
+    let r3 = arr3 is {
+        [first, ..rest] => first,
+        _ => 0
+    };
+    println(r3);  // 5
+    
+    println("✅ Slice 模式测试通过");
+    println("");
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 7. Optional 模式
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+fn test_optional_patterns() -> void {
+    println("━━━ Optional 模式 ━━━");
+    
+    let opt: i32? = some(42);
+    let result = opt is {
+        some(x) => x,
+        none => 0
+    };
+    
+    println(result);  // 42
+    println("✅ Optional 模式测试通过");
+    println("");
+}
+

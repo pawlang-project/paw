@@ -313,5 +313,22 @@ void CaptureAnalyzer::visit(StructPattern* node) {
     }
 }
 
+void CaptureAnalyzer::visit(ArrayPattern* node) {
+    // 数组模式绑定元素变量
+    for (const auto& elem : node->getElements()) {
+        elem->accept(this);
+    }
+}
+
+void CaptureAnalyzer::visit(SlicePattern* node) {
+    // Slice模式绑定变量
+    for (const auto& prefix : node->getPrefix()) {
+        prefix->accept(this);
+    }
+    if (node->hasRest()) {
+        node->getRest()->accept(this);
+    }
+}
+
 } // namespace pawc
 

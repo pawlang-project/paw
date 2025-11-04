@@ -1757,6 +1757,11 @@ std::unique_ptr<Pattern> Parser::parsePattern() {
         return parseLiteralPattern();
     }
     
+    // 数组模式 [pattern, pattern, ...]
+    if (match(TokenType::LBRACKET)) {
+        return parseArrayPattern();
+    }
+    
     // 元组模式 (pattern, pattern, ...)
     if (match(TokenType::LPAREN)) {
         return parseTuplePattern();
@@ -1805,6 +1810,59 @@ std::unique_ptr<Pattern> Parser::parseLiteralPattern() {
     
     error("Expected literal pattern");
     throw std::runtime_error("Parse error");
+}
+
+// 解析数组/切片模式: [pattern, pattern, ...] 或 [pattern, ..] 或 [pattern, ..rest]
+std::unique_ptr<Pattern> Parser::parseArrayPattern() {
+    std::vector<std::unique_ptr<Pattern>> elements;
+    
+    if (!check(TokenType::RBRACKET)) {
+        do {
+            // 检查 rest pattern: .. 或 ..rest
+            if (match(TokenType::DOT_DOT)) {
+                // 检查是否有名字
+                if (check(TokenType::IDENTIFIER)) {
+                    // 命名形式: [a, ..rest]
+                    Token rest_name = advance();
+                    consume(TokenType::RBRACKET, "Expected ']' after slice pattern");
+                    
+                    auto rest_pattern = std::make_unique<VariablePattern>(rest_name.lexeme);
+                    return std::make_unique<SlicePattern>(
+                        std::move(elements), 
+                        std::move(rest_pattern)
+                    );
+                } else if (check(TokenType::RBRACKET)) {
+                    // 匿名形式: [a, ..]
+                    consume(TokenType::RBRACKET, "Expected ']' after '..'");
+                    
+                    return std::make_unique<SlicePattern>(
+                        std::move(elements), 
+                        nullptr  // 无名字，表示忽略剩余部分
+                    );
+                } else {
+                    error("Expected identifier or ']' after '..'");
+                    break;
+                }
+            }
+            
+            elements.push_back(parsePattern());
+        } while (match(TokenType::COMMA) && !check(TokenType::RBRACKET));
+    }
+    
+    consume(TokenType::RBRACKET, "Expected ']'");
+    
+    // 固定大小数组模式
+    return std::make_unique<ArrayPattern>(
+        std::move(elements), 
+        elements.size()
+    );
+}
+
+// 解析切片模式辅助方法 (未来扩展用)
+std::unique_ptr<Pattern> Parser::parseSlicePattern(std::vector<std::unique_ptr<Pattern>> prefix) {
+    // TODO: 实现 ...rest 语法需要先添加 DOT_DOT_DOT token
+    // 当前版本：SlicePattern 用于 TypeChecker，暂不在 Parser 中创建
+    return nullptr;
 }
 
 // 解析枚举构造器关键字模式: ok(...), err(...), some(...), none

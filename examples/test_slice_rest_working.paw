@@ -1,0 +1,28 @@
+// Slice rest 变量绑定测试
+
+fn main() -> void {
+    println("━━━ Slice Rest 变量绑定测试 ━━━");
+    
+    // 测试 1: rest 变量绑定
+    let arr: [i32; 5] = [1, 2, 3, 4, 5];
+    
+    let result = arr is {
+        [first, ..rest] => first,
+        _ => 0
+    };
+    
+    println(result);  // 应该输出 1
+    println("✅ Slice rest 绑定成功");
+    
+    // 测试 2: 多前缀 + rest
+    let arr2: [i32; 5] = [10, 20, 30, 40, 50];
+    
+    let result2 = arr2 is {
+        [a, b, ..tail] => a + b,
+        _ => 0
+    };
+    
+    println(result2);  // 应该输出 30
+    println("✅ 多前缀 rest 绑定成功");
+}
+

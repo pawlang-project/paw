@@ -137,6 +137,37 @@ private:
     std::vector<FieldPattern> fields_;     // 字段模式列表
 };
 
+/// ArrayPattern - 数组解构模式 (例如: [a, b, c])
+class ArrayPattern : public Pattern {
+public:
+    ArrayPattern(std::vector<PatternPtr> elements, size_t expected_size)
+        : elements_(std::move(elements)), expected_size_(expected_size) {}
+    
+    const std::vector<PatternPtr>& getElements() const { return elements_; }
+    size_t getExpectedSize() const { return expected_size_; }
+    void accept(ASTVisitor* visitor) override;
+    
+private:
+    std::vector<PatternPtr> elements_;  // 元素模式
+    size_t expected_size_;              // 期望的数组大小
+};
+
+/// SlicePattern - 切片解构模式 (例如: [first, ...rest])
+class SlicePattern : public Pattern {
+public:
+    SlicePattern(std::vector<PatternPtr> prefix, PatternPtr rest = nullptr)
+        : prefix_(std::move(prefix)), rest_(std::move(rest)) {}
+    
+    const std::vector<PatternPtr>& getPrefix() const { return prefix_; }
+    Pattern* getRest() const { return rest_.get(); }
+    bool hasRest() const { return rest_ != nullptr; }
+    void accept(ASTVisitor* visitor) override;
+    
+private:
+    std::vector<PatternPtr> prefix_;  // 前缀元素模式
+    PatternPtr rest_;                 // 剩余部分 (可选, ...rest)
+};
+
 } // namespace pawc
 
 #endif // PAW_PATTERN_H

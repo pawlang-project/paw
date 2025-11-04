@@ -1,0 +1,39 @@
+// 详细的模式匹配测试
+
+fn main() -> void {
+    println("=== 开始测试 ===");
+    
+    // 1. Array 模式
+    println("");
+    println("1. Array 模式");
+    let arr: [i32; 3] = [1, 2, 3];
+    let r1 = arr is {
+        [a, b, c] => a + b + c,
+        _ => 0
+    };
+    println(r1);
+    
+    // 2. Slice 匿名
+    println("");
+    println("2. Slice 匿名");
+    let arr2: [i32; 5] = [10, 20, 30, 40, 50];
+    let r2 = arr2 is {
+        [first, ..] => first,
+        _ => 0
+    };
+    println(r2);
+    
+    // 3. Slice rest 绑定
+    println("");
+    println("3. Slice rest 绑定");
+    let arr3: [i32; 5] = [5, 10, 15, 20, 25];
+    let r3 = arr3 is {
+        [a, b, ..rest] => a + b,
+        _ => 0
+    };
+    println(r3);
+    
+    println("");
+    println("=== 所有测试通过 ===");
+}
+

@@ -10,6 +10,7 @@
 #include "frontend/parser/ast/pattern.h"
 #include "middleend/types/composite_types.h"
 #include "middleend/types/generic_types.h"
+#include "middleend/types/type_system.h"
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 
@@ -249,6 +250,152 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         return result_cond;  // nullptr表示所有子模式都是通配符/变量
     }
     
+    // ArrayPattern: 数组匹配
+    if (auto* array = dynamic_cast<ArrayPattern*>(pattern)) {
+        if (!scrutinee_type || scrutinee_type->getKind() != Type::Kind::Array) {
+            return nullptr;
+        }
+        
+        auto* array_type = static_cast<ArrayType*>(scrutinee_type);
+        Type* elem_type = array_type->getElementType();
+        const auto& patterns = array->getElements();
+        
+        if (patterns.size() != array_type->getSize()) {
+            return nullptr;  // 数组大小不匹配
+        }
+        
+        llvm::Type* llvm_array_type = context_->getLLVMType(array_type);
+        
+        // 确保scrutinee是指针类型
+        llvm::Value* array_ptr = scrutinee;
+        if (!scrutinee->getType()->isPointerTy()) {
+            llvm::AllocaInst* temp = builder.CreateAlloca(scrutinee->getType(), nullptr, "array.tmp");
+            builder.CreateStore(scrutinee, temp);
+            array_ptr = temp;
+        }
+        
+        // 生成所有子模式的条件，并用AND连接
+        llvm::Value* result_cond = nullptr;
+        
+        for (size_t i = 0; i < patterns.size(); ++i) {
+            // 提取数组元素: GEP [array_type, array_ptr, 0, i]
+            llvm::Value* indices[] = {
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), i)
+            };
+            
+            llvm::Value* elem_ptr = builder.CreateGEP(
+                llvm_array_type,
+                array_ptr,
+                indices,
+                "array.elem." + std::to_string(i)
+            );
+            
+            llvm::Type* elem_llvm_type = context_->getLLVMType(elem_type);
+            llvm::Value* elem_value = builder.CreateLoad(
+                elem_llvm_type,
+                elem_ptr,
+                "array.elem.val"
+            );
+            
+            // 递归生成子模式匹配条件
+            llvm::Value* sub_cond = generatePatternMatch(
+                patterns[i].get(),
+                elem_value,
+                elem_type
+            );
+            
+            if (sub_cond) {
+                if (!result_cond) {
+                    result_cond = sub_cond;
+                } else {
+                    result_cond = builder.CreateAnd(result_cond, sub_cond, "array.match.and");
+                }
+            }
+        }
+        
+        return result_cond;  // nullptr表示所有子模式都是通配符/变量
+    }
+    
+    // SlicePattern: 切片匹配（支持 Array 和 Slice）
+    if (auto* slice_pat = dynamic_cast<SlicePattern*>(pattern)) {
+        // Slice 模式可以匹配 Array 或 Slice 类型
+        if (!scrutinee_type) {
+            return nullptr;
+        }
+        
+        Type* elem_type = nullptr;
+        
+        if (scrutinee_type->getKind() == Type::Kind::Array) {
+            auto* array_type = static_cast<ArrayType*>(scrutinee_type);
+            elem_type = array_type->getElementType();
+            
+            // 检查前缀长度
+            if (slice_pat->getPrefix().size() > array_type->getSize()) {
+                return nullptr;
+            }
+        } else if (scrutinee_type->getKind() == Type::Kind::Slice) {
+            auto* slice_type = static_cast<SliceType*>(scrutinee_type);
+            elem_type = slice_type->getElementType();
+        } else {
+            return nullptr;  // 类型不匹配
+        }
+        
+        // Slice 模式匹配：检查长度是否足够
+        // 对于 [first, ..rest]，需要至少 1 个元素
+        // 对于 Array 类型，在编译时已知大小，总是满足
+        // 对于 Slice 类型，需要运行时检查长度
+        
+        llvm::Type* llvm_scrutinee_type = context_->getLLVMType(scrutinee_type);
+        
+        llvm::Value* scrutinee_ptr = scrutinee;
+        if (!scrutinee->getType()->isPointerTy()) {
+            llvm::AllocaInst* temp = builder.CreateAlloca(scrutinee->getType(), nullptr, "slice.tmp");
+            builder.CreateStore(scrutinee, temp);
+            scrutinee_ptr = temp;
+        }
+        
+        // 生成前缀元素的匹配条件
+        llvm::Value* result_cond = nullptr;
+        
+        for (size_t i = 0; i < slice_pat->getPrefix().size(); ++i) {
+            llvm::Value* elem_value = nullptr;
+            
+            if (scrutinee_type->getKind() == Type::Kind::Array) {
+                // Array: 使用 GEP 提取
+                llvm::Value* indices[] = {
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), i)
+                };
+                llvm::Value* elem_ptr = builder.CreateGEP(
+                    llvm_scrutinee_type, scrutinee_ptr, indices,
+                    "slice.elem." + std::to_string(i)
+                );
+                llvm::Type* elem_llvm_type = context_->getLLVMType(elem_type);
+                elem_value = builder.CreateLoad(elem_llvm_type, elem_ptr, "slice.elem.val");
+            }
+            
+            // 递归生成子模式匹配
+            if (elem_value) {
+                llvm::Value* sub_cond = generatePatternMatch(
+                    slice_pat->getPrefix()[i].get(),
+                    elem_value,
+                    elem_type
+                );
+                
+                if (sub_cond) {
+                    if (!result_cond) {
+                        result_cond = sub_cond;
+                    } else {
+                        result_cond = builder.CreateAnd(result_cond, sub_cond, "slice.match.and");
+                    }
+                }
+            }
+        }
+        
+        return result_cond;
+    }
+    
     // EnumPattern: 枚举匹配
     if (auto* enum_pat = dynamic_cast<EnumPattern*>(pattern)) {
         // 特殊处理Result类型
@@ -398,6 +545,175 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
             // 递归绑定
             bindPatternVariables(patterns[i].get(), elem_value, element_types[i]);
         }
+        return;
+    }
+    
+    // ArrayPattern: 递归绑定数组元素
+    if (auto* array = dynamic_cast<ArrayPattern*>(pattern)) {
+        if (!value_type || value_type->getKind() != Type::Kind::Array) {
+            return;
+        }
+        
+        auto* array_type = static_cast<ArrayType*>(value_type);
+        Type* elem_type = array_type->getElementType();
+        const auto& patterns = array->getElements();
+        
+        llvm::Type* llvm_array_type = context_->getLLVMType(array_type);
+        
+        // 确保value是指针类型
+        llvm::Value* array_ptr = value;
+        if (!value->getType()->isPointerTy()) {
+            llvm::AllocaInst* temp = builder.CreateAlloca(value->getType(), nullptr, "array.tmp");
+            builder.CreateStore(value, temp);
+            array_ptr = temp;
+        }
+        
+        // 递归绑定每个元素
+        for (size_t i = 0; i < patterns.size() && i < array_type->getSize(); ++i) {
+            // 提取数组元素
+            llvm::Value* indices[] = {
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), 0),
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), i)
+            };
+            
+            llvm::Value* elem_ptr = builder.CreateGEP(
+                llvm_array_type,
+                array_ptr,
+                indices,
+                "array.elem." + std::to_string(i)
+            );
+            
+            llvm::Type* elem_llvm_type = context_->getLLVMType(elem_type);
+            llvm::Value* elem_value = builder.CreateLoad(
+                elem_llvm_type,
+                elem_ptr,
+                "array.elem.val"
+            );
+            
+            // 递归绑定
+            bindPatternVariables(patterns[i].get(), elem_value, elem_type);
+        }
+        return;
+    }
+    
+    // SlicePattern: 递归绑定切片元素
+    if (auto* slice_pat = dynamic_cast<SlicePattern*>(pattern)) {
+        if (!value_type) {
+            return;
+        }
+        
+        Type* elem_type = nullptr;
+        Type* rest_type = nullptr;
+        
+        if (value_type->getKind() == Type::Kind::Array) {
+            auto* array_type = static_cast<ArrayType*>(value_type);
+            elem_type = array_type->getElementType();
+            // rest 部分是 Slice 类型
+            rest_type = new SliceType(elem_type);
+        } else if (value_type->getKind() == Type::Kind::Slice) {
+            auto* slice_type = static_cast<SliceType*>(value_type);
+            elem_type = slice_type->getElementType();
+            rest_type = slice_type;
+        } else {
+            return;
+        }
+        
+        llvm::Type* llvm_value_type = context_->getLLVMType(value_type);
+        
+        // 确保value是指针类型
+        llvm::Value* value_ptr = value;
+        if (!value->getType()->isPointerTy()) {
+            llvm::AllocaInst* temp = builder.CreateAlloca(value->getType(), nullptr, "slice.tmp");
+            builder.CreateStore(value, temp);
+            value_ptr = temp;
+        }
+        
+        // 绑定前缀元素
+        for (size_t i = 0; i < slice_pat->getPrefix().size(); ++i) {
+            if (value_type->getKind() == Type::Kind::Array) {
+                // Array: 使用 GEP 提取
+                llvm::Value* indices[] = {
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), 0),
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), i)
+                };
+                
+                llvm::Value* elem_ptr = builder.CreateGEP(
+                    llvm_value_type, value_ptr, indices,
+                    "slice.elem." + std::to_string(i)
+                );
+                
+                llvm::Type* elem_llvm_type = context_->getLLVMType(elem_type);
+                llvm::Value* elem_value = builder.CreateLoad(
+                    elem_llvm_type, elem_ptr, "slice.elem.val"
+                );
+                
+                // 递归绑定
+                bindPatternVariables(slice_pat->getPrefix()[i].get(), elem_value, elem_type);
+            }
+        }
+        
+        // 绑定 rest 部分（如果有名字）
+        if (slice_pat->hasRest() && slice_pat->getRest()) {
+            // 创建 Slice 结构体 {ptr, len} 并绑定到 rest 变量
+            
+            if (value_type->getKind() == Type::Kind::Array) {
+                auto* array_type = static_cast<ArrayType*>(value_type);
+                size_t prefix_size = slice_pat->getPrefix().size();
+                size_t rest_size = array_type->getSize() - prefix_size;
+                
+                // 创建 Slice 类型的 LLVM 表示: { ptr, i64 }
+                llvm::StructType* slice_struct_type = llvm::StructType::get(
+                    context_->getLLVMContext(),
+                    {
+                        llvm::PointerType::getUnqual(context_->getLLVMContext()),  // data指针
+                        llvm::Type::getInt64Ty(context_->getLLVMContext())         // 长度
+                    }
+                );
+                
+                // 计算 rest 数组的起始指针
+                llvm::Value* indices[] = {
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), 0),
+                    llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), prefix_size)
+                };
+                
+                llvm::Value* rest_ptr = builder.CreateGEP(
+                    llvm_value_type, value_ptr, indices, "slice.rest.ptr"
+                );
+                
+                // 创建 Slice 结构体 {ptr, len}
+                llvm::AllocaInst* slice_alloca = builder.CreateAlloca(
+                    slice_struct_type, nullptr, "slice.rest"
+                );
+                
+                // 设置 data 字段 (index 0)
+                llvm::Value* data_field_ptr = builder.CreateStructGEP(
+                    slice_struct_type, slice_alloca, 0, "slice.data.ptr"
+                );
+                builder.CreateStore(rest_ptr, data_field_ptr);
+                
+                // 设置 len 字段 (index 1)
+                llvm::Value* len_field_ptr = builder.CreateStructGEP(
+                    slice_struct_type, slice_alloca, 1, "slice.len.ptr"
+                );
+                llvm::Value* len_value = llvm::ConstantInt::get(
+                    llvm::Type::getInt64Ty(context_->getLLVMContext()), rest_size
+                );
+                builder.CreateStore(len_value, len_field_ptr);
+                
+                // 加载 Slice 值并绑定到 rest 变量
+                llvm::Value* slice_value = builder.CreateLoad(
+                    slice_struct_type, slice_alloca, "slice.rest.val"
+                );
+                
+                bindPatternVariables(slice_pat->getRest(), slice_value, rest_type);
+            } else if (value_type->getKind() == Type::Kind::Slice) {
+                // 对于 Slice 类型，需要动态计算 rest 部分
+                // 提取 data 和 len 字段
+                // TODO: 实现 Slice 的 rest 绑定
+                // 当前暂不实现，因为需要运行时计算
+            }
+        }
+        
         return;
     }
     

@@ -38,6 +38,8 @@ class VariablePattern;
 class TuplePattern;
 class EnumPattern;
 class StructPattern;
+class ArrayPattern;
+class SlicePattern;
 
 class ExprStmt;
 class VarDecl;
@@ -95,6 +97,8 @@ public:
     virtual void visit(TuplePattern* node) = 0;
     virtual void visit(EnumPattern* node) = 0;
     virtual void visit(StructPattern* node) = 0;
+    virtual void visit(ArrayPattern* node) = 0;
+    virtual void visit(SlicePattern* node) = 0;
     
     // 语句访问
     virtual void visit(ExprStmt* node) = 0;

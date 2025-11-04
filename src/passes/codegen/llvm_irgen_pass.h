@@ -46,7 +46,15 @@ public:
         ExprCodeGen expr_gen(codegen_ctx.get());
         StmtCodeGen stmt_gen(codegen_ctx.get(), &expr_gen);
         
-        // 遍历AST生成IR
+        // 🔧 两遍扫描：支持函数前向引用
+        // 第一遍：生成所有函数声明（只生成签名，不生成函数体）
+        for (const auto& stmt : *ast) {
+            if (auto* func = dynamic_cast<FunctionDecl*>(stmt.get())) {
+                stmt_gen.generateFunctionDeclaration(func);
+            }
+        }
+        
+        // 第二遍：生成所有语句（包括函数体）
         for (const auto& stmt : *ast) {
             stmt_gen.generate(stmt.get());
         }
