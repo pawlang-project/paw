@@ -1,6 +1,9 @@
 //===--- constant_folding_pass.h - Constant Folding Pass --------*- C++ -*-===//
+/// @file constant_folding_pass.h
+/// @brief Code generation utilities
+///
 //
-// 常量折叠Pass：在编译期计算常量表达式
+// constantfoldPass：in/atcompile/compilationearlycomputeconstantexpression
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,10 +19,10 @@ public:
     static constexpr const char* getName() { return "ConstantFoldingPass"; }
     
     bool run(PassContext& context) override {
-        // TODO: 实现常量折叠
-        // 1. 识别常量表达式
-        // 2. 编译期计算
-        // 3. 替换为常量
+        // TODO: implementationconstantfold
+        // 1. identifyconstantexpression
+        // 2. compile/compilationearlycompute
+        // 3. substitutionis/asconstant
         return true;
     }
 };

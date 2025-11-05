@@ -1,4 +1,6 @@
 //===--- expr.cpp - Expression AST Implementation ---------------*- C++ -*-===//
+/// @file expr.cpp
+/// @brief AST node implementation
 
 #include "expr.h"
 #include "frontend/parser/visitor.h"
@@ -6,7 +8,7 @@
 namespace pawc {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 表达式Visitor接受方法
+// Expression visitor accept method
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void IntLiteral::accept(ASTVisitor* visitor) { visitor->visit(this); }

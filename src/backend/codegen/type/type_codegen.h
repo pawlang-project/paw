@@ -17,24 +17,24 @@
 
 namespace pawc {
 
-/// TypeCodeGen - 类型映射器
+/// TypeCodeGen - typesmaplinker/er
 ///
-/// 职责：将28种PawLang类型映射到LLVM类型
+/// responsibilities：will28types/kindsPawLangtypesmaptoLLVMtypes
 class TypeCodeGen {
 public:
     TypeCodeGen(llvm::LLVMContext& llvm_context);
     
-    /// 主入口：映射任意PawLang类型
+    /// mainentry point：maparbitrary/anyPawLangtypes
     llvm::Type* mapType(Type* paw_type);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 基础类型映射 (18种)
+    // basetypesmap (18types/kinds)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     llvm::Type* mapPrimitiveType(Type* type);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 复合类型映射
+    // compositetypesmap
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     llvm::ArrayType* mapArrayType(ArrayType* type);
@@ -44,7 +44,7 @@ public:
     llvm::StructType* mapEnumType(EnumType* type);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 特殊类型映射
+    // specialtypesmap
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     llvm::StructType* mapOptionalType(OptionalType* type);

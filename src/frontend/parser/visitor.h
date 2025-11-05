@@ -5,7 +5,7 @@
 
 namespace pawc {
 
-// 前向声明所有AST节点类型
+// Forward declaration of all AST node types
 class IntLiteral;
 class FloatLiteral;
 class BoolLiteral;
@@ -31,7 +31,7 @@ class StructLiteral;
 class MatchExpr;
 class TryExpr;
 
-// Pattern前向声明
+// Pattern forward declaration
 class LiteralPattern;
 class WildcardPattern;
 class VariablePattern;
@@ -61,12 +61,12 @@ class EnumDecl;
 class InterfaceDecl;
 class SupportDecl;
 
-/// ASTVisitor - 访问者基类
+/// ASTVisitor - visitor base class
 class ASTVisitor {
 public:
     virtual ~ASTVisitor() = default;
     
-    // 表达式访问
+    // expressionvisit
     virtual void visit(IntLiteral* node) = 0;
     virtual void visit(FloatLiteral* node) = 0;
     virtual void visit(BoolLiteral* node) = 0;
@@ -92,7 +92,7 @@ public:
     virtual void visit(MatchExpr* node) = 0;
     virtual void visit(TryExpr* node) = 0;
     
-    // Pattern访问
+    // Patternvisit
     virtual void visit(LiteralPattern* node) = 0;
     virtual void visit(WildcardPattern* node) = 0;
     virtual void visit(VariablePattern* node) = 0;
@@ -104,7 +104,7 @@ public:
     virtual void visit(RangePattern* node) = 0;
     virtual void visit(OrPattern* node) = 0;
     
-    // 语句访问
+    // statementvisit
     virtual void visit(ExprStmt* node) = 0;
     virtual void visit(VarDecl* node) = 0;
     virtual void visit(DestructuringDecl* node) = 0;

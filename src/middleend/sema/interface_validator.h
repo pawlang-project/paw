@@ -1,6 +1,6 @@
 //===--- interface_validator.h - Interface Validation -----------*- C++ -*-===//
 //
-// 接口验证 - 验证接口实现的正确性
+// interfacevalidate - validateinterfaceimplementationof/thecorrectperformance
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,28 +16,28 @@ class SupportDecl;
 class InterfaceDecl;
 class Type;
 
-/// InterfaceValidator - 接口验证器
+/// InterfaceValidator - interfacevalidatelinker/er
 ///
-/// 负责验证：
-/// - 接口定义的正确性
-/// - support实现是否满足接口要求
-/// - 方法签名是否匹配
+/// negativeresponsiblevalidate：
+/// - interfacedefinitionof/thecorrectperformance
+/// - supportimplementationyesnosatisfyinterfacerequirement
+/// - methodsignatureyesnomatch
 class InterfaceValidator {
     SemanticContext* context_;
     
 public:
     explicit InterfaceValidator(SemanticContext* context);
     
-    /// 验证接口定义
+    /// validateinterfacedefinition
     bool validateInterfaceDecl(InterfaceDecl* decl);
     
-    /// 验证support实现
+    /// validatesupportimplementation
     bool validateSupportDecl(SupportDecl* decl);
     
-    /// 验证类型是否实现了接口
+    /// validatetypesyesnoimplementationimplementedinterface
     bool checkImplementsInterface(Type* type, const std::string& interface_name);
     
-    /// 验证方法签名是否匹配
+    /// validatemethodsignatureyesnomatch
     bool validateMethodSignature(
         const std::string& impl_method_name,
         const std::vector<Type*>& impl_param_types,

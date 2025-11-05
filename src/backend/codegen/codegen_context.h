@@ -25,18 +25,18 @@
 
 namespace pawc {
 
-/// CodeGenContext - LLVM代码生成上下文
+/// CodeGenContext - LLVMcode generationcontext
 ///
-/// 管理：
-/// - LLVM上下文 (LLVMContext, Module, IRBuilder)
-/// - 类型映射 (PawLang Type → LLVM Type)
-/// - 符号映射 (变量、函数)
-/// - 作用域管理
+/// manage：
+/// - LLVMcontext (LLVMContext, Module, IRBuilder)
+/// - typesmap (PawLang Type → LLVM Type)
+/// - symbolmap (variable、function)
+/// - scopemanage
 class CodeGenContext {
 public:
     CodeGenContext(const std::string& module_name, TypeSystem* type_system,
                    SymbolTable* symbol_table);
-    ~CodeGenContext();  // 🔧 Bug Fix: 显式析构以控制LLVM对象析构顺序
+    ~CodeGenContext();  // 🔧 Bug Fix: explicitstyle/formdestruct/destructionwith/tocontrolLLVMobjectdestruct/destructionsequential
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // LLVM Core Objects
@@ -48,12 +48,12 @@ public:
     TypeSystem* getTypeSystem() { return type_system_; }
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // Type Mapping (28种类型 → LLVM类型)
+    // Type Mapping (28types/kindstypes → LLVMtypes)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     llvm::Type* getLLVMType(Type* paw_type);
     
-    // 基础类型映射
+    // basetypesmap
     llvm::Type* getI8Type();
     llvm::Type* getI16Type();
     llvm::Type* getI32Type();
@@ -81,15 +81,15 @@ public:
     // Symbol Management
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
-    // 变量管理
+    // variablemanage
     void defineVariable(const std::string& name, llvm::Value* value);
     llvm::Value* lookupVariable(const std::string& name);
     
-    // 函数管理
+    // functionmanage
     void registerFunction(const std::string& name, llvm::Function* func);
     llvm::Function* lookupFunction(const std::string& name);
     
-    /// 基于参数类型查找重载函数（用于builtin）
+    /// based onparametertypeslookupoverloadfunction（used forbuiltin）
     llvm::Function* lookupFunctionWithTypes(const std::string& name,
                                             const std::vector<Type*>& param_types);
     
@@ -104,15 +104,15 @@ public:
     // Helper Functions
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
-    // 创建alloca指令（用于变量声明）
+    // createallocadirective（used forvariabledeclaration）
     llvm::AllocaInst* createEntryBlockAlloca(llvm::Function* func,
                                              const std::string& var_name,
                                              llvm::Type* type);
     
-    // 获取当前BasicBlock
+    // getcurrentBasicBlock
     llvm::BasicBlock* getCurrentBlock();
     
-    // 创建新的BasicBlock
+    // createnewof/theBasicBlock
     llvm::BasicBlock* createBasicBlock(const std::string& name,
                                        llvm::Function* func = nullptr);
     
@@ -124,48 +124,48 @@ public:
     llvm::Function* getRuntimeFunction(const std::string& name);
     void registerRuntimeFunction(const std::string& name, llvm::Function* func);
     
-    /// 注册所有builtin函数的LLVM声明（print, println, to_string等）
+    /// registerAllbuiltinfunctionof/theLLVMdeclaration（print, println, to_stringetc）
     void registerAllBuiltinFunctions();
     
-    /// 生成类型签名字符串（用于函数查找）
+    /// generationtypessignaturecharacterstring（used forfunctionlookup）
     std::string getTypeSignature(const std::vector<Type*>& types);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // Module Output
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
-    void dump(); // 输出LLVM IR到stdout
+    void dump(); // outputLLVM IRtostdout
     bool writeToFile(const std::string& filename);
     bool emitObjectFile(const std::string& filename);
     
 private:
-    // LLVM核心对象
-    // 注意：context_ 必须首先声明，这样它会最后析构
-    // Module 和 IRBuilder 依赖于 LLVMContext，所以 context_ 必须比它们活得更久
+    // LLVMcoreobject
+    // Note：context_ mustfirstFirstdeclaration，so that/this wayitwilllastdestruct/destruction
+    // Module and IRBuilder dependentat/in LLVMContext，so context_ mustLive longer than them
     llvm::LLVMContext context_;
     std::unique_ptr<llvm::Module> module_;
     llvm::IRBuilder<> builder_;
     
-    // PawLang编译器组件
+    // PawLangcompilercomponent
     TypeSystem* type_system_;
     SymbolTable* symbol_table_;
     
-    // 类型缓存 (PawLang Type → LLVM Type)
+    // typecache (PawLang Type → LLVM Type)
     std::unordered_map<Type*, llvm::Type*> type_cache_;
     
-    // 符号表 (变量名 → LLVM Value)
+    // symboltable (variablename → LLVM Value)
     std::vector<std::unordered_map<std::string, llvm::Value*>> variable_stack_;
     
-    // 函数表 (函数名 → LLVM Function)
+    // functiontable (function name → LLVM Function)
     std::unordered_map<std::string, llvm::Function*> function_table_;
     
-    // Runtime函数表
+    // Runtimefunctiontable
     std::unordered_map<std::string, llvm::Function*> runtime_functions_;
     
-    // Builtin函数重载表: name -> [(param_types, llvm_function)]
+    // Builtinfunctionoverloadtable: name -> [(param_types, llvm_function)]
     std::unordered_map<std::string, std::vector<std::pair<std::vector<Type*>, llvm::Function*>>> builtin_overloads_;
     
-    // 辅助方法
+    // helpermethod
     llvm::Type* mapPrimitiveType(Type* type);
     llvm::Type* mapArrayType(ArrayType* type);
     llvm::Type* mapTupleType(TupleType* type);

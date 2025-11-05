@@ -12,9 +12,9 @@
 
 namespace pawc {
 
-class ASTNode;  // 前向声明
+class ASTNode;  // Forward declaration
 
-/// CodeGenBase - 所有CodeGen类的基类
+/// CodeGenBase - AllCodeGenclassof/thebaseclass
 class CodeGenBase {
 public:
     explicit CodeGenBase(CodeGenContext* context) : context_(context) {}

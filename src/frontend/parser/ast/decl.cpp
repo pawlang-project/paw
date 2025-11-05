@@ -1,4 +1,6 @@
 //===--- decl.cpp - Declaration AST Implementation ---------------*- C++ -*-===//
+/// @file decl.cpp
+/// @brief AST node implementation
 
 #include "decl.h"
 #include "frontend/parser/visitor.h"

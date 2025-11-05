@@ -8,7 +8,7 @@
 
 namespace pawc {
 
-/// StringInterner - 字符串驻留，优化字符串比较
+/// StringInterner - string interning, optimize string comparison
 class StringInterner {
 public:
     const std::string* intern(const std::string& str) {

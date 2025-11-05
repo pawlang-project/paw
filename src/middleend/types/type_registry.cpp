@@ -1,4 +1,6 @@
 //===--- type_registry.cpp - Type Registry Implementation -------*- C++ -*-===//
+/// @file type_registry.cpp
+/// @brief Type system and semantic analysis implementation
 
 #include "type_registry.h"
 #include "composite_types.h"

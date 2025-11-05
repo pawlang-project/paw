@@ -1,4 +1,6 @@
 //===--- composite_types.cpp - Composite Types Implementation ---*- C++ -*-===//
+/// @file composite_types.cpp
+/// @brief Type system and semantic analysis implementation
 
 #include "composite_types.h"
 

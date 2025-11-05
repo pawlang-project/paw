@@ -2,7 +2,7 @@
 //
 // PawLang Compiler - Builtin Functions Registration
 //
-// 18种类型重载：i8-i128, u8-u128, f8-f128, bool, char, string
+// 18types/kindstypesoverload：i8-i128, u8-u128, f8-f128, bool, char, string
 //
 //===----------------------------------------------------------------------===//
 
@@ -14,7 +14,7 @@ namespace pawc {
 class SymbolTable;
 class TypeSystem;
 
-/// BuiltinSymbols - 注册所有内置函数
+/// BuiltinSymbols - registerAllinsidebuilt-infunction
 class BuiltinSymbols {
 public:
     static void registerAll(SymbolTable* symbol_table, TypeSystem* type_system);
@@ -29,7 +29,7 @@ private:
     static void registerDebugAssert(SymbolTable* st, TypeSystem* ts);
     static void registerUnreachable(SymbolTable* st, TypeSystem* ts);
     
-    // Optional 构造器
+    // Optional constructor
     static void registerSome(SymbolTable* st, TypeSystem* ts);
     static void registerNone(SymbolTable* st, TypeSystem* ts);
 };

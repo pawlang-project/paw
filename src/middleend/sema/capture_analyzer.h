@@ -1,7 +1,10 @@
 //===--- capture_analyzer.h - Closure Capture Analysis -------*- C++ -*-===//
+/// @file capture_analyzer.h
+/// @brief Compiler infrastructure
+///
 //
-// 闭包捕获变量分析器
-// 遍历闭包体，查找所有自由变量（在外部作用域定义的变量）
+// closurecapturevariableanalysislinker/er
+// traverseclosurebody/struct，lookupAllself/frombyvariable（in/atexternal/outsidescopedefinitionof/thevariable）
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,10 +25,10 @@ class CaptureAnalyzer : public ASTVisitor {
 public:
     CaptureAnalyzer(SymbolTable* symbols) : symbols_(symbols) {}
     
-    /// 分析闭包体，返回捕获变量列表
+    /// analysisclosurebody/struct，returncapturevariablelist
     std::vector<ClosureExpr::CapturedVar> analyze(Expr* body, const std::vector<ClosureExpr::Param>& params);
     
-    // 表达式访问
+    // expressionvisit
     void visit(IntLiteral* node) override {}
     void visit(FloatLiteral* node) override {}
     void visit(BoolLiteral* node) override {}
@@ -51,7 +54,7 @@ public:
     void visit(ClosureExpr* node) override;
     void visit(TryExpr* node) override;
     
-    // 语句访问
+    // statementvisit
     void visit(ExprStmt* node) override;
     void visit(VarDecl* node) override;
     void visit(DestructuringDecl* node) override;
@@ -70,7 +73,7 @@ public:
     void visit(InterfaceDecl* node) override {}
     void visit(SupportDecl* node) override {}
     
-    // Pattern访问
+    // Patternvisit
     void visit(LiteralPattern* node) override {}
     void visit(WildcardPattern* node) override {}
     void visit(VariablePattern* node) override;
@@ -84,11 +87,11 @@ public:
     
 private:
     SymbolTable* symbols_;
-    std::vector<std::set<std::string>> local_vars_stack_;  // 作用域栈：每层作用域的局部变量
-    std::set<std::string> captured_vars_;  // 捕获的外部变量
-    int closure_depth_;  // 嵌套闭包深度
+    std::vector<std::set<std::string>> local_vars_stack_;  // Scope stack: each level's local variablesiable
+    std::set<std::string> captured_vars_;  // captureof/theexternal/outsidevariable
+    int closure_depth_;  // nestedclosuredepth
     
-    // 辅助方法
+    // helpermethod
     void enterScope();
     void exitScope();
     bool isLocalVariable(const std::string& name) const;

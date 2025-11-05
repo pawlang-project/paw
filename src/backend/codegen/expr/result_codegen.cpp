@@ -1,6 +1,9 @@
-//===--- result_codegen.cpp - Result Type CodeGen ---------------*- C++ -*-===//
+//===--- results_codegen.cpp - Result Type CodeGen ---------------*- C++ -*-===//
+/// @file results_codegen.cpp
+/// @brief Implementation file
+///
 //
-// Result类型相关代码生成：NullLiteral, ok/err builtin, TryExpr
+// Resulttypesrelatedcode generation：NullLiteral, ok/err builtin, TryExpr
 //
 //===----------------------------------------------------------------------===//
 
@@ -14,39 +17,39 @@
 namespace pawc {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// NoneLiteral - none字面量生成
+// NoneLiteral - noneliteralgenerate
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ExprCodeGen::visit(NoneLiteral* node) {
-    // none字面量：生成正确类型的Optional
-    // Optional类型结构: { i1 has_value, T value }
+    // noneliteral：generatecorrecttypesof/theOptional
+    // Optionaltypesstruct: { i1 has_value, T value }
     auto& builder = context_->getBuilder();
     
-    // 从AST节点获取类型（Sema应该已设置）
+    // fromASTnodegettypes（Semashouldalreadyset）
     Type* none_type = node->getType();
     
-    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+    // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
     llvm::Type* optional_llvm_type = nullptr;
     
     if (none_type && none_type->getKind() == Type::Kind::Optional) {
-        // 使用Sema推导的类型
+        // useSemainferof/thetypes
         optional_llvm_type = context_->getLLVMType(none_type);
     } else {
-        // 兜底：创建Optional<void>
+        // fallbackbottom：createOptional<void>
         llvm::StructType* optional_type = llvm::StructType::get(
             context_->getLLVMContext(),
             {
                 llvm::Type::getInt1Ty(context_->getLLVMContext()),  // has_value
-                llvm::Type::getInt8Ty(context_->getLLVMContext())   // void占位
+                llvm::Type::getInt8Ty(context_->getLLVMContext())   // voidplaceholder
             }
         );
         optional_llvm_type = optional_type;
     }
     
-    // 创建undef结构体
+    // createundefstructbody/struct
     llvm::Value* optional_value = llvm::UndefValue::get(optional_llvm_type);
     
-    // 设置has_value = false
+    // sethas_value = false
     optional_value = builder.CreateInsertValue(
         optional_value,
         llvm::ConstantInt::get(builder.getInt1Ty(), 0),  // false
@@ -54,136 +57,136 @@ void ExprCodeGen::visit(NoneLiteral* node) {
         "null"
     );
     
-    result_ = optional_value;
+    results_ = optional_value;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// TryExpr - ? 操作符代码生成
+// TryExpr - ? operationoperatorcode generation
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ExprCodeGen::visit(TryExpr* node) {
     auto& builder = context_->getBuilder();
     
-    // 生成expr
+    // generationexpr
     node->getExpr()->accept(this);
-    llvm::Value* try_value = result_;
+    llvm::Value* try_value = results_;
     
     if (!try_value) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
     Type* expr_type = node->getExpr()->getType();
     if (!expr_type) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
-    // === 根据操作符区分处理 ===
+    // === according tooperationoperator typefractionalprocess ===
     if (node->isResultTry()) {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // expr! - Result<T> unwrap（错误处理）
+        // expr! - Result<T> unwrap（errorprocess）
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
         if (expr_type->getKind() != Type::Kind::Result) {
-            result_ = nullptr;
+            results_ = nullptr;
             return;
         }
         
-        auto* result_type = static_cast<ResultType*>(expr_type);
+        auto* results_type = static_cast<ResultType*>(expr_type);
         
-        // 提取is_ok字段（索引0）
+        // extractis_okfield（index0）
         llvm::Value* is_ok = builder.CreateExtractValue(try_value, 0, "is_ok");
         
-        // 获取当前函数
+        // getcurrentfunction
         llvm::Function* current_fn = builder.GetInsertBlock()->getParent();
         
-        // 创建基本块
+        // Create basic block
         llvm::BasicBlock* ok_bb = llvm::BasicBlock::Create(
-            context_->getLLVMContext(), "result_ok", current_fn);
+            context_->getLLVMContext(), "results_ok", current_fn);
         llvm::BasicBlock* err_bb = llvm::BasicBlock::Create(
-            context_->getLLVMContext(), "result_err", current_fn);
+            context_->getLLVMContext(), "results_err", current_fn);
         
-        // 条件分支
+        // conditionbranch
         builder.CreateCondBr(is_ok, ok_bb, err_bb);
         
-        // === 错误分支：提取错误并传播 ===
+        // === errorbranch：extracterrorandpropagate ===
         builder.SetInsertPoint(err_bb);
         
-        // 提取error message（索引2）
+        // extracterror message（index2）
         llvm::Value* err_msg = builder.CreateExtractValue(try_value, 2, "err_msg");
         
-        // 构造当前函数的Result错误返回值
+        // constructcurrentfunctionof/theResulterrorreturnvalue
         llvm::Type* current_fn_ret_type = current_fn->getReturnType();
         
-        // 创建错误返回值: { false, undef, err_msg }
+        // createerrorreturnvalue: { false, undef, err_msg }
         llvm::Value* error_return = llvm::UndefValue::get(current_fn_ret_type);
         error_return = builder.CreateInsertValue(error_return,
             llvm::ConstantInt::get(builder.getInt1Ty(), 0),  // is_ok = false
             0);
         error_return = builder.CreateInsertValue(error_return, err_msg, 2);  // error = err_msg
         
-        // 返回错误
+        // returnerror
         builder.CreateRet(error_return);
         
-        // === 成功分支：提取value并继续 ===
+        // === successbranch：extractvalueandcontinue ===
         builder.SetInsertPoint(ok_bb);
         
-        // 提取value（索引1）
-        result_ = builder.CreateExtractValue(try_value, 1, "value");
+        // extractvalue（index1）
+        results_ = builder.CreateExtractValue(try_value, 1, "value");
     }
     else if (node->isOptionalTry()) {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // expr? - Optional<T> unwrap（可空值）
+        // expr? - Optional<T> unwrap（cannone/null）
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
         if (expr_type->getKind() != Type::Kind::Optional) {
-            result_ = nullptr;
+            results_ = nullptr;
             return;
         }
         
         auto* optional_type = static_cast<OptionalType*>(expr_type);
         
-        // Optional结构体: { i1 has_value, T value }
-        // 提取has_value字段（索引0）
+        // Optionalstructbody/struct: { i1 has_value, T value }
+        // extracthas_valuefield（index0）
         llvm::Value* has_value = builder.CreateExtractValue(try_value, 0, "has_value");
         
-        // 获取当前函数
+        // getcurrentfunction
         llvm::Function* current_fn = builder.GetInsertBlock()->getParent();
         
-        // 创建基本块
+        // Create basic block
         llvm::BasicBlock* some_bb = llvm::BasicBlock::Create(
             context_->getLLVMContext(), "optional_some", current_fn);
         llvm::BasicBlock* none_bb = llvm::BasicBlock::Create(
             context_->getLLVMContext(), "optional_none", current_fn);
         
-        // 条件分支
+        // conditionbranch
         builder.CreateCondBr(has_value, some_bb, none_bb);
         
-        // === None分支：传播null（返回Optional<U>的None） ===
+        // === Nonebranch：propagatenull（returnOptional<U>of/theNone） ===
         builder.SetInsertPoint(none_bb);
         
-        // 如果当前函数返回Optional<U>，返回None
+        // ifcurrentfunctionreturnOptional<U>，returnNone
         llvm::Type* current_fn_ret_type = current_fn->getReturnType();
         
-        // 创建None返回值: { false, undef }
+        // createNonereturnvalue: { false, undef }
         llvm::Value* none_return = llvm::UndefValue::get(current_fn_ret_type);
         none_return = builder.CreateInsertValue(none_return,
             llvm::ConstantInt::get(builder.getInt1Ty(), 0),  // has_value = false
             0);
         
-        // 返回None
+        // returnNone
         builder.CreateRet(none_return);
         
-        // === Some分支：提取value并继续 ===
+        // === Somebranch：extractvalueandcontinue ===
         builder.SetInsertPoint(some_bb);
         
-        // 提取value（索引1）
-        result_ = builder.CreateExtractValue(try_value, 1, "value");
+        // extractvalue（index1）
+        results_ = builder.CreateExtractValue(try_value, 1, "value");
     }
     else {
-        // 未知操作符
-        result_ = nullptr;
+        // not yetknownoperationoperator
+        results_ = nullptr;
     }
 }
 

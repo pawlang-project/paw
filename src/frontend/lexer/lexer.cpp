@@ -1,11 +1,15 @@
 //===--- lexer.cpp - Lexer Implementation ------------------------*- C++ -*-===//
+/// @file lexer.cpp
+/// @brief Lexical analyzer implementation
+///
+/// Tokenizes PawLang source code into lexical tokens.
 
 #include "lexer.h"
 #include <cctype>
 
 namespace pawc {
 
-// 关键字映射表
+/// Keyword lookup table mapping strings to token types
 const std::unordered_map<std::string, TokenType> Lexer::keywords_ = {
     {"as", TokenType::AS},
     {"break", TokenType::BREAK},
@@ -22,14 +26,14 @@ const std::unordered_map<std::string, TokenType> Lexer::keywords_ = {
     {"is", TokenType::IS},
     {"let", TokenType::LET},
     {"loop", TokenType::LOOP},
-    {"none", TokenType::NONE},         // Optional空值构造器
-    // {"null", TokenType::NULL_KW},   // 已移除，统一使用 none
+    {"none", TokenType::NONE},         // Optional empty value constructor
+    // {"null", TokenType::NULL_KW},   // Removed, unified to 'none'
     {"ok", TokenType::OK},
     {"pub", TokenType::PUB},
     {"return", TokenType::RETURN},
     {"self", TokenType::SELF_LOWER},
     {"Self", TokenType::SELF_UPPER},
-    {"some", TokenType::SOME},         // Optional值构造器
+    {"some", TokenType::SOME},         // Optional value constructor
     {"struct", TokenType::STRUCT},
     {"support", TokenType::SUPPORT},
     {"true", TokenType::TRUE},
@@ -54,7 +58,7 @@ std::vector<Token> Lexer::tokenize() {
         }
     }
     
-    // 添加EOF token
+    // Add EOF token
     tokens.push_back(Token(TokenType::END_OF_FILE, "", currentLocation()));
     
     return tokens;
@@ -70,17 +74,17 @@ Token Lexer::scanToken() {
     start_ = current_;
     char c = advance();
     
-    // 标识符或关键字
+    // Identifier or keyword
     if (std::isalpha(c) || c == '_') {
         return scanIdentifierOrKeyword();
     }
     
-    // 数字
+    // Number literal
     if (std::isdigit(c)) {
         return scanNumber();
     }
     
-    // 单字符和双字符token
+    // Single-character and two-character tokens
     switch (c) {
         case '(': return makeToken(TokenType::LPAREN);
         case ')': return makeToken(TokenType::RPAREN);
@@ -225,13 +229,13 @@ Token Lexer::scanIdentifierOrKeyword() {
 Token Lexer::scanNumber() {
     bool is_float = false;
     
-    // 扫描整数部分
+    // Scan integer part
     while (std::isdigit(peek())) {
         advance();
     }
     
-    // 检查小数点
-    if (peek() == '.' && std::isdigit(peekNext())) {
+      // Check for decimal point
+      if (peek() == '.' && std::isdigit(peekNext())) {
         is_float = true;
         advance(); // '.'
         while (std::isdigit(peek())) {
@@ -239,8 +243,8 @@ Token Lexer::scanNumber() {
         }
     }
     
-    // 检查指数
-    if (peek() == 'e' || peek() == 'E') {
+      // Check for exponent
+      if (peek() == 'e' || peek() == 'E') {
         is_float = true;
         advance();
         if (peek() == '+' || peek() == '-') {
@@ -295,7 +299,7 @@ Token Lexer::scanChar() {
     
     char c = advance();
     
-    // 处理转义字符
+    // Handle escape sequences
     if (c == '\\') {
         if (isAtEnd()) {
             return errorToken("Unterminated character literal");

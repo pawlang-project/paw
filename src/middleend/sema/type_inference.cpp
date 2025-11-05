@@ -1,4 +1,6 @@
 //===--- type_inference.cpp - Type Inference Implementation -----*- C++ -*-===//
+/// @file type_inference.cpp
+/// @brief Type system and semantic analysis implementation
 
 #include "type_inference.h"
 #include "frontend/parser/ast/expr.h"
@@ -14,12 +16,12 @@ TypeInference::TypeInference(SemanticContext* context)
     : context_(context) {}
 
 Type* TypeInference::inferType(Expr* expr) {
-    // 如果表达式已有类型，直接返回
+    // ifexpressionalreadyhastypes，directlyreturn
     if (expr->getType()) {
         return expr->getType();
     }
     
-    // 根据表达式类型推导
+    // according toexpressiontypesinfer
     if (auto* lit = dynamic_cast<IntLiteral*>(expr)) {
         return context_->getTypeSystem()->getI32Type();
     }
@@ -36,7 +38,7 @@ Type* TypeInference::inferType(Expr* expr) {
         return context_->getTypeSystem()->getStringType();
     }
     if (auto* lit = dynamic_cast<NoneLiteral*>(expr)) {
-        // none 默认为 Optional<void>
+        // none defaultis/as Optional<void>
         return context_->getTypeSystem()->getOptionalType(
             context_->getTypeSystem()->getVoidType()
         );
@@ -65,7 +67,7 @@ Type* TypeInference::inferType(Expr* expr) {
 }
 
 Type* TypeInference::inferFromLiteral(Expr* literal) {
-    // 字面量类型推导
+    // literaltypesinfer
     if (dynamic_cast<IntLiteral*>(literal)) {
         return context_->getTypeSystem()->getI32Type();
     }
@@ -91,7 +93,7 @@ Type* TypeInference::inferFromLiteral(Expr* literal) {
 }
 
 Type* TypeInference::inferFromBinaryOp(Expr* left, Expr* right, const std::string& op) {
-    // 推导左右操作数的类型
+    // inferleftrightoperationnumberof/thetypes
     Type* left_type = inferType(left);
     Type* right_type = inferType(right);
     
@@ -99,15 +101,15 @@ Type* TypeInference::inferFromBinaryOp(Expr* left, Expr* right, const std::strin
         return nullptr;
     }
     
-    // 算术运算：返回操作数类型（假设类型一致）
+    // arithmeticoperation：returnoperationnumbertypes（assumptiontypesconsistent）
     // +, -, *, /, %
     if (left_type->isNumeric() && right_type->isNumeric()) {
-        // 简化：返回左操作数类型
-        // TODO: 实现更精确的类型提升规则（i32 + f64 -> f64）
+        // simplify：returnleftoperationnumbertypes
+        // TODO: implementationmoreprecise/exactof/thetypesimproverule（i32 + f64 -> f64）
         return left_type;
     }
     
-    // 比较运算：返回 bool
+    // compareoperation：return bool
     // ==, !=, <, >, <=, >=
     return context_->getTypeSystem()->getBoolType();
 }
@@ -116,21 +118,21 @@ Type* TypeInference::inferFromArrayLiteral(ArrayLiteral* arr) {
     const auto& elements = arr->getElements();
     
     if (elements.empty()) {
-        // 空数组：无法推导，返回 void 数组
+        // emptyarray：noway/cannotinfer，return void array
         return context_->getTypeSystem()->getArrayType(
             context_->getTypeSystem()->getVoidType(),
             0
         );
     }
     
-    // 从第一个元素推导类型
+    // fromfirstelementinfertypes
     Type* elem_type = inferType(elements[0].get());
     
     if (!elem_type) {
         return nullptr;
     }
     
-    // 创建数组类型
+    // createarraytypes
     return context_->getTypeSystem()->getArrayType(elem_type, elements.size());
 }
 
@@ -150,7 +152,7 @@ Type* TypeInference::inferFromTuple(TupleExpr* tuple) {
 }
 
 Type* TypeInference::inferFromIfExpr(IfExpr* if_expr) {
-    // 推导 then 和 else 分支的类型
+    // infer then and else branchof/thetypes
     Type* then_type = nullptr;
     Type* else_type = nullptr;
     
@@ -162,23 +164,23 @@ Type* TypeInference::inferFromIfExpr(IfExpr* if_expr) {
         else_type = inferType(if_expr->getElseExpr());
     }
     
-    // 如果两个分支类型一致，返回该类型
+    // iftwoindividual/piecebranchtypesconsistent，returnshouldtypes
     if (then_type && else_type) {
         return inferCommonType(then_type, else_type);
     }
     
-    // 否则返回其中一个非空类型
+    // nootherwisereturnitsmiddle/centerone/aindividual/piecenotemptytypes
     return then_type ? then_type : else_type;
 }
 
 Type* TypeInference::inferFromStructLiteral(StructLiteral* struct_lit) {
-    // 从结构体名称查找类型
+    // fromstructbody/structnamelookuptypes
     const std::string& struct_name = struct_lit->getStructName();
     return context_->getTypeSystem()->lookupType(struct_name);
 }
 
 Type* TypeInference::inferFromCallExpr(CallExpr* call) {
-    // 从callee推导返回类型
+    // fromcalleeinferreturntypes
     Expr* callee = call->getCallee();
     
     if (!callee) {
@@ -191,7 +193,7 @@ Type* TypeInference::inferFromCallExpr(CallExpr* call) {
         return nullptr;
     }
     
-    // 如果callee是函数类型，返回其返回类型
+    // ifcalleeyesfunctiontypes，returnitsreturntypes
     if (callee_type->isFunction()) {
         FunctionType* func_type = static_cast<FunctionType*>(callee_type);
         return func_type->getReturnType();
@@ -201,22 +203,22 @@ Type* TypeInference::inferFromCallExpr(CallExpr* call) {
 }
 
 Type* TypeInference::inferCommonType(Type* t1, Type* t2) {
-    // 如果两个类型相同，返回该类型
+    // iftwoindividual/piecetypessame，returnshouldtypes
     if (t1 && t2 && t1->equals(t2)) {
         return t1;
     }
     
-    // 数值类型提升规则
+    // numbervaluetypesimproverule
     if (t1 && t2 && t1->isNumeric() && t2->isNumeric()) {
-        // i32 + f64 -> f64 (浮点优先)
+        // i32 + f64 -> f64 (floating-point takes precedence)
         if (t1->isFloat() || t2->isFloat()) {
             return context_->getTypeSystem()->getF64Type();
         }
-        // 默认 i32（简化：不区分 i32/i64）
+        // Default i32 (simplified: don't distinguish i32/i64)
         return context_->getTypeSystem()->getI32Type();
     }
     
-    // 默认返回第一个类型
+    // defaultreturnfirsttypes
     return t1 ? t1 : t2;
 }
 

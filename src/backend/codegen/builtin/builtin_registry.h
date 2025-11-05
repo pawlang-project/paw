@@ -1,7 +1,10 @@
 //===--- builtin_registry.h - Builtin Function Registry ---------*- C++ -*-===//
+/// @file builtin_registry.h
+/// @brief Built-in functions and runtime support
+///
 //
-// Builtin函数注册和查找
-// 从builtin_codegen中提取
+// Builtinfunctionregisterandlookup
+// frombuiltin_codegenmiddle/centerextract
 //
 //===----------------------------------------------------------------------===//
 
@@ -10,8 +13,8 @@
 
 namespace pawc {
 
-// Builtin注册逻辑保留在builtin_codegen.h中
-// 框架文件，待未来详细实现
+// Builtinregisterlogickeep/reservein/atbuiltin_codegen.hmiddle/center
+// frameworkfile，to benot yetfuturedetailedimplementation
 
 } // namespace pawc
 

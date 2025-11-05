@@ -1,4 +1,7 @@
 //===--- diagnostic_engine.h - Diagnostic Engine ------------------*- C++ -*-===//
+/// @file diagnostic_engine.h
+/// @brief Compiler infrastructure
+///
 
 #ifndef PAW_DIAGNOSTIC_ENGINE_H
 #define PAW_DIAGNOSTIC_ENGINE_H

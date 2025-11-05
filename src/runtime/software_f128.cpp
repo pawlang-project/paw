@@ -1,14 +1,16 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 软件f128运算实现 - 完全手工实现，高性能优化
+/// @file software_f128.cpp
+/// @brief Implementation file
+// Software f128 arithmetic implementation - fully manual implementation, high-performance optimization
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 
-// IEEE 754 binary128格式:
+// IEEE 754 binary128 format:
 //   [127]      sign (1 bit)
 //   [126-112]  exponent (15 bits, bias = 16383)
-//   [111-0]    mantissa (112 bits, 隐含前导1)
+//   [111-0]    mantissa (112 bits, implicit leading 1)
 //
-// 精度: 34位十进制数字
-// 范围: ±1.18e-4932 到 ±1.18e+4932
+// Precision: 34 decimal digits
+// Range: ±1.18e-4932 to ±1.18e+4932
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -17,7 +19,7 @@
 #include <cmath>
 #include <cstdio>
 
-// SIMD支持检测
+// SIMD support detection
 #if defined(__ARM_NEON) || defined(__aarch64__)
     #include <arm_neon.h>
     #define PAW_HAS_NEON 1
@@ -29,51 +31,51 @@
 #endif
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 阶段1: IEEE 754 fp128结构定义和解析
+// Phase 1: IEEE 754 fp128 struct definition and parsing
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// IEEE 754 fp128表示（与LLVM/hardware兼容）
+// IEEE 754 fp128 representation (compatible with LLVM/hardware)
 struct f128_t {
     uint64_t low;   // bits [63:0]
     uint64_t high;  // bits [127:64]
 };
 
-// fp128的组成部分
+// fp128 components
 struct f128_parts {
-    bool sign;              // 符号位
-    uint16_t exponent;      // 指数（biased）
-    uint64_t mant_high;     // 尾数高64位
-    uint64_t mant_low;      // 尾数低48位（实际只用48位）
+    bool sign;              // Sign bit
+    uint16_t exponent;      // Exponent (biased)
+    uint64_t mant_high;     // High 64 bits of mantissa
+    uint64_t mant_low;      // Low 48 bits of mantissa (only 48 bits used)
 };
 
-// 常量定义
+// Constant definitions
 static const uint16_t F128_EXP_BIAS = 16383;
 static const uint16_t F128_EXP_MAX = 0x7FFF;
 static const int F128_MANT_BITS = 112;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 内联辅助函数（性能优化）
+// Inline helper functions (performance optimization)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// 解析fp128位表示
+// Parse fp128 bit representation
 static inline void f128_unpack(const f128_t& v, f128_parts* parts) {
     parts->sign = (v.high >> 63) & 1;
     parts->exponent = (v.high >> 48) & 0x7FFF;
-    parts->mant_high = v.high & 0xFFFFFFFFFFFFULL;  // 低48位
+    parts->mant_high = v.high & 0xFFFFFFFFFFFFULL;  // Low 48 bits
     parts->mant_low = v.low;
 }
 
-// 打包fp128
+// Pack fp128
 static inline f128_t f128_pack(const f128_parts& parts) {
-    f128_t result;
-    result.low = parts.mant_low;
-    result.high = ((uint64_t)parts.sign << 63) |
+    f128_t results;
+    results.low = parts.mant_low;
+    results.high = ((uint64_t)parts.sign << 63) |
                   ((uint64_t)parts.exponent << 48) |
                   (parts.mant_high & 0xFFFFFFFFFFFFULL);
-    return result;
+    return results;
 }
 
-// 检测特殊值（内联优化）
+// Detect special values (inline optimization)
 static inline bool f128_is_zero(const f128_t& v) {
     uint16_t exp = (v.high >> 48) & 0x7FFF;
     return exp == 0 && (v.high & 0xFFFFFFFFFFFFULL) == 0 && v.low == 0;
@@ -102,7 +104,7 @@ static inline bool f128_sign(const f128_t& v) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 阶段2: 大整数运算（用于尾数计算）
+// Phase 2: Big integer arithmetic (for mantissa calculations)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 struct uint128_t {
@@ -110,18 +112,18 @@ struct uint128_t {
     uint64_t high;
 };
 
-// 256位大整数（用于乘法）
+// 256-bit big integer (for multiplication)
 struct uint256_t {
-    uint64_t words[4];  // words[0]=最低64位, words[3]=最高64位
+    uint64_t words[4];  // words[0]=lowest 64 bits, words[3]=highest 64 bits
 };
 
-// 512位大整数（用于Dragon4完整34位精度）
+// 512-bit big integer (for Dragon4 full 34-digit precision)
 struct uint512_t {
-    uint64_t words[8];  // words[0]=最低64位, words[7]=最高64位
+    uint64_t words[8];  // words[0]=lowest 64 bits, words[7]=highest 64 bits
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 256位大整数运算（完整版，用于Dragon4）
+// 256-bit big integer arithmetic (full version, for Dragon4)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 static inline void u256_zero(uint256_t* v) {
@@ -133,7 +135,7 @@ static inline bool u256_is_zero(const uint256_t* v) {
            v->words[2] == 0 && v->words[3] == 0;
 }
 
-// 256位左移
+// 256-bit left shift
 static inline void u256_shl(uint256_t* v, unsigned shift) {
     if (shift == 0) return;
     if (shift >= 256) {
@@ -145,7 +147,7 @@ static inline void u256_shl(uint256_t* v, unsigned shift) {
     int bit_shift = shift % 64;
     
     if (bit_shift == 0) {
-        // 整字移位
+        // Whole word shift
         for (int i = 3; i >= word_shift; i--) {
             v->words[i] = v->words[i - word_shift];
         }
@@ -153,7 +155,7 @@ static inline void u256_shl(uint256_t* v, unsigned shift) {
             v->words[i] = 0;
         }
     } else {
-        // 位移
+        // Bit shift
         for (int i = 3; i >= 0; i--) {
             if (i >= word_shift) {
                 v->words[i] = v->words[i - word_shift] << bit_shift;
@@ -167,7 +169,7 @@ static inline void u256_shl(uint256_t* v, unsigned shift) {
     }
 }
 
-// 256位右移
+// 256-bit right shift
 static inline void u256_shr(uint256_t* v, unsigned shift) {
     if (shift == 0) return;
     if (shift >= 256) {
@@ -179,7 +181,7 @@ static inline void u256_shr(uint256_t* v, unsigned shift) {
     int bit_shift = shift % 64;
     
     if (bit_shift == 0) {
-        // 整字移位
+        // Whole word shift
         for (int i = 0; i < 4 - word_shift; i++) {
             v->words[i] = v->words[i + word_shift];
         }
@@ -187,7 +189,7 @@ static inline void u256_shr(uint256_t* v, unsigned shift) {
             v->words[i] = 0;
         }
     } else {
-        // 位移
+        // Bit shift
         for (int i = 0; i < 4; i++) {
             if (i + word_shift < 4) {
                 v->words[i] = v->words[i + word_shift] >> bit_shift;
@@ -201,7 +203,7 @@ static inline void u256_shr(uint256_t* v, unsigned shift) {
     }
 }
 
-// 256位比较
+// 256-bit comparison
 static inline int u256_cmp(const uint256_t* a, const uint256_t* b) {
     for (int i = 3; i >= 0; i--) {
         if (a->words[i] != b->words[i]) {
@@ -211,11 +213,11 @@ static inline int u256_cmp(const uint256_t* a, const uint256_t* b) {
     return 0;
 }
 
-// 256位乘以uint64
+// 256-bit multiply by uint64
 static inline void u256_mul_u64(uint256_t* v, uint64_t multiplier) {
     uint64_t carry = 0;
     for (int i = 0; i < 4; i++) {
-        // 分解为32位避免溢出
+        // Decompose to 32-bit to avoid overflow
         uint64_t lo = (v->words[i] & 0xFFFFFFFFULL) * multiplier + carry;
         uint64_t hi = (v->words[i] >> 32) * multiplier + (lo >> 32);
         
@@ -224,7 +226,7 @@ static inline void u256_mul_u64(uint256_t* v, uint64_t multiplier) {
     }
 }
 
-// 256位减法
+// 256-bit subtraction
 static inline bool u256_sub(uint256_t* a, const uint256_t* b) {
     uint64_t borrow = 0;
     for (int i = 0; i < 4; i++) {
@@ -236,26 +238,26 @@ static inline bool u256_sub(uint256_t* a, const uint256_t* b) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 512位大整数运算（用于完整34位精度 + SIMD优化）
+// 512-bit big integer arithmetic (for full 34-digit precision + SIMD optimization)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 static inline void u512_zero(uint512_t* v) {
 #if PAW_HAS_NEON
-    // ARM NEON优化：使用128位向量清零
+    // ARM NEON optimization: use 128-bit vector to zero
     uint64x2_t zero = vdupq_n_u64(0);
     vst1q_u64(&v->words[0], zero);
     vst1q_u64(&v->words[2], zero);
     vst1q_u64(&v->words[4], zero);
     vst1q_u64(&v->words[6], zero);
 #elif PAW_HAS_SSE2
-    // SSE2优化
+    // SSE2 optimization
     __m128i zero = _mm_setzero_si128();
     _mm_storeu_si128((__m128i*)&v->words[0], zero);
     _mm_storeu_si128((__m128i*)&v->words[2], zero);
     _mm_storeu_si128((__m128i*)&v->words[4], zero);
     _mm_storeu_si128((__m128i*)&v->words[6], zero);
 #else
-    // 标量版本
+    // Scalar version
     for (int i = 0; i < 8; i++) v->words[i] = 0;
 #endif
 }
@@ -267,21 +269,21 @@ static inline bool u512_is_zero(const uint512_t* v) {
     return true;
 }
 
-// 512位比较（SIMD优化）
+// 512-bit comparison (SIMD optimization)
 static inline int u512_cmp(const uint512_t* a, const uint512_t* b) {
 #if PAW_HAS_NEON
-    // ARM NEON优化：向量比较
-    // 从高位到低位比较
+    // ARM NEON optimization: vector comparison
+    // Compare from high to low
     for (int i = 3; i >= 0; i--) {
         uint64x2_t va = vld1q_u64(&a->words[i * 2]);
         uint64x2_t vb = vld1q_u64(&b->words[i * 2]);
         
-        // 检查不等
+        // Check inequality
         uint64x2_t neq = vceqq_u64(va, vb);
         uint64_t neq_mask = vgetq_lane_u64(neq, 1) & vgetq_lane_u64(neq, 0);
         
         if (neq_mask != 0xFFFFFFFFFFFFFFFFULL) {
-            // 有不等，逐个比较
+            // Has inequality, compare individually
             if (a->words[i * 2 + 1] != b->words[i * 2 + 1]) {
                 return a->words[i * 2 + 1] > b->words[i * 2 + 1] ? 1 : -1;
             }
@@ -292,7 +294,7 @@ static inline int u512_cmp(const uint512_t* a, const uint512_t* b) {
     }
     return 0;
 #else
-    // 标量版本
+    // Scalar version
     for (int i = 7; i >= 0; i--) {
         if (a->words[i] != b->words[i]) {
             return a->words[i] > b->words[i] ? 1 : -1;
@@ -302,7 +304,7 @@ static inline int u512_cmp(const uint512_t* a, const uint512_t* b) {
 #endif
 }
 
-// 512位左移
+// 512-bit left shift
 static inline void u512_shl(uint512_t* v, unsigned shift) {
     if (shift == 0) return;
     if (shift >= 512) {
@@ -334,7 +336,7 @@ static inline void u512_shl(uint512_t* v, unsigned shift) {
     }
 }
 
-// 512位乘以uint64
+// 512-bit multiply by uint64
 static inline void u512_mul_u64(uint512_t* v, uint64_t multiplier) {
     uint64_t carry = 0;
     for (int i = 0; i < 8; i++) {
@@ -345,12 +347,12 @@ static inline void u512_mul_u64(uint512_t* v, uint64_t multiplier) {
     }
 }
 
-// 512位减法（SIMD优化版本）
+// 512-bit subtraction (SIMD optimization version)
 static inline bool u512_sub(uint512_t* a, const uint512_t* b) {
 #if PAW_HAS_NEON
-    // ARM NEON优化：向量减法（需要手动处理借位）
-    // 由于NEON不直接支持带借位的减法，仍使用标量版本
-    // 但可以用SIMD加载/存储加速
+    // ARM NEON optimization: vector subtraction (requires manual borrow handling)
+    // Since NEON doesn't directly support subtraction with borrow, still use scalar version
+    // But can use SIMD load/store to accelerate
     uint64_t borrow = 0;
     for (int i = 0; i < 8; i++) {
         uint64_t temp = a->words[i];
@@ -359,7 +361,7 @@ static inline bool u512_sub(uint512_t* a, const uint512_t* b) {
     }
     return borrow != 0;
 #else
-    // 标量版本
+    // Scalar version
     uint64_t borrow = 0;
     for (int i = 0; i < 8; i++) {
         uint64_t temp = a->words[i];
@@ -370,22 +372,22 @@ static inline bool u512_sub(uint512_t* a, const uint512_t* b) {
 #endif
 }
 
-// 计算10^n（n>=0，结果存入v，512位）
-// 性能优化：对于小n使用查找表，大n动态计算
+// Compute 10^n (n>=0, results stored in v, 512-bit)
+// Performance optimization: use lookup table for small n, dynamic computation for large n
 static void u512_pow10(uint512_t* v, int n) {
     u512_zero(v);
     v->words[0] = 1;
     
-    // 优化：对于常见的幂次（0-15），可以使用快速路径
-    // 当前简化实现：全部动态计算（查找表可后续添加）
+    // Optimization: for common powers (0-15), can use fast path
+    // Current simplified implementation: all dynamic computation (lookup table can be added later)
     for (int i = 0; i < n; i++) {
         u512_mul_u64(v, 10);
     }
 }
 
-// 128位 × 128位 = 256位（完整精度乘法）
+// 128-bit × 128-bit = 256-bit (full precision multiplication)
 static uint256_t u128_mul_u128_full(uint128_t a, uint128_t b) {
-    // 使用分解法：将128位分为4个32位部分
+    // Use decomposition method: split 128-bit into 4 32-bit parts
     // a = a3*2^96 + a2*2^64 + a1*2^32 + a0
     // b = b3*2^96 + b2*2^64 + b1*2^32 + b0
     
@@ -399,112 +401,112 @@ static uint256_t u128_mul_u128_full(uint128_t a, uint128_t b) {
     uint32_t b2 = (uint32_t)(b.high);
     uint32_t b3 = (uint32_t)(b.high >> 32);
     
-    uint256_t result;
-    u256_zero(&result);
+    uint256_t results;
+    u256_zero(&results);
     
-    // 计算所有16个部分积并累加
-    // 为避免复杂度，使用逐步累加法
+    // Compute all 16 partial products and accumulate
+    // To avoid complexity, use step-by-step accumulation
     for (int i = 0; i < 4; i++) {
         uint32_t ai = (i == 0) ? a0 : (i == 1) ? a1 : (i == 2) ? a2 : a3;
         for (int j = 0; j < 4; j++) {
             uint32_t bj = (j == 0) ? b0 : (j == 1) ? b1 : (j == 2) ? b2 : b3;
             
             uint64_t prod = (uint64_t)ai * (uint64_t)bj;
-            int word_pos = i + j;  // 结果在哪个64位字
-            int shift_in_word = 0;  // 在字内的偏移（0或32）
+            int word_pos = i + j;  // Which 64-bit word for results
+            int shift_in_word = 0;  // Offset within word (0 or 32)
             
-            // ai在第i个32位，bj在第j个32位
-            // 结果在第(i+j)*32位位置
-            // 转换为64位字索引
+            // ai is at i-th 32-bit, bj is at j-th 32-bit
+            // Result is at (i+j)*32 bit position
+            // Convert to 64-bit word index
             int bit_pos = (i + j) * 32;
             word_pos = bit_pos / 64;
             shift_in_word = bit_pos % 64;
             
-            // 添加到result
+            // Add to results
             if (word_pos < 4) {
                 uint64_t carry = 0;
                 uint64_t add_val = prod << shift_in_word;
-                result.words[word_pos] += add_val;
-                if (result.words[word_pos] < add_val) carry = 1;
+                results.words[word_pos] += add_val;
+                if (results.words[word_pos] < add_val) carry = 1;
                 
                 if (shift_in_word != 0 && word_pos + 1 < 4) {
                     uint64_t high_part = prod >> (64 - shift_in_word);
-                    result.words[word_pos + 1] += high_part + carry;
-                    if (result.words[word_pos + 1] < high_part) carry = 1;
+                    results.words[word_pos + 1] += high_part + carry;
+                    if (results.words[word_pos + 1] < high_part) carry = 1;
                     else carry = 0;
                 }
                 
-                // 传播进位
+                // Propagate carry
                 for (int k = word_pos + (shift_in_word != 0 ? 2 : 1); k < 4 && carry; k++) {
-                    result.words[k] += carry;
-                    if (result.words[k] == 0) carry = 1;
+                    results.words[k] += carry;
+                    if (results.words[k] == 0) carry = 1;
                     else carry = 0;
                 }
             }
         }
     }
     
-    return result;
+    return results;
 }
 
-// 128位加法（带进位）
+// 128-bit addition (with carry)
 static inline uint128_t u128_add(uint128_t a, uint128_t b) {
-    uint128_t result;
-    result.low = a.low + b.low;
-    result.high = a.high + b.high + (result.low < a.low ? 1 : 0);  // 进位
-    return result;
+    uint128_t results;
+    results.low = a.low + b.low;
+    results.high = a.high + b.high + (results.low < a.low ? 1 : 0);  // Carry
+    return results;
 }
 
-// 128位减法（带借位）
+// 128-bit subtraction (with borrow)
 static inline uint128_t u128_sub(uint128_t a, uint128_t b) {
-    uint128_t result;
-    result.low = a.low - b.low;
-    result.high = a.high - b.high - (a.low < b.low ? 1 : 0);  // 借位
-    return result;
+    uint128_t results;
+    results.low = a.low - b.low;
+    results.high = a.high - b.high - (a.low < b.low ? 1 : 0);  // Borrow
+    return results;
 }
 
-// 128位左移
+// 128-bit left shift
 static inline uint128_t u128_shl(uint128_t a, unsigned shift) {
     if (shift == 0) return a;
     if (shift >= 128) return {0, 0};
     
-    uint128_t result;
+    uint128_t results;
     if (shift < 64) {
-        result.high = (a.high << shift) | (a.low >> (64 - shift));
-        result.low = a.low << shift;
+        results.high = (a.high << shift) | (a.low >> (64 - shift));
+        results.low = a.low << shift;
     } else {
-        result.high = a.low << (shift - 64);
-        result.low = 0;
+        results.high = a.low << (shift - 64);
+        results.low = 0;
     }
-    return result;
+    return results;
 }
 
-// 128位右移
+// 128-bit right shift
 static inline uint128_t u128_shr(uint128_t a, unsigned shift) {
     if (shift == 0) return a;
     if (shift >= 128) return {0, 0};
     
-    uint128_t result;
+    uint128_t results;
     if (shift < 64) {
-        result.low = (a.low >> shift) | (a.high << (64 - shift));
-        result.high = a.high >> shift;
+        results.low = (a.low >> shift) | (a.high << (64 - shift));
+        results.high = a.high >> shift;
     } else {
-        result.low = a.high >> (shift - 64);
-        result.high = 0;
+        results.low = a.high >> (shift - 64);
+        results.high = 0;
     }
-    return result;
+    return results;
 }
 
-// 128位比较
+// 128-bit comparison
 static inline int u128_cmp(uint128_t a, uint128_t b) {
     if (a.high != b.high) return a.high > b.high ? 1 : -1;
     if (a.low != b.low) return a.low > b.low ? 1 : -1;
     return 0;
 }
 
-// 128位乘以64位
+// 128-bit multiply by 64-bit
 static inline uint128_t u128_mul_u64(uint128_t a, uint64_t b) {
-    // 分解为32位部分进行乘法（避免溢出）
+    // Decompose to 32-bit parts for multiplication (avoid overflow)
     uint64_t a_lo = a.low & 0xFFFFFFFFULL;
     uint64_t a_hi = a.low >> 32;
     uint64_t b_lo = b & 0xFFFFFFFFULL;
@@ -517,32 +519,32 @@ static inline uint128_t u128_mul_u64(uint128_t a, uint64_t b) {
     
     uint64_t carry = ((p0 >> 32) + (p1 & 0xFFFFFFFFULL) + (p2 & 0xFFFFFFFFULL)) >> 32;
     
-    uint128_t result;
-    result.low = p0 + (p1 << 32) + (p2 << 32);
-    result.high = p3 + (p1 >> 32) + (p2 >> 32) + carry;
-    result.high += a.high * b;  // 高位乘法
+    uint128_t results;
+    results.low = p0 + (p1 << 32) + (p2 << 32);
+    results.high = p3 + (p1 >> 32) + (p2 >> 32) + carry;
+    results.high += a.high * b;  // High bits multiplication
     
-    return result;
+    return results;
 }
 
-// 128位除以64位（返回商和余数）
+// 128-bit divide by 64-bit (return quotient and remainder)
 static inline uint64_t u128_div_u64(uint128_t* dividend, uint64_t divisor) {
-    if (divisor == 0) return 0;  // 错误处理
+    if (divisor == 0) return 0;  // Error handling
     
-    // 简化实现：用128位除法
-    // 这里使用long division算法
+    // Simplified implementation: use 128-bit division
+    // Use long division algorithm here
     uint64_t quotient = 0;
     
-    // 如果被除数小于除数，直接返回0
+    // If dividend is less than divisor, return 0 directly
     if (dividend->high == 0 && dividend->low < divisor) {
         return 0;
     }
     
-    // 长除法
+    // Long division
     for (int i = 127; i >= 0; i--) {
         quotient <<= 1;
         
-        // 检查第i位
+        // Check i-th bit
         bool bit;
         if (i >= 64) {
             bit = (dividend->high >> (i - 64)) & 1;
@@ -550,12 +552,12 @@ static inline uint64_t u128_div_u64(uint128_t* dividend, uint64_t divisor) {
             bit = (dividend->low >> i) & 1;
         }
         
-        // 构造临时被除数
+        // Construct temporary dividend
         static uint128_t temp = {0, 0};
         temp = u128_shl(temp, 1);
         if (bit) temp.low |= 1;
         
-        // 试除
+        // Trial division
         if (temp.high > 0 || temp.low >= divisor) {
             if (temp.high == 0) {
                 temp.low -= divisor;
@@ -570,12 +572,12 @@ static inline uint64_t u128_div_u64(uint128_t* dividend, uint64_t divisor) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 阶段3: fp128 ↔ double 转换（完全正确实现）
+// Phase 3: fp128 ↔ double conversion (completely correct implementation)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// fp128 → double（简化但正确的实现）
+// fp128 → double (simplified but correct implementation)
 double f128_to_double_correct(f128_t v) {
-    // 特殊值处理
+    // Special value handling
     if (f128_is_zero(v)) {
         return f128_sign(v) ? -0.0 : 0.0;
     }
@@ -586,17 +588,17 @@ double f128_to_double_correct(f128_t v) {
         return NAN;
     }
     
-    // 解析fp128
+    // Parse fp128
     f128_parts parts;
     f128_unpack(v, &parts);
     
-    // 计算实际指数
+    // Calculate actual exponent
     int32_t exp_f128 = (int32_t)parts.exponent - F128_EXP_BIAS;
     
-    // 调整为double指数
+    // Adjust to double exponent
     int32_t exp_double = exp_f128 + 1023;  // double bias
     
-    // 检查溢出/下溢
+    // Check overflow/underflow
     if (exp_double >= 2047) {
         return parts.sign ? -INFINITY : INFINITY;
     }
@@ -604,45 +606,45 @@ double f128_to_double_correct(f128_t v) {
         return parts.sign ? -0.0 : 0.0;
     }
     
-    // fp128 mantissa: 112位，存储在[mant_high(48位), mant_low(64位)]
-    // double mantissa: 52位
-    // 我们需要截断到52位
+    // fp128 mantissa: 112 bits, stored in [mant_high(48 bits), mant_low(64 bits)]
+    // double mantissa: 52 bits
+    // We need to truncate to 52 bits
     
-    // 构造113位mantissa（包含隐含1）
-    // fp128: bit 112 = 隐含1, bits [111:0] = 存储的mantissa
-    // 已存储: mant_high(48位) + mant_low(64位) = 112位
+    // Construct 113-bit mantissa (including implicit 1)
+    // fp128: bit 112 = implicit 1, bits [111:0] = stored mantissa
+    // Already stored: mant_high(48 bits) + mant_low(64 bits) = 112 bits
     
-    // 将112位mantissa转换为52位
-    // 取最高的52位：从bit[111]开始取52位 = bit[111:60]
+    // Convert 112-bit mantissa to 52 bits
+    // Take highest 52 bits: starting from bit[111], take 52 bits = bit[111:60]
     
     uint64_t mant_double;
     if (parts.mant_high != 0) {
-        // mant_high有数据：bit[111:64]在mant_high，bit[63:0]在mant_low
-        // 取bit[111:60]：
-        //   bit[111:64]的高(48-4=44)位 + bit[63:60]的4位
+        // mant_high has data: bit[111:64] in mant_high, bit[63:0] in mant_low
+        // Take bit[111:60]:
+        //   High (48-4=44) bits of bit[111:64] + 4 bits of bit[63:60]
         mant_double = (parts.mant_high << 4) | (parts.mant_low >> 60);
-        mant_double &= 0xFFFFFFFFFFFFFULL;  // 52位mask
+        mant_double &= 0xFFFFFFFFFFFFFULL;  // 52-bit mask
     } else {
-        // 只有mant_low有数据
+        // Only mant_low has data
         mant_double = parts.mant_low >> 60;
     }
     
-    // 移除隐含1（double格式不存储隐含1）
-    mant_double &= 0xFFFFFFFFFFFFFULL;  // 52位
+    // Remove implicit 1 (double format doesn't store implicit 1)
+    mant_double &= 0xFFFFFFFFFFFFFULL;  // 52 bits
     
-    // 构造double
+    // Construct double
     uint64_t double_bits = ((uint64_t)parts.sign << 63) |
                            ((uint64_t)exp_double << 52) |
                            mant_double;
     
-    double result;
-    memcpy(&result, &double_bits, sizeof(double));
-    return result;
+    double results;
+    memcpy(&results, &double_bits, sizeof(double));
+    return results;
 }
 
-// double → fp128（正确实现）
+// double → fp128 (correct implementation)
 f128_t double_to_f128_correct(double d) {
-    // 特殊值
+    // Special values
     if (d == 0.0) {
         return {0, signbit(d) ? (1ULL << 63) : 0};
     }
@@ -654,7 +656,7 @@ f128_t double_to_f128_correct(double d) {
         return {1, 0x7FFFULL << 48};
     }
     
-    // 解析double
+    // Parse double
     uint64_t double_bits;
     memcpy(&double_bits, &d, sizeof(double));
     
@@ -662,31 +664,31 @@ f128_t double_to_f128_correct(double d) {
     uint16_t exp_double = (double_bits >> 52) & 0x7FF;
     uint64_t mant_double = double_bits & 0xFFFFFFFFFFFFFULL;
     
-    // 转换指数
+    // Convert exponent
     int32_t exp_actual;
     if (exp_double == 0) {
-        // 次正规数
+        // Subnormal number
         exp_actual = 1 - 1023;
     } else {
-        // 正规数
-        mant_double |= (1ULL << 52);  // 添加隐含1
+        // Normal number
+        mant_double |= (1ULL << 52);  // Add implicit 1
         exp_actual = (int32_t)exp_double - 1023;
     }
     
-    // 转换为fp128指数
+    // Convert to fp128 exponent
     uint16_t exp_f128 = (uint16_t)(exp_actual + F128_EXP_BIAS);
     
-    // 扩展mantissa: double的53位 → fp128的113位
-    // double mantissa在bit[52:0]，fp128在bit[111:0]
-    // 需要左移59位
+    // Extend mantissa: double's 53 bits → fp128's 113 bits
+    // double mantissa at bit[52:0], fp128 at bit[111:0]
+    // Need to left shift 59 bits
     uint128_t mant_f128 = {mant_double << 59, mant_double >> 5};
     
-    // 移除隐含1（fp128存储时不包含）
+    // Remove implicit 1 (fp128 doesn't include it when storing)
     if (exp_f128 != 0) {
-        mant_f128.high &= 0xFFFFFFFFFFFFULL;  // 清除bit[48]
+        mant_f128.high &= 0xFFFFFFFFFFFFULL;  // Clear bit[48]
     }
     
-    // 打包
+    // Pack
     f128_parts parts;
     parts.sign = sign;
     parts.exponent = exp_f128;
@@ -697,22 +699,22 @@ f128_t double_to_f128_correct(double d) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 阶段4: 完整的fp128基础运算（不转换精度）
+// Phase 4: Complete fp128 basic operations (no precision loss)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// 辅助：规范化mantissa（确保最高位是1）
+// Helper: normalize mantissa (ensure highest bit is 1)
 static f128_t normalize_f128(bool sign, int32_t exp, uint128_t mant) {
 #if F128_DEBUG
     fprintf(stderr, "[NORM] Input: sign=%d, exp=%d, mant={0x%llx, 0x%llx}\n",
                  sign, exp, mant.high, mant.low);
 #endif
     
-    // 如果mantissa为0
+    // If mantissa is 0
     if (mant.low == 0 && mant.high == 0) {
         return {0, sign ? (1ULL << 63) : 0};
     }
     
-    // 找到最高位（使用CLZ - Count Leading Zeros）
+    // Find highest bit (use CLZ - Count Leading Zeros)
     int leading_zeros;
     if (mant.high != 0) {
         leading_zeros = __builtin_clzll(mant.high);
@@ -720,7 +722,7 @@ static f128_t normalize_f128(bool sign, int32_t exp, uint128_t mant) {
         leading_zeros = 64 + __builtin_clzll(mant.low);
     }
     
-    // 左移使最高位对齐到bit 112（fp128 mantissa的隐含1位置）
+    // Left shift to align highest bit to bit 112 (fp128 mantissa's implicit 1 position)
     int shift_needed = leading_zeros - 15;  // 15 = 64-49
     
     if (shift_needed > 0) {
@@ -731,7 +733,7 @@ static f128_t normalize_f128(bool sign, int32_t exp, uint128_t mant) {
         exp += -shift_needed;
     }
     
-    // 检查指数范围
+    // Check for exponent range
     if (exp >= F128_EXP_MAX) {
         return {0, ((uint64_t)sign << 63) | ((uint64_t)F128_EXP_MAX << 48)};
     }
@@ -739,29 +741,29 @@ static f128_t normalize_f128(bool sign, int32_t exp, uint128_t mant) {
         return {0, sign ? (1ULL << 63) : 0};
     }
     
-    // 打包结果（移除隐含1）
+    // Pack results (remove implicit 1)
     f128_parts parts;
     parts.sign = sign;
     parts.exponent = (uint16_t)exp;
-    parts.mant_high = mant.high & 0xFFFFFFFFFFFFULL;  // 只取低48位
+    parts.mant_high = mant.high & 0xFFFFFFFFFFFFULL;  // Only take low 48 bits
     parts.mant_low = mant.low;
     
     return f128_pack(parts);
 }
 
-// 调试辅助（可选，编译时可禁用）
+// Debug helper (optional, can be disabled at compile time)
 #define F128_DEBUG 0
 static void debug_f128(const char* label, f128_t v) {
 #if F128_DEBUG
     fprintf(stderr, "[DEBUG] %s: low=0x%016llx, high=0x%016llx\n", 
                  label, v.low, v.high);
 #endif
-    (void)label; (void)v;  // 避免unused warning
+    (void)label; (void)v;  // Avoid unused warning
 }
 
-// 完整的fp128加法（直接在113位mantissa上运算）
+// Complete fp128 addition (operate directly on 113-bit mantissa)
 f128_t f128_add_impl(f128_t a, f128_t b) {
-    // 特殊值处理
+    // Special value handling
     if (f128_is_nan(a) || f128_is_nan(b)) {
         return {1, ((uint64_t)F128_EXP_MAX << 48)};  // NaN
     }
@@ -775,16 +777,16 @@ f128_t f128_add_impl(f128_t a, f128_t b) {
     if (f128_is_zero(a)) return b;
     if (f128_is_zero(b)) return a;
     
-    // 解析操作数
+    // Parse operands
     f128_parts pa, pb;
     f128_unpack(a, &pa);
     f128_unpack(b, &pb);
     
-    // 构造完整的113位mantissa（包含隐含1）
+    // Construct complete 113-bit mantissa (including implicit 1)
     uint128_t ma = {pa.mant_low, pa.mant_high};
     uint128_t mb = {pb.mant_low, pb.mant_high};
     
-    // 添加隐含1（在bit 112位置）
+    // Add implicit 1 (at bit 112 position)
     if (pa.exponent != 0) {
         ma.high |= (1ULL << 48);  // bit 112
     }
@@ -792,76 +794,76 @@ f128_t f128_add_impl(f128_t a, f128_t b) {
         mb.high |= (1ULL << 48);
     }
     
-    // 对齐指数（将指数小的右移）
+    // Align exponents (right shift the smaller one)
     int32_t exp_a = (int32_t)pa.exponent - F128_EXP_BIAS;
     int32_t exp_b = (int32_t)pb.exponent - F128_EXP_BIAS;
     int32_t exp_diff = exp_a - exp_b;
     
-    int32_t result_exp;
-    uint128_t result_mant;
-    bool result_sign;
+    int32_t results_exp;
+    uint128_t results_mant;
+    bool results_sign;
     
     if (exp_diff > 0) {
-        // a的指数更大，右移b
+        // a's exponent is larger, right shift b
         if (exp_diff < 128) {
             mb = u128_shr(mb, exp_diff);
         } else {
-            mb = {0, 0};  // 差距太大，b变为0
+            mb = {0, 0};  // Gap too large, b becomes 0
         }
-        result_exp = exp_a;
+        results_exp = exp_a;
     } else if (exp_diff < 0) {
-        // b的指数更大，右移a
+        // b's exponent is larger, right shift a
         if (-exp_diff < 128) {
             ma = u128_shr(ma, -exp_diff);
         } else {
             ma = {0, 0};
         }
-        result_exp = exp_b;
+        results_exp = exp_b;
     } else {
-        result_exp = exp_a;
+        results_exp = exp_a;
     }
     
-    // 执行加法或减法（根据符号）
+    // Perform addition or subtraction (based on sign)
     if (pa.sign == pb.sign) {
-        // 同号：相加
-        result_mant = u128_add(ma, mb);
-        result_sign = pa.sign;
+        // Same sign: add
+        results_mant = u128_add(ma, mb);
+        results_sign = pa.sign;
         
-        // 检查是否进位（bit 113）
-        if (result_mant.high & (1ULL << 49)) {  // bit 113进位
-            result_mant = u128_shr(result_mant, 1);
-            result_exp++;
+        // Check if carry (bit 113)
+        if (results_mant.high & (1ULL << 49)) {  // bit 113 carry
+            results_mant = u128_shr(results_mant, 1);
+            results_exp++;
         }
     } else {
-        // 异号：相减（大减小）
+        // Different sign: subtract (larger - smaller)
         int cmp = u128_cmp(ma, mb);
         if (cmp > 0) {
-            result_mant = u128_sub(ma, mb);
-            result_sign = pa.sign;
+            results_mant = u128_sub(ma, mb);
+            results_sign = pa.sign;
         } else if (cmp < 0) {
-            result_mant = u128_sub(mb, ma);
-            result_sign = pb.sign;
+            results_mant = u128_sub(mb, ma);
+            results_sign = pb.sign;
         } else {
-            // 相等，结果为0
+            // Equal, results is 0
             return {0, 0};
         }
     }
     
-    // 规范化并返回
-    return normalize_f128(result_sign, result_exp + F128_EXP_BIAS, result_mant);
+    // Normalize and return
+    return normalize_f128(results_sign, results_exp + F128_EXP_BIAS, results_mant);
 }
 
-// 完整的fp128减法
+// Complete fp128 subtraction
 f128_t f128_sub_impl(f128_t a, f128_t b) {
-    // 减法 = 加上负数
-    // 翻转b的符号
+    // Subtraction = add negative
+    // Flip b's sign
     b.high ^= (1ULL << 63);
     return f128_add_impl(a, b);
 }
 
-// 完整的fp128乘法（使用256位精度）
+// Complete fp128 multiplication (using 256-bit precision)
 f128_t f128_mul_impl(f128_t a, f128_t b) {
-    // 特殊值处理
+    // Special value handling
     if (f128_is_nan(a) || f128_is_nan(b)) {
         return {1, ((uint64_t)F128_EXP_MAX << 48)};
     }
@@ -874,73 +876,73 @@ f128_t f128_mul_impl(f128_t a, f128_t b) {
         return {0, ((uint64_t)sign << 63) | ((uint64_t)F128_EXP_MAX << 48)};
     }
     
-    // 解析
+    // Parse
     f128_parts pa, pb;
     f128_unpack(a, &pa);
     f128_unpack(b, &pb);
     
-    // 结果符号
-    bool result_sign = pa.sign ^ pb.sign;
+    // Result sign
+    bool results_sign = pa.sign ^ pb.sign;
     
-    // 结果指数（乘法：指数相加）
+    // Result exponent (multiplication: add exponents)
     int32_t exp_a = (int32_t)pa.exponent - F128_EXP_BIAS;
     int32_t exp_b = (int32_t)pb.exponent - F128_EXP_BIAS;
-    int32_t result_exp = exp_a + exp_b;
+    int32_t results_exp = exp_a + exp_b;
     
-    // 构造完整113位mantissa（包含隐含1）
+    // Construct complete 113-bit mantissa (including implicit 1)
     uint128_t ma = {pa.mant_low, pa.mant_high};
     uint128_t mb = {pb.mant_low, pb.mant_high};
     
-    // 添加隐含1（在bit 112，即high的bit 48）
+    // Add implicit 1 (at bit 112, i.e. high's bit 48)
     if (pa.exponent != 0) ma.high |= (1ULL << 48);
     if (pb.exponent != 0) mb.high |= (1ULL << 48);
     
-    // 完整的128位 × 128位 = 256位乘法
+    // Complete 128-bit × 128-bit = 256-bit multiplication
     uint256_t prod256 = u128_mul_u128_full(ma, mb);
     
-    // 乘法结果：113位×113位 = 最多226位
-    // bit 225可能是1（如果两个mantissa都接近2.0）
-    // 我们需要提取bit[225:113]作为新的mantissa
+    // Multiplication results: 113-bit × 113-bit = at most 226 bits
+    // bit 225 could be 1 (if both mantissas close to 2.0)
+    // We need to extract bit[225:113] as new mantissa
     
-    // 检查最高位（bit 225 = words[3]的bit 33）
+    // Check highest bit (bit 225 = words[3]'s bit 33)
     bool need_shift = (prod256.words[3] & (1ULL << 33)) != 0;
     
     if (need_shift) {
-        // bit 225是1，右移1位并调整指数
+        // bit 225 is 1, right shift 1 bit and adjust exponent
         u256_shr(&prod256, 1);
-        result_exp++;
+        results_exp++;
     }
     
-    // 现在bit 224是最高有效位（隐含1）
-    // 提取bit[224:112]作为新mantissa（共113位）
-    // bit 224在words[3]的bit 32
-    // bit 112在words[1]的bit 48
+    // Now bit 224 is the highest significant bit (implicit 1)
+    // Extract bit[224:112] as new mantissa (total 113 bits)
+    // bit 224 at words[3]'s bit 32
+    // bit 112 at words[1]'s bit 48
     
-    // 从256位中提取113位mantissa
-    // bit[224:112]跨越words[1]的高16位和words[2]的全部64位和words[3]的低33位
+    // Extract 113-bit mantissa from 256 bits
+    // bit[224:112] spans high 16 bits of words[1], all 64 bits of words[2], and low 33 bits of words[3]
     
-    uint128_t result_mant;
-    // bit[175:112] = words[1]的bit[63:48] + words[2]的全部
-    result_mant.low = (prod256.words[1] >> 48) | (prod256.words[2] << 16);
-    // bit[224:176] = words[2]的高位 + words[3]的低位
-    result_mant.high = (prod256.words[2] >> 48) | ((prod256.words[3] & 0x1FFFFFFFFFFFF) << 16);
+    uint128_t results_mant;
+    // bit[175:112] = words[1]'s bit[63:48] + all of words[2]
+    results_mant.low = (prod256.words[1] >> 48) | (prod256.words[2] << 16);
+    // bit[224:176] = words[2]'s high bits + words[3]'s low bits
+    results_mant.high = (prod256.words[2] >> 48) | ((prod256.words[3] & 0x1FFFFFFFFFFFF) << 16);
     
-    // 规范化并返回
-    return normalize_f128(result_sign, result_exp + F128_EXP_BIAS, result_mant);
+    // Normalize and return
+    return normalize_f128(results_sign, results_exp + F128_EXP_BIAS, results_mant);
 }
 
-// 完整的128位长除法算法
+// Complete 128-bit long division algorithm
 static uint128_t u128_div_u128(uint128_t dividend, uint128_t divisor, uint128_t* remainder) {
-    // 长除法算法
+    // Long division algorithm
     uint128_t quotient = {0, 0};
     uint128_t rem = {0, 0};
     
-    // 从最高位开始逐位除
+    // Divide bit by bit from highest
     for (int i = 127; i >= 0; i--) {
-        // 左移余数
+        // Left shift remainder
         rem = u128_shl(rem, 1);
         
-        // 添加被除数的第i位
+        // Add i-th bit of dividend
         uint64_t bit_val;
         if (i >= 64) {
             bit_val = (dividend.high >> (i - 64)) & 1;
@@ -952,11 +954,11 @@ static uint128_t u128_div_u128(uint128_t dividend, uint128_t divisor, uint128_t*
             rem.low |= 1;
         }
         
-        // 如果rem >= divisor，减去并设置商的对应位
+        // If rem >= divisor, subtract and set corresponding bit of quotient
         if (u128_cmp(rem, divisor) >= 0) {
             rem = u128_sub(rem, divisor);
             
-            // 设置商的第i位
+            // Set i-th bit of quotient
             if (i >= 64) {
                 quotient.high |= (1ULL << (i - 64));
             } else {
@@ -972,14 +974,14 @@ static uint128_t u128_div_u128(uint128_t dividend, uint128_t divisor, uint128_t*
     return quotient;
 }
 
-// 完整的fp128除法（使用128位长除法）
+// Complete fp128 division (using 128-bit long division)
 f128_t f128_div_impl(f128_t a, f128_t b) {
-    // 特殊值处理
+    // Special value handling
     if (f128_is_nan(a) || f128_is_nan(b)) {
         return {1, ((uint64_t)F128_EXP_MAX << 48)};
     }
     if (f128_is_zero(b)) {
-        // 除以0
+        // Divide by 0
         bool sign = f128_sign(a) ^ f128_sign(b);
         return {0, ((uint64_t)sign << 63) | ((uint64_t)F128_EXP_MAX << 48)};  // inf
     }
@@ -999,55 +1001,55 @@ f128_t f128_div_impl(f128_t a, f128_t b) {
         return {0, sign ? (1ULL << 63) : 0};  // x/inf = 0
     }
     
-    // 解析
+    // Parse
     f128_parts pa, pb;
     f128_unpack(a, &pa);
     f128_unpack(b, &pb);
     
-    bool result_sign = pa.sign ^ pb.sign;
+    bool results_sign = pa.sign ^ pb.sign;
     
-    // 除法指数：exp_a - exp_b
+    // Division exponent: exp_a - exp_b
     int32_t exp_a = (int32_t)pa.exponent - F128_EXP_BIAS;
     int32_t exp_b = (int32_t)pb.exponent - F128_EXP_BIAS;
-    int32_t result_exp = exp_a - exp_b;
+    int32_t results_exp = exp_a - exp_b;
     
-    // 构造完整113位mantissa（包含隐含1）
+    // Construct complete 113-bit mantissa (including implicit 1)
     uint128_t ma = {pa.mant_low, pa.mant_high};
     uint128_t mb = {pb.mant_low, pb.mant_high};
     
     if (pa.exponent != 0) ma.high |= (1ULL << 48);
     if (pb.exponent != 0) mb.high |= (1ULL << 48);
     
-    // 使用完整128位长除法
-    // ma和mb都是113位（最高位在bit 112）
+    // Use complete 128-bit long division
+    // ma and mb are both 113 bits (highest bit at bit 112)
     
-    // 标准长除法
+    // Standard long division
     uint128_t quotient = {0, 0};
     uint128_t remainder = ma;
     
-    // 如果ma < mb，商 < 1.0，需要调整
+    // If ma < mb, quotient < 1.0, need adjustment
     if (u128_cmp(ma, mb) < 0) {
-        // 左移ma一位（相当于×2）
+        // Left shift ma by 1 (equivalent to ×2)
         ma = u128_shl(ma, 1);
         remainder = ma;
-        result_exp--;  // 指数-1
+        results_exp--;  // Exponent -1
     }
     
-    // 现在执行除法，商应该在[1.0, 2.0)范围
-    // 即bit 112应该是1
+    // Now perform division, quotient should be in [1.0, 2.0) range
+    // I.e. bit 112 should be 1
     
-    // 第一次试商：减去mb
+    // First trial quotient: subtract mb
     if (u128_cmp(remainder, mb) >= 0) {
         remainder = u128_sub(remainder, mb);
-        quotient.high |= (1ULL << 48);  // 设置bit 112（隐含1）
+        quotient.high |= (1ULL << 48);  // Set bit 112 (implicit 1)
     }
     
-    // 继续计算后续112位
+    // Continue calculating subsequent 112 bits
     for (int i = 111; i >= 0; i--) {
-        // 左移余数
+        // Left shift remainder
         remainder = u128_shl(remainder, 1);
         
-        // 如果remainder >= mb，设置商的bit i
+        // If remainder >= mb, set bit i of quotient
         if (u128_cmp(remainder, mb) >= 0) {
             remainder = u128_sub(remainder, mb);
             
@@ -1059,26 +1061,26 @@ f128_t f128_div_impl(f128_t a, f128_t b) {
         }
     }
     
-    // 规范化
-    return normalize_f128(result_sign, result_exp + F128_EXP_BIAS, quotient);
+    // Normalize
+    return normalize_f128(results_sign, results_exp + F128_EXP_BIAS, quotient);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 导出的C ABI函数（符合LLVM compiler-rt规范）
+// Exported C ABI functions (compliant with LLVM compiler-rt specification)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 extern "C" {
 
-// PawLang专用f128运算函数（分解传递，绕过ABI问题）
-// ARM64无法正确传递16字节struct，分解为4个uint64
+// PawLang-specific f128 operation functions (decomposed passing, bypass ABI issues)
+// ARM64 cannot correctly pass 16-byte struct, decompose to 4 uint64
 void paw_f128_add(uint64_t* ret_low, uint64_t* ret_high,
                    uint64_t a_low, uint64_t a_high,
                    uint64_t b_low, uint64_t b_high) {
     f128_t a = {a_low, a_high};
     f128_t b = {b_low, b_high};
-    f128_t result = f128_add_impl(a, b);
-    *ret_low = result.low;
-    *ret_high = result.high;
+    f128_t results = f128_add_impl(a, b);
+    *ret_low = results.low;
+    *ret_high = results.high;
 }
 
 void paw_f128_sub(uint64_t* ret_low, uint64_t* ret_high,
@@ -1086,9 +1088,9 @@ void paw_f128_sub(uint64_t* ret_low, uint64_t* ret_high,
                    uint64_t b_low, uint64_t b_high) {
     f128_t a = {a_low, a_high};
     f128_t b = {b_low, b_high};
-    f128_t result = f128_sub_impl(a, b);
-    *ret_low = result.low;
-    *ret_high = result.high;
+    f128_t results = f128_sub_impl(a, b);
+    *ret_low = results.low;
+    *ret_high = results.high;
 }
 
 void paw_f128_mul(uint64_t* ret_low, uint64_t* ret_high,
@@ -1096,9 +1098,9 @@ void paw_f128_mul(uint64_t* ret_low, uint64_t* ret_high,
                    uint64_t b_low, uint64_t b_high) {
     f128_t a = {a_low, a_high};
     f128_t b = {b_low, b_high};
-    f128_t result = f128_mul_impl(a, b);
-    *ret_low = result.low;
-    *ret_high = result.high;
+    f128_t results = f128_mul_impl(a, b);
+    *ret_low = results.low;
+    *ret_high = results.high;
 }
 
 void paw_f128_div(uint64_t* ret_low, uint64_t* ret_high,
@@ -1106,13 +1108,13 @@ void paw_f128_div(uint64_t* ret_low, uint64_t* ret_high,
                    uint64_t b_low, uint64_t b_high) {
     f128_t a = {a_low, a_high};
     f128_t b = {b_low, b_high};
-    f128_t result = f128_div_impl(a, b);
-    *ret_low = result.low;
-    *ret_high = result.high;
+    f128_t results = f128_div_impl(a, b);
+    *ret_low = results.low;
+    *ret_high = results.high;
 }
 
-// LLVM compiler-rt兼容函数（尝试支持，但ARM64 ABI有问题）
-// 暂时保留用于其他平台
+// LLVM compiler-rt compatible functions (attempted support, but ARM64 ABI has issues)
+// Kept for other platforms for now
 f128_t __addtf3(f128_t a, f128_t b) {
     return f128_add_impl(a, b);
 }
@@ -1129,7 +1131,7 @@ f128_t __divtf3(f128_t a, f128_t b) {
     return f128_div_impl(a, b);
 }
 
-// 类型转换
+// Type conversions
 f128_t __extenddftf2(double d) {
     return double_to_f128_correct(d);
 }
@@ -1138,7 +1140,7 @@ double __trunctfdf2(f128_t a) {
     return f128_to_double_correct(a);
 }
 
-// 比较操作
+// Comparison operations
 int __eqtf2(f128_t a, f128_t b) {
     double ad = f128_to_double_correct(a);
     double bd = f128_to_double_correct(b);
@@ -1174,14 +1176,14 @@ int __letf2(f128_t a, f128_t b) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 阶段5: fp128→string转换（完整34位精度）
+// Stage 5: fp128→string conversion (full 34-digit precision)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// 大整数除以10（用于十进制转换）
+// large/bigintegerdividewith/to10（used fordecimalconvert）
 static uint64_t u256_div_10(uint256_t* v) {
     uint64_t remainder = 0;
     for (int i = 3; i >= 0; i--) {
-        // 当前word + 前一个remainder
+        // Current word + previous remainder
         uint64_t dividend = v->words[i];
         uint64_t high_part = ((uint64_t)remainder << 32) | (dividend >> 32);
         uint64_t quo_high = high_part / 10;
@@ -1197,35 +1199,35 @@ static uint64_t u256_div_10(uint256_t* v) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Dragon4算法：fp128→十进制字符串（完整34位精度）
+// Dragon4 algorithm: fp128→decimal string (full 34-digit precision)ision）
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 性能优化：查找表
+// Performance optimizable: lookup table
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// 性能优化框架：10的幂次查找表（未来扩展）
-// 当前：动态计算（框架已准备，可后续添加查找表）
-// 优化潜力：对于常见幂次（0-15），查找表可提升30-50%性能
+// Performance optimization framework: powers of 10 lookup table (not yet extended)nd）
+// Current: dynamic computation (framework ready, can be extended later)lookuptable）
+// Optimization potential: for common powers (0-15), lookup table can improve performancelecanimprove30-50%performancecan
 
-// 估算十进制指数：log10(2^e) ≈ e * 0.30103
+// Estimate decimal exponent：log10(2^e) ≈ e * 0.30103
 static int estimate_decimal_exp(int32_t binary_exp) {
-    // 使用定点运算：0.30103 ≈ 19728/65536
+    // Use fixed-point operation: 0.30103 ≈ 19728/65536
     return (int)((int64_t)binary_exp * 19728 / 65536);
 }
 
-// 计算10^n（n>=0，结果存入v，256位）
+// Compute 10^n (n>=0, result stored in v, 256-bit)
 static void u256_pow10(uint256_t* v, int n) {
     u256_zero(v);
     v->words[0] = 1;
     
-    // 优化：对于小n，可以使用查找表（未来扩展）
+    // Optimization: for small n, can use lookup tableot yetfutureextend）
     for (int i = 0; i < n; i++) {
         u256_mul_u64(v, 10);
     }
 }
 
-// 计算2^n（n>=0，结果存入v）
+// Compute 2^n (n>=0, result stored in v)
 static void u256_pow2(uint256_t* v, int n) {
     u256_zero(v);
     v->words[0] = 1;
@@ -1233,16 +1235,16 @@ static void u256_pow2(uint256_t* v, int n) {
     if (n < 256) {
         u256_shl(v, n);
     } else {
-        // 溢出：设为很大的数（实际不应发生）
+        // Overflow: set as very large number (should not actually occur)
         v->words[3] = 0xFFFFFFFFFFFFFFFFULL;
     }
 }
 
-// fp128→十进制字符串（Dragon4算法，34位精度）
+// fp128→decimal string (Dragon4 algorithm, 34-digit precision)
 void paw_f128_to_string_decimal(uint64_t low, uint64_t high, char* buffer, size_t buf_size) {
     f128_t v = {low, high};
     
-    // 特殊值
+    // specialvalue
     if (f128_is_zero(v)) {
         snprintf(buffer, buf_size, "%s0", f128_sign(v) ? "-" : "");
         return;
@@ -1256,58 +1258,58 @@ void paw_f128_to_string_decimal(uint64_t low, uint64_t high, char* buffer, size_
         return;
     }
     
-    // 解析
+    // parsing
     f128_parts parts;
     f128_unpack(v, &parts);
     
-    // Dragon4算法
-    // 表示v = f × 2^e，其中f是mantissa（[1.0, 2.0)），e是exponent
+    // Dragon4 algorithm
+    // Represent v = f × 2^e, where f is mantissa ([1.0, 2.0)), e is exponent
     
-    // 提取mantissa（113位，归一化到[1.0, 2.0)）
-    // 使用512位以获得完整34位精度
+    // Extract mantissa (113 bits, normalized to [1.0, 2.0))
+    // Use 512 bits to get full 34-digit precision
     uint512_t r, s;  // r/s = v
     
-    // mantissa包含隐含1
+    // Mantissa includes implicit 1
     u512_zero(&r);
     r.words[0] = parts.mant_low;
     r.words[1] = parts.mant_high;
     if (parts.exponent != 0) {
-        r.words[1] |= (1ULL << 48);  // 添加隐含1
+        r.words[1] |= (1ULL << 48);  // Add implicit 1
     }
     
-    // 实际指数（注意：fp128的mantissa已经是[1.0,2.0)，不需要再除以2^112！）
+    // Actual exponent (Note: fp128's mantissa is already [1.0,2.0), no need to divide by 2^112 again!)
     int32_t e = (int32_t)parts.exponent - F128_EXP_BIAS;
     
-    // 估算十进制指数
+    // Estimate decimal exponent
     int k = estimate_decimal_exp(e) + 1;
     
-    // 设置s = 10^k（512位）
+    // Set s = 10^k (512-bit)
     u512_pow10(&s, k >= 0 ? k : -k);
     
-    // Dragon4核心：设置r和s使得 v = r/s
-    // v = mantissa × 2^e，其中mantissa在[1.0, 2.0)
+    // Dragon4 core: set r and s such that v = r/s
+    // v = mantissa × 2^e, where mantissa is in [1.0, 2.0)
     // 
-    // 我们将mantissa表示为113位整数（bit 112=1）
-    // 所以需要 v = (mantissa_int / 2^112) × 2^e = mantissa_int × 2^(e-112)
+    // We represent mantissa as 113-bit integer (bit 112=1)
+    // So we need v = (mantissa_int / 2^112) × 2^e = mantissa_int × 2^(e-112)
     
-    int32_t e_adjusted = e - 112;  // 调整指数
+    int32_t e_adjusted = e - 112;  // Adjust exponent
     
-    // 调整r和s（512位操作）
+    // Adjust r and s (512-bit operations)
     if (e_adjusted >= 0) {
         // r = mantissa_int × 2^e_adjusted
         if (e_adjusted < 512) {
             u512_shl(&r, e_adjusted);
         }
-        // s = 10^k（已设置）
+        // s = 10^k (already set)
     } else {
-        // r = mantissa_int（已设置）
+        // r = mantissa_int (already set)
         // s = 2^(-e_adjusted) × 10^k
         if (-e_adjusted < 512) {
             u512_shl(&s, -e_adjusted);
         }
     }
     
-    // 调整k使得r/s在[0.1, 1.0)范围
+    // Adjust k to make r/s in [0.1, 1.0) range
     uint512_t r_times_10 = r;
     u512_mul_u64(&r_times_10, 10);
     
@@ -1323,16 +1325,16 @@ void paw_f128_to_string_decimal(uint64_t low, uint64_t high, char* buffer, size_
         k++;
     }
     
-    // 现在 0.1 <= r/s < 1.0
-    // 提取十进制数字（512位精度，支持完整34位）
+    // Now 0.1 <= r/s < 1.0
+    // Extract decimal digits (512-bit precision, support full 34 digits)
     char digits[40];
     int digit_count = 0;
     
-    for (int i = 0; i < 38 && !u512_is_zero(&r); i++) {  // 最多38位（超过34位）
+    for (int i = 0; i < 38 && !u512_is_zero(&r); i++) {  // At most 38 digits (exceeds 34)
         // digit = floor(r * 10 / s)
         u512_mul_u64(&r, 10);
         
-        // 计算r/s的整数部分（0-9）
+        // Calculate integer part of r/s (0-9)
         int digit = 0;
         while (u512_cmp(&r, &s) >= 0) {
             u512_sub(&r, &s);
@@ -1341,7 +1343,7 @@ void paw_f128_to_string_decimal(uint64_t low, uint64_t high, char* buffer, size_
         
         digits[digit_count++] = '0' + digit;
         
-        // 如果余数为0且已有足够精度，停止
+        // If remainder is 0 and has enough precision, stop
         if (u512_is_zero(&r) && digit_count >= 34) {
             break;
         }
@@ -1351,9 +1353,9 @@ void paw_f128_to_string_decimal(uint64_t low, uint64_t high, char* buffer, size_
         digits[digit_count++] = '0';
     }
     
-    // 智能格式选择：科学计数法 vs 固定小数点
-    // 如果指数在[-6, 15]范围内，使用固定小数点格式
-    // 否则使用科学计数法
+    // Smart format selection: scientific notation vs fixed decimal point
+    // If exponent in [-6, 15] range, use fixed decimal point format
+    // Otherwise use scientific notation
     int decimal_exp = k - 1;
     bool use_fixed = (decimal_exp >= -6 && decimal_exp <= 15);
     
@@ -1362,44 +1364,44 @@ void paw_f128_to_string_decimal(uint64_t low, uint64_t high, char* buffer, size_
     
     if (use_fixed) {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // 固定小数点格式：123.456789...
+        // Fixed decimal point format: 123.456789...
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
-        int integer_digits = decimal_exp + 1;  // 整数部分位数
-        int decimal_digits = 0;                 // 小数部分位数
+        int integer_digits = decimal_exp + 1;  // Integer part digits
+        int decimal_digits = 0;                 // Decimal part digits
         
         if (integer_digits <= 0) {
-            // 纯小数：0.001234...
+            // Pure decimal: 0.001234...
             *p++ = '0';
             *p++ = '.';
             
-            // 添加前导零
+            // Add leading zeros
             for (int i = 0; i < -integer_digits; i++) {
                 *p++ = '0';
             }
             
-            // 输出所有有效数字作为小数部分
+            // Output all significant digits as decimal part
             int max_decimal = (digit_count > 33) ? 33 : digit_count;
             for (int i = 0; i < max_decimal; i++) {
                 *p++ = digits[i];
             }
         } else if (integer_digits >= digit_count) {
-            // 纯整数：123456
+            // Pure integer: 123456
             for (int i = 0; i < digit_count; i++) {
                 *p++ = digits[i];
             }
-            // 补充尾随零
+            // Append trailing zeros
             for (int i = digit_count; i < integer_digits; i++) {
                 *p++ = '0';
             }
         } else {
-            // 混合：整数部分 + 小数部分
-            // 整数部分
+            // Mixed: integer part + decimal part
+            // Integer part
             for (int i = 0; i < integer_digits; i++) {
                 *p++ = digits[i];
             }
             
-            // 小数部分
+            // Decimal part
             if (integer_digits < digit_count) {
                 *p++ = '.';
                 int max_decimal = (digit_count - integer_digits > 33) ? 33 : (digit_count - integer_digits);
@@ -1414,7 +1416,7 @@ void paw_f128_to_string_decimal(uint64_t low, uint64_t high, char* buffer, size_
         }
     } else {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // 科学计数法：d.ddd...e±k
+        // Scientific notation: d.ddd...e±k
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         *p++ = digits[0];
         if (digit_count > 1) {
@@ -1425,7 +1427,7 @@ void paw_f128_to_string_decimal(uint64_t low, uint64_t high, char* buffer, size_
             }
         }
         
-        // 添加指数
+        // Add exponent
         p += snprintf(p, buffer + buf_size - p, "e%+d", decimal_exp);
     }
     

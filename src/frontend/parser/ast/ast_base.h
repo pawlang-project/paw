@@ -14,10 +14,10 @@
 
 namespace pawc {
 
-// 前向声明
+// Forward declaration
 class ASTVisitor;
 
-/// ASTNode - 所有AST节点的基类
+/// ASTNode - Base class for all AST nodes
 class ASTNode {
 public:
     virtual ~ASTNode() = default;
@@ -31,7 +31,7 @@ protected:
     SourceLocation location_;
 };
 
-/// Expr - 表达式基类
+/// Expr - Expression base class
 class Expr : public ASTNode {
 public:
     Type* getType() const { return type_; }
@@ -41,16 +41,16 @@ protected:
     Type* type_ = nullptr;
 };
 
-/// Stmt - 语句基类
+/// Stmt - Statement base class
 class Stmt : public ASTNode {};
 
-/// Decl - 声明基类
+/// Decl - Declaration base class
 class Decl : public ASTNode {};
 
-/// Pattern - 模式基类（用于match）
+/// Pattern - Pattern base class (used for match)
 class Pattern : public ASTNode {};
 
-// 智能指针别名
+// Smart pointer aliases
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
 using DeclPtr = std::unique_ptr<Decl>;

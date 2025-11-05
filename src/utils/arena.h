@@ -1,4 +1,7 @@
 //===--- arena.h - Arena Allocator --------------------------------*- C++ -*-===//
+/// @file arena.h
+/// @brief Compiler infrastructure
+///
 
 #ifndef PAW_ARENA_H
 #define PAW_ARENA_H

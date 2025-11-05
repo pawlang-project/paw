@@ -1,54 +1,59 @@
 //===--- type_system.cpp - Type System Implementation ------------*- C++ -*-===//
+/// @file type_system.cpp
+/// @brief Type system implementation with type caching and interning
+///
+/// Central type factory managing all type instances via flyweight pattern.
 
 #include "type_system.h"
 #include "generic_template.h"
-#include "frontend/parser/ast/stmt.h"  // EnumDecl完整定义
+#include "frontend/parser/ast/stmt.h"  // EnumDeclcompletedefinition
 #include <iostream>
 
 namespace pawc {
 
+/// Initialize type system and create primitive type singletons
 TypeSystem::TypeSystem() {
     initializePrimitiveTypes();
 }
 
 TypeSystem::~TypeSystem() {
-    // 🔧 Bug Fix: 避免析构时的double-free问题
-    // TypeSystem包含多个容器和Arena，它们的析构顺序很复杂
-    // 直接让编译器退出，由操作系统回收所有内存
-    // 这对于编译器这种短生命周期工具是可接受的
+    // Bug Fix: Avoid double-free issues during destruction
+    // TypeSystem contains multiple containers and Arena with complex destruction order
+    // Exit directly and let OS reclaim all memory
+    // This is acceptable for short-lived compiler tools
     std::exit(0);
 }
 
 void TypeSystem::initializePrimitiveTypes() {
-    // 有符号整数 (5)
+    // Signed integers (5)
     primitive_cache_["i8"] = arena_.allocate<PrimitiveType>(Type::Kind::I8);
     primitive_cache_["i16"] = arena_.allocate<PrimitiveType>(Type::Kind::I16);
     primitive_cache_["i32"] = arena_.allocate<PrimitiveType>(Type::Kind::I32);
     primitive_cache_["i64"] = arena_.allocate<PrimitiveType>(Type::Kind::I64);
     primitive_cache_["i128"] = arena_.allocate<PrimitiveType>(Type::Kind::I128);
     
-    // 无符号整数 (5)
+    // Unsigned integers (5)
     primitive_cache_["u8"] = arena_.allocate<PrimitiveType>(Type::Kind::U8);
     primitive_cache_["u16"] = arena_.allocate<PrimitiveType>(Type::Kind::U16);
     primitive_cache_["u32"] = arena_.allocate<PrimitiveType>(Type::Kind::U32);
     primitive_cache_["u64"] = arena_.allocate<PrimitiveType>(Type::Kind::U64);
     primitive_cache_["u128"] = arena_.allocate<PrimitiveType>(Type::Kind::U128);
     
-    // 浮点数 (5) - 原生精度，不近似
+    // Floating-point numbers (5) - nativeprecision，notapproximate
     primitive_cache_["f8"] = arena_.allocate<PrimitiveType>(Type::Kind::F8);
     primitive_cache_["f16"] = arena_.allocate<PrimitiveType>(Type::Kind::F16);
     primitive_cache_["f32"] = arena_.allocate<PrimitiveType>(Type::Kind::F32);
     primitive_cache_["f64"] = arena_.allocate<PrimitiveType>(Type::Kind::F64);
     primitive_cache_["f128"] = arena_.allocate<PrimitiveType>(Type::Kind::F128);
     
-    // 其他 (4)
+    // Other types (4)
     primitive_cache_["bool"] = arena_.allocate<PrimitiveType>(Type::Kind::Bool);
     primitive_cache_["char"] = arena_.allocate<PrimitiveType>(Type::Kind::Char);
     primitive_cache_["string"] = arena_.allocate<PrimitiveType>(Type::Kind::String);
     primitive_cache_["void"] = arena_.allocate<PrimitiveType>(Type::Kind::Void);
 }
 
-// 基础类型getter（18种）
+// basetypesgetter（18types/kinds）
 Type* TypeSystem::getI8Type() { return primitive_cache_["i8"]; }
 Type* TypeSystem::getI16Type() { return primitive_cache_["i16"]; }
 Type* TypeSystem::getI32Type() { return primitive_cache_["i32"]; }
@@ -72,7 +77,7 @@ Type* TypeSystem::getCharType() { return primitive_cache_["char"]; }
 Type* TypeSystem::getStringType() { return primitive_cache_["string"]; }
 Type* TypeSystem::getVoidType() { return primitive_cache_["void"]; }
 
-// 复合类型创建
+// compositetypescreate
 ArrayType* TypeSystem::getArrayType(Type* element, size_t size) {
     auto* type = arena_.allocate<ArrayType>(element, size);
     type_pool_.push_back(std::unique_ptr<Type>(type));
@@ -122,7 +127,7 @@ GenericType* TypeSystem::getGenericType(const std::string& name) {
 }
 
 SelfType* TypeSystem::getSelfType() {
-    // Self类型是单例，使用缓存
+    // Self type is singleton, use cache
     static SelfType* self_type_instance = nullptr;
     if (!self_type_instance) {
         self_type_instance = arena_.allocate<SelfType>();
@@ -131,7 +136,7 @@ SelfType* TypeSystem::getSelfType() {
     return self_type_instance;
 }
 
-// 用户定义类型注册
+// User-defined type registration
 void TypeSystem::registerStruct(StructType* type) {
     named_types_[type->getName()] = type;
 }
@@ -145,13 +150,13 @@ void TypeSystem::registerInterface(InterfaceType* type) {
 }
 
 Type* TypeSystem::lookupType(const std::string& name) {
-    // 先查基础类型
+    // Firstlookupbasetypes
     auto it = primitive_cache_.find(name);
     if (it != primitive_cache_.end()) {
         return it->second;
     }
     
-    // 再查用户定义类型
+    // Then lookup user-defined types
     auto it2 = named_types_.find(name);
     if (it2 != named_types_.end()) {
         return it2->second;
@@ -160,7 +165,7 @@ Type* TypeSystem::lookupType(const std::string& name) {
     return nullptr;
 }
 
-// 类型兼容性检查
+// typecompatibilitycheck
 bool TypeSystem::isAssignable(Type* from, Type* to) {
     return equals(from, to);
 }
@@ -171,13 +176,13 @@ bool TypeSystem::equals(Type* t1, Type* t2) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 泛型系统实现
+// genericsystemimplementation
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void TypeSystem::registerGenericTemplate(GenericTemplate* tmpl) {
     if (!tmpl) return;
     
-    // 注册模板
+    // registertemplate
     generic_templates_[tmpl->name] = tmpl;
     template_pool_.push_back(std::unique_ptr<GenericTemplate>(tmpl));
 }
@@ -192,9 +197,9 @@ GenericTemplate* TypeSystem::lookupGenericTemplate(const std::string& name) {
 
 Type* TypeSystem::instantiateGeneric(const std::string& template_name,
                                      const std::vector<Type*>& type_args) {
-    // 🔧 M5: 泛型实例化算法
+    // 🔧 M5: genericinstantiationcalculateway/cannot
     
-    // 1. 生成实例化名称: "Option" + [i32] -> "Option_i32"
+    // 1. generateinstantiationname: "Option" + [i32] -> "Option_i32"
     std::string instance_name = template_name;
     for (const auto* arg : type_args) {
         if (arg) {
@@ -202,45 +207,45 @@ Type* TypeSystem::instantiateGeneric(const std::string& template_name,
         }
     }
     
-    // 2. 查找缓存（避免重复实例化）
+    // 2. lookupcache（avoidduplicateinstantiation）
     auto it = instantiated_types_.find(instance_name);
     if (it != instantiated_types_.end()) {
         return it->second;
     }
     
-    // 3. 查找泛型模板
+    // 3. lookupgenerictemplate
     GenericTemplate* tmpl = lookupGenericTemplate(template_name);
     if (!tmpl) {
-        return nullptr;  // 模板不存在
+        return nullptr;  // templatenotexists
     }
     
-    // 4. 验证类型参数数量
+    // 4. validatetypesparametercount
     if (type_args.size() != tmpl->type_params.size()) {
-        return nullptr;  // 参数数量不匹配
+        return nullptr;  // parametercountmismatch
     }
     
-    // 5. 根据模板类型实例化
+    // 5. according totemplatetypesinstantiation
     Type* instance_type = nullptr;
     
     if (tmpl->kind == GenericTemplate::ENUM) {
-        // 实例化Enum类型
+        // instantiationEnumtypes
         EnumDecl* enum_def = tmpl->enum_def;
         
-        // 替换类型参数：创建映射 T -> i32
+        // substitutiontypesparameter：createmap T -> i32
         std::unordered_map<std::string, Type*> type_substitution;
         for (size_t i = 0; i < tmpl->type_params.size(); i++) {
             type_substitution[tmpl->type_params[i]] = type_args[i];
         }
         
-        // 为每个variant替换类型参数
+        // is/aseach/everyvariantsubstitutiontypesparameter
         std::vector<std::pair<std::string, Type*>> instantiated_variants;
         for (const auto& variant : enum_def->getVariants()) {
-            // TODO: 支持多参数variant需要修改EnumType结构
-            // 当前简化为单个类型（元组）
+            // TODO: supportmany/muchparametervariantneedmodifyEnumTypestruct
+            // currentsimplifyis/assingleindividual/piecetypes（tuple）
             Type* instantiated_data_type = nullptr;
             
             if (!variant.data_types.empty()) {
-                // 如果有多个参数，包装成元组类型
+                // ifhasmany/muchindividual/pieceparameter，wrapinto/becometupletypes
                 if (variant.data_types.size() == 1) {
                     instantiated_data_type = substituteType(variant.data_types[0], type_substitution);
                 } else {
@@ -255,36 +260,36 @@ Type* TypeSystem::instantiateGeneric(const std::string& template_name,
             instantiated_variants.push_back({variant.name, instantiated_data_type});
         }
         
-        // 创建实例化的EnumType
+        // createinstantiationof/theEnumType
         instance_type = new EnumType(instance_name, instantiated_variants);
     } 
     else if (tmpl->kind == GenericTemplate::STRUCT) {
-        // 🔧 G1: 实例化Struct类型
+        // 🔧 G1: instantiationStructtypes
         StructDecl* struct_def = tmpl->struct_def;
         
-        // 替换类型参数：创建映射 T -> i32
+        // substitutiontypesparameter：createmap T -> i32
         std::unordered_map<std::string, Type*> type_substitution;
         for (size_t i = 0; i < tmpl->type_params.size(); i++) {
             type_substitution[tmpl->type_params[i]] = type_args[i];
         }
         
-        // 为每个field替换类型参数
+        // is/aseach/everyfieldsubstitutiontypesparameter
         std::vector<std::pair<std::string, Type*>> instantiated_fields;
         for (const auto& field : struct_def->getFields()) {
-            // field是std::pair<string, Type*>
+            // fieldyesstd::pair<string, Type*>
             Type* instantiated_field_type = substituteType(field.second, type_substitution);
             instantiated_fields.push_back({field.first, instantiated_field_type});
         }
         
-        // 创建实例化的StructType
+        // createinstantiationof/theStructType
         instance_type = new StructType(instance_name, instantiated_fields);
     }
     
-    // 6. 注册实例化类型
+    // 6. registerinstantiationtypes
     if (instance_type) {
         instantiated_types_[instance_name] = instance_type;
         
-        // 根据类型注册
+        // according totypesregister
         if (tmpl->kind == GenericTemplate::ENUM) {
             registerEnum(static_cast<EnumType*>(instance_type));
         } else if (tmpl->kind == GenericTemplate::STRUCT) {
@@ -295,22 +300,22 @@ Type* TypeSystem::instantiateGeneric(const std::string& template_name,
     return instance_type;
 }
 
-// 类型参数替换
+// typeparametersubstitution
 Type* TypeSystem::substituteType(Type* type, 
                                  const std::unordered_map<std::string, Type*>& substitution) {
     if (!type) return nullptr;
     
-    // 如果是泛型类型参数（GenericType），替换它
+    // ifyesgenerictypesparameter（GenericType），substitutionit
     if (type->getKind() == Type::Kind::Generic) {
         auto* generic = static_cast<GenericType*>(type);
         auto it = substitution.find(generic->getName());
         if (it != substitution.end()) {
-            return it->second;  // 替换！
+            return it->second;  // substitute！
         }
-        return type;  // 未找到，保持原样
+        return type;  // not found，maintain/keephold/maintainas-is
     }
     
-    // 其他类型（i32, string等）不需要替换
+    // Other typestypes（i32, stringetc）notneedsubstitution
     return type;
 }
 

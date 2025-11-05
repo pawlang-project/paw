@@ -1,4 +1,6 @@
 //===--- capture_analyzer.cpp - Closure Capture Analysis -------*- C++ -*-===//
+/// @file capture_analyzer.cpp
+/// @brief Type system and semantic analysis implementation
 
 #include "capture_analyzer.h"
 #include "frontend/parser/ast/pattern.h"
@@ -10,38 +12,38 @@ std::vector<ClosureExpr::CapturedVar> CaptureAnalyzer::analyze(
     Expr* body, 
     const std::vector<ClosureExpr::Param>& params) {
     
-    // 清空之前的分析结果
+    // clearemptybeforeof/theanalysisresults
     local_vars_stack_.clear();
     captured_vars_.clear();
     closure_depth_ = 0;
     
-    // 创建第一层作用域
+    // createtheone/alayer/levelscope
     enterScope();
     
-    // 1. 将闭包参数添加到当前作用域（它们不是捕获变量）
+    // 1. willclosureparameteraddtocurrentscope（they/themnotyescapturevariable）
     for (const auto& param : params) {
         local_vars_stack_.back().insert(param.name);
     }
     
-    // 2. 遍历闭包体
+    // 2. traverseclosurebody/struct
     if (body) {
         body->accept(this);
     }
     
-    // 退出作用域
+    // exitscope
     exitScope();
     
-    // 3. 构建捕获变量列表
-    std::vector<ClosureExpr::CapturedVar> result;
+    // 3. build/constructcapturevariablelist
+    std::vector<ClosureExpr::CapturedVar> results;
     for (const auto& var_name : captured_vars_) {
-        // 从符号表查找类型
+        // fromsymboltablelookuptypes
         VariableSymbol* var = symbols_->lookupVariable(var_name);
         if (var) {
-            result.emplace_back(var_name, var->getType(), false);  // 默认值捕获
+            results.emplace_back(var_name, var->getType(), false);  // defaultvaluecapture
         }
     }
     
-    return result;
+    return results;
 }
 
 void CaptureAnalyzer::enterScope() {
@@ -55,7 +57,7 @@ void CaptureAnalyzer::exitScope() {
 }
 
 bool CaptureAnalyzer::isLocalVariable(const std::string& name) const {
-    // 检查所有作用域栈
+    // CheckAllscopestack
     for (const auto& scope : local_vars_stack_) {
         if (scope.find(name) != scope.end()) {
             return true;
@@ -67,9 +69,9 @@ bool CaptureAnalyzer::isLocalVariable(const std::string& name) const {
 void CaptureAnalyzer::visit(IdentifierExpr* node) {
     const std::string& name = node->getName();
     
-    // 如果不是局部变量，则是捕获变量
+    // ifnotyeslocalvariable，otherwiseyescapturevariable
     if (!isLocalVariable(name)) {
-        // 检查是否在外部作用域存在
+        // Checkyesnoin/atexternal/outsidescopeexists
         if (symbols_->lookupVariable(name)) {
             captured_vars_.insert(name);
             std::cerr << "[CaptureAnalyzer] Captured variable: " << name << std::endl;
@@ -111,14 +113,14 @@ void CaptureAnalyzer::visit(IfExpr* node) {
 }
 
 void CaptureAnalyzer::visit(BlockExpr* node) {
-    // 🔧 进入新作用域
+    // 🔧 enternewscope
     enterScope();
     
     for (const auto& stmt : node->getStmts()) {
         stmt->accept(this);
     }
     
-    // 🔧 退出作用域（局部变量不再可见）
+    // 🔧 exitscope（localvariablenotno longer/againvisible）
     exitScope();
 }
 
@@ -148,47 +150,47 @@ void CaptureAnalyzer::visit(StructLiteral* node) {
 void CaptureAnalyzer::visit(MatchExpr* node) {
     node->getScrutinee()->accept(this);
     for (const auto& arm : node->getArms()) {
-        // 🔧 每个match arm都是一个新作用域
+        // 🔧 each/everymatch armallyesone/aindividual/piecenewscope
         enterScope();
         
-        // 访问pattern（定义新变量）
+        // visitpattern（definitionnewvariable）
         arm.pattern->accept(this);
         
-        // 访问arm的expression
+        // visitarmof/theexpression
         arm.expression->accept(this);
         
-        // 🔧 退出arm作用域
+        // 🔧 exitarmscope
         exitScope();
     }
 }
 
 void CaptureAnalyzer::visit(ClosureExpr* node) {
-    // 🔧 嵌套闭包：递归分析其捕获
-    // 嵌套闭包可能捕获外层闭包的参数和捕获变量
+    // 🔧 nestedclosure：recursionanalysisitscapture
+    // nestedclosurepossiblycaptureoutsidelayer/levelclosureof/theparameterandcapturevariable
     
     closure_depth_++;
     
     if (closure_depth_ > 10) {
-        // 防止过深嵌套导致问题
+        // preventtoodeepnestedcause/lead toproblem/issue
         std::cerr << "[CaptureAnalyzer] Warning: Nested closure depth > 10" << std::endl;
         closure_depth_--;
         return;
     }
     
-    // 创建新作用域
+    // createnewscope
     enterScope();
     
-    // 添加嵌套闭包的参数
+    // addnestedclosureof/theparameter
     for (const auto& param : node->getParams()) {
         local_vars_stack_.back().insert(param.name);
     }
     
-    // 分析嵌套闭包的body
+    // analysisnestedclosureof/thebody
     if (node->getBody()) {
         node->getBody()->accept(this);
     }
     
-    // 退出嵌套闭包作用域
+    // exitnestedclosurescope
     exitScope();
     
     closure_depth_--;
@@ -205,24 +207,24 @@ void CaptureAnalyzer::visit(ExprStmt* node) {
 }
 
 void CaptureAnalyzer::visit(VarDecl* node) {
-    // 先检查初始值（可能引用外部变量）
+    // Firstcheckinitialvalue（possiblyreferenceexternal/outsidevariable）
     if (node->getInit()) {
         node->getInit()->accept(this);
     }
     
-    // 然后添加到当前作用域的局部变量
+    // thenback/afteraddtocurrentscopeof/thelocalvariable
     if (!local_vars_stack_.empty()) {
         local_vars_stack_.back().insert(node->getName());
     }
 }
 
 void CaptureAnalyzer::visit(DestructuringDecl* node) {
-    // 先检查初始值
+    // Firstcheckinitialvalue
     if (node->getInit()) {
         node->getInit()->accept(this);
     }
     
-    // 然后添加到当前作用域的局部变量
+    // thenback/afteraddtocurrentscopeof/thelocalvariable
     if (!local_vars_stack_.empty()) {
         for (const auto& name : node->getNames()) {
             local_vars_stack_.back().insert(name);
@@ -231,12 +233,12 @@ void CaptureAnalyzer::visit(DestructuringDecl* node) {
 }
 
 void CaptureAnalyzer::visit(StructDestructuringDecl* node) {
-    // 先检查初始值
+    // Firstcheckinitialvalue
     if (node->getInit()) {
         node->getInit()->accept(this);
     }
     
-    // 然后添加到当前作用域的局部变量
+    // thenback/afteraddtocurrentscopeof/thelocalvariable
     if (!local_vars_stack_.empty()) {
         for (const auto& name : node->getFieldNames()) {
             local_vars_stack_.back().insert(name);
@@ -259,7 +261,7 @@ void CaptureAnalyzer::visit(IfStmt* node) {
 }
 
 void CaptureAnalyzer::visit(LoopStmt* node) {
-    // 简化实现：只遍历body
+    // simplifyimplementation：onlytraversebody
     node->getBody()->accept(this);
 }
 
@@ -269,24 +271,24 @@ void CaptureAnalyzer::visit(WhileStmt* node) {
 }
 
 void CaptureAnalyzer::visit(BlockStmt* node) {
-    // 🔧 进入新作用域
+    // 🔧 enternewscope
     enterScope();
     
     for (const auto& stmt : node->getStmts()) {
         stmt->accept(this);
     }
     
-    // 🔧 退出作用域（局部变量不再可见）
+    // 🔧 exitscope（localvariablenotno longer/againvisible）
     exitScope();
 }
 
 void CaptureAnalyzer::visit(ForStmt* node) {
-    // ForStmt暂时不使用，简化实现
-    // PawLang使用统一的loop关键字
+    // ForStmttemporarilytime/whennotuse，simplifyimplementation
+    // PawLang uses unified loop keyword
 }
 
 void CaptureAnalyzer::visit(VariablePattern* node) {
-    // Pattern绑定的变量是当前作用域的局部变量
+    // Patternbindof/thevariableyescurrentscopeof/thelocalvariable
     if (!local_vars_stack_.empty()) {
         local_vars_stack_.back().insert(node->getName());
     }
@@ -299,7 +301,7 @@ void CaptureAnalyzer::visit(TuplePattern* node) {
 }
 
 void CaptureAnalyzer::visit(EnumPattern* node) {
-    // EnumPattern可能有嵌套pattern
+    // EnumPatternpossiblyhasnestedpattern
     const auto& inner_patterns = node->getInnerPatterns();
     for (const auto& pattern : inner_patterns) {
         pattern->accept(this);
@@ -307,21 +309,21 @@ void CaptureAnalyzer::visit(EnumPattern* node) {
 }
 
 void CaptureAnalyzer::visit(StructPattern* node) {
-    // 结构体模式绑定字段变量
+    // structbody/structpatternbindfieldvariable
     for (const auto& field : node->getFields()) {
         field.pattern->accept(this);
     }
 }
 
 void CaptureAnalyzer::visit(ArrayPattern* node) {
-    // 数组模式绑定元素变量
+    // arraypatternbindelementvariable
     for (const auto& elem : node->getElements()) {
         elem->accept(this);
     }
 }
 
 void CaptureAnalyzer::visit(SlicePattern* node) {
-    // Slice模式绑定变量
+    // Slicepatternbindvariable
     for (const auto& prefix : node->getPrefix()) {
         prefix->accept(this);
     }
@@ -334,7 +336,7 @@ void CaptureAnalyzer::visit(SlicePattern* node) {
 }
 
 void CaptureAnalyzer::visit(OrPattern* node) {
-    // OR模式：遍历所有分支
+    // ORpattern：traverseAllbranch
     for (const auto& alt : node->getAlternatives()) {
         alt->accept(this);
     }

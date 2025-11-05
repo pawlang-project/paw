@@ -1,6 +1,6 @@
 //===--- type_inference.h - Type Inference ----------------------*- C++ -*-===//
 //
-// 类型推导 - 从表达式推导类型
+// typeinfer - fromexpressioninfertypes
 //
 //===----------------------------------------------------------------------===//
 
@@ -14,45 +14,45 @@ namespace pawc {
 class Expr;
 class Type;
 
-/// TypeInference - 类型推导器
+/// TypeInference - typesinferlinker/er
 ///
-/// 负责从表达式推导类型，支持：
-/// - 字面量类型推导
-/// - 二元运算类型推导
-/// - 函数调用返回类型推导
-/// - 数组和元组类型推导
-/// - 结构体字面量类型推导
+/// negativeresponsiblefromexpressioninfertypes，support：
+/// - literaltypesinfer
+/// - binary operationstypesinfer
+/// - functioncallreturntypesinfer
+/// - arrayandtupletypesinfer
+/// - structbody/structliteraltypesinfer
 class TypeInference {
     SemanticContext* context_;
     
 public:
     explicit TypeInference(SemanticContext* context);
     
-    /// 从表达式推导类型（主入口）
+    /// fromexpressioninfertypes（mainentry point）
     Type* inferType(Expr* expr);
     
-    /// 从字面量推导
+    /// fromliteralinfer
     Type* inferFromLiteral(Expr* literal);
     
-    /// 从二元运算推导
+    /// frombinary operationsinfer
     Type* inferFromBinaryOp(Expr* left, Expr* right, const std::string& op);
     
-    /// 从数组字面量推导
+    /// fromarrayliteralinfer
     Type* inferFromArrayLiteral(class ArrayLiteral* arr);
     
-    /// 从元组推导
+    /// fromtupleinfer
     Type* inferFromTuple(class TupleExpr* tuple);
     
-    /// 从if表达式推导
+    /// fromifexpressioninfer
     Type* inferFromIfExpr(class IfExpr* if_expr);
     
-    /// 从结构体字面量推导
+    /// fromstructbody/structliteralinfer
     Type* inferFromStructLiteral(class StructLiteral* struct_lit);
     
-    /// 从函数调用推导
+    /// fromfunctioncallinfer
     Type* inferFromCallExpr(class CallExpr* call);
     
-    /// 推导公共类型（用于if表达式等）
+    /// infercommon/publictypes（used forifexpressionetc）
     Type* inferCommonType(Type* t1, Type* t2);
 };
 

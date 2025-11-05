@@ -1,7 +1,9 @@
 //===--- binary_codegen.cpp - Binary/Unary Expr CodeGen ---------*- C++ -*-===//
+/// @file binary_codegen.cpp
+/// @brief Code generation implementation
 //
-// 二元和一元运算代码生成
-// 从expr_codegen.cpp中提取
+// binaryandunary operationscode generation
+// fromexpr_codegen.cppmiddle/centerextract
 //
 //===----------------------------------------------------------------------===//
 
@@ -12,23 +14,23 @@
 namespace pawc {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 二元运算
+// binary operations
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ExprCodeGen::visit(BinaryExpr* node) {
-    // 生成左右操作数
+    // generationleftrightoperationnumber
     node->getLeft()->accept(this);
-    llvm::Value* left = result_;
+    llvm::Value* left = results_;
     
     node->getRight()->accept(this);
-    llvm::Value* right = result_;
+    llvm::Value* right = results_;
     
     if (!left || !right) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
-    result_ = generateBinaryOp(node->getOperator(), left, right,
+    results_ = generateBinaryOp(node->getOperator(), left, right,
                                node->getLeft()->getType());
 }
 
@@ -50,7 +52,7 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
                     builder.CreateSRem(left, right, "modtmp") :
                     builder.CreateURem(left, right, "modtmp");
             
-            // 比较运算
+            // compareoperation
             case TokenType::EQ_EQ:       return builder.CreateICmpEQ(left, right, "eqtmp");
             case TokenType::NOT_EQ:      return builder.CreateICmpNE(left, right, "netmp");
             case TokenType::LESS:
@@ -70,14 +72,14 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
                     builder.CreateICmpSGE(left, right, "getmp") :
                     builder.CreateICmpUGE(left, right, "getmp");
             
-            // 逻辑运算
+            // logicoperation
             case TokenType::AND_AND: return builder.CreateAnd(left, right, "andtmp");
             case TokenType::OR_OR:   return builder.CreateOr(left, right, "ortmp");
             
             default: return nullptr;
         }
     } else if (type->isFloat()) {
-        // 特殊处理f128：直接调用PawLang的运算函数（绕过LLVM ABI问题）
+        // specialhandlef128：directlycallPawLangof/theoperationfunction（bypassLLVM ABIproblem/issue）
         if (type->getKind() == Type::Kind::F128) {
             std::string func_name;
             switch (op) {
@@ -86,7 +88,7 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
                 case TokenType::STAR:       func_name = "paw_f128_mul"; break;
                 case TokenType::SLASH:      func_name = "paw_f128_div"; break;
                 
-                // 比较运算仍使用LLVM指令（简单比较无ABI问题）
+                // compareoperationstilluseLLVMdirective（simplesinglecomparenoABIproblem/issue）
                 case TokenType::EQ_EQ:      return builder.CreateFCmpOEQ(left, right, "feqtmp");
                 case TokenType::NOT_EQ:     return builder.CreateFCmpONE(left, right, "fnetmp");
                 case TokenType::LESS:       return builder.CreateFCmpOLT(left, right, "flttmp");
@@ -97,7 +99,7 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
                 default: return nullptr;
             }
             
-            // 声明并调用paw_f128_*函数（分解传递）
+            // declareandcallpaw_f128_*function（decomposepass）
             llvm::Function* runtime_fn = context_->getRuntimeFunction(func_name);
             if (!runtime_fn) {
                 llvm::Type* i64_ty = builder.getInt64Ty();
@@ -118,7 +120,7 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
                 context_->registerRuntimeFunction(func_name, runtime_fn);
             }
             
-            // 分解fp128为两个i64
+            // decomposefp128is/astwoindividual/piecei64
             llvm::Value* left_i128 = builder.CreateBitCast(left, builder.getInt128Ty());
             llvm::Value* right_i128 = builder.CreateBitCast(right, builder.getInt128Ty());
             
@@ -134,14 +136,14 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
                 builder.getInt64Ty()
             );
             
-            // 分配返回值空间
+            // allocatereturnvalueemptybetween/among
             llvm::Value* ret_low = builder.CreateAlloca(builder.getInt64Ty());
             llvm::Value* ret_high = builder.CreateAlloca(builder.getInt64Ty());
             
-            // 调用
+            // call
             builder.CreateCall(runtime_fn, {ret_low, ret_high, a_low, a_high, b_low, b_high});
             
-            // 重新组装为fp128
+            // renewassembleis/asfp128
             llvm::Value* res_low = builder.CreateLoad(builder.getInt64Ty(), ret_low);
             llvm::Value* res_high = builder.CreateLoad(builder.getInt64Ty(), ret_high);
             
@@ -156,14 +158,14 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
             return builder.CreateBitCast(res_i128, llvm::Type::getFP128Ty(builder.getContext()));
         }
         
-        // 其他浮点类型：使用LLVM指令
+        // Other typesfloating-pointtypes：useLLVMdirective
         switch (op) {
             case TokenType::PLUS:       return builder.CreateFAdd(left, right, "faddtmp");
             case TokenType::MINUS:      return builder.CreateFSub(left, right, "fsubtmp");
             case TokenType::STAR:       return builder.CreateFMul(left, right, "fmultmp");
             case TokenType::SLASH:      return builder.CreateFDiv(left, right, "fdivtmp");
             
-            // 比较运算
+            // compareoperation
             case TokenType::EQ_EQ:      return builder.CreateFCmpOEQ(left, right, "feqtmp");
             case TokenType::NOT_EQ:     return builder.CreateFCmpONE(left, right, "fnetmp");
             case TokenType::LESS:       return builder.CreateFCmpOLT(left, right, "flttmp");
@@ -179,19 +181,19 @@ llvm::Value* ExprCodeGen::generateBinaryOp(TokenType op, llvm::Value* left,
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 一元运算
+// unary operations
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ExprCodeGen::visit(UnaryExpr* node) {
     node->getOperand()->accept(this);
-    llvm::Value* operand = result_;
+    llvm::Value* operand = results_;
     
     if (!operand) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
-    result_ = generateUnaryOp(node->getOperator(), operand,
+    results_ = generateUnaryOp(node->getOperator(), operand,
                               node->getOperand()->getType());
 }
 

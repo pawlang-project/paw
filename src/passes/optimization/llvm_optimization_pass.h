@@ -13,19 +13,19 @@
 
 namespace pawc {
 
-/// LLVMOptimizationPass - LLVM优化Pass
+/// LLVMOptimizationPass - LLVMoptimizationPass
 ///
-/// 根据优化级别应用不同的LLVM优化
-/// -O0: 无优化
-/// -O1: 基础优化（Mem2Reg, InstCombine等）
-/// -O2: 标准优化（+ GVN, DSE, DCE等）
-/// -O3: 激进优化（+ Inlining, Unroll, Vectorize等）
+/// according tooptimizationlevelapplydifferentof/theLLVMoptimization
+/// -O0: nooptimization
+/// -O1: basic optimization (Mem2Reg, InstCombine, etc.)
+/// -O2: standard optimization (+ GVN, DSE, DCE, etc.)
+/// -O3: aggressive optimization (+ Inlining, Unroll, Vectorization, etc.)orizeetc）
 class LLVMOptimizationPass : public PassBase<LLVMOptimizationPass> {
 public:
     static std::string name() { return "LLVMOptimizationPass"; }
     
     PassResult runImpl(PassContext* context) {
-        // 从context获取LLVM模块
+        // Get LLVM module from context
         llvm::Module* module = nullptr;
         if (!context->getCachedResult("llvm_module", module) || !module) {
             return PassResult{false, "No LLVM module available for optimization"};
@@ -34,34 +34,34 @@ public:
         int opt_level = context->getOptLevel();
         
         if (opt_level == 0) {
-            // -O0: 无优化，直接返回
+            // -O0: nooptimization，directlyreturn
             return PassResult{true, "No optimization (O0)"};
         }
         
-        // 创建优化Pass管理器
+        // createoptimizationPassmanager
         llvm::legacy::PassManager pm;
         
         if (opt_level >= 1) {
-            // -O1: 基础优化
+            // -O1: baseoptimization
             pm.add(llvm::createPromoteMemoryToRegisterPass());  // Mem2Reg
             pm.add(llvm::createInstructionCombiningPass());     // InstCombine
             pm.add(llvm::createReassociatePass());              // Reassociate
-            pm.add(llvm::createCFGSimplificationPass());        // CFG简化
+            pm.add(llvm::createCFGSimplificationPass());        // CFGsimplify
         }
         
         if (opt_level >= 2) {
-            // -O2: 标准优化
+            // -O2: standardoptimization
             pm.add(llvm::createEarlyCSEPass());                 // Early CSE
             pm.add(llvm::createDeadCodeEliminationPass());      // DCE
-            pm.add(llvm::createCFGSimplificationPass());        // 再次CFG简化
+            pm.add(llvm::createCFGSimplificationPass());        // againCFGsimplify
         }
         
         if (opt_level >= 3) {
-            // -O3: 激进优化
+            // -O3: aggressive optimization
             pm.add(llvm::createLoopUnrollPass());               // Loop Unroll
         }
         
-        // 运行所有优化Pass
+        // runAlloptimizationPass
         pm.run(*module);
         
         if (context->isVerbose()) {

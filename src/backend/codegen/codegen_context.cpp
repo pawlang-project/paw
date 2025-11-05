@@ -1,4 +1,8 @@
 //===--- codegen_context.cpp - CodeGen Context Implementation ----*- C++ -*-===//
+/// @file codegen_context.cpp
+/// @brief LLVM code generation context implementation
+///
+/// Manages LLVM infrastructure and type conversion for code generation.
 
 #include "codegen_context.h"
 #include "type/type_codegen.h"
@@ -17,6 +21,7 @@
 
 namespace pawc {
 
+/// Initialize code generation context with LLVM module and builders
 CodeGenContext::CodeGenContext(const std::string& module_name,
                                TypeSystem* type_system,
                                SymbolTable* symbol_table)
@@ -25,29 +30,29 @@ CodeGenContext::CodeGenContext(const std::string& module_name,
       type_system_(type_system),
       symbol_table_(symbol_table) {
     
-    // 初始化全局作用域
+    // Initialize global scope
     variable_stack_.emplace_back();
     
-    // 声明runtime函数
+    // Declare runtime function
     declareRuntimeFunctions();
 }
 
 CodeGenContext::~CodeGenContext() {
-    // 🔧 Bug Fix: 放弃Module所有权，避免析构时的内存问题
-    // LLVM内部对匿名StructType的管理导致析构时出现double-free
-    // 通过release()放弃所有权，让指针泄漏，由OS在进程退出时回收
+    // Bug Fix: Release Module ownership to avoid memory issues during destruction
+    // LLVM's internal management of anonymous StructType causes double-free on destruction
+    // Release ownership and let the pointer leak, OS will reclaim on process exit
     if (module_) {
-        module_.release();  // 放弃所有权，不调用析构
+        module_.release();  // Release ownership, don't call destructor
     }
-    // 其他成员按默认顺序自动析构
+    // Other members destructed automatically in default order
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Type Mapping - 28种类型
+// Type Mapping - 28 type kinds
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 llvm::Type* CodeGenContext::getLLVMType(Type* paw_type) {
-    // 检查缓存
+    // Check cache first
     auto it = type_cache_.find(paw_type);
     if (it != type_cache_.end()) {
         return it->second;
@@ -71,16 +76,16 @@ llvm::Type* CodeGenContext::getLLVMType(Type* paw_type) {
         llvm_type = mapFunctionType(static_cast<FunctionType*>(paw_type));
     } else if (paw_type->isReference()) {
         auto* ref_type = static_cast<ReferenceType*>(paw_type);
-        llvm_type = getLLVMType(ref_type->getPointeeType())->getPointerTo();
+        llvm_type = llvm::PointerType::getUnqual(context_);
     } else if (paw_type->isEnum()) {
-        // 🔧 M7: Enum类型映射
+        // 🔧 M7: Enum type mapping
         llvm_type = mapEnumType(static_cast<EnumType*>(paw_type));
     } else {
-        // 默认返回opaque pointer
+        // Default return opaque pointer
         llvm_type = llvm::PointerType::getUnqual(context_);
     }
     
-    // 缓存结果
+    // Cache results
     type_cache_[paw_type] = llvm_type;
     
     return llvm_type;
@@ -88,28 +93,28 @@ llvm::Type* CodeGenContext::getLLVMType(Type* paw_type) {
 
 llvm::Type* CodeGenContext::mapPrimitiveType(Type* type) {
     switch (type->getKind()) {
-        // 有符号整数
+        // Signed integers
         case Type::Kind::I8:    return builder_.getInt8Ty();
         case Type::Kind::I16:   return builder_.getInt16Ty();
         case Type::Kind::I32:   return builder_.getInt32Ty();
         case Type::Kind::I64:   return builder_.getInt64Ty();
         case Type::Kind::I128:  return builder_.getInt128Ty();
         
-        // 无符号整数 (LLVM使用相同的整数类型)
+        // Unsigned integers (LLVM uses same integer types)
         case Type::Kind::U8:    return builder_.getInt8Ty();
         case Type::Kind::U16:   return builder_.getInt16Ty();
         case Type::Kind::U32:   return builder_.getInt32Ty();
         case Type::Kind::U64:   return builder_.getInt64Ty();
         case Type::Kind::U128:  return builder_.getInt128Ty();
         
-        // 浮点数 (完整精度)
+        // Floating-point numbers (full precision)
         case Type::Kind::F8:    return builder_.getBFloatTy();  // bfloat16
         case Type::Kind::F16:   return builder_.getHalfTy();    // half (fp16)
         case Type::Kind::F32:   return builder_.getFloatTy();   // float
         case Type::Kind::F64:   return builder_.getDoubleTy();  // double
         case Type::Kind::F128:  return llvm::Type::getFP128Ty(context_);   // fp128
         
-        // 其他
+        // Other types
         case Type::Kind::Bool:   return builder_.getInt1Ty();
         case Type::Kind::Char:   return builder_.getInt8Ty();
         case Type::Kind::String: return llvm::PointerType::getUnqual(context_);
@@ -122,12 +127,12 @@ llvm::Type* CodeGenContext::mapPrimitiveType(Type* type) {
 
 llvm::Type* CodeGenContext::mapArrayType(ArrayType* type) {
     llvm::Type* element_type = getLLVMType(type->getElementType());
-    // Array是LLVM内置类型，不需要命名
+    // Array is LLVM built-in type, no naming needed
     return llvm::ArrayType::get(element_type, type->getSize());
 }
 
 llvm::Type* CodeGenContext::mapTupleType(TupleType* type) {
-    // Tuple使用匿名类型（LLVM会内部去重相同结构的类型）
+    // Tuple uses anonymous type (LLVM internally deduplicates same structure types)
     std::vector<llvm::Type*> element_types;
     for (auto* elem_type : type->getElementTypes()) {
         element_types.push_back(getLLVMType(elem_type));
@@ -136,31 +141,31 @@ llvm::Type* CodeGenContext::mapTupleType(TupleType* type) {
 }
 
 llvm::Type* CodeGenContext::mapStructType(StructType* type) {
-    // 🔧 关键修复：确保struct类型在整个编译过程中只创建一次
+    // 🔧 Key fix：ensurestruct typein/atinteger/wholeindividual/piececompile/compilationproceduremiddle/centeronlycreate once
     std::string struct_name = type->getName();
     
-    // 1. 首先通过名称查找已存在的LLVM类型
+    // 1. firstFirstthrough/vianamelookup existing LLVM types
     llvm::StructType* existing_type = llvm::StructType::getTypeByName(context_, struct_name);
     if (existing_type) {
-        // 类型已存在，直接返回（即使PawLang Type对象不同）
+        // type already exists，directlyreturn (even if PawLang Type objects differ)
         type_cache_[type] = existing_type;
         return existing_type;
     }
     
-    // 2. 不存在，需要创建新类型
-    // 先创建opaque类型（只有名称，没有body）
+    // 2. notexists，needcreate new type
+    // Firstcreate opaque type（onlyhasname，nohasbody）
     llvm::StructType* new_type = llvm::StructType::create(context_, struct_name);
     
-    // 立即缓存，防止递归定义时重复创建
+    // immediatelycache，preventduring recursive definitionduplicatecreate
     type_cache_[type] = new_type;
     
-    // 3. 生成字段类型
+    // 3. generate field types
     std::vector<llvm::Type*> field_types;
     for (const auto& [name, field_type] : type->getFields()) {
         field_types.push_back(getLLVMType(field_type));
     }
     
-    // 4. 设置body（填充字段）
+    // 4. set body (populate fields)
     new_type->setBody(field_types);
     
     return new_type;
@@ -168,13 +173,13 @@ llvm::Type* CodeGenContext::mapStructType(StructType* type) {
 
 llvm::Type* CodeGenContext::mapOptionalType(OptionalType* type) {
     // Optional<T> = { i1 has_value, T value }
-    // Optional使用匿名类型（LLVM会内部去重相同结构的类型）
+    // Optional uses anonymous type (LLVM internally deduplicates same structure types)
     Type* inner_paw_type = type->getInnerType();
     llvm::Type* inner_type = getLLVMType(inner_paw_type);
     
-    // 特殊处理: Optional<void> - void不能作为结构体字段
+    // specialhandle: Optional<void> - void cannot be used as struct field
     if (inner_paw_type->isVoid()) {
-        // 使用 i8 作为占位符
+        // use i8 as placeholder
         inner_type = builder_.getInt8Ty();
     }
     
@@ -201,16 +206,16 @@ llvm::Type* CodeGenContext::mapFunctionType(FunctionType* type) {
 }
 
 llvm::Type* CodeGenContext::mapEnumType(EnumType* type) {
-    // 🔧 M7: Enum类型映射为: { i32 variant_index, data }
-    // 为简化，我们使用i64作为data字段（可以存放指针或小数据）
+    // 🔧 M7: Enum type mappingis/as: { i32 variant_index, data }
+    // As simplification, we use i64 as data field (may store pointer or small data)
     
-    // 查找最大的variant数据类型
-    llvm::Type* data_type = builder_.getInt64Ty();  // 默认i64
+    // lookup largest variant data type
+    llvm::Type* data_type = builder_.getInt64Ty();  // defaulti64
     
     for (const auto& variant : type->getVariants()) {
         if (variant.second) {
             llvm::Type* variant_llvm_type = getLLVMType(variant.second);
-            // 如果variant类型更大，使用它
+            // if variant type is larger，useit
             auto& data_layout = module_->getDataLayout();
             if (data_layout.getTypeAllocSize(variant_llvm_type) >
                 data_layout.getTypeAllocSize(data_type)) {
@@ -225,7 +230,7 @@ llvm::Type* CodeGenContext::mapEnumType(EnumType* type) {
     });
 }
 
-// 基础类型快捷方法
+// base type shortcut methods
 llvm::Type* CodeGenContext::getI8Type()   { return builder_.getInt8Ty(); }
 llvm::Type* CodeGenContext::getI16Type()  { return builder_.getInt16Ty(); }
 llvm::Type* CodeGenContext::getI32Type()  { return builder_.getInt32Ty(); }
@@ -258,7 +263,7 @@ void CodeGenContext::defineVariable(const std::string& name, llvm::Value* value)
 }
 
 llvm::Value* CodeGenContext::lookupVariable(const std::string& name) {
-    // 从内到外查找
+    // lookup from inner to outer
     for (auto it = variable_stack_.rbegin(); it != variable_stack_.rend(); ++it) {
         auto found = it->find(name);
         if (found != it->end()) {
@@ -278,7 +283,7 @@ llvm::Function* CodeGenContext::lookupFunction(const std::string& name) {
         return it->second;
     }
     
-    // 查找runtime函数
+    // lookup runtime function
     return getRuntimeFunction(name);
 }
 
@@ -324,8 +329,8 @@ llvm::BasicBlock* CodeGenContext::createBasicBlock(const std::string& name,
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void CodeGenContext::declareRuntimeFunctions() {
-    // Runtime函数声明由BuiltinCodeGen统一管理
-    // 这里只声明最基础的内存管理函数
+    // Runtime function declarations uniformly managed by BuiltinCodeGen
+    // hereonlydeclarationmost/lastbasic memory management functions
     
     // void* paw_malloc(u64 size)
     auto* malloc_type = llvm::FunctionType::get(
@@ -366,7 +371,7 @@ void CodeGenContext::declareRuntimeFunctions() {
         module_.get()
     );
     
-    // 注意：18种print/println/to_string函数由BuiltinCodeGen::declareAllRuntimeFunctions()声明
+    // Note：18 print/println/to_string functions declared by BuiltinCodeGen::declareAllRuntimeFunctions()
 }
 
 llvm::Function* CodeGenContext::getRuntimeFunction(const std::string& name) {
@@ -385,20 +390,20 @@ llvm::Function* CodeGenContext::lookupFunctionWithTypes(
     const std::string& name,
     const std::vector<Type*>& param_types) {
     
-    // 先查找普通函数
+    // first lookup normal function
     auto it = function_table_.find(name);
     if (it != function_table_.end()) {
         return it->second;
     }
     
-    // 查找builtin重载
+    // lookup builtin overload
     auto overload_it = builtin_overloads_.find(name);
     if (overload_it != builtin_overloads_.end()) {
-        // 遍历所有重载，找到匹配的
+        // traverse all overloads，foundmatchof/the
         for (const auto& [overload_types, func] : overload_it->second) {
             if (overload_types.size() != param_types.size()) continue;
             
-            // 检查每个参数类型是否匹配
+            // check each parameter typeyesnomatch
             bool match = true;
             for (size_t i = 0; i < param_types.size(); ++i) {
                 if (!type_system_->equals(param_types[i], overload_types[i])) {
@@ -442,7 +447,7 @@ std::string CodeGenContext::getTypeSignature(const std::vector<Type*>& types) {
             else if (kind == Type::Kind::Char) sig += "char";
             else if (kind == Type::Kind::String) sig += "string";
             else if (kind == Type::Kind::Struct) {
-                // Struct类型：使用结构体名称
+                // Struct type: use struct name
                 auto* struct_type = static_cast<StructType*>(types[i]);
                 sig += struct_type->getName();
             }
@@ -452,9 +457,9 @@ std::string CodeGenContext::getTypeSignature(const std::vector<Type*>& types) {
                 sig += getTypeSignature({optional_type->getInnerType()});
             }
             else if (kind == Type::Kind::Result) {
-                auto* result_type = static_cast<ResultType*>(types[i]);
-                sig += "result_";
-                sig += getTypeSignature({result_type->getOkType()});
+                auto* results_type = static_cast<ResultType*>(types[i]);
+                sig += "results_";
+                sig += getTypeSignature({results_type->getOkType()});
             }
             else sig += "unknown";
         }
@@ -463,17 +468,17 @@ std::string CodeGenContext::getTypeSignature(const std::vector<Type*>& types) {
 }
 
 void CodeGenContext::registerAllBuiltinFunctions() {
-    // 为每个builtin函数的18种类型重载生成LLVM声明
+    // generate LLVM declaration for each builtin function 18 type overloads
     
     if (!type_system_) {
-        return; // TypeSystem未初始化
+        return; // TypeSystem not initialized
     }
     
     TypeCodeGen type_gen(context_);
     auto* void_type = builder_.getVoidTy();
     auto* string_type = llvm::PointerType::getUnqual(context_);
     
-    // 获取所有18种基本类型
+    // get all 18 basic types
     std::vector<Type*> all_types;
     if (auto* t = type_system_->getI8Type()) all_types.push_back(t);
     if (auto* t = type_system_->getI16Type()) all_types.push_back(t);
@@ -494,10 +499,10 @@ void CodeGenContext::registerAllBuiltinFunctions() {
     if (auto* t = type_system_->getCharType()) all_types.push_back(t);
     if (auto* t = type_system_->getStringType()) all_types.push_back(t);
     
-    // 为每个类型生成print/println/to_string
+    // generate print/println/to_string for each type
     for (Type* param_type : all_types) {
         std::string type_suffix = getTypeSignature({param_type});
-        llvm::Type* llvm_param_type = getLLVMType(param_type);  // 使用统一的类型映射
+        llvm::Type* llvm_param_type = getLLVMType(param_type);  // use unified type mapping
         
         // print(T) -> void
         {
@@ -510,7 +515,7 @@ void CodeGenContext::registerAllBuiltinFunctions() {
                 module_.get()
             );
             
-            // 生成函数体：调用对应的paw_print_*
+            // generate function body：call correspondingpaw_print_*
             llvm::BasicBlock* entry = llvm::BasicBlock::Create(context_, "entry", func);
             auto saved_point = builder_.saveIP();
             builder_.SetInsertPoint(entry);
@@ -518,7 +523,7 @@ void CodeGenContext::registerAllBuiltinFunctions() {
             std::string runtime_name = "paw_print_" + type_suffix;
             auto* runtime_func = getRuntimeFunction(runtime_name);
             if (!runtime_func) {
-                // 声明runtime函数
+                // Declare runtime function
                 auto* rt_func_type = llvm::FunctionType::get(void_type, {llvm_param_type}, false);
                 runtime_func = llvm::Function::Create(
                     rt_func_type,
@@ -533,7 +538,7 @@ void CodeGenContext::registerAllBuiltinFunctions() {
             builder_.CreateRetVoid();
             builder_.restoreIP(saved_point);
             
-            // 注册到重载表
+            // register to overload table
             builtin_overloads_["print"].push_back({{param_type}, func});
         }
         
@@ -548,16 +553,16 @@ void CodeGenContext::registerAllBuiltinFunctions() {
                 module_.get()
             );
             
-            // 生成函数体：调用print + newline
+            // generate function body：call print + newline
             llvm::BasicBlock* entry = llvm::BasicBlock::Create(context_, "entry", func);
             auto saved_point = builder_.saveIP();
             builder_.SetInsertPoint(entry);
             
-            // 调用print
+            // call print
             auto* print_func = builtin_overloads_["print"].back().second;
             builder_.CreateCall(print_func, {&*func->arg_begin()});
             
-            // 调用paw_print_newline
+            // call paw_print_newline
             auto* newline_func = getRuntimeFunction("paw_print_newline");
             if (!newline_func) {
                 auto* nl_func_type = llvm::FunctionType::get(void_type, {}, false);
@@ -573,7 +578,7 @@ void CodeGenContext::registerAllBuiltinFunctions() {
             builder_.CreateRetVoid();
             builder_.restoreIP(saved_point);
             
-            // 注册到重载表
+            // register to overload table
             builtin_overloads_["println"].push_back({{param_type}, func});
         }
         
@@ -588,7 +593,7 @@ void CodeGenContext::registerAllBuiltinFunctions() {
                 module_.get()
             );
             
-            // 生成函数体：调用paw_*_to_string
+            // generate function body：call paw_*_to_string
             llvm::BasicBlock* entry = llvm::BasicBlock::Create(context_, "entry", func);
             auto saved_point = builder_.saveIP();
             builder_.SetInsertPoint(entry);
@@ -606,11 +611,11 @@ void CodeGenContext::registerAllBuiltinFunctions() {
                 registerRuntimeFunction(runtime_name, runtime_func);
             }
             
-            auto* result = builder_.CreateCall(runtime_func, {&*func->arg_begin()});
-            builder_.CreateRet(result);
+            auto* results = builder_.CreateCall(runtime_func, {&*func->arg_begin()});
+            builder_.CreateRet(results);
             builder_.restoreIP(saved_point);
             
-            // 注册到重载表
+            // register to overload table
             builtin_overloads_["to_string"].push_back({{param_type}, func});
         }
     }
@@ -642,8 +647,8 @@ void CodeGenContext::registerAllBuiltinFunctions() {
             registerRuntimeFunction("paw_string_len", runtime_func);
         }
         
-        auto* result = builder_.CreateCall(runtime_func, {&*func->arg_begin()});
-        builder_.CreateRet(result);
+        auto* results = builder_.CreateCall(runtime_func, {&*func->arg_begin()});
+        builder_.CreateRet(results);
         builder_.restoreIP(saved_point);
         
         builtin_overloads_["len"].push_back({{type_system_->getStringType()}, func});
@@ -690,8 +695,8 @@ void CodeGenContext::registerAllBuiltinFunctions() {
         llvm::Value* condition = &*args++;
         llvm::Value* message = &*args;
         
-        // 调用paw_assert(condition, message, __FILE__, __LINE__)
-        auto* file_str = builder_.CreateGlobalStringPtr("paw_code");
+        // call paw_assert(condition, message, __FILE__, __LINE__)
+        auto* file_str = builder_.CreateGlobalString("paw_code");
         auto* line_val = llvm::ConstantInt::get(builder_.getInt32Ty(), 0);
         
         auto* runtime_func = getRuntimeFunction("paw_assert");
@@ -722,7 +727,7 @@ void CodeGenContext::registerAllBuiltinFunctions() {
         llvm::Value* condition = &*args++;
         llvm::Value* message = &*args;
         
-        auto* file_str = builder_.CreateGlobalStringPtr("paw_code");
+        auto* file_str = builder_.CreateGlobalString("paw_code");
         auto* line_val = llvm::ConstantInt::get(builder_.getInt32Ty(), 0);
         
         auto* runtime_func = getRuntimeFunction("paw_debug_assert");
@@ -748,7 +753,7 @@ void CodeGenContext::registerAllBuiltinFunctions() {
         auto saved_point = builder_.saveIP();
         builder_.SetInsertPoint(entry);
         
-        auto* file_str = builder_.CreateGlobalStringPtr("paw_code");
+        auto* file_str = builder_.CreateGlobalString("paw_code");
         auto* line_val = llvm::ConstantInt::get(builder_.getInt32Ty(), 0);
         
         auto* runtime_func = getRuntimeFunction("paw_unreachable");
@@ -781,29 +786,28 @@ bool CodeGenContext::writeToFile(const std::string& filename) {
 }
 
 bool CodeGenContext::emitObjectFile(const std::string& filename) {
-    // 配置目标平台
+    // Configure target platform
     std::string error;
-    auto target_triple_str = llvm::sys::getDefaultTargetTriple();
-    llvm::Triple target_triple(target_triple_str);
+    llvm::Triple target_triple(llvm::sys::getDefaultTargetTriple());
     
-    auto target = llvm::TargetRegistry::lookupTarget(target_triple_str, error);
+    auto target = llvm::TargetRegistry::lookupTarget(target_triple.getTriple(), error);
     if (!target) {
         return false;
     }
     
-    // 配置TargetMachine
+    // Configure TargetMachine
     auto cpu = "generic";
     auto features = "";
     llvm::TargetOptions opt;
     auto rm = llvm::Reloc::Model::PIC_;
     
     auto* target_machine = target->createTargetMachine(
-        target_triple_str, cpu, features, opt, rm);
+        target_triple, cpu, features, opt, rm);
     
     module_->setDataLayout(target_machine->createDataLayout());
     module_->setTargetTriple(target_triple);
     
-    // 输出对象文件
+    // outputobjectfile
     std::error_code ec;
     llvm::raw_fd_ostream dest(filename, ec, llvm::sys::fs::OF_None);
     

@@ -1,6 +1,9 @@
 //===--- llvm_optimization_pass.h - LLVM Optimization Pass ------*- C++ -*-===//
+/// @file llvm_optimization_pass.h
+/// @brief Code generation utilities
+///
 //
-// LLVM优化Pass：调用LLVM的优化管道
+// LLVMoptimizationPass：callLLVMof/theoptimizationpipe
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,10 +19,10 @@ public:
     static constexpr const char* getName() { return "LLVMOptimizationPass"; }
     
     bool run(PassContext& context) override {
-        // TODO: 实现LLVM优化管道
-        // 1. 配置LLVM Pass Manager
-        // 2. 添加优化Pass
-        // 3. 运行优化
+        // TODO: implementationLLVMoptimizationpipe
+        // 1. configureLLVM Pass Manager
+        // 2. addoptimizationPass
+        // 3. runoptimization
         return true;
     }
 };

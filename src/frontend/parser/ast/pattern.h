@@ -1,6 +1,6 @@
 //===--- pattern.h - Pattern AST Nodes ---------------------------*- C++ -*-===//
 //
-// Pattern节点用于match表达式的模式匹配
+// Patternnodeused formatchexpressionof/thepattern matching
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,7 +16,7 @@ namespace pawc {
 
 class ASTVisitor;
 
-/// LiteralPattern - 字面量模式 (例如: 0, 1, "hello")
+/// LiteralPattern - literal pattern (e.g.: 0, 1, "hello")
 class LiteralPattern : public Pattern {
 public:
     enum class Kind {
@@ -39,14 +39,14 @@ private:
     std::string value_;
 };
 
-/// WildcardPattern - 通配符模式 (_)
+/// WildcardPattern - wildcardpattern (_)
 class WildcardPattern : public Pattern {
 public:
     WildcardPattern() = default;
     void accept(ASTVisitor* visitor) override;
 };
 
-/// VariablePattern - 变量绑定模式 (例如: value, x)
+/// VariablePattern - variable binding pattern (e.g.: value, x)
 class VariablePattern : public Pattern {
 public:
     explicit VariablePattern(std::string name)
@@ -59,7 +59,7 @@ private:
     std::string name_;
 };
 
-/// TuplePattern - 元组模式 (例如: (x, y), (0, _))
+/// TuplePattern - tuple pattern (e.g.: (x, y), (0, _))
 class TuplePattern : public Pattern {
 public:
     explicit TuplePattern(std::vector<PatternPtr> elements)
@@ -72,10 +72,10 @@ private:
     std::vector<PatternPtr> elements_;
 };
 
-/// EnumPattern - 枚举模式 (例如: Some(x), None, Option::Some(x), ok(v))
+/// EnumPattern - enum pattern (e.g.: Some(x), None, Option::Some(x))me(x), ok(v))
 class EnumPattern : public Pattern {
 public:
-    // 简单构造器（向后兼容）
+    // Simple single constructor (backward compatible)
     EnumPattern(std::string variant_name, PatternPtr inner = nullptr)
         : type_name_(""),
           variant_name_(std::move(variant_name)),
@@ -85,7 +85,7 @@ public:
         }
     }
     
-    // 完整构造器
+    // completeconstructor
     EnumPattern(std::string type_name, std::string variant_name, 
                 std::vector<PatternPtr> inner_patterns, bool is_alias = false)
         : type_name_(std::move(type_name)),
@@ -98,7 +98,7 @@ public:
     bool isAlias() const { return is_alias_; }
     const std::vector<PatternPtr>& getInnerPatterns() const { return inner_patterns_; }
     
-    // 向后兼容
+    // Backward compatible
     Pattern* getInner() const { 
         return inner_patterns_.empty() ? nullptr : inner_patterns_[0].get(); 
     }
@@ -106,19 +106,19 @@ public:
     void accept(ASTVisitor* visitor) override;
     
 private:
-    std::string type_name_;        // 类型名（可选，如 "Option"）
-    std::string variant_name_;     // 变体名（如 "Some" 或 "ok"）
-    std::vector<PatternPtr> inner_patterns_;  // 内部模式（支持多参数）
-    bool is_alias_;                // 是否是小写别名（ok, err, some, none）
+    std::string type_name_;        // Type name (optional, e.g. "Option")n"）
+    std::string variant_name_;     // Variant name (e.g. "Some") or "ok"）
+    std::vector<PatternPtr> inner_patterns_;  // internal/insidepattern（supportmany/muchparameter）
+    bool is_alias_;                // Is lowercase alias (ok, err, some, none)r, some, none）
 };
 
-/// StructPattern - 结构体模式 (例如: Point { x, y }, Point { x: a, y: b })
+/// StructPattern - struct pattern (e.g.: Point { x, y }, Point { x: a, y: b })t { x: a, y: b })
 class StructPattern : public Pattern {
 public:
-    /// 字段模式：字段名 -> 绑定的模式
+    /// fieldpattern：fieldname -> bindof/thepattern
     struct FieldPattern {
-        std::string field_name;  // 字段名（如 "x"）
-        PatternPtr pattern;      // 绑定的模式（通常是VariablePattern）
+        std::string field_name;  // Field name (e.g. "x")
+        PatternPtr pattern;      // bindof/thepattern（usually/normallyyesVariablePattern）
         
         FieldPattern(std::string name, PatternPtr pat)
             : field_name(std::move(name)), pattern(std::move(pat)) {}
@@ -133,11 +133,11 @@ public:
     void accept(ASTVisitor* visitor) override;
     
 private:
-    std::string struct_name_;              // 结构体名（如 "Point"）
-    std::vector<FieldPattern> fields_;     // 字段模式列表
+    std::string struct_name_;              // Struct type name (e.g. "Point") "Point"）
+    std::vector<FieldPattern> fields_;     // fieldpatternlist
 };
 
-/// ArrayPattern - 数组解构模式 (例如: [a, b, c])
+/// ArrayPattern - array destructuring pattern (e.g.: [a, b, c])
 class ArrayPattern : public Pattern {
 public:
     ArrayPattern(std::vector<PatternPtr> elements, size_t expected_size)
@@ -148,58 +148,150 @@ public:
     void accept(ASTVisitor* visitor) override;
     
 private:
-    std::vector<PatternPtr> elements_;  // 元素模式
-    size_t expected_size_;              // 期望的数组大小
+    std::vector<PatternPtr> elements_;  // elementpattern
+    size_t expected_size_;              // expectedof/thearraysize
 };
 
-/// SlicePattern - 切片解构模式 (例如: [first, ..rest], [first, .., last])
+/// SlicePattern - Slice destructuring pattern with middle rest support
+///
+/// Represents patterns that match arrays or slices with optional rest elements.
+/// Supports three parts: prefix, rest (middle), and suffix.
+///
+/// Examples:
+///   [first, .., last]      - Match first and last, ignore middle (anonymous rest)
+///   [first, ..rest, last]  - Match first and last, bind middle to 'rest'
+///   [a, b, .., y, z]       - Match first 2 and last 2 elements
+///   [.., last]             - Match only the last element
+///
+/// The rest element (`..` or `..name`) must appear at most once.
+/// Type checking ensures prefix.size() + suffix.size() <= array.size().
+///
+/// Code generation:
+///   - Prefix elements: accessed from index 0
+///   - Suffix elements: accessed from (array.size() - suffix.size())
+///   - Rest: slice from prefix.size() to (array.size() - suffix.size())
 class SlicePattern : public Pattern {
 public:
+    /// Constructs a SlicePattern
+    /// @param prefix Pattern elements before the rest (may be empty)
+    /// @param rest Optional rest pattern (nullptr for anonymous rest `..`)
+    /// @param suffix Pattern elements after the rest (may be empty)
     SlicePattern(std::vector<PatternPtr> prefix, PatternPtr rest = nullptr, 
                  std::vector<PatternPtr> suffix = {})
         : prefix_(std::move(prefix)), rest_(std::move(rest)), suffix_(std::move(suffix)) {}
     
+    /// Get the prefix patterns (elements before rest)
     const std::vector<PatternPtr>& getPrefix() const { return prefix_; }
+    
+    /// Get the rest pattern (may be nullptr for anonymous rest)
     Pattern* getRest() const { return rest_.get(); }
+    
+    /// Check if this pattern has a rest element
     bool hasRest() const { return rest_ != nullptr; }
+    
+    /// Get the suffix patterns (elements after rest)
     const std::vector<PatternPtr>& getSuffix() const { return suffix_; }
+    
+    /// Check if this pattern has suffix elements
     bool hasSuffix() const { return !suffix_.empty(); }
+    
     void accept(ASTVisitor* visitor) override;
     
 private:
-    std::vector<PatternPtr> prefix_;  // 前缀元素模式
-    PatternPtr rest_;                 // 剩余部分 (可选, ..rest)
-    std::vector<PatternPtr> suffix_;  // 后缀元素模式（用于 [a, .., z]）
+    std::vector<PatternPtr> prefix_;  ///< Pattern elements before rest
+    PatternPtr rest_;                 ///< Optional rest pattern (nullptr for anonymous `..`)
+    std::vector<PatternPtr> suffix_;  ///< Pattern elements after rest (for [a, .., z])
 };
 
-/// RangePattern - 范围模式 (例如: 1..10, 'a'..'z', 1..=10)
+/// RangePattern - Range pattern matching
+///
+/// Matches values within a specified range. Supports both exclusive and inclusive ranges.
+///
+/// Syntax:
+///   start..end    - Exclusive range (start <= value < end)
+///   start..=end   - Inclusive range (start <= value <= end)
+///
+/// Examples:
+///   90..100       - Matches 90, 91, ..., 99 (not 100)
+///   90..=100      - Matches 90, 91, ..., 100 (includes 100)
+///   'a'..'z'      - Matches lowercase letters a-y (not z)
+///   'a'..='z'     - Matches lowercase letters a-z (includes z)
+///
+/// Constraints:
+///   - Only supports integer types (i8, i16, i32, i64, u8, u16, u32, u64) and char
+///   - Start and end must be literal patterns of the same type
+///   - Type checked at compile time
+///
+/// Code generation:
+///   Generates efficient comparison: (value >= start) && (value < end)
+///   For inclusive: (value >= start) && (value <= end)
+///   Optimized to 2 comparisons at runtime
 class RangePattern : public Pattern {
 public:
+    /// Constructs a RangePattern
+    /// @param start Starting value of the range (inclusive)
+    /// @param end Ending value of the range
+    /// @param inclusive Whether the end value is included in the range
     RangePattern(PatternPtr start, PatternPtr end, bool inclusive)
         : start_(std::move(start)), end_(std::move(end)), inclusive_(inclusive) {}
     
+    /// Get the start pattern (typically a LiteralPattern)
     Pattern* getStart() const { return start_.get(); }
+    
+    /// Get the end pattern (typically a LiteralPattern)
     Pattern* getEnd() const { return end_.get(); }
+    
+    /// Check if this is an inclusive range (..=) or exclusive (..)
     bool isInclusive() const { return inclusive_; }
+    
     void accept(ASTVisitor* visitor) override;
     
 private:
-    PatternPtr start_;     // 起始值（通常是 LiteralPattern）
-    PatternPtr end_;       // 结束值
-    bool inclusive_;       // 是否包含结束值（.. 或 ..=）
+    PatternPtr start_;     ///< Start value (usually LiteralPattern)
+    PatternPtr end_;       ///< End value (usually LiteralPattern)
+    bool inclusive_;       ///< true for `..=` (inclusive), false for `..` (exclusive)
 };
 
-/// OrPattern - OR模式 (例如: 1 | 2 | 3, Color::red | Color::blue)
+/// OrPattern - Alternative pattern matching (OR pattern)
+///
+/// Matches if any of the alternative patterns match. Uses pipe (|) separator.
+///
+/// Syntax:
+///   pattern1 | pattern2 | pattern3
+///
+/// Examples:
+///   1 | 2 | 3                    - Match any of these integers
+///   "red" | "green" | "blue"     - Match any of these strings
+///   'a' | 'e' | 'i' | 'o' | 'u'  - Match vowels
+///   Some(x) | None               - Match any Optional variant
+///
+/// Constraints:
+///   - All alternative patterns must have compatible types
+///   - Type checked at compile time
+///   - Can be combined with other patterns (e.g., (1 | 2 | 3) if x > 0)
+///
+/// Code generation:
+///   Generates disjunction: cond1 || cond2 || cond3
+///   Short-circuits on first match (optimized evaluation)
+///   Time complexity: O(k) where k is the number of alternatives
+///
+/// Variable binding:
+///   - All alternatives must bind the same variables
+///   - Variables bound by the first matching alternative
 class OrPattern : public Pattern {
 public:
+    /// Constructs an OrPattern
+    /// @param alternatives Vector of alternative patterns to try matching
     explicit OrPattern(std::vector<PatternPtr> alternatives)
         : alternatives_(std::move(alternatives)) {}
     
+    /// Get all alternative patterns
     const std::vector<PatternPtr>& getAlternatives() const { return alternatives_; }
+    
     void accept(ASTVisitor* visitor) override;
     
 private:
-    std::vector<PatternPtr> alternatives_;  // 多个可选模式
+    std::vector<PatternPtr> alternatives_;  ///< Alternative patterns (at least 2)
 };
 
 } // namespace pawc

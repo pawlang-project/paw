@@ -1,4 +1,9 @@
 //===--- stmt_codegen.cpp - Statement CodeGen Implementation -----*- C++ -*-===//
+/// @file stmt_codegen.cpp
+/// @brief Statement and declaration code generation implementation
+///
+/// Generates LLVM IR for statements, control flow, and type declarations.
+/// Implements two-pass function generation for forward references.
 
 #include "stmt_codegen.h"
 #include "../expr/expr_codegen.h"
@@ -13,9 +18,10 @@
 
 namespace pawc {
 
+/// Initialize statement code generator and link with expression generator
 StmtCodeGen::StmtCodeGen(CodeGenContext* context, ExprCodeGen* expr_codegen)
-    : CodeGenBase(context), expr_codegen_(expr_codegen), result_(nullptr) {
-    // 设置ExprCodeGen的StmtCodeGen引用（用于BlockExpr）
+    : CodeGenBase(context), expr_codegen_(expr_codegen), results_(nullptr) {
+    // Link ExprCodeGen with StmtCodeGen (for BlockExpr)
     if (expr_codegen_) {
         expr_codegen_->setStmtCodeGen(this);
     }
@@ -24,38 +30,38 @@ StmtCodeGen::StmtCodeGen(CodeGenContext* context, ExprCodeGen* expr_codegen)
 llvm::Value* StmtCodeGen::generate(ASTNode* node) {
     if (auto* stmt = dynamic_cast<Stmt*>(node)) {
         stmt->accept(this);
-        return result_;
+        return results_;
     }
     return nullptr;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 语句生成
+// Statement generation
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void StmtCodeGen::visit(ExprStmt* node) {
     std::cerr << "[ExprStmt] Generating expression statement" << std::endl;
-    result_ = expr_codegen_->generate(node->getExpr());
-    std::cerr << "[ExprStmt] Result: " << (result_ ? "valid" : "null") << std::endl;
+    results_ = expr_codegen_->generate(node->getExpr());
+    std::cerr << "[ExprStmt] Result: " << (results_ ? "valid" : "null") << std::endl;
 }
 
 void StmtCodeGen::visit(VarDecl* node) {
     llvm::Function* func = context_->getBuilder().GetInsertBlock()->getParent();
     auto& builder = context_->getBuilder();
     
-    // === 特殊处理：FunctionType（闭包）===
-    // 闭包类型不能直接alloca，需要存储闭包指针或闭包对象
+    // === Special handling: FunctionType (closure) ===
+    // Closure types cannot be directly alloca'd, need to store closure pointer or closure object
     if (node->getType() && node->getType()->getKind() == Type::Kind::Function) {
-        // 生成闭包初始化表达式
+        // Generate closure initialization expression
         if (node->getInit()) {
             llvm::Value* closure_value = expr_codegen_->generate(node->getInit());
             
             if (closure_value) {
-                // 闭包值可能是：
-                // 1. 函数指针（无捕获）
-                // 2. 闭包结构体指针（有捕获）
+                // Closure value can be:
+                // 1. Function pointer (no captures)
+                // 2. Closure struct pointer (with captures)
                 
-                // 创建指针类型的alloca来存储闭包
+                // Create alloca of pointer type to store closure
                 llvm::Type* closure_storage_type = closure_value->getType();
                 
                 llvm::AllocaInst* alloca = context_->createEntryBlockAlloca(
@@ -66,26 +72,26 @@ void StmtCodeGen::visit(VarDecl* node) {
                 
                 builder.CreateStore(closure_value, alloca);
                 context_->defineVariable(node->getName(), alloca);
-                result_ = alloca;
+                results_ = alloca;
             }
         }
         return;
     }
     
-    // === 普通类型处理 ===
-    // 获取变量类型 - 使用CodeGenContext的统一类型映射
+    // === Normal type process ===
+    // Get variable type - use CodeGenContext's unified type map
     llvm::Type* var_type = node->getType() ?
         context_->getLLVMType(node->getType()) :
         llvm::Type::getInt32Ty(context_->getLLVMContext());
     
-    // 创建alloca
+    // Create alloca
     llvm::AllocaInst* alloca = context_->createEntryBlockAlloca(
         func,
         node->getName(),
         var_type
     );
     
-    // 如果有初始值，生成store
+    // If there's an initial value, generate and store it
     if (node->getInit()) {
         llvm::Value* init_value = expr_codegen_->generate(node->getInit());
         if (init_value) {
@@ -93,109 +99,109 @@ void StmtCodeGen::visit(VarDecl* node) {
         }
     }
     
-    // 注册变量
+    // Register variable
     context_->defineVariable(node->getName(), alloca);
     
-    result_ = alloca;
+    results_ = alloca;
 }
 
 void StmtCodeGen::visit(DestructuringDecl* node) {
-    // 元组解构: let (a, b) = tuple_expr;
+    // Tuple destructuring: let (a, b) = tuple_expr;
     auto& builder = context_->getBuilder();
     llvm::Function* func = builder.GetInsertBlock()->getParent();
     
     if (!node->getInit()) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
-    // 生成元组表达式
+    // Generate tuple expression
     llvm::Value* tuple_value = expr_codegen_->generate(node->getInit());
     if (!tuple_value) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
-    // 为每个变量创建alloca并提取对应的元组元素
+    // Create alloca for each variable and extract corresponding tuple element
     for (size_t i = 0; i < node->getNames().size(); ++i) {
-        // 提取元组元素
+        // Extract tuple element
         llvm::Value* element = builder.CreateExtractValue(tuple_value, i, "tuple.elem." + std::to_string(i));
         
-        // 创建变量的alloca
+        // Create alloca for variable
         llvm::AllocaInst* alloca = context_->createEntryBlockAlloca(
             func,
             node->getNames()[i],
             element->getType()
         );
         
-        // 存储元素值
+        // Store element value
         builder.CreateStore(element, alloca);
         
-        // 注册变量
+        // Register variable
         context_->defineVariable(node->getNames()[i], alloca);
     }
     
-    result_ = tuple_value;
+    results_ = tuple_value;
 }
 
 void StmtCodeGen::visit(StructDestructuringDecl* node) {
-    // 结构体解构: let Point { x, y } = p;
+    // Struct destructuring: let Point { x, y } = p;
     auto& builder = context_->getBuilder();
     llvm::Function* func = builder.GetInsertBlock()->getParent();
     
     if (!node->getInit()) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
-    // 生成结构体表达式
+    // Generate struct expression
     llvm::Value* struct_value = expr_codegen_->generate(node->getInit());
     if (!struct_value) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
-    // 为每个字段创建alloca并提取对应的结构体字段
-    // 使用ExtractValue而不是GEP（假设struct_value是按值传递）
+    // Create alloca for each field and extract corresponding struct field
+    // Use ExtractValue instead of GEP (assuming struct_value is passed by value)
     for (size_t i = 0; i < node->getFieldNames().size(); ++i) {
-        // 直接从结构体值中提取字段
+        // Extract field directly from struct value
         llvm::Value* field_value = builder.CreateExtractValue(
             struct_value,
             i,
             "struct.field." + node->getFieldNames()[i]
         );
         
-        // 创建变量的alloca
+        // Create alloca for variable
         llvm::AllocaInst* alloca = context_->createEntryBlockAlloca(
             func,
             node->getFieldNames()[i],
             field_value->getType()
         );
         
-        // 存储字段值
+        // Store field value
         builder.CreateStore(field_value, alloca);
         
-        // 注册变量
+        // Register variable
         context_->defineVariable(node->getFieldNames()[i], alloca);
     }
     
-    result_ = struct_value;
+    results_ = struct_value;
 }
 
-// 🔧 生成函数声明（仅签名，支持前向引用）
+// 🔧 Generate function declaration (signature only, supports forward references)
 void StmtCodeGen::generateFunctionDeclaration(FunctionDecl* node) {
-    // 检查函数是否已存在
+    // Check if function already exists
     std::string check_name = (node->getName() == "main") ? "paw.main" : node->getName();
     if (!current_support_type_.empty()) {
         check_name = current_support_type_ + "_" + node->getName();
     }
     
     if (context_->getModule()->getFunction(check_name)) {
-        // 函数已存在，跳过
+        // Function already exists, skip
         return;
     }
     
-    // 创建函数类型
+    // createfunctiontypes
     std::vector<llvm::Type*> param_types;
     llvm::Type* ret_type = nullptr;
     
@@ -213,7 +219,7 @@ void StmtCodeGen::generateFunctionDeclaration(FunctionDecl* node) {
     
     auto* func_type = llvm::FunctionType::get(ret_type, param_types, false);
     
-    // 创建函数（仅声明，不生成函数体）
+    // Create function (declaration only, don't generate function body)
     llvm::Function::LinkageTypes linkage = (node->getName() == "main") ?
         llvm::Function::InternalLinkage : llvm::Function::ExternalLinkage;
     
@@ -226,12 +232,12 @@ void StmtCodeGen::generateFunctionDeclaration(FunctionDecl* node) {
         context_->getModule()
     );
     
-    // 注册函数到上下文
+    // Register function to context
     context_->registerFunction(node->getName(), func);
 }
 
 void StmtCodeGen::visit(FunctionDecl* node) {
-    // 查找已创建的函数（第一遍扫描时创建）
+    // Look up already created function (created during first pass)
     std::string func_name = (node->getName() == "main") ? "paw.main" : node->getName();
     
     if (!current_support_type_.empty()) {
@@ -241,41 +247,41 @@ void StmtCodeGen::visit(FunctionDecl* node) {
     llvm::Function* func = context_->getModule()->getFunction(func_name);
     
     if (!func) {
-        // 如果第一遍扫描被跳过（如在support块中），现在创建
+        // If first pass was skipped (e.g., in support block), create now
         generateFunctionDeclaration(node);
         func = context_->getModule()->getFunction(func_name);
     }
     
     if (!func) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
-    // 创建entry基本块（如果还没有）
+    // Create entry basic block (if not already present)
     if (func->empty()) {
         llvm::BasicBlock* entry = context_->createBasicBlock("entry", func);
         context_->getBuilder().SetInsertPoint(entry);
     } else {
-        // 已有基本块，设置插入点到第一个块
+        // Already has basic block, set insertion point to first block
         context_->getBuilder().SetInsertPoint(&func->getEntryBlock());
     }
     
-    // 进入函数作用域
+    // Enter function scope
     context_->enterScope();
     
-    // 添加参数到符号表
+    // Add parameters to symbol table
     size_t i = 0;
     for (auto& arg : func->args()) {
         const auto& param = node->getParams()[i];
         arg.setName(param.name);
         
-        // 🔧 Fix: 使用resolved_param_types（如果可用）来创建alloca
+        // 🔧 Fix: Use resolved_param_types (if available) to create alloca
         Type* param_type = param.type;
         if (node->hasResolvedTypes() && i < node->getResolvedParamTypes().size()) {
             param_type = node->getResolvedParamTypes()[i];
         }
         
-        // 创建alloca并存储参数值 - 使用CodeGenContext的类型映射确保一致性
+        // Create alloca and store parameter value - use CodeGenContext's type map to ensure consistency
         llvm::AllocaInst* alloca = context_->createEntryBlockAlloca(
             func,
             param.name,
@@ -287,12 +293,12 @@ void StmtCodeGen::visit(FunctionDecl* node) {
         i++;
     }
     
-    // 生成函数体
+    // generate function body
     if (node->getBody()) {
         node->getBody()->accept(this);
     }
     
-    // 如果没有return，添加默认return
+    // If no return, add default return
     if (!context_->getCurrentBlock()->getTerminator()) {
         llvm::Type* return_type = func->getReturnType();
         if (return_type->isVoidTy()) {
@@ -300,19 +306,19 @@ void StmtCodeGen::visit(FunctionDecl* node) {
         }
     }
     
-    // 退出函数作用域
+    // Exit function scope
     context_->exitScope();
     
-    // 特殊处理：为所有main()生成C ABI wrapper
+    // Special handling: Generate C ABI wrapper for main()
     if (node->getName() == "main") {
         generateMainWrapper(func, func->getReturnType());
     }
     
-    result_ = func;
+    results_ = func;
 }
 
 void StmtCodeGen::generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_return_type) {
-    // 生成C ABI兼容的main函数: int main() { ... return 0/result; }
+    // Generate C ABI-compatible main function: int main() { ... return 0/results; }
     auto& builder = context_->getBuilder();
     auto* i32_type = llvm::Type::getInt32Ty(context_->getLLVMContext());
     auto* main_type = llvm::FunctionType::get(i32_type, {}, false);
@@ -324,45 +330,45 @@ void StmtCodeGen::generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_
         context_->getModule()
     );
     
-    // 创建entry块
+    // Create entry block
     llvm::BasicBlock* entry = llvm::BasicBlock::Create(
         context_->getLLVMContext(), "entry", c_main);
     
-    // 保存当前插入点
+    // Save current insertion point
     auto saved_block = builder.GetInsertBlock();
     
-    // 切换到C main
+    // Switch to C main
     builder.SetInsertPoint(entry);
     
-    // 调用PawLang的main
-    llvm::Value* paw_result = builder.CreateCall(paw_main, {});
+    // Call PawLang's main
+    llvm::Value* paw_results = builder.CreateCall(paw_main, {});
     
-    // 根据返回类型处理返回值
+    // Process return value based on return type
     if (paw_return_type->isVoidTy()) {
         // void main() -> return 0
         builder.CreateRet(llvm::ConstantInt::get(i32_type, 0));
     } else if (paw_return_type->isIntegerTy(32)) {
-        // i32 main() -> return result
-        builder.CreateRet(paw_result);
+        // i32 main() -> return results
+        builder.CreateRet(paw_results);
     } else if (paw_return_type->isStructTy()) {
         // Result<i32> main() -> extract value and return
-        // Result结构体: { i1 is_ok, T value, ptr error_message }
-        // 如果is_ok，返回value；否则返回1（错误码）
+        // Result struct: { i1 is_ok, T value, ptr error_message }
+        // If is_ok, return value; otherwise return 1 (error code)
         
-        // === 关键修复：先alloca Result，再进行GEP ===
-        // 创建临时alloca存储Result值
-        llvm::AllocaInst* result_alloca = llvm::IRBuilder<>(
+        // === Key fix: First alloca Result, then perform GEP ===
+        // Create temporary alloca to store Result value
+        llvm::AllocaInst* results_alloca = llvm::IRBuilder<>(
             &c_main->getEntryBlock(),
             c_main->getEntryBlock().begin()
-        ).CreateAlloca(paw_return_type, nullptr, "result_tmp");
+        ).CreateAlloca(paw_return_type, nullptr, "results_tmp");
         
-        // 存储Result值
-        builder.CreateStore(paw_result, result_alloca);
+        // Store Result value
+        builder.CreateStore(paw_results, results_alloca);
         
-        // 提取is_ok字段
+        // Extract is_ok field
         llvm::Value* is_ok_ptr = builder.CreateStructGEP(
             paw_return_type,
-            result_alloca,  // 使用alloca指针
+            results_alloca,  // Use alloca pointer
             0
         );
         llvm::Value* is_ok = builder.CreateLoad(
@@ -371,7 +377,7 @@ void StmtCodeGen::generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_
             "is_ok"
         );
         
-        // 创建条件分支
+        // Create conditional branch
         llvm::BasicBlock* ok_bb = llvm::BasicBlock::Create(
             context_->getLLVMContext(), "main.ok", c_main);
         llvm::BasicBlock* err_bb = llvm::BasicBlock::Create(
@@ -379,32 +385,32 @@ void StmtCodeGen::generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_
         
         builder.CreateCondBr(is_ok, ok_bb, err_bb);
         
-        // OK分支：提取value并返回
+        // OK branch: Extract value and return
         builder.SetInsertPoint(ok_bb);
         llvm::Value* value_ptr = builder.CreateStructGEP(
             paw_return_type,
-            result_alloca,  // 使用alloca指针
+            results_alloca,  // Use alloca pointer
             1
         );
         llvm::Type* value_type = paw_return_type->getStructElementType(1);
         llvm::Value* value = builder.CreateLoad(value_type, value_ptr, "value");
         
-        // 如果value是i32，直接返回；否则返回0
+        // If value is i32, return directly; otherwise return 0
         if (value_type->isIntegerTy(32)) {
             builder.CreateRet(value);
         } else {
             builder.CreateRet(llvm::ConstantInt::get(i32_type, 0));
         }
         
-        // ERR分支：返回1（错误码）
+        // ERR branch: Return 1 (error code)
         builder.SetInsertPoint(err_bb);
         builder.CreateRet(llvm::ConstantInt::get(i32_type, 1));
     } else {
-        // 其他类型 -> return 0
+        // Other types -> return 0
         builder.CreateRet(llvm::ConstantInt::get(i32_type, 0));
     }
     
-    // 恢复插入点
+    // Restore insertion point
     if (saved_block) {
         builder.SetInsertPoint(saved_block);
     }
@@ -417,90 +423,90 @@ void StmtCodeGen::visit(ReturnStmt* node) {
         llvm::Value* ret_val = expr_codegen_->generate(node->getValue());
         
         if (!ret_val) {
-            result_ = nullptr;
+            results_ = nullptr;
             return;
         }
         
-        // === 自动包装Optional和Result ===
-        // 获取当前函数的返回类型
+        // === self/fromdynamicwrapOptionalandResult ===
+        // getcurrentfunctionof/thereturntypes
         llvm::Function* current_fn = builder.GetInsertBlock()->getParent();
         llvm::Type* fn_ret_type = current_fn->getReturnType();
         
-        // 检查是否需要包装为Optional或Result
+        // Checkyesnoneedwrapis/asOptionalorResult
         Type* ret_val_type = node->getValue()->getType();
         
-        // 如果函数返回Optional<T>，且返回值是T（非Optional），自动包装
+        // iffunctionreturnOptional<T>，andreturnvalueyesT（notOptional），self/fromdynamicwrap
         if (fn_ret_type->isStructTy() && fn_ret_type->getStructNumElements() == 2) {
-            // 可能是Optional<T> = { i1 has_value, T value }
-            // 检查返回值类型是否匹配Optional的value类型
+            // Possibly Optional<T> = { i1 has_value, T value }
+            // Check if return value type matches Optional's value type
             llvm::Type* expected_value_type = fn_ret_type->getStructElementType(1);
             
             if (ret_val->getType() == expected_value_type) {
-                // 自动包装为Optional: { true, value }
+                // Auto-wrap as Optional: { true, value }
                 llvm::Value* optional_value = llvm::UndefValue::get(fn_ret_type);
                 
-                // 设置has_value = true
+                // Set has_value = true
                 optional_value = builder.CreateInsertValue(optional_value,
                     llvm::ConstantInt::get(builder.getInt1Ty(), 1),  // true
                     0);
                 
-                // 设置value
+                // Set value
                 optional_value = builder.CreateInsertValue(optional_value, ret_val, 1);
                 
-                result_ = builder.CreateRet(optional_value);
+                results_ = builder.CreateRet(optional_value);
                 return;
             }
             
-            // === 特殊处理：null返回（Optional<void> → Optional<T>） ===
-            // 如果返回值是Optional类型（可能是null），且第一个字段类型匹配
+            // === Special handling: null return (Optional<void> → Optional<T>) ===
+            // If return value is Optional type (possibly null) and first field type matches
             if (ret_val->getType()->isStructTy() &&
                 ret_val->getType()->getStructNumElements() == 2 &&
                 ret_val->getType()->getStructElementType(0)->isIntegerTy(1)) {
                 
-                // 这可能是null（Optional<void>），需要转换为Optional<T>
-                // 提取has_value字段
+                // This might be null (Optional<void>), needs to be converted to Optional<T>
+                // Extract has_value field
                 llvm::Value* has_value = builder.CreateExtractValue(ret_val, 0, "has_value");
                 
-                // 创建正确类型的Optional<T>
+                // Create correctly typed Optional<T>
                 llvm::Value* converted_optional = llvm::UndefValue::get(fn_ret_type);
                 
-                // 复制has_value（应该是false for null）
+                // Copy has_value (should be false for null)
                 converted_optional = builder.CreateInsertValue(converted_optional, has_value, 0);
                 
-                // value字段保持undef（因为has_value=false时不使用）
+                // Value field remains undef (not used when has_value=false)
                 
-                result_ = builder.CreateRet(converted_optional);
+                results_ = builder.CreateRet(converted_optional);
                 return;
             }
         }
         
-        // 否则直接返回
-        result_ = builder.CreateRet(ret_val);
+        // Otherwise return directly
+        results_ = builder.CreateRet(ret_val);
     } else {
-        result_ = builder.CreateRetVoid();
+        results_ = builder.CreateRetVoid();
     }
 }
 
 void StmtCodeGen::visit(IfStmt* node) {
     llvm::Function* func = context_->getBuilder().GetInsertBlock()->getParent();
     
-    // 生成条件
+    // Generate condition
     llvm::Value* cond = expr_codegen_->generate(node->getCondition());
     
-    // 创建基本块
+    // Create basic blocks
     llvm::BasicBlock* then_bb = context_->createBasicBlock("if.then", func);
     llvm::BasicBlock* else_bb = node->getElseStmt() ?
         context_->createBasicBlock("if.else", func) : nullptr;
     llvm::BasicBlock* merge_bb = context_->createBasicBlock("if.end", func);
     
-    // 创建分支
+    // Create branch
     if (else_bb) {
         context_->getBuilder().CreateCondBr(cond, then_bb, else_bb);
     } else {
         context_->getBuilder().CreateCondBr(cond, then_bb, merge_bb);
     }
     
-    // 生成then分支
+    // Generate then branch
     context_->getBuilder().SetInsertPoint(then_bb);
     node->getThenStmt()->accept(this);
     bool then_has_terminator = context_->getCurrentBlock()->getTerminator() != nullptr;
@@ -508,7 +514,7 @@ void StmtCodeGen::visit(IfStmt* node) {
         context_->getBuilder().CreateBr(merge_bb);
     }
     
-    // 生成else分支
+    // Generate else branch
     bool else_has_terminator = false;
     if (else_bb) {
         context_->getBuilder().SetInsertPoint(else_bb);
@@ -519,18 +525,18 @@ void StmtCodeGen::visit(IfStmt* node) {
         }
     }
     
-    // 只有在merge块可达时才设置插入点
-    // 如果两个分支都有terminator（都return），merge块不可达，需要添加unreachable
+    // Only set insertion point if merge block is reachable
+    // If both branches have terminators (both return), merge block is unreachable, need to add unreachable
     if (then_has_terminator && else_has_terminator && else_bb) {
-        // 两个分支都有terminator，merge块不可达
+        // Both branches have terminators, merge block is unreachable
         context_->getBuilder().SetInsertPoint(merge_bb);
         context_->getBuilder().CreateUnreachable();
     } else {
-        // merge块可达，正常设置为插入点
+        // Merge block is reachable, normally set as insertion point
         context_->getBuilder().SetInsertPoint(merge_bb);
     }
     
-    result_ = nullptr;
+    results_ = nullptr;
 }
 
 void StmtCodeGen::visit(LoopStmt* node) {
@@ -539,50 +545,50 @@ void StmtCodeGen::visit(LoopStmt* node) {
     llvm::BasicBlock* loop_bb = context_->createBasicBlock("loop", func);
     llvm::BasicBlock* after_bb = context_->createBasicBlock("afterloop", func);
     
-    // 保存break/continue目标
+    // Save break/continue targets
     llvm::BasicBlock* old_break = break_target_;
     llvm::BasicBlock* old_continue = continue_target_;
     break_target_ = after_bb;
     continue_target_ = loop_bb;
     
-    // 跳转到loop
+    // Jump to loop
     context_->getBuilder().CreateBr(loop_bb);
     
-    // 生成loop体
+    // Generate loop body
     context_->getBuilder().SetInsertPoint(loop_bb);
     node->getBody()->accept(this);
     
-    // 如果没有terminator，继续循环
+    // If no terminator, continue looping
     if (!context_->getCurrentBlock()->getTerminator()) {
         context_->getBuilder().CreateBr(loop_bb);
     }
     
-    // 恢复break/continue目标
+    // Restore break/continue targets
     break_target_ = old_break;
     continue_target_ = old_continue;
     
-    // 继续在after块
+    // Continue at after block
     context_->getBuilder().SetInsertPoint(after_bb);
-    result_ = nullptr;
+    results_ = nullptr;
 }
 
 void StmtCodeGen::visit(WhileStmt* node) {
-    // while等价于 loop { if !cond { break } ... }
+    // while is equivalent to: loop { if !cond { break } ... }
     llvm::Function* func = context_->getBuilder().GetInsertBlock()->getParent();
     
     llvm::BasicBlock* loop_bb = context_->createBasicBlock("while.loop", func);
     llvm::BasicBlock* body_bb = context_->createBasicBlock("while.body", func);
     llvm::BasicBlock* after_bb = context_->createBasicBlock("while.end", func);
     
-    // 跳转到loop
+    // Jump to loop
     context_->getBuilder().CreateBr(loop_bb);
     
-    // loop header: 检查条件
+    // Loop header: Check condition
     context_->getBuilder().SetInsertPoint(loop_bb);
     llvm::Value* cond = expr_codegen_->generate(node->getCondition());
     context_->getBuilder().CreateCondBr(cond, body_bb, after_bb);
     
-    // loop body
+    // Loop body
     context_->getBuilder().SetInsertPoint(body_bb);
     
     llvm::BasicBlock* old_break = break_target_;
@@ -599,20 +605,20 @@ void StmtCodeGen::visit(WhileStmt* node) {
     break_target_ = old_break;
     continue_target_ = old_continue;
     
-    // 继续在after块
+    // Continue at after block
     context_->getBuilder().SetInsertPoint(after_bb);
-    result_ = nullptr;
+    results_ = nullptr;
 }
 
 void StmtCodeGen::visit(BreakStmt* node) {
     if (break_target_) {
-        result_ = context_->getBuilder().CreateBr(break_target_);
+        results_ = context_->getBuilder().CreateBr(break_target_);
     }
 }
 
 void StmtCodeGen::visit(ContinueStmt* node) {
     if (continue_target_) {
-        result_ = context_->getBuilder().CreateBr(continue_target_);
+        results_ = context_->getBuilder().CreateBr(continue_target_);
     }
 }
 
@@ -622,41 +628,41 @@ void StmtCodeGen::visit(BlockStmt* node) {
     for (const auto& stmt : node->getStmts()) {
         stmt->accept(this);
         
-        // 如果已经有terminator，停止生成后续代码
+        // If already has terminator, stop generating subsequent code
         if (context_->getCurrentBlock()->getTerminator()) {
             break;
         }
     }
     
     context_->exitScope();
-    result_ = nullptr;
+    results_ = nullptr;
 }
 
 void StmtCodeGen::visit(ForStmt* node) {
-    // for i in 0..10 { ... } 展开为传统循环
+    // for i in 0..10 { ... } expands to traditional loop
     
     auto& builder = context_->getBuilder();
     llvm::Function* func = builder.GetInsertBlock()->getParent();
     
-    // 生成iterator表达式（应该是Range）
+    // Generate iterator expression (should be a Range)
     llvm::Value* iterator = expr_codegen_->generate(node->getIterator());
     if (!iterator) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
-    // 如果iterator是Range结构体 {start, end, inclusive}
+    // If iterator is a Range struct {start, end, inclusive}
     llvm::Type* iter_type = iterator->getType();
     
     if (iter_type->isStructTy()) {
         llvm::StructType* range_struct = llvm::cast<llvm::StructType>(iter_type);
         
-        // 提取start, end, inclusive
+        // Extract start, end, inclusive
         llvm::Value* start = builder.CreateExtractValue(iterator, 0, "range.start");
         llvm::Value* end = builder.CreateExtractValue(iterator, 1, "range.end");
         llvm::Value* inclusive = builder.CreateExtractValue(iterator, 2, "range.inclusive");
         
-        // 创建循环变量
+        // Create loop variable
         llvm::AllocaInst* loop_var = context_->createEntryBlockAlloca(
             func,
             node->getVarName(),
@@ -665,21 +671,21 @@ void StmtCodeGen::visit(ForStmt* node) {
         builder.CreateStore(start, loop_var);
         context_->defineVariable(node->getVarName(), loop_var);
         
-        // 创建基本块
+        // Create basic blocks
         llvm::BasicBlock* cond_bb = context_->createBasicBlock("for.cond", func);
         llvm::BasicBlock* body_bb = context_->createBasicBlock("for.body", func);
         llvm::BasicBlock* inc_bb = context_->createBasicBlock("for.inc", func);
         llvm::BasicBlock* end_bb = context_->createBasicBlock("for.end", func);
         
-        // 跳转到条件检查
+        // Jump to condition check
         builder.CreateBr(cond_bb);
         
-        // 条件检查：i < end 或 i <= end
+        // Condition check: i < end or i <= end
         builder.SetInsertPoint(cond_bb);
         llvm::Value* current = builder.CreateLoad(start->getType(), loop_var, "i");
         llvm::Value* cond;
         
-        // 根据inclusive标志选择比较运算符
+        // Choose comparison operator based on inclusive flag
         llvm::BasicBlock* lt_bb = context_->createBasicBlock("for.lt", func);
         llvm::BasicBlock* le_bb = context_->createBasicBlock("for.le", func);
         llvm::BasicBlock* cmp_bb = context_->createBasicBlock("for.cmp", func);
@@ -696,7 +702,7 @@ void StmtCodeGen::visit(ForStmt* node) {
         llvm::Value* cond_le = builder.CreateICmpSLE(current, end, "cond.le");
         builder.CreateBr(cmp_bb);
         
-        // PHI节点选择条件
+        // PHI node selects condition
         builder.SetInsertPoint(cmp_bb);
         llvm::PHINode* phi = builder.CreatePHI(builder.getInt1Ty(), 2, "cond");
         phi->addIncoming(cond_lt, lt_bb);
@@ -704,7 +710,7 @@ void StmtCodeGen::visit(ForStmt* node) {
         
         builder.CreateCondBr(phi, body_bb, end_bb);
         
-        // 循环体
+        // Loop body
         builder.SetInsertPoint(body_bb);
         
         llvm::BasicBlock* old_break = break_target_;
@@ -721,7 +727,7 @@ void StmtCodeGen::visit(ForStmt* node) {
         break_target_ = old_break;
         continue_target_ = old_continue;
         
-        // 递增：i = i + 1
+        // Increment: i = i + 1
         builder.SetInsertPoint(inc_bb);
         llvm::Value* current_inc = builder.CreateLoad(start->getType(), loop_var, "i.inc");
         llvm::Value* next = builder.CreateAdd(current_inc, 
@@ -730,56 +736,56 @@ void StmtCodeGen::visit(ForStmt* node) {
         builder.CreateStore(next, loop_var);
         builder.CreateBr(cond_bb);
         
-        // 继续在end块
+        // Continue at end block
         builder.SetInsertPoint(end_bb);
     }
     
-    result_ = nullptr;
+    results_ = nullptr;
 }
 
 void StmtCodeGen::visit(StructDecl* node) {
-    // 类型定义不需要生成LLVM IR
-    // TypeSystem已在TypeChecker阶段注册类型
-    result_ = nullptr;
+    // Type definition doesn't need to generate LLVM IR
+    // TypeSystem already registered types in TypeChecker phase
+    results_ = nullptr;
 }
 
 void StmtCodeGen::visit(EnumDecl* node) {
-    // 类型定义不需要生成LLVM IR
-    // TypeSystem已在TypeChecker阶段注册类型
-    result_ = nullptr;
+    // Type definition doesn't need to generate LLVM IR
+    // TypeSystem already registered types in TypeChecker phase
+    results_ = nullptr;
 }
 
 void StmtCodeGen::visit(InterfaceDecl* node) {
-    // 接口定义不需要生成LLVM IR
-    // TypeSystem已在TypeChecker阶段注册类型
-    result_ = nullptr;
+    // Interface definition doesn't need to generate LLVM IR
+    // TypeSystem already registered types in TypeChecker phase
+    results_ = nullptr;
 }
 
 void StmtCodeGen::visit(SupportDecl* node) {
-    // support块：生成接口方法实现
-    // 🔧 Self/support上下文：设置当前类型名，让方法使用修饰后的名称
+    // Support block: Generate interface method implementations
+    // 🔧 Self/support context: Set current type name, allowing methods to use mangled name
     
     std::string saved_support_type = current_support_type_;
     current_support_type_ = node->getTypeName();
     
-    // 1. 生成用户实现的方法
+    // 1. Generate user-implemented methods
     for (const auto& method : node->getMethods()) {
         method->accept(this);
     }
     
-    // 2. 🔧 生成接口默认方法的包装
+    // 2. 🔧 Generate wrappers for interface default methods
     Type* interface_type = context_->getTypeSystem()->lookupType(node->getInterfaceName());
     if (interface_type && interface_type->getKind() == Type::Kind::Interface) {
         auto* iface = static_cast<InterfaceType*>(interface_type);
         
-        // 获取已实现的方法名列表
+        // Get list of already implemented method names
         std::set<std::string> implemented_methods;
         for (const auto& method : node->getMethods()) {
             implemented_methods.insert(method->getName());
         }
         
-        // 查找有默认实现但未被实现的方法
-        // 🔧 构建泛型参数替换映射（用于默认方法）
+        // Find methods with default implementation that haven't been implemented
+        // 🔧 Build generic parameter substitution map (for default methods)
         std::map<std::string, Type*> generic_substitution;
         if (iface->isGeneric() && node->isInterfaceGeneric()) {
             const auto& interface_def_param_names = iface->getGenericParamNames();
@@ -796,30 +802,30 @@ void StmtCodeGen::visit(SupportDecl* node) {
         for (const auto& iface_method : iface->getMethods()) {
             if (iface_method.has_default_impl && 
                 implemented_methods.find(iface_method.name) == implemented_methods.end()) {
-                // 生成默认方法的包装（传递泛型替换映射）
+                // Generate wrapper for default method (pass generic substitution map)
                 generateDefaultMethod(node->getTypeName(), iface_method, generic_substitution);
             }
         }
     }
     
-    // 恢复上下文
+    // Restore context
     current_support_type_ = saved_support_type;
     
-    result_ = nullptr;
+    results_ = nullptr;
 }
 
 void StmtCodeGen::generateDefaultMethod(const std::string& type_name, 
                                         const InterfaceType::MethodSignature& method,
                                         const std::map<std::string, Type*>& generic_substitution) {
-    // 🔧 为类型生成接口默认方法的包装
-    // 方法名格式: type_name::method_name (与其他方法一致)
+    // 🔧 Generate wrapper for interface default method for type
+    // Method name format: type_name::method_name (consistent with other methods)
     
     auto& builder = context_->getBuilder();
     std::string mangled_name = type_name + "::" + method.name;
     
-    // 检查是否已存在
+    // Check if already exists
     if (context_->getModule()->getFunction(mangled_name)) {
-        return;  // 已存在，跳过
+        return;  // Already exists, skip
     }
     
     std::cerr << "[DefaultMethod] Generating default method: " << mangled_name << std::endl;
@@ -827,18 +833,18 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
         std::cerr << "[DefaultMethod] Using generic substitution" << std::endl;
     }
     
-    // 构建函数类型
+    // build/constructfunctiontypes
     std::vector<llvm::Type*> param_types;
-    std::vector<Type*> paw_param_types;  // 保存 PawLang 类型（用于绑定参数）
+    std::vector<Type*> paw_param_types;  // save PawLang types（used forbindparameter）
     
-    // 第一个参数：self（类型为 type_name）
+    // firstparameter：self（typesis/as type_name）
     Type* self_type = context_->getTypeSystem()->lookupType(type_name);
     if (!self_type) {
         std::cerr << "[DefaultMethod] Error: Type not found: " << type_name << std::endl;
         return;
     }
     
-    // 根据第一个参数的类型确定 self 的传递方式
+    // according tofirstparameterof/thetypescertain/sure self of/thepasswaystyle/form
     bool is_self_ref = false;
     bool is_self_mut = false;
     
@@ -849,22 +855,22 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
     }
     
     if (is_self_ref) {
-        // self 是引用类型，传递指针
+        // self yesreferencetypes，passpointer
         param_types.push_back(llvm::PointerType::getUnqual(builder.getContext()));
         paw_param_types.push_back(context_->getTypeSystem()->getReferenceType(self_type, is_self_mut));
     } else {
-        // self 是值类型
+        // self yesvaluetypes
         param_types.push_back(context_->getLLVMType(self_type));
         paw_param_types.push_back(self_type);
     }
     
-    // 🔧 其他参数 - 应用泛型替换！
+    // 🔧 otherparameter - applygenericsubstitution！
     for (size_t i = 1; i < method.param_types.size(); ++i) {
         Type* param_type = method.param_types[i];
         
-        // 应用泛型替换
+        // applygenericsubstitution
         if (!generic_substitution.empty()) {
-            // 简单替换：如果是泛型类型，从映射中查找替换
+            // simplesinglesubstitution：ifyesgenerictypes，frommapmiddle/centerlookupsubstitution
             if (param_type->getKind() == Type::Kind::Generic) {
                 auto* generic = static_cast<GenericType*>(param_type);
                 auto it = generic_substitution.find(generic->getName());
@@ -880,10 +886,10 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
         param_types.push_back(context_->getLLVMType(param_type));
     }
     
-    // 返回类型
+    // returntypes
     llvm::Type* return_type = context_->getLLVMType(method.return_type);
     
-    // 创建函数
+    // createfunction
     auto* fn_type = llvm::FunctionType::get(return_type, param_types, false);
     llvm::Function* wrapper_fn = llvm::Function::Create(
         fn_type,
@@ -892,10 +898,10 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
         context_->getModule()
     );
     
-    // 保存当前插入点
+    // savecurrentinsertedpoint
     llvm::BasicBlock* saved_bb = builder.GetInsertBlock();
     
-    // 创建函数体
+    // createfunctionbody/struct
     llvm::BasicBlock* entry_bb = llvm::BasicBlock::Create(
         builder.getContext(),
         "entry",
@@ -903,14 +909,14 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
     );
     builder.SetInsertPoint(entry_bb);
     
-    // 🔧 关键：生成调用默认实现的代码
-    // 进入作用域
+    // 🔧 Key：generatecalldefaultimplementationof/thecode
+    // enterscope
     context_->enterScope();
     
-    // 绑定参数到符号表（包括 self）
+    // bindparametertosymboltable（packageincluding self）
     auto args_iter = wrapper_fn->arg_begin();
     
-    // 第一个参数是 self
+    // firstparameteryes self
     args_iter->setName("self");
     std::cerr << "[DefaultMethod] Self arg type: " << (args_iter->getType()->isPointerTy() ? "pointer" : "value") << std::endl;
     
@@ -925,10 +931,10 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
     std::cerr << "[DefaultMethod] Self variable defined" << std::endl;
     ++args_iter;
     
-    // 🔧 其他参数 - 使用真实参数名！
-    size_t param_idx = 1;  // 跳过 self
+    // 🔧 otherparameter - usetrueactualparametername！
+    size_t param_idx = 1;  // skip self
     for (; args_iter != wrapper_fn->arg_end(); ++args_iter, ++param_idx) {
-        // 🔧 使用真实参数名（如 "other"）
+        // 🔧 usetrueactualparametername（like/such as "other"）
         std::string param_name = (param_idx < method.param_names.size()) 
                                ? method.param_names[param_idx] 
                                : ("arg" + std::to_string(param_idx));
@@ -945,29 +951,29 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
         std::cerr << "[DefaultMethod] Bound parameter: " << param_name << std::endl;
     }
     
-    // 生成默认实现的 body
+    // generationdefaultimplementationof/the body
     if (method.default_body) {
         std::cerr << "[DefaultMethod] Generating body..." << std::endl;
         
-        // 🔧 检查 body 是否是 BlockExpr
+        // 🔧 check body yesnoyes BlockExpr
         if (auto* block_expr = dynamic_cast<BlockExpr*>(method.default_body)) {
             std::cerr << "[DefaultMethod] Body is BlockExpr with " << block_expr->getStmts().size() << " statements" << std::endl;
             
-            // BlockExpr 包含多个语句，需要逐个执行
+            // BlockExpr containsmany/muchindividual/piecestatement，needone by one/eachindividual/pieceexecute
             llvm::Value* last_value = nullptr;
             for (size_t i = 0; i < block_expr->getStmts().size(); ++i) {
                 const auto& stmt = block_expr->getStmts()[i];
                 bool is_last = (i == block_expr->getStmts().size() - 1);
                 
-                stmt->accept(this);  // 使用 StmtCodeGen 执行语句
+                stmt->accept(this);  // use StmtCodeGen executestatement
                 
-                // 🔧 最后一个语句的返回值作为BlockExpr的返回值
+                // 🔧 Last statement's return value used as BlockExpr's return value
                 if (is_last) {
-                    last_value = result_;  // 从 StmtCodeGen 的 result_ 获取
+                    last_value = results_;  // from StmtCodeGen of/the results_ get
                 }
             }
             
-            // 返回最后一个表达式的值
+            // returnlastone/aindividual/pieceexpressionof/thevalue
             if (last_value && !return_type->isVoidTy()) {
                 std::cerr << "[DefaultMethod] Returning last value from BlockExpr" << std::endl;
                 builder.CreateRet(last_value);
@@ -977,28 +983,28 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
                 builder.CreateRet(llvm::Constant::getNullValue(return_type));
             }
         } else {
-            // 单个表达式
+            // singleindividual/pieceexpression
             method.default_body->accept(expr_codegen_);
-            llvm::Value* body_result = expr_codegen_->getResult();
+            llvm::Value* body_results = expr_codegen_->getResult();
             
-            std::cerr << "[DefaultMethod] Body result: " << (body_result ? "valid" : "null") << std::endl;
+            std::cerr << "[DefaultMethod] Body results: " << (body_results ? "valid" : "null") << std::endl;
             
-            // 返回结果
-            if (body_result && !return_type->isVoidTy()) {
-                std::cerr << "[DefaultMethod] Returning body result" << std::endl;
-                builder.CreateRet(body_result);
+            // returnresults
+            if (body_results && !return_type->isVoidTy()) {
+                std::cerr << "[DefaultMethod] Returning body results" << std::endl;
+                builder.CreateRet(body_results);
             } else if (return_type->isVoidTy()) {
                 std::cerr << "[DefaultMethod] Returning void" << std::endl;
                 builder.CreateRetVoid();
             } else {
                 std::cerr << "[DefaultMethod] Returning null value" << std::endl;
-                // 如果没有结果，返回零值
+                // ifnohasresults，returnzerovalue
                 builder.CreateRet(llvm::Constant::getNullValue(return_type));
             }
         }
     } else {
         std::cerr << "[DefaultMethod] No body!" << std::endl;
-        // 没有 body（不应该发生）
+        // no body（notshouldoccur）
         if (return_type->isVoidTy()) {
             builder.CreateRetVoid();
         } else {
@@ -1006,10 +1012,10 @@ void StmtCodeGen::generateDefaultMethod(const std::string& type_name,
         }
     }
     
-    // 退出作用域
+    // exitscope
     context_->exitScope();
     
-    // 恢复插入点
+    // recoverinsertedpoint
     if (saved_bb) {
         builder.SetInsertPoint(saved_bb);
     }

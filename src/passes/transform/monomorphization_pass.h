@@ -1,10 +1,10 @@
 //===--- monomorphization_pass.h - Generic Monomorphization Pass -*- C++ -*-===//
 //
-// PawLang Compiler - 泛型单态化Pass
+// PawLang Compiler - genericmonomorphizationPass
 //
-// 将泛型定义转换为具体类型的实例：
+// willgenericdefinitionconvertis/asconcretetypesof/theinstance：
 //   type Box<T> = struct { value: T }
-//   let x = Box { value: 42 };  // 生成 Box_i32
+//   let x = Box { value: 42 };  // generation Box_i32
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,25 +22,25 @@
 namespace pawc {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 泛型实例化请求
+// genericinstantiationrequest
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// InstantiationRequest - 泛型实例化请求
+/// InstantiationRequest - genericinstantiationrequest
 struct InstantiationRequest {
-    std::string generic_name;           // 泛型名称，如 "Box"
-    std::vector<Type*> type_args;       // 具体类型参数，如 [i32]
+    std::string generic_name;           // genericname，like/such as "Box"
+    std::vector<Type*> type_args;       // concretetypesparameter，like/such as [i32]
     
     bool operator<(const InstantiationRequest& other) const {
         if (generic_name != other.generic_name) {
             return generic_name < other.generic_name;
         }
         
-        // 比较类型参数数量
+        // comparetypesparametercount
         if (type_args.size() != other.type_args.size()) {
             return type_args.size() < other.type_args.size();
         }
         
-        // 逐个比较类型参数（通过类型名称）
+        // one by one/eachindividual/piececomparetypesparameter（through/viatypesname）
         for (size_t i = 0; i < type_args.size(); ++i) {
             std::string this_type_name = type_args[i]->toString();
             std::string other_type_name = other.type_args[i]->toString();
@@ -50,33 +50,33 @@ struct InstantiationRequest {
             }
         }
         
-        return false;  // 完全相同
+        return false;  // completelysame
     }
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 单态化Pass
+// monomorphizationPass
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// MonomorphizationPass - 泛型单态化Pass
+/// MonomorphizationPass - genericmonomorphizationPass
 ///
-/// 工作流程：
-/// 1. 第一遍：收集所有泛型定义（StructDecl, EnumDecl, FunctionDecl with generics）
-/// 2. 第二遍：收集所有泛型使用点（StructLiteral, FunctionCall等）
-/// 3. 推导具体类型参数
-/// 4. 生成单态化实例（克隆AST并替换类型参数）
-/// 5. 将单态化实例插入AST
+/// workingflow：
+/// 1. first pass：collectAllgenericdefinition（StructDecl, EnumDecl, FunctionDecl with generics）
+/// 2. second pass：collectAllgeneric usagepoint（StructLiteral, FunctionCalletc）
+/// 3. inferconcretetypesparameter
+/// 4. generatemonomorphizationinstance（cloneASTandsubstitutiontypesparameter）
+/// 5. willmonomorphizationinstanceinsertedAST
 class MonomorphizationPass : public PassBase<MonomorphizationPass>, public ASTVisitor {
 public:
     static std::string name() { return "MonomorphizationPass"; }
     
     PassResult runImpl(PassContext* context);
     
-    /// 获取单态化后的实例（用于AST合并）
+    /// getmonomorphizationback/afterof/theinstance（used forASTmerge）
     std::vector<StmtPtr>& getMonomorphizedInstances() { return monomorphized_stmts_; }
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // Visitor实现
+    // Visitorimplementation
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     // Statements
@@ -93,8 +93,8 @@ public:
     void visit(BreakStmt* stmt) override;
     void visit(ContinueStmt* stmt) override;
     void visit(BlockStmt* stmt) override;
-    void visit(StructDecl* decl) override;      // 收集泛型定义
-    void visit(EnumDecl* decl) override;         // 收集泛型定义
+    void visit(StructDecl* decl) override;      // collectgenericdefinition
+    void visit(EnumDecl* decl) override;         // collectgenericdefinition
     void visit(InterfaceDecl* decl) override;
     void visit(SupportDecl* decl) override;
     
@@ -109,11 +109,11 @@ public:
     void visit(ClosureExpr* expr) override;
     void visit(ArrayLiteral* expr) override;
     void visit(TupleExpr* expr) override;
-    void visit(StructLiteral* expr) override;    // 泛型使用点
+    void visit(StructLiteral* expr) override;    // generic usagepoint
     void visit(IdentifierExpr* expr) override;
     void visit(BinaryExpr* expr) override;
     void visit(UnaryExpr* expr) override;
-    void visit(CallExpr* expr) override;         // 泛型使用点
+    void visit(CallExpr* expr) override;         // generic usagepoint
     void visit(MemberExpr* expr) override;
     void visit(StaticAccessExpr* expr) override;
     void visit(IndexExpr* expr) override;
@@ -139,49 +139,49 @@ public:
 private:
     PassContext* context_ = nullptr;
     
-    // 泛型定义存储
-    std::map<std::string, StructDecl*> generic_structs_;   // 泛型结构体
-    std::map<std::string, EnumDecl*> generic_enums_;       // 泛型枚举
-    std::map<std::string, FunctionDecl*> generic_functions_; // 泛型函数
+    // genericdefinitionstorage
+    std::map<std::string, StructDecl*> generic_structs_;   // genericstructbody/struct
+    std::map<std::string, EnumDecl*> generic_enums_;       // genericenum
+    std::map<std::string, FunctionDecl*> generic_functions_; // genericfunction
     
-    // 实例化缓存（避免重复实例化）
+    // instantiationcache（avoidduplicateinstantiation）
     std::map<InstantiationRequest, std::string> instance_cache_;
     
-    // 新生成的单态化实例
+    // newgenerateof/themonomorphizationinstance
     std::vector<StmtPtr> monomorphized_stmts_;
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 辅助函数
+    // helper function
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
-    /// 收集泛型定义
+    /// collectgenericdefinition
     void collectGenericDefinitions(const std::vector<StmtPtr>& ast);
     
-    /// 从StructLiteral推导类型参数（完整实现）
+    /// fromStructLiteralinfertypesparameter（completeimplementation）
     std::vector<Type*> inferTypeArgsFromStructLiteral(StructLiteral* lit, StructDecl* generic_decl);
     
-    /// 从CallExpr推导类型参数
+    /// fromCallExprinfertypesparameter
     std::vector<Type*> inferTypeArgsFromCallExpr(CallExpr* call, FunctionDecl* generic_func);
     
-    /// 生成单态化名称: Box<i32> -> Box_i32
-    // 注意：generateMonomorphizedName已移至 backend/codegen/generic/mangling.h
-    // 这里保留一个转发函数以保持兼容性
+    /// generationmonomorphizationname: Box<i32> -> Box_i32
+    // Note：generateMonomorphizedNamemoved to backend/codegen/generic/mangling.h
+    // Keep a forwarding herefunctionTo maintain compatibility
     std::string generateMonomorphizedName(const std::string& base_name,
                                          const std::vector<Type*>& type_args);
     
-    /// 克隆并替换类型参数
+    /// cloneandsubstitutiontypesparameter
     StmtPtr cloneAndSubstitute(StructDecl* generic_decl, const std::vector<Type*>& type_args);
     StmtPtr cloneAndSubstitute(EnumDecl* generic_decl, const std::vector<Type*>& type_args);
     StmtPtr cloneAndSubstitute(FunctionDecl* generic_decl, const std::vector<Type*>& type_args);
     
-    /// 类型替换（将泛型参数T替换为具体类型）
+    /// typesubstitution（willgenericparameterTsubstitutionis/asconcretetypes）
     Type* substituteType(Type* type, 
                          const std::map<std::string, Type*>& type_mapping);
     
-    /// 从表达式推导类型（用于单态化）
+    /// fromexpressioninfertypes（used formonomorphization）
     Type* inferTypeFromExpr(Expr* expr);
     
-    /// 克隆AST节点（用于函数体克隆）
+    /// cloneASTnode（used forfunctionbody/structclone）
     StmtPtr cloneStmt(Stmt* stmt, const std::map<std::string, Type*>& type_mapping);
     ExprPtr cloneExpr(Expr* expr, const std::map<std::string, Type*>& type_mapping);
 };

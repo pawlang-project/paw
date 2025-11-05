@@ -1,4 +1,6 @@
 //===--- primitive_types.cpp - Primitive Types Implementation ---*- C++ -*-===//
+/// @file primitive_types.cpp
+/// @brief Type system and semantic analysis implementation
 
 #include "primitive_types.h"
 

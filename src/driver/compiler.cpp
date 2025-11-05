@@ -1,4 +1,6 @@
 //===--- compiler.cpp - Compiler Implementation ------------------*- C++ -*-===//
+/// @file compiler.cpp
+/// @brief Implementation file
 
 #include "compiler.h"
 #include "linker.h"
@@ -24,64 +26,64 @@ Compiler::Compiler(const CompilerOptions& options)
 }
 
 Compiler::~Compiler() {
-    // 按正确的顺序清理资源
+    // Cleanup resources in correct order
     
-    // 1. 首先清理Pass管理器
+    // 1. First cleanup PassManager
     pass_manager_.reset();
     
-    // 2. 清理PassContext（包含CodeGenContext）
+    // 2. cleanupPassContext（containsCodeGenContext）
     if (pass_context_) {
         pass_context_->clearCache();
     }
     pass_context_.reset();
     
-    // 3. 清理符号表和类型系统
+    // 3. cleanupsymboltableandtypessystem
     symbol_table_.reset();
     type_system_.reset();
     
-    // 4. 最后清理诊断引擎
+    // 4. Finally cleanup diagnostic engine
     diagnostics_.reset();
 }
 
 void Compiler::initialize() {
-    // 创建核心组件
+    // Create core components
     diagnostics_ = std::make_unique<DiagnosticEngine>();
     type_system_ = std::make_unique<TypeSystem>();
     symbol_table_ = std::make_unique<SymbolTable>(type_system_.get());
     
-    // 初始化builtin符号
+    // initializebuiltinsymbol
     symbol_table_->initializeBuiltins();
     
-    // 创建Pass上下文
+    // createPasscontext
     pass_context_ = std::make_unique<PassContext>(
         diagnostics_.get(),
         type_system_.get(),
         symbol_table_.get()
     );
     
-    // 配置Pass上下文
+    // configurePasscontext
     pass_context_->setOptLevel(options_.opt_level);
     pass_context_->setVerbose(options_.verbose);
     
-    // 创建PassManager
+    // createPassManager
     pass_manager_ = std::make_unique<PassManager>(pass_context_.get());
     
-    // 配置Pass流程
+    // configurePassflow
     setupPasses();
 }
 
 void Compiler::setupPasses() {
-    // 根据架构，按顺序添加Pass
+    // According to architecture, add passes sequentially
     
-    // 1. LLVM IR生成Pass
+    // 1. LLVM IRgeneratePass
     pass_manager_->addPass<LLVMIRGenPass>();
     
-    // 2. 优化Pass（如果优化级别>0）
+    // 2. optimizationPass（ifoptimizationlevel>0）
     if (options_.opt_level > 0) {
         pass_manager_->addPass<LLVMOptimizationPass>();
     }
     
-    // 3. 对象文件生成Pass（如果不是仅输出IR）
+    // 3. Object file generation pass (if not IR-only output)
     if (!options_.emit_llvm_ir) {
         pass_manager_->addPass<ObjectGenPass>();
     }
@@ -158,17 +160,17 @@ bool Compiler::compile(const std::string& source_file) {
         return false;
     }
     
-    // === Phase 2.5: Monomorphization (泛型单态化) ===
+    // === Phase 2.5: Monomorphization (genericmonomorphization) ===
     if (options_.verbose) std::cout << "📝 Phase 2.5: Generic Monomorphization\n";
     
-    // 设置AST到PassContext
+    // setASTtoPassContext
     pass_context_->setAST(&ast);
     
-    // 运行单态化Pass
+    // runmonomorphizationPass
     MonomorphizationPass mono_pass;
-    PassResult mono_result = mono_pass.run(pass_context_.get());
+    PassResult mono_results = mono_pass.run(pass_context_.get());
     
-    // 合并单态化实例到AST
+    // mergemonomorphizationinstancetoAST
     auto& mono_instances = mono_pass.getMonomorphizedInstances();
     size_t mono_count = mono_instances.size();
     for (auto& inst : mono_instances) {
@@ -176,23 +178,23 @@ bool Compiler::compile(const std::string& source_file) {
     }
     
     if (options_.verbose) {
-        std::cout << "   ✅ " << mono_result.message << "\n";
+        std::cout << "   ✅ " << mono_results.message << "\n";
         if (mono_count > 0) {
             std::cout << "   📦 Merged " << mono_count << " monomorphized instances into AST\n";
         }
-        std::cout << "   ⏱️  Execution time: " << mono_result.execution_time_ms << " ms\n\n";
+        std::cout << "   ⏱️  Execution time: " << mono_results.execution_time_ms << " ms\n\n";
     }
     
-    if (!mono_result.success) {
-        diagnostics_->reportError("Monomorphization failed: " + mono_result.message, 
+    if (!mono_results.success) {
+        diagnostics_->reportError("Monomorphization failed: " + mono_results.message, 
                                   SourceLocation());
         return false;
     }
     
-    // 更新PassContext中的AST（包含单态化实例）
+    // UpdatePassContextinAST（containsmonomorphizationinstance）
     pass_context_->setAST(&ast);
     
-    // Debug: 单态化后的AST dump
+    // Debug: monomorphizationback/afterof/theAST dump
     if (options_.emit_ast && mono_count > 0) {
         std::cout << "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
         std::cout << "Post-Monomorphization AST:\n";
@@ -222,13 +224,13 @@ bool Compiler::compile(const std::string& source_file) {
         return false;
     }
     
-    // === Phase 4: Code Generation (通过PassManager) ===
+    // === Phase 4: Code Generation (through/viaPassManager) ===
     if (options_.verbose) std::cout << "📝 Phase 4: Code Generation\n";
     
-    // 将AST传递给PassContext
+    // Pass AST to PassContext
     pass_context_->setAST(&ast);
     
-    // 运行所有Pass
+    // runAllPass
     pass_manager_->runAll();
     
     if (diagnostics_->hasErrors()) {
@@ -240,7 +242,7 @@ bool Compiler::compile(const std::string& source_file) {
         std::cout << "   ✅ Code generation complete\n\n";
     }
     
-    // === Phase 5: 链接（如果需要） ===
+    // === Phase 5: link（ifneed） ===
     if (!options_.compile_only && !options_.emit_llvm_ir) {
         return processResults();
     }
@@ -254,7 +256,7 @@ bool Compiler::compile(const std::string& source_file) {
 
 bool Compiler::processResults() {
     try {
-        // 从PassContext获取对象文件路径
+        // fromPassContextgetobjectfilepath
         std::string object_file;
         if (!pass_context_->getCachedResult("object_file", object_file)) {
             diagnostics_->reportError("No object file generated", SourceLocation());
@@ -266,15 +268,15 @@ bool Compiler::processResults() {
             std::cout << "   Object file: " << object_file << "\n";
         }
         
-        // 创建链接器
+        // Create linker
         Linker linker;
         linker.setVerbose(options_.verbose);
         
-        // 设置runtime库路径（相对于当前工作目录）
-        // 从 build/ 目录运行时，路径应该是 src/runtime
+        // Set runtime library path (relative to current working directory)ry）
+        // from build/ directoryruntime/when，pathshouldyes src/runtime
         linker.setRuntimePath("build/src/runtime");
         
-        // 执行链接
+        // executelink
         if (!linker.link({object_file}, options_.output_file, 
                          options_.library_paths, options_.libraries)) {
             diagnostics_->reportError("Linking failed: " + linker.getError(), 

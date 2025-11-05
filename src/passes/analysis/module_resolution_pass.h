@@ -1,6 +1,9 @@
 //===--- module_resolution_pass.h - Module Resolution Pass ------*- C++ -*-===//
+/// @file module_resolution_pass.h
+/// @brief Code generation utilities
+///
 //
-// 模块解析Pass：解析import语句，构建模块依赖图
+// Module resolution pass: parse import statements, build module dependency graphkdependentgraph
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,10 +19,10 @@ public:
     static constexpr const char* getName() { return "ModuleResolutionPass"; }
     
     bool run(PassContext& context) override {
-        // TODO: 实现模块解析逻辑
-        // 1. 解析import语句
-        // 2. 构建模块依赖图
-        // 3. 检测循环依赖
+        // TODO: implement module resolution logic
+        // 1. parseimportstatement
+        // 2. Build module dependency graph
+        // 3. Detect circular dependencies
         return true;
     }
 };

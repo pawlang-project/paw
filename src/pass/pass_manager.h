@@ -11,7 +11,7 @@
 
 namespace pawc {
 
-/// PassManager - 管理和执行Pass
+/// PassManager - manageandexecutePass
 class PassManager {
 public:
     explicit PassManager(PassContext* context) : context_(context) {}

@@ -1,7 +1,9 @@
 //===--- enum_codegen.cpp - Enum Type CodeGen -------------------*- C++ -*-===//
+/// @file enum_codegen.cpp
+/// @brief Code generation implementation
 //
-// 枚举类型映射和代码生成
-// 从type_codegen.cpp中提取
+// enumtypesmapandcode generation
+// fromtype_codegen.cppmiddle/centerextract
 //
 //===----------------------------------------------------------------------===//
 
@@ -10,8 +12,8 @@
 
 namespace pawc {
 
-// 枚举类型映射逻辑保留在type_codegen.cpp中
-// 框架文件，待未来详细实现
+// enumtypesmaplogickeep/reservein/attype_codegen.cppmiddle/center
+// frameworkfile，to benot yetfuturedetailedimplementation
 
 } // namespace pawc
 

@@ -13,37 +13,37 @@
 
 namespace pawc {
 
-/// MemoryManager - 内存管理器（无GC）
+/// MemoryManager - insidememorymanager（noGC）
 ///
-/// 策略：
-/// - Stack-first: 默认栈分配
-/// - RAII: 自动析构
-/// - Box<T>: 显式堆分配
+/// Strategy:
+/// - Stack-first: defaultstackallocate
+/// - RAII: self/fromdynamicdestruct/destruction
+/// - Box<T>: explicitstyle/formheapallocate
 class MemoryManager {
 public:
     MemoryManager(llvm::IRBuilder<>& builder, llvm::Module* module);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 栈分配（默认）
+    // stackallocate（default）
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     llvm::AllocaInst* allocateOnStack(llvm::Type* type,
                                       const std::string& name);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 堆分配（显式：Box<T>）
+    // heapallocate（explicitstyle/form：Box<T>）
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     llvm::Value* allocateOnHeap(llvm::Type* type);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 释放内存
+    // releaseinsidememory
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     void freeMemory(llvm::Value* ptr);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 析构器生成（RAII）
+    // destruct/destructionlinker/ergenerate（RAII）
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     void generateDestructor(llvm::Value* object, llvm::Type* type);
@@ -52,7 +52,7 @@ private:
     llvm::IRBuilder<>& builder_;
     llvm::Module* module_;
     
-    // Runtime函数
+    // Runtimefunction
     llvm::Function* malloc_func_ = nullptr;
     llvm::Function* free_func_ = nullptr;
     

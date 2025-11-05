@@ -16,7 +16,7 @@ namespace pawc {
 // Forward declarations
 class PassContext;
 
-/// PassResult - Pass执行结果
+/// PassResult - Passexecuteresults
 struct PassResult {
     bool success = true;
     std::string message;
@@ -27,18 +27,18 @@ struct PassResult {
         : success(s), message(msg) {}
 };
 
-/// PassBase - Pass基类（使用CRTP优化）
+/// PassBase - Pass base class (uses CRTP optimization)
 ///
-/// 使用CRTP（Curiously Recurring Template Pattern）来消除虚函数调用开销
+/// Uses CRTP (Curiously Recurring Template Pattern) to eliminate virtual function call overhead
 /// 
-/// 使用方法：
+/// usemethod：
 /// ```cpp
 /// class MyPass : public PassBase<MyPass> {
 /// public:
 ///     static std::string name() { return "MyPass"; }
 ///     
 ///     PassResult runImpl(PassContext* context) {
-///         // Pass实现
+///         // Passimplementation
 ///         return PassResult{true, "Success"};
 ///     }
 /// };
@@ -46,17 +46,17 @@ struct PassResult {
 template<typename Derived>
 class PassBase {
 public:
-    /// 运行Pass（CRTP静态多态）
+    /// runPass (CRTP static polymorphism)
     PassResult run(PassContext* context) {
         auto start = std::chrono::high_resolution_clock::now();
         
-        PassResult result = static_cast<Derived*>(this)->runImpl(context);
+        PassResult results = static_cast<Derived*>(this)->runImpl(context);
         
         auto end = std::chrono::high_resolution_clock::now();
         double time_ms = std::chrono::duration<double, std::milli>(end - start).count();
         
-        result.execution_time_ms = time_ms;
-        return result;
+        results.execution_time_ms = time_ms;
+        return results;
     }
     
     virtual ~PassBase() = default;

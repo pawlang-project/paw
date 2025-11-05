@@ -1,4 +1,6 @@
 //===--- type_codegen.cpp - Type Mapping Implementation ----------*- C++ -*-===//
+/// @file type_codegen.cpp
+/// @brief Code generation implementation
 
 #include "type_codegen.h"
 #include "middleend/types/primitive_types.h"
@@ -12,7 +14,7 @@ TypeCodeGen::TypeCodeGen(llvm::LLVMContext& llvm_context)
     : context_(llvm_context) {}
 
 llvm::Type* TypeCodeGen::mapType(Type* paw_type) {
-    // 检查缓存
+    // Check cache first
     auto it = cache_.find(paw_type);
     if (it != cache_.end()) {
         return it->second;
@@ -41,47 +43,47 @@ llvm::Type* TypeCodeGen::mapType(Type* paw_type) {
     } else if (paw_type->isFunction()) {
         llvm_type = mapFunctionType(static_cast<FunctionType*>(paw_type));
     } else {
-        // 默认：i8指针（opaque pointer）
+        // default：i8pointer（opaque pointer）
         llvm_type = llvm::PointerType::getUnqual(context_);
     }
     
-    // 缓存
+    // cache
     cache_[paw_type] = llvm_type;
     
     return llvm_type;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 基础类型映射 (18种) - 完整精度
+// basetypesmap (18types/kinds) - completeprecision
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 llvm::Type* TypeCodeGen::mapPrimitiveType(Type* type) {
     switch (type->getKind()) {
-        // 有符号整数
+        // Signed integers
         case Type::Kind::I8:    return llvm::Type::getInt8Ty(context_);
         case Type::Kind::I16:   return llvm::Type::getInt16Ty(context_);
         case Type::Kind::I32:   return llvm::Type::getInt32Ty(context_);
         case Type::Kind::I64:   return llvm::Type::getInt64Ty(context_);
         case Type::Kind::I128:  return llvm::Type::getInt128Ty(context_);
         
-        // 无符号整数
+        // Unsigned integers
         case Type::Kind::U8:    return llvm::Type::getInt8Ty(context_);
         case Type::Kind::U16:   return llvm::Type::getInt16Ty(context_);
         case Type::Kind::U32:   return llvm::Type::getInt32Ty(context_);
         case Type::Kind::U64:   return llvm::Type::getInt64Ty(context_);
         case Type::Kind::U128:  return llvm::Type::getInt128Ty(context_);
         
-        // 浮点数 - 完整精度，不近似
+        // Floating-point numbers - completeprecision，notapproximate
         case Type::Kind::F8:    return llvm::Type::getBFloatTy(context_);  // bfloat16
         case Type::Kind::F16:   return llvm::Type::getHalfTy(context_);    // half
         case Type::Kind::F32:   return llvm::Type::getFloatTy(context_);   // float
         case Type::Kind::F64:   return llvm::Type::getDoubleTy(context_);  // double
         case Type::Kind::F128:  
-            // 软件f128实现：使用真正的fp128类型
-            // LLVM会自动链接compiler-rt提供软件运算（高性能）
+            // softwaref128implementation：usetruepositiveof/thefp128types
+            // LLVMwillself/fromdynamiclinkcompiler-rtProvide software operations（highperformancecan）
             return llvm::Type::getFP128Ty(context_);
         
-        // 其他
+        // Other types
         case Type::Kind::Bool:   return llvm::Type::getInt1Ty(context_);
         case Type::Kind::Char:   return llvm::Type::getInt8Ty(context_);
         case Type::Kind::String: return llvm::PointerType::getUnqual(context_);
@@ -93,7 +95,7 @@ llvm::Type* TypeCodeGen::mapPrimitiveType(Type* type) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 复合类型映射
+// compositetypesmap
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 llvm::ArrayType* TypeCodeGen::mapArrayType(ArrayType* type) {
@@ -103,12 +105,12 @@ llvm::ArrayType* TypeCodeGen::mapArrayType(ArrayType* type) {
 
 llvm::StructType* TypeCodeGen::mapSliceType(SliceType* type) {
     // Slice<T> = { ptr data, i64 len }
-    // 切片是动态大小的数组视图（胖指针）
+    // Slice is a dynamic-size array view (fat pointer)
     return llvm::StructType::get(
         context_,
         {
-            llvm::PointerType::getUnqual(context_),  // data指针
-            llvm::Type::getInt64Ty(context_)         // 长度
+            llvm::PointerType::getUnqual(context_),  // datapointer
+            llvm::Type::getInt64Ty(context_)         // length
         }
     );
 }
@@ -122,30 +124,30 @@ llvm::StructType* TypeCodeGen::mapTupleType(TupleType* type) {
 }
 
 llvm::StructType* TypeCodeGen::mapStructType(StructType* type) {
-    // 🔧 关键修复：通过名称查找已存在类型，确保全局唯一
+    // 🔧 Key fix：through/vianamelookupalreadyexiststypes，ensureglobalunique
     std::string struct_name = type->getName();
     
-    // 1. 首先通过名称查找已存在的LLVM类型
+    // 1. firstFirstthrough/vianamelookup existing LLVM types
     llvm::StructType* existing_type = llvm::StructType::getTypeByName(context_, struct_name);
     if (existing_type) {
-        // 类型已存在，直接返回
+        // type already exists，directlyreturn
         cache_[type] = existing_type;
         return existing_type;
     }
     
-    // 2. 不存在，创建opaque类型
+    // 2. notexists，create opaque type
     llvm::StructType* new_type = llvm::StructType::create(context_, struct_name);
     
-    // 立即缓存
+    // immediatelycache
     cache_[type] = new_type;
     
-    // 3. 生成字段类型
+    // 3. generate field types
     std::vector<llvm::Type*> field_types;
     for (const auto& [name, field_type] : type->getFields()) {
         field_types.push_back(mapType(field_type));
     }
     
-    // 4. 设置body
+    // 4. setbody
     new_type->setBody(field_types);
     
     return new_type;
@@ -153,31 +155,31 @@ llvm::StructType* TypeCodeGen::mapStructType(StructType* type) {
 
 llvm::StructType* TypeCodeGen::mapEnumType(EnumType* type) {
     // Enum = { i32 tag, union { variants... } }
-    // 优化方案：计算所有variant的最大size，使用inline storage
+    // optimizationsolution：computeAllvariantof/themost/lastlarge/bigsize，useinline storage
     
     auto* i32_type = llvm::Type::getInt32Ty(context_);
     
-    // 计算所有variant的最大size（使用指针大小作为估算）
+    // Compute max size of all variants (use pointer size as estimate)
     size_t max_size = 0;
     for (const auto& [variant_name, variant_type] : type->getVariants()) {
         if (variant_type) {
             llvm::Type* variant_llvm_type = mapType(variant_type);
             
-            // 估算大小（基于类型）
+            // estimatesize（based ontypes）
             size_t variant_size = 0;
             if (variant_llvm_type->isIntegerTy()) {
                 variant_size = variant_llvm_type->getIntegerBitWidth() / 8;
             } else if (variant_llvm_type->isPointerTy()) {
-                variant_size = 8;  // 指针大小
+                variant_size = 8;  // pointersize
             } else if (variant_llvm_type->isFloatTy() || variant_llvm_type->isHalfTy()) {
                 variant_size = 4;
             } else if (variant_llvm_type->isDoubleTy()) {
                 variant_size = 8;
             } else if (variant_llvm_type->isStructTy()) {
-                // 结构体：估算为所有字段大小之和（简化）
-                variant_size = 16;  // 保守估计
+                // Struct: estimate as sum of all field sizes (simplified)
+                variant_size = 16;  // Conservative estimate
             } else {
-                variant_size = 8;  // 默认
+                variant_size = 8;  // default
             }
             
             if (variant_size > max_size) {
@@ -186,14 +188,14 @@ llvm::StructType* TypeCodeGen::mapEnumType(EnumType* type) {
         }
     }
     
-    // 如果所有variant都无数据，只需要tag
+    // ifAllvariantallnodata，only needs towant/needtag
     if (max_size == 0) {
         std::vector<llvm::Type*> fields = {i32_type};
         return llvm::StructType::get(context_, fields);
     }
     
-    // 如果max_size较小（<= 24字节），使用inline storage
-    // 否则使用指针（避免enum太大）
+    // If max_size is small (<= 24 bytes), use inline storage
+    // Otherwise use pointer (avoid enum being too large)
     if (max_size <= 24) {
         // { i32 tag, [max_size x i8] data }
         auto* data_type = llvm::ArrayType::get(
@@ -203,7 +205,7 @@ llvm::StructType* TypeCodeGen::mapEnumType(EnumType* type) {
         std::vector<llvm::Type*> fields = {i32_type, data_type};
         return llvm::StructType::get(context_, fields);
     } else {
-        // { i32 tag, ptr data } - 对于大型variant使用堆分配
+        // { i32 tag, ptr data } - For large variants use heap allocation
         auto* ptr_type = llvm::PointerType::getUnqual(context_);
         std::vector<llvm::Type*> fields = {i32_type, ptr_type};
         return llvm::StructType::get(context_, fields);
@@ -211,7 +213,7 @@ llvm::StructType* TypeCodeGen::mapEnumType(EnumType* type) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 特殊类型映射
+// specialtypesmap
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 llvm::StructType* TypeCodeGen::mapOptionalType(OptionalType* type) {
@@ -240,8 +242,8 @@ llvm::StructType* TypeCodeGen::mapResultType(ResultType* type) {
 }
 
 llvm::PointerType* TypeCodeGen::mapReferenceType(ReferenceType* type) {
-    llvm::Type* pointee_type = mapType(type->getPointeeType());
-    return pointee_type->getPointerTo();
+    // Return opaque pointer (LLVM opaque pointer model)
+    return llvm::PointerType::getUnqual(context_);
 }
 
 llvm::FunctionType* TypeCodeGen::mapFunctionType(FunctionType* type) {

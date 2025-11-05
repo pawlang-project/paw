@@ -1,6 +1,6 @@
 //===--- pattern_checker.h - Pattern Exhaustiveness Checker -----*- C++ -*-===//
 //
-// 模式检查 - 验证match表达式的穷尽性
+// patterncheck - validatematchexpressionof/theexhaustiveness
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,39 +17,39 @@ class Type;
 class EnumType;
 class MatchExpr;
 
-/// PatternChecker - 模式检查器
+/// PatternChecker - patternchecker
 ///
-/// 负责验证：
-/// - match表达式的穷尽性
-/// - 模式类型的正确性
-/// - 模式变量的作用域
+/// negativeresponsiblevalidate：
+/// - matchexpressionof/theexhaustiveness
+/// - patterntypesof/thecorrectperformance
+/// - patternvariableof/thescope
 class PatternChecker {
     SemanticContext* context_;
     
 public:
     explicit PatternChecker(SemanticContext* context);
     
-    /// 检查match表达式的穷尽性
+    /// Checkmatchexpressionof/theexhaustiveness
     bool checkExhaustiveness(MatchExpr* match_expr);
     
-    /// 检查模式是否覆盖类型的所有可能值
+    /// Checkpatternyesnooverride/covertypesof/theAllpossiblyvalue
     bool isExhaustive(const std::vector<Pattern*>& patterns, Type* type);
     
-    /// 检查模式类型
+    /// Checkpatterntypes
     bool checkPatternType(Pattern* pattern, Type* expected_type);
     
-    /// 收集模式中的变量
+    /// collectpatterninvariable
     void collectPatternVariables(Pattern* pattern, 
                                 std::vector<std::pair<std::string, Type*>>& variables);
 
 private:
-    /// 检查枚举穷尽性
+    /// Checkenumexhaustiveness
     bool checkEnumExhaustiveness(const std::vector<Pattern*>& patterns, EnumType* enum_type);
     
-    /// 检查布尔穷尽性
+    /// Checkbooleanexhaustiveness
     bool checkBoolExhaustiveness(const std::vector<Pattern*>& patterns);
     
-    /// 检查Optional穷尽性
+    /// CheckOptionalexhaustiveness
     bool checkOptionalExhaustiveness(const std::vector<Pattern*>& patterns);
 };
 

@@ -1,4 +1,6 @@
 //===--- ast_printer.cpp - AST Pretty Printer Implementation ----*- C++ -*-===//
+/// @file ast_printer.cpp
+/// @brief AST node implementation
 
 #include "ast_printer.h"
 #include "frontend/parser/ast/pattern.h"
@@ -72,7 +74,7 @@ std::string ASTPrinter::getOpString(TokenType op) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 表达式
+// expression
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ASTPrinter::visit(IntLiteral* node) {
@@ -274,7 +276,7 @@ void ASTPrinter::visit(StructLiteral* node) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 语句
+// statement
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ASTPrinter::visit(ExprStmt* node) {
@@ -487,7 +489,7 @@ void ASTPrinter::visit(MatchExpr* node) {
     char buf[16];
     std::snprintf(buf, sizeof(buf), "%zu", node->getArms().size());
     printLine(std::string(buf) + " arms");
-    // TODO: 遍历打印每个arm
+    // TODO: traverseprinteach/everyarm
     indent_ -= 2;
 }
 
@@ -495,7 +497,7 @@ void ASTPrinter::visit(ClosureExpr* node) {
     printLine("ClosureExpr:");
     indent_ += 2;
     
-    // 打印参数
+    // printparameter
     std::stringstream params_ss;
     params_ss << "Params: [";
     bool first = true;
@@ -512,7 +514,7 @@ void ASTPrinter::visit(ClosureExpr* node) {
     params_ss << "]";
     printLine(params_ss.str());
     
-    // 打印返回类型
+    // printreturntypes
     std::string return_str = "ReturnType: ";
     if (node->getReturnType()) {
         return_str += node->getReturnType()->toString();
@@ -521,7 +523,7 @@ void ASTPrinter::visit(ClosureExpr* node) {
     }
     printLine(return_str);
     
-    // 打印捕获变量
+    // printcapturevariable
     if (!node->getCapturedVars().empty()) {
         std::stringstream captured_ss;
         captured_ss << "Captured: [";
@@ -538,7 +540,7 @@ void ASTPrinter::visit(ClosureExpr* node) {
         printLine(captured_ss.str());
     }
     
-    // 打印闭包体
+    // Print closure body
     printLine("Body:");
     indent_ += 2;
     node->getBody()->accept(this);
@@ -554,7 +556,7 @@ void ASTPrinter::visit(TryExpr* node) {
     indent_ -= 1;
 }
 
-// Pattern打印
+// Patternprint
 void ASTPrinter::visit(LiteralPattern* node) {
     printLine("LiteralPattern: " + node->getValue());
 }

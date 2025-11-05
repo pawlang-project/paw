@@ -12,32 +12,32 @@
 
 namespace pawc {
 
-/// Linker - 链接器封装
+/// Linker - linker wrapper
 ///
-/// 负责将对象文件链接成可执行文件
-/// 使用LLD作为底层链接器
+/// Responsible for linking object files into executable
+/// Uses LLD as underlying linker
 class Linker {
 public:
     Linker();
     
-    /// 链接对象文件生成可执行文件
-    /// \param object_files 对象文件列表
-    /// \param output_file 输出可执行文件名
-    /// \param library_paths 库搜索路径
-    /// \param libraries 需要链接的库
-    /// \return true表示成功
+    /// linkobjectfilegeneratecanexecutefile
+    /// \param object_files objectfilelist
+    /// \param output_file outputcanexecutefilename
+    /// \param library_paths librarysearchpath
+    /// \param libraries needlinkof/thelibrary
+    /// \return true indicates success
     bool link(const std::vector<std::string>& object_files,
               const std::string& output_file,
               const std::vector<std::string>& library_paths = {},
               const std::vector<std::string>& libraries = {});
     
-    /// 设置runtime库路径
+    /// setruntimelibrarypath
     void setRuntimePath(const std::string& path) { runtime_path_ = path; }
     
-    /// 设置详细输出
+    /// setdetailedoutput
     void setVerbose(bool v) { verbose_ = v; }
     
-    /// 获取错误信息
+    /// geterrorinfo
     std::string getError() const { return error_; }
     
 private:
@@ -45,10 +45,10 @@ private:
     std::string error_;
     bool verbose_ = false;
     
-    /// 调用系统链接器
+    /// Call system linker
     bool invokeSystemLinker(const std::vector<std::string>& args);
     
-    /// 构建链接命令
+    /// build/constructlinkcommand
     std::vector<std::string> buildLinkCommand(
         const std::vector<std::string>& object_files,
         const std::string& output_file,

@@ -1,7 +1,9 @@
 //===--- struct_codegen.cpp - Struct Type CodeGen ---------------*- C++ -*-===//
+/// @file struct_codegen.cpp
+/// @brief Code generation implementation
 //
-// 结构体类型映射和代码生成
-// 从type_codegen.cpp中提取
+// structbody/structtypesmapandcode generation
+// fromtype_codegen.cppmiddle/centerextract
 //
 //===----------------------------------------------------------------------===//
 
@@ -10,8 +12,8 @@
 
 namespace pawc {
 
-// 结构体类型映射逻辑保留在type_codegen.cpp中
-// 框架文件，待未来详细实现
+// structbody/structtypesmaplogickeep/reservein/attype_codegen.cppmiddle/center
+// frameworkfile，to benot yetfuturedetailedimplementation
 
 } // namespace pawc
 

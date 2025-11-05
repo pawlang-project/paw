@@ -1,6 +1,9 @@
 //===--- interface_validation_pass.h - Interface Validation Pass -*- C++ -*-===//
+/// @file interface_validation_pass.h
+/// @brief Code generation utilities
+///
 //
-// 接口验证Pass：验证接口实现的正确性
+// Interface validation pass: validate interface implementation correctnesshecorrectperformance
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,8 +19,8 @@ public:
     static constexpr const char* getName() { return "InterfaceValidationPass"; }
     
     bool run(PassContext& context) override {
-        // TODO: 实现接口验证逻辑（已在InterfaceValidator中实现）
-        // 这个Pass是对现有InterfaceValidator的封装
+        // TODO: implementationinterfacevalidatelogic（alreadyin/atInterfaceValidatormiddle/centerimplementation）
+        // This pass should only appear when there are interfaceserfaceValidatorof/thewrapper/encapsulation
         return true;
     }
 };

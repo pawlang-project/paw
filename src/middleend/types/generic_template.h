@@ -1,6 +1,6 @@
 //===--- generic_template.h - Generic Template Definition -------*- C++ -*-===//
 //
-// 泛型模板定义：用于泛型类型的实例化
+// generictemplatedefinition：used forgenerictypesof/theinstantiation
 //
 //===----------------------------------------------------------------------===//
 
@@ -13,29 +13,29 @@
 
 namespace pawc {
 
-// 前向声明 - 需要完整路径
+// Forward declaration - needcompletepath
 class EnumDecl;
 class StructDecl;
 
-// 声明完整类型（避免不完整类型错误）
-// #include "frontend/parser/ast/stmt.h"  // 包含EnumDecl定义
+// declarecompletetypes（avoidnotcompletetypeserror）
+// #include "frontend/parser/ast/stmt.h"  // containsEnumDecldefinition
 
-/// GenericTemplate - 泛型模板
+/// GenericTemplate - generictemplate
 ///
-/// 保存泛型定义信息，用于实例化具体类型
+/// savegenericdefinitioninfo，used forinstantiationconcretetypes
 struct GenericTemplate {
     enum Kind {
         ENUM,
         STRUCT,
-        FUNCTION,     // 🔧 G3: 泛型函数支持
-        INTERFACE     // 🔧 G2: 泛型接口支持
+        FUNCTION,     // 🔧 G3: genericfunctionsupport
+        INTERFACE     // 🔧 G2: genericinterfacesupport
     };
     
     std::string name;                      // "Option", "Result", "identity"
     std::vector<std::string> type_params;  // ["T"], ["T", "E"]
     Kind kind;
     
-    // 保存原始AST定义（用于实例化）
+    // saveoriginalASTdefinition（used forinstantiation）
     union {
         EnumDecl* enum_def;
         StructDecl* struct_def;
@@ -43,7 +43,7 @@ struct GenericTemplate {
         class InterfaceDecl* interface_def; // G2
     };
     
-    // 构造函数
+    // constructfunction
     GenericTemplate(std::string n, std::vector<std::string> params, EnumDecl* def)
         : name(std::move(n)), type_params(std::move(params)), 
           kind(ENUM), enum_def(def) {}
@@ -60,10 +60,10 @@ struct GenericTemplate {
         : name(std::move(n)), type_params(std::move(params)), 
           kind(INTERFACE), interface_def(def) {}
     
-    // 获取类型参数数量
+    // gettypesparametercount
     size_t getParamCount() const { return type_params.size(); }
     
-    // 检查类型参数名称是否有效
+    // Checktypesparameternameyesnohassignificant/effective
     bool hasTypeParam(const std::string& param_name) const {
         for (const auto& p : type_params) {
             if (p == param_name) return true;

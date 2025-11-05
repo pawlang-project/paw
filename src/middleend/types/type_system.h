@@ -20,23 +20,23 @@
 
 namespace pawc {
 
-/// TypeSystem - 类型系统管理器
+/// TypeSystem - typessystemmanager
 ///
-/// 职责：
-/// - 创建和管理所有类型
-/// - 类型查找和注册
-/// - 类型兼容性检查
+/// responsibilities：
+/// - createandmanageAlltypes
+/// - typeslookupandregister
+/// - typescompatibilitycheck
 class TypeSystem {
 public:
     TypeSystem();
-    ~TypeSystem();  // 需要自定义析构来清理Arena中的对象
+    ~TypeSystem();  // needself/fromdefinitiondestruct/destructionfuturecleanupArenainobject
     
     // Non-copyable
     TypeSystem(const TypeSystem&) = delete;
     TypeSystem& operator=(const TypeSystem&) = delete;
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 基础类型获取（18种）
+    // basetypesget（18types/kinds）
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     Type* getI8Type();
@@ -63,7 +63,7 @@ public:
     Type* getVoidType();
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 复合类型创建
+    // compositetypescreate
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     ArrayType* getArrayType(Type* element, size_t size);
@@ -79,7 +79,7 @@ public:
     SelfType* getSelfType();
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 用户定义类型
+    // User-defined types
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     void registerStruct(StructType* type);
@@ -89,27 +89,27 @@ public:
     Type* lookupType(const std::string& name);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 泛型系统
+    // genericsystem
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
-    /// 注册泛型模板
+    /// registergenerictemplate
     void registerGenericTemplate(GenericTemplate* tmpl);
     
-    /// 查找泛型模板
+    /// lookupgenerictemplate
     GenericTemplate* lookupGenericTemplate(const std::string& name);
     
-    /// 实例化泛型类型
-    /// @param template_name 模板名称（如"Option"）
-    /// @param type_args 类型参数（如[i32]）
-    /// @return 实例化的类型（如Option_i32）
+    /// instantiationgenerictypes
+    /// @param template_name templatename（like/such as"Option"）
+    /// @param type_args typesparameter（like/such as[i32]）
+    /// @return instantiationof/thetypes（like/such asOption_i32）
     Type* instantiateGeneric(const std::string& template_name,
                             const std::vector<Type*>& type_args);
     
-    /// 类型参数替换（公开，供TypeChecker使用）
+    /// typeparametersubstitution（public，for/provideTypeCheckeruse）
     Type* substituteType(Type* type, const std::unordered_map<std::string, Type*>& substitution);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 类型查询
+    // typequery
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     bool isAssignable(Type* from, Type* to);
@@ -123,7 +123,7 @@ private:
     std::unordered_map<std::string, Type*> named_types_;
     std::vector<std::unique_ptr<Type>> type_pool_;
     
-    // 泛型系统
+    // genericsystem
     std::unordered_map<std::string, GenericTemplate*> generic_templates_;
     std::unordered_map<std::string, Type*> instantiated_types_;
     std::vector<std::unique_ptr<GenericTemplate>> template_pool_;

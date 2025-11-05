@@ -1,6 +1,6 @@
 //===--- semantic_context.h - Semantic Analysis Context ---------*- C++ -*-===//
 //
-// 语义分析上下文 - 共享的语义分析状态和资源
+// semantic analysiscontext - share/sharedof/thesemanticanalysisstateandresourcessource
 //
 //===----------------------------------------------------------------------===//
 
@@ -13,30 +13,30 @@
 
 namespace pawc {
 
-/// SemanticContext - 语义分析上下文
+/// SemanticContext - semanticanalysiscontext
 ///
-/// 在不同的语义分析组件（TypeChecker, TypeInference, InterfaceValidator等）
-/// 之间共享状态和资源
+/// in/atdifferentof/thesemanticanalysiscomponent（TypeChecker, TypeInference, InterfaceValidatoretc）
+/// betweenshare/sharedstateandresourcessource
 class SemanticContext {
     TypeSystem* type_system_;
     SymbolTable* symbol_table_;
     DiagnosticEngine* diagnostics_;
     
-    // 当前分析状态
+    // currentanalysisstate
     Type* current_function_return_type_ = nullptr;
     bool in_loop_ = false;
-    Type* current_self_type_ = nullptr;  // 当前接口实现的类型
+    Type* current_self_type_ = nullptr;  // currentinterfaceimplementationof/thetypes
     
 public:
     SemanticContext(TypeSystem* ts, SymbolTable* st, DiagnosticEngine* diag)
         : type_system_(ts), symbol_table_(st), diagnostics_(diag) {}
     
-    // 资源访问
+    // resourcessourcevisit
     TypeSystem* getTypeSystem() const { return type_system_; }
     SymbolTable* getSymbolTable() const { return symbol_table_; }
     DiagnosticEngine* getDiagnostics() const { return diagnostics_; }
     
-    // 状态管理
+    // state management
     void setCurrentFunctionReturnType(Type* type) { current_function_return_type_ = type; }
     Type* getCurrentFunctionReturnType() const { return current_function_return_type_; }
     

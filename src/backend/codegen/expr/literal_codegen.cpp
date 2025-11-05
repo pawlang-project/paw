@@ -1,7 +1,9 @@
 //===--- literal_codegen.cpp - Literal CodeGen Implementation ---*- C++ -*-===//
+/// @file literal_codegen.cpp
+/// @brief Code generation implementation
 //
-// 字面量代码生成：IntLiteral, FloatLiteral, BoolLiteral, CharLiteral, StringLiteral
-// 从expr_codegen.cpp中提取
+// literalcode generation：IntLiteral, FloatLiteral, BoolLiteral, CharLiteral, StringLiteral
+// fromexpr_codegen.cppmiddle/centerextract
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,20 +18,20 @@
 namespace pawc {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 字面量生成
+// literalgenerate
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ExprCodeGen::visit(IntLiteral* node) {
-    // 使用APInt解析整数值（支持任意精度，包括i128/u128）
+    // useAPIntparseintegervalue（supportarbitrary precision，packageincludingi128/u128）
     const std::string& value_str = node->getValue();
     
-    // 检查是否是负数
+    // Checkyesnoyesnegativenumber
     bool is_negative = (!value_str.empty() && value_str[0] == '-');
     std::string abs_value_str = is_negative ? value_str.substr(1) : value_str;
     
-    // 根据类型确定位宽
+    // according totypescertain/surebit/digitwide
     Type* type = node->getType();
-    unsigned bit_width = 64;  // 默认i32实际用64位解析
+    unsigned bit_width = 64;  // defaulti32actualuse64bit/digitparse
     
     if (type) {
         switch (type->getKind()) {
@@ -51,84 +53,84 @@ void ExprCodeGen::visit(IntLiteral* node) {
                 break;
             case Type::Kind::I128:
             case Type::Kind::U128:
-                bit_width = 128;  // 完整128位精度
+                bit_width = 128;  // complete128bit/digitprecision
                 break;
             default:
                 bit_width = 32;
                 break;
         }
     } else {
-        // 默认为i32
+        // defaultis/asi32
         bit_width = 32;
     }
     
-    // 使用APInt解析（支持任意大整数）
+    // useAPIntparse（supportarbitrary/anylarge/biginteger）
     llvm::APInt ap_value(bit_width, abs_value_str, 10);
     
-    // 如果是负数，取反
+    // ifyesnegativenumber，negate
     if (is_negative) {
         ap_value = -ap_value;
     }
     
-    // 创建LLVM常量
+    // createLLVMconstant
     llvm::Type* llvm_type = type ? context_->getLLVMType(type) : nullptr;
     
     if (!llvm_type || !llvm_type->isIntegerTy()) {
         llvm_type = llvm::Type::getInt32Ty(context_->getLLVMContext());
     }
     
-    result_ = llvm::ConstantInt::get(llvm_type, ap_value);
+    results_ = llvm::ConstantInt::get(llvm_type, ap_value);
 }
 
 void ExprCodeGen::visit(FloatLiteral* node) {
-    // 使用APFloat支持完整精度浮点数
+    // useAPFloatsupportcompleteprecisionfloating-pointnumber
     const std::string& value_str = node->getValue();
     Type* type = node->getType();
     
-    // f128：生成真正的fp128常量（支持运算）
+    // f128：generatetruepositiveof/thefp128constant（supportoperation）
     if (type && type->getKind() == Type::Kind::F128) {
-        // 使用APFloat解析为IEEE 754 fp128
+        // useAPFloatparseis/asIEEE 754 fp128
         llvm::APFloat ap_value(llvm::APFloat::IEEEquad(), value_str);
         
-        // 生成fp128常量（而不是字符串）
-        result_ = llvm::ConstantFP::get(
+        // generationfp128constant（whilenotyescharacterstring）
+        results_ = llvm::ConstantFP::get(
             llvm::Type::getFP128Ty(context_->getLLVMContext()),
             ap_value
         );
         return;
     }
     
-    // 其他浮点类型：正常处理
+    // Other typesfloating-pointtypes：positivenormallyprocess
     llvm::Type* llvm_type = type ? context_->getLLVMType(type) : nullptr;
     
-    // 如果没有类型或类型不是浮点，默认f64
+    // ifnohastypesortypesnotyesfloating-point，defaultf64
     if (!llvm_type || (!llvm_type->isFloatingPointTy() && !llvm_type->isStructTy())) {
         llvm_type = llvm::Type::getDoubleTy(context_->getLLVMContext());
     }
     
-    // 使用APFloat解析（完整精度）
+    // useAPFloatparse（completeprecision）
     llvm::APFloat ap_value(llvm_type->getFltSemantics(), value_str);
     
-    result_ = llvm::ConstantFP::get(llvm_type, ap_value);
+    results_ = llvm::ConstantFP::get(llvm_type, ap_value);
 }
 
 void ExprCodeGen::visit(BoolLiteral* node) {
-    result_ = llvm::ConstantInt::get(
+    results_ = llvm::ConstantInt::get(
         llvm::Type::getInt1Ty(context_->getLLVMContext()),
         node->getValue() ? 1 : 0
     );
 }
 
 void ExprCodeGen::visit(CharLiteral* node) {
-    result_ = llvm::ConstantInt::get(
+    results_ = llvm::ConstantInt::get(
         llvm::Type::getInt8Ty(context_->getLLVMContext()),
         static_cast<uint8_t>(node->getValue())
     );
 }
 
 void ExprCodeGen::visit(StringLiteral* node) {
-    // 创建全局字符串常量
-    result_ = context_->getBuilder().CreateGlobalStringPtr(node->getValue());
+    // Create global character string constant
+    results_ = context_->getBuilder().CreateGlobalString(node->getValue());
 }
 
 } // namespace pawc

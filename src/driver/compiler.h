@@ -19,48 +19,48 @@
 
 namespace pawc {
 
-/// Compiler - 编译器主类
+/// Compiler - compilermainclass
 ///
-/// 负责协调整个编译流程，使用PassManager管理所有Pass
+/// Responsible for coordinating entire compilation processcompilationflow，usePassManagermanageAllPass
 class Compiler {
 public:
     explicit Compiler(const CompilerOptions& options);
-    ~Compiler();  // 显式析构以清理PassContext缓存
+    ~Compiler();  // explicitstyle/formdestruct/destructionwith/tocleanupPassContextcache
     
-    /// 编译源文件
-    /// \param source_file 源文件路径
-    /// \return true表示成功
+    /// compile/compilationsourcefile
+    /// \param source_file sourcefilepath
+    /// \return true indicates success
     bool compile(const std::string& source_file);
     
-    /// 获取诊断引擎
+    /// Get diagnostic engine
     DiagnosticEngine* getDiagnostics() { return diagnostics_.get(); }
     
-    /// 获取类型系统
+    /// gettypessystem
     TypeSystem* getTypeSystem() { return type_system_.get(); }
     
-    /// 获取符号表
+    /// getsymboltable
     SymbolTable* getSymbolTable() { return symbol_table_.get(); }
     
 private:
     CompilerOptions options_;
     
-    // 核心组件
+    // Core components
     std::unique_ptr<DiagnosticEngine> diagnostics_;
     std::unique_ptr<TypeSystem> type_system_;
     std::unique_ptr<SymbolTable> symbol_table_;
     std::unique_ptr<PassContext> pass_context_;
     std::unique_ptr<PassManager> pass_manager_;
     
-    // 初始化编译器组件
+    // initializecompilercomponent
     void initialize();
     
-    // 配置Pass流程
+    // configurePassflow
     void setupPasses();
     
-    // 读取源文件
+    // readsourcefile
     std::string readSourceFile(const std::string& filename);
     
-    // 处理编译结果
+    // processcompile/compilationresults
     bool processResults();
 };
 

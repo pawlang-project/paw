@@ -1,4 +1,6 @@
 //===--- memory_manager.cpp - Memory Manager Implementation ------*- C++ -*-===//
+/// @file memory_manager.cpp
+/// @brief Implementation file
 
 #include "memory_manager.h"
 #include <llvm/IR/Function.h>
@@ -12,7 +14,7 @@ MemoryManager::MemoryManager(llvm::IRBuilder<>& builder, llvm::Module* module)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 栈分配
+// stackallocate
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 llvm::AllocaInst* MemoryManager::allocateOnStack(llvm::Type* type,
@@ -24,15 +26,15 @@ llvm::AllocaInst* MemoryManager::allocateOnStack(llvm::Type* type,
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 堆分配
+// heapallocate
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 llvm::Value* MemoryManager::allocateOnHeap(llvm::Type* type) {
-    // 计算类型大小
+    // computetypessize
     const llvm::DataLayout& dl = module_->getDataLayout();
     uint64_t size = dl.getTypeAllocSize(type);
     
-    // 调用paw_malloc
+    // callpaw_malloc
     llvm::Value* size_val = llvm::ConstantInt::get(
         llvm::Type::getInt64Ty(builder_.getContext()),
         size
@@ -40,32 +42,32 @@ llvm::Value* MemoryManager::allocateOnHeap(llvm::Type* type) {
     
     llvm::Value* ptr = builder_.CreateCall(malloc_func_, {size_val});
     
-    // 转换为正确的类型指针
-    return builder_.CreateBitCast(ptr, type->getPointerTo());
+    // Return pointer (opaque pointer model - no bitcast needed)
+    return ptr;
 }
 
 void MemoryManager::freeMemory(llvm::Value* ptr) {
-    // 直接调用free（opaque pointer不需要bitcast）
+    // directlycallfree（opaque pointernotneedbitcast）
     builder_.CreateCall(free_func_, {ptr});
 }
 
 void MemoryManager::generateDestructor(llvm::Value* object, llvm::Type* type) {
-    // 析构函数生成（基于类型）
+    // destruct/destructionfunctiongenerate（based ontypes）
     // 
-    // PawLang内存管理策略：
-    //   1. 栈分配：自动释放（函数退出时）
-    //   2. 堆分配：需要显式析构
-    //   3. 当前：非GC策略，未来可扩展为ARC/RAII
+    // PawLangmemory managementStrategy:
+    //   1. stackallocate：self/fromdynamicrelease（functionexittime/when）
+    //   2. heapallocate：needexplicitstyle/formdestruct/destruction
+    //   3. current：notGCpolicy，not yetfuturecanextendis/asARC/RAII
     // 
-    // 目前实现：基础堆内存释放
-    // 未来扩展：递归释放复合类型（struct/array）
+    // currentlyfront/beforeimplementation：baseheapmemory deallocation
+    // not yetfutureextend：recursionreleasecompositetypes（struct/array）
     // 
-    // 注意：PawLang的内存模型仍在设计中，
-    // 当前简化实现足以支持大多数场景
+    // Note：PawLangof/theinsidememorymodelstillin/atdesignmiddle/center，
+    // currentsimplifyimplementationsufficientsupportlarge/bigmany/muchnumberscenario
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Runtime函数声明
+// Runtime function declarations
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void MemoryManager::declareMalloc() {

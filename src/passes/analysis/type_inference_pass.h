@@ -1,6 +1,9 @@
 //===--- type_inference_pass.h - Type Inference Pass ------------*- C++ -*-===//
+/// @file type_inference_pass.h
+/// @brief Code generation utilities
+///
 //
-// 类型推导Pass：推导变量和表达式的类型
+// typeinferPass：infervariableandexpressionof/thetypes
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,10 +19,10 @@ public:
     static constexpr const char* getName() { return "TypeInferencePass"; }
     
     bool run(PassContext& context) override {
-        // TODO: 实现类型推导逻辑
-        // 1. 推导变量类型
-        // 2. 推导表达式类型
-        // 3. 推导返回类型
+        // TODO: implementationtypesinferlogic
+        // 1. infervariabletypes
+        // 2. inferexpressiontypes
+        // 3. inferreturntypes
         return true;
     }
 };

@@ -1,4 +1,24 @@
-//===--- parser.h - Parser ----------------------------------------*- C++ -*-===//
+//===--- parser.h - Recursive Descent Parser -------------------*- C++ -*-===//
+//
+// Recursive descent parser for PawLang.
+//
+// Transforms token stream into Abstract Syntax Tree (AST).
+//
+// Architecture:
+//   - Recursive descent with operator precedence climbing
+//   - One parse method per grammar rule
+//   - Error recovery with synchronization points
+//   - Panic mode for multiple error reporting
+//
+// Features:
+//   - All PawLang constructs: expressions, statements, declarations
+//   - Advanced pattern matching: range, OR, guards, nested
+//   - Generic types with where clauses
+//   - Interface system with default methods
+//
+// Performance: O(n) single-pass parsing
+//
+//===----------------------------------------------------------------------===//
 
 #ifndef PAW_PARSER_H
 #define PAW_PARSER_H
@@ -13,7 +33,13 @@
 
 namespace pawc {
 
-/// Parser - 语法分析器
+/// Parser - Syntax analyzer for PawLang
+///
+/// Converts token stream to AST using recursive descent.
+///
+/// Usage:
+///   Parser parser(tokens, diag, types);
+///   auto ast = parser.parse();
 class Parser {
 public:
     Parser(const std::vector<Token>& tokens, DiagnosticEngine* diag_engine,
@@ -22,7 +48,7 @@ public:
     std::vector<StmtPtr> parse();
     
 private:
-    // Token处理
+    // Tokenprocess
     Token advance();
     Token peek() const;
     Token peekNext() const;
@@ -31,7 +57,7 @@ private:
     Token consume(TokenType type, const std::string& message);
     bool isAtEnd() const;
     
-    // 语句解析
+    // statementparse
     StmtPtr parseStatement();
     StmtPtr parseVarDecl();
     StmtPtr parseFunctionDecl(bool is_public = false);
@@ -51,7 +77,7 @@ private:
     StmtPtr parseExprStmt();
     std::vector<StmtPtr> parseBlockStmtsWithImplicitReturn();
     
-    // Pattern解析
+    // Patternparse
     std::unique_ptr<class Pattern> parsePattern();
     std::unique_ptr<class Pattern> parseBasePattern();
     std::unique_ptr<class Pattern> parseLiteralPattern();
@@ -63,7 +89,7 @@ private:
     std::unique_ptr<class Pattern> parseEnumConstructorPattern();
     std::unique_ptr<class Pattern> parseTuplePattern();
     
-    // 表达式解析（按优先级）
+    // Expression parsing (by operator precedence)
     ExprPtr parseExpression();
     ExprPtr parseAssignment();
     ExprPtr parseMatchExpr();
@@ -78,18 +104,18 @@ private:
     ExprPtr parsePostfix();
     ExprPtr parsePrimary();
     
-    // 类型解析
+    // typeparse
     Type* parseType();
     
-    // 泛型参数和where约束解析
-    std::vector<GenericParam> parseGenericParams();        // 解析 <T, U>
-    std::vector<WhereClause> parseWhereClauses();          // 解析 where T: Display, U: Debug
+    // genericparameterandwhereconstraintparse
+    std::vector<GenericParam> parseGenericParams();        // parsing <T, U>
+    std::vector<WhereClause> parseWhereClauses();          // parsing where T: Display, U: Debug
     
-    // 错误处理
+    // errorprocess
     void error(const std::string& message);
     void synchronize();
     
-    // 辅助方法
+    // helpermethod
     std::string normalizeEnumAlias(const std::string& alias);
     
 private:
@@ -98,7 +124,7 @@ private:
     DiagnosticEngine* diag_engine_;
     TypeSystem* type_system_;
     
-    // 当前泛型上下文
+    // currentgenericcontext
     std::vector<GenericParam> current_generic_params_;
 };
 

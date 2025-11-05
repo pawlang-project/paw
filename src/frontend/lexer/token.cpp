@@ -1,4 +1,6 @@
 //===--- token.cpp - Token Implementation ------------------------*- C++ -*-===//
+/// @file token.cpp
+/// @brief AST node implementation
 
 #include "token.h"
 

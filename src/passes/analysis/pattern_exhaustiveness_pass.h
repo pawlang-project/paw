@@ -1,6 +1,9 @@
 //===--- pattern_exhaustiveness_pass.h - Pattern Exhaustiveness -*- C++ -*-===//
+/// @file pattern_exhaustiveness_pass.h
+/// @brief Code generation utilities
+///
 //
-// 模式穷尽性检查Pass：检查match表达式是否覆盖所有情况
+// Pattern exhaustiveness check pass: check if match expression covers all caseserAllcase/situation
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,8 +19,8 @@ public:
     static constexpr const char* getName() { return "PatternExhaustivenessPass"; }
     
     bool run(PassContext& context) override {
-        // TODO: 实现模式穷尽性检查（已在PatternChecker中实现）
-        // 这个Pass是对现有PatternChecker的封装
+        // TODO: implement pattern exhaustiveness check (already in PatternChecker)eckermiddle/centerimplementation）
+        // This pass should only appear when there is PatternChecker wrapping
         return true;
     }
 };

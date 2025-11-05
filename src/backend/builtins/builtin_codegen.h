@@ -17,57 +17,57 @@
 
 namespace pawc {
 
-/// BuiltinCodeGen - Builtin函数代码生成
+/// BuiltinCodeGen - Builtinfunctioncode generation
 ///
-/// 处理18种类型的print/println/to_string重载
+/// process18types/kindstypesof/theprint/println/to_stringoverload
 class BuiltinCodeGen {
 public:
     explicit BuiltinCodeGen(CodeGenContext* context);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 声明所有Runtime函数
+    // declareAllRuntimefunction
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     void declareAllRuntimeFunctions();
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 生成Builtin函数调用
+    // generationBuiltinfunctioncall
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
-    /// 根据类型生成print调用
+    /// according totypesgenerateprintcall
     llvm::Value* generatePrint(llvm::Value* value, Type* type);
     
-    /// 根据类型生成println调用
+    /// according totypesgenerateprintlncall
     llvm::Value* generatePrintln(llvm::Value* value, Type* type);
     
-    /// 根据类型生成to_string调用
+    /// according totypesgenerateto_stringcall
     llvm::Value* generateToString(llvm::Value* value, Type* type);
     
-    /// 生成len调用 (支持string, array, slice)
+    /// generationlencall (supportstring, array, slice)
     llvm::Value* generateLen(llvm::Value* value, Type* type);
     
-    /// 生成panic调用
+    /// generationpaniccall
     llvm::Value* generatePanic(llvm::Value* message);
     
-    /// 生成assert调用
+    /// generationassertcall
     llvm::Value* generateAssert(llvm::Value* condition, llvm::Value* message,
                                 const std::string& file, int line);
     
-    /// 生成debug_assert调用
+    /// generationdebug_assertcall
     llvm::Value* generateDebugAssert(llvm::Value* condition, llvm::Value* message,
                                      const std::string& file, int line);
     
-    /// 生成unreachable调用
+    /// generationunreachablecall
     llvm::Value* generateUnreachable(const std::string& file, int line);
     
 private:
     CodeGenContext* context_;
     
-    // 获取特定类型的runtime函数名
+    // getspecifictypesof/theruntimefunction name
     std::string getRuntimePrintName(Type* type);
     std::string getRuntimeToStringName(Type* type);
     
-    // 声明单个runtime函数
+    // declaresingleindividual/pieceruntimefunction
     llvm::Function* declareRuntimeFunction(
         const std::string& name,
         llvm::Type* return_type,

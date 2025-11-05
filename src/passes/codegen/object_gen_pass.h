@@ -15,40 +15,40 @@
 
 namespace pawc {
 
-/// ObjectGenPass - 对象文件生成Pass
+/// ObjectGenPass - objectfilegeneratePass
 ///
-/// 将LLVM IR编译为目标平台的对象文件(.o)
+/// Compile LLVM IR to target platform object fileile(.o)
 class ObjectGenPass : public PassBase<ObjectGenPass> {
 public:
     static std::string name() { return "ObjectGenPass"; }
     
     PassResult runImpl(PassContext* context) {
-        // 从context获取LLVM模块
+        // Get LLVM module from context
         llvm::Module* module = nullptr;
         if (!context->getCachedResult("llvm_module", module) || !module) {
             return PassResult{false, "No LLVM module available for object generation"};
         }
         
-        // 初始化所有targets
+        // initializeAlltargets
         llvm::InitializeAllTargetInfos();
         llvm::InitializeAllTargets();
         llvm::InitializeAllTargetMCs();
         llvm::InitializeAllAsmParsers();
         llvm::InitializeAllAsmPrinters();
         
-        // 获取target triple
+        // gettarget triple
         auto target_triple_str = llvm::sys::getDefaultTargetTriple();
         llvm::Triple target_triple(target_triple_str);
         module->setTargetTriple(target_triple);
         
-        // 查找target
+        // lookuptarget
         std::string error;
         auto target = llvm::TargetRegistry::lookupTarget(target_triple_str, error);
         if (!target) {
             return PassResult{false, "Failed to lookup target: " + error};
         }
         
-        // 创建TargetMachine - 🔧 Bug Fix: 使用unique_ptr管理生命周期
+        // Create TargetMachine - 🔧 Bug Fix: use unique_ptr to manage lifetimeiod
         llvm::StringRef cpu = "generic";
         llvm::StringRef features = "";
         llvm::TargetOptions opt;
@@ -64,7 +64,7 @@ public:
         
         module->setDataLayout(target_machine->createDataLayout());
         
-        // 生成对象文件（使用临时文件）
+        // generationobjectfile（useTemporaryfile）
         std::string output_file = "/tmp/paw_output.o";
         std::error_code ec;
         llvm::raw_fd_ostream dest(output_file, ec, llvm::sys::fs::OF_None);
@@ -73,7 +73,7 @@ public:
             return PassResult{false, "Failed to open output file: " + ec.message()};
         }
         
-        // 设置Pass来生成对象文件
+        // Configure pass to generate object file
         llvm::legacy::PassManager pass;
         auto file_type = llvm::CodeGenFileType::ObjectFile;
         
@@ -81,13 +81,13 @@ public:
             return PassResult{false, "TargetMachine can't emit object file"};
         }
         
-        // 运行Pass
+        // runPass
         pass.run(*module);
         dest.flush();
         
-        // target_machine会在函数结束时自动释放
+        // target_machinewillin/atfunctionendtime/whenself/fromdynamicrelease
         
-        // 缓存对象文件路径供链接器使用
+        // Cache object file path for linker use
         context->cacheAnalysisResult("object_file", output_file);
         
         if (context->isVerbose()) {

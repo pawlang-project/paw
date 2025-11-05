@@ -1,4 +1,7 @@
 //===--- diagnostic.cpp - Diagnostic Implementation -------------*- C++ -*-===//
+/// @file diagnostic.cpp
+/// @brief Implementation file
+///
 
 #include "diagnostic.h"
 #include <sstream>

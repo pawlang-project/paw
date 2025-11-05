@@ -9,11 +9,11 @@
 
 namespace pawc {
 
-/// Hash - SipHash实现
+/// Hash - SipHashimplementation
 class Hash {
 public:
     static uint64_t hash64(const void* data, size_t len) {
-        // 简化的哈希实现（生产环境应使用SipHash）
+        // Simple hash implementation (production environment should use SipHash)
         uint64_t hash = 0xcbf29ce484222325ULL; // FNV offset basis
         const uint8_t* bytes = static_cast<const uint8_t*>(data);
         

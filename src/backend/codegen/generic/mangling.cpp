@@ -1,4 +1,6 @@
 //===--- mangling.cpp - Generic Name Mangling Implementation -----*- C++ -*-===//
+/// @file mangling.cpp
+/// @brief Implementation file
 
 #include "mangling.h"
 #include "middleend/types/type.h"
@@ -29,16 +31,16 @@ std::string Mangling::typeToString(Type* type) {
         return "unknown";
     }
     
-    // 获取类型的字符串表示
+    // gettypesof/thecharacterstringtableindicates/show
     std::string type_str = type->toString();
     
-    // 转义特殊字符
+    // Escape special characters
     return escapeTypeName(type_str);
 }
 
 std::string Mangling::escapeTypeName(const std::string& name) {
-    std::string result;
-    result.reserve(name.size());
+    std::string results;
+    results.reserve(name.size());
     
     for (char c : name) {
         switch (c) {
@@ -54,14 +56,14 @@ std::string Mangling::escapeTypeName(const std::string& name) {
             case '*':
             case '?':
             case '!':
-                // 跳过这些字符或替换为下划线
+                // Skip these characters or substitute as underscore
                 break;
             default:
-                result.push_back(c);
+                results.push_back(c);
         }
     }
     
-    return result;
+    return results;
 }
 
 } // namespace pawc

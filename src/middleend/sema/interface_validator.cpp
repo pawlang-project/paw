@@ -1,4 +1,6 @@
 //===--- interface_validator.cpp - Interface Validation Impl -----*- C++ -*-===//
+/// @file interface_validator.cpp
+/// @brief Type system and semantic analysis implementation
 
 #include "interface_validator.h"
 #include "frontend/parser/ast/stmt.h"
@@ -13,21 +15,21 @@ InterfaceValidator::InterfaceValidator(SemanticContext* context)
     : context_(context) {}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 1. 验证接口定义
+// 1. validateinterfacedefinition
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 bool InterfaceValidator::validateInterfaceDecl(InterfaceDecl* decl) {
     auto* diagnostics = context_->getDiagnostics();
     bool valid = true;
     
-    // 1. 检查接口名称是否已存在（避免重复定义）
-    // 注：这里简化处理，实际应该从符号表或类型系统中查找
+    // 1. checkinterfacenameyesnoalreadyexists（avoidduplicatedefinition）
+    // note：heresimplifyprocess，actualshouldfromsymboltableortypessystemmiddle/centerlookup
     
-    // 2. 验证方法声明
+    // 2. validatemethoddeclaration
     std::unordered_set<std::string> method_names;
     
     for (const auto& method : decl->getMethods()) {
-        // 2.1 检查方法名重复
+        // 2.1 checkmethodnameduplicate
         if (method_names.find(method.name) != method_names.end()) {
             if (diagnostics) {
                 // diagnostics->error("Interface method '" + method.name + 
@@ -42,7 +44,7 @@ bool InterfaceValidator::validateInterfaceDecl(InterfaceDecl* decl) {
         }
         method_names.insert(method.name);
         
-        // 2.2 验证方法参数类型存在
+        // 2.2 validatemethodparametertypesexists
         for (const auto& param : method.params) {
             if (!param.type) {
                 if (diagnostics) {
@@ -53,7 +55,7 @@ bool InterfaceValidator::validateInterfaceDecl(InterfaceDecl* decl) {
                 valid = false;
             }
             
-            // 检查 Self 类型只能出现在引用类型中
+            // Check Self typesonlycanappearnowreferencetypesmiddle/center
             if (param.type && param.type->getKind() == Type::Kind::SelfType) {
                 if (diagnostics) {
                     std::cerr << "[InterfaceValidator] Error: Self type can only appear "
@@ -64,7 +66,7 @@ bool InterfaceValidator::validateInterfaceDecl(InterfaceDecl* decl) {
             }
         }
         
-        // 2.3 验证返回类型存在
+        // 2.3 validatereturntypesexists
         if (!method.return_type) {
             if (diagnostics) {
                 std::cerr << "[InterfaceValidator] Error: Method '" << method.name 
@@ -75,7 +77,7 @@ bool InterfaceValidator::validateInterfaceDecl(InterfaceDecl* decl) {
         }
     }
     
-    // 3. 验证泛型参数（如果是泛型接口）
+    // 3. validategenericparameter（ifyesgenericinterface）
     if (decl->isGeneric()) {
         std::unordered_set<std::string> generic_param_names;
         for (const auto& param : decl->getGenericParams()) {
@@ -95,7 +97,7 @@ bool InterfaceValidator::validateInterfaceDecl(InterfaceDecl* decl) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 2. 验证 Support 实现
+// 2. validate Support implementation
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 bool InterfaceValidator::validateSupportDecl(SupportDecl* decl) {
@@ -103,7 +105,7 @@ bool InterfaceValidator::validateSupportDecl(SupportDecl* decl) {
     auto* type_system = context_->getTypeSystem();
     bool valid = true;
     
-    // 1. 检查实现的类型是否存在
+    // 1. checkimplementationof/thetypesyesnoexists
     Type* impl_type = type_system->lookupType(decl->getTypeName());
     if (!impl_type) {
         if (diagnostics) {
@@ -113,21 +115,21 @@ bool InterfaceValidator::validateSupportDecl(SupportDecl* decl) {
         return false;
     }
     
-    // 2. 检查接口是否存在
-    // 注：实际应该从类型系统或符号表中查找接口定义
-    // 这里简化处理，假设接口存在
+    // 2. checkinterfaceyesnoexists
+    // note：actualshouldfromtypessystemorsymboltablemiddle/centerlookupinterfacedefinition
+    // heresimplifyprocess，assumptioninterfaceexists
     
-    // 3. 获取接口定义（简化版 - 实际需要从上下文中获取）
-    // TODO: 从类型系统或符号表中查找接口定义
-    // 目前先假设接口定义存在，只验证方法签名的基本正确性
+    // 3. getinterfacedefinition（simplifyversion - actualneedfromcontextmiddle/centerget）
+    // TODO: fromtypessystemorsymboltablemiddle/centerlookupinterfacedefinition
+    // Currently first assume interface definition exists, only validate basic method signature correctness
     
-    // 4. 验证实现的方法
+    // 4. validateimplementationof/themethod
     std::unordered_set<std::string> impl_method_names;
     
     for (const auto& method : decl->getMethods()) {
         const std::string& method_name = method->getName();
         
-        // 4.1 检查方法名重复
+        // 4.1 checkmethodnameduplicate
         if (impl_method_names.find(method_name) != impl_method_names.end()) {
             if (diagnostics) {
                 std::cerr << "[InterfaceValidator] Error: Method '" << method_name 
@@ -139,7 +141,7 @@ bool InterfaceValidator::validateSupportDecl(SupportDecl* decl) {
         }
         impl_method_names.insert(method_name);
         
-        // 4.2 验证方法有实现体
+        // 4.2 validatemethodhasimplementationbody/struct
         if (!method->getBody()) {
             if (diagnostics) {
                 std::cerr << "[InterfaceValidator] Error: Method '" << method_name 
@@ -149,7 +151,7 @@ bool InterfaceValidator::validateSupportDecl(SupportDecl* decl) {
             valid = false;
         }
         
-        // 4.3 验证方法参数和返回类型
+        // 4.3 validatemethodparameterandreturntypes
         for (const auto& param : method->getParams()) {
             if (!param.type) {
                 if (diagnostics) {
@@ -169,9 +171,9 @@ bool InterfaceValidator::validateSupportDecl(SupportDecl* decl) {
         }
     }
     
-    // 5. 验证 where 约束
+    // 5. validate where constraint
     for (const auto& clause : decl->getWhereClauses()) {
-        // 检查约束的类型参数是否在泛型参数中
+        // Checkconstraintof/thetypesparameteryesnoin/atgenericparametermiddle/center
         bool found = false;
         for (const auto& param : decl->getTypeGenericParams()) {
             if (param.name == clause.type_param) {
@@ -194,34 +196,34 @@ bool InterfaceValidator::validateSupportDecl(SupportDecl* decl) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 3. 检查类型是否实现了接口
+// 3. checktypesyesnoimplementationimplementedinterface
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 bool InterfaceValidator::checkImplementsInterface(Type* type, const std::string& interface_name) {
     if (!type) return false;
     
-    // TODO: 实现完整的接口实现检查
-    // 当前简化版本：假设如果类型存在且接口存在，就认为可能实现了
-    // 实际需要：
-    // 1. 查找该类型的所有 Support 声明
-    // 2. 检查是否有 support Type with Interface 的声明
-    // 3. 验证所有必需的方法都已实现
+    // TODO: implementationcompleteof/theinterfaceimplementationcheck
+    // currentsimplifyversion：assumptioniftypesexistsandinterfaceexists，assumeis/aspossiblyimplementationimplemented
+    // actualneed：
+    // 1. lookupshouldtypesof/theAll Support declaration
+    // 2. checkyesnohas support Type with Interface of/thedeclaration
+    // 3. validateAllrequiredneedof/themethodallalreadyimplementation
     
     auto* type_system = context_->getTypeSystem();
     
-    // 检查接口类型是否存在
+    // Checkinterfacetypesyesnoexists
     Type* interface_type = type_system->lookupType(interface_name);
     if (!interface_type || interface_type->getKind() != Type::Kind::Interface) {
         return false;
     }
     
-    // 简化实现：总是返回 true
-    // 实际实现需要检查 Support 声明
+    // simplifyimplementation：alwaysyesreturn true
+    // actualimplementationneedcheck Support declaration
     return true;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 4. 验证方法签名是否匹配
+// 4. validatemethodsignatureyesnomatch
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 bool InterfaceValidator::validateMethodSignature(
@@ -235,7 +237,7 @@ bool InterfaceValidator::validateMethodSignature(
     auto* diagnostics = context_->getDiagnostics();
     bool valid = true;
     
-    // 1. 检查方法名是否匹配
+    // 1. checkmethodnameyesnomatch
     if (impl_method_name != interface_method_name) {
         if (diagnostics) {
             std::cerr << "[InterfaceValidator] Error: Method name mismatch: expected '" 
@@ -245,7 +247,7 @@ bool InterfaceValidator::validateMethodSignature(
         return false;
     }
     
-    // 2. 检查参数数量是否匹配
+    // 2. checkparametercountyesnomatch
     if (impl_param_types.size() != interface_param_types.size()) {
         if (diagnostics) {
             std::cerr << "[InterfaceValidator] Error: Method '" << impl_method_name 
@@ -256,7 +258,7 @@ bool InterfaceValidator::validateMethodSignature(
         return false;
     }
     
-    // 3. 检查每个参数类型是否匹配
+    // 3. checkeach/everyparametertypesyesnomatch
     for (size_t i = 0; i < impl_param_types.size(); i++) {
         Type* impl_type = impl_param_types[i];
         Type* interface_type = interface_param_types[i];
@@ -266,23 +268,23 @@ bool InterfaceValidator::validateMethodSignature(
             continue;
         }
         
-        // 处理 Self 类型：在实现中 Self 会被替换为实际类型
-        // 这里需要特殊处理
+        // process Self types：in/atimplementationmiddle/center Self willby/passive markersubstitutionis/asactualtypes
+        // hereneedspecialhandle
         if (interface_type->getKind() == Type::Kind::SelfType) {
-            // 接口中的 Self 在实现中应该被替换为实际类型
-            continue;  // 简化处理，跳过 Self 类型检查
+            // interfacein Self in/atimplementationmiddle/centershouldby/passive markersubstitutionis/asactualtypes
+            continue;  // simplifyprocess，skip Self typescheck
         }
         
-        // 处理引用类型中的 Self
+        // processreferencetypesin Self
         if (interface_type->getKind() == Type::Kind::Reference) {
             auto* ref_type = static_cast<ReferenceType*>(interface_type);
             if (ref_type->getPointeeType()->getKind() == Type::Kind::SelfType) {
-                // &Self 或 &~Self
-                continue;  // 简化处理
+                // &Self or &~Self
+                continue;  // simplifyprocess
             }
         }
         
-        // 检查类型是否相等
+        // Checktypesyesnoequal
         if (!impl_type->equals(interface_type)) {
             if (diagnostics) {
                 std::cerr << "[InterfaceValidator] Error: Method '" << impl_method_name 
@@ -294,15 +296,15 @@ bool InterfaceValidator::validateMethodSignature(
         }
     }
     
-    // 4. 检查返回类型是否匹配
+    // 4. checkreturntypesyesnomatch
     if (!impl_return_type || !interface_return_type) {
         return false;
     }
     
-    // 处理 Self 类型
+    // process Self types
     if (interface_return_type->getKind() == Type::Kind::SelfType) {
-        // 返回 Self 在实现中应该被替换为实际类型
-        // 简化处理，跳过检查
+        // return Self in/atimplementationmiddle/centershouldby/passive markersubstitutionis/asactualtypes
+        // simplifyprocess，skipcheck
         return valid;
     }
     

@@ -1,7 +1,10 @@
 //===--- monomorphization_pass.cpp - Monomorphization Pass ------*- C++ -*-===//
+/// @file monomorphization_pass.cpp
+/// @brief Implementation file
+///
 
 #include "monomorphization_pass.h"
-#include "backend/codegen/generic/mangling.h"  // 使用新的Mangling模块
+#include "backend/codegen/generic/mangling.h"  // Use new Mangling module
 #include "pass/pass_context.h"
 #include "middleend/types/type_system.h"
 #include "frontend/parser/ast/pattern.h"
@@ -10,7 +13,7 @@
 namespace pawc {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Pass主入口
+// Pass main entry point
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 PassResult MonomorphizationPass::runImpl(PassContext* context) {
@@ -21,36 +24,36 @@ PassResult MonomorphizationPass::runImpl(PassContext* context) {
         return PassResult{true, "No AST for monomorphization"};
     }
     
-    // 第一遍：收集所有泛型定义
+    // First pass: collect all generic definitions
     collectGenericDefinitions(*ast);
     
-    // 第二遍：遍历AST，找到泛型使用点并生成单态化实例
+    // Second pass: traverse AST, find generic use sites and generate monomorphized instances
     for (const auto& stmt : *ast) {
         stmt->accept(this);
     }
     
-    // 【新增】将单态化实例注册（TypeChecker会处理）
-    // 注意：单态化的函数和类型会在后续TypeChecker/CodeGen中被处理
-    // 因为它们已经被添加到monomorphized_stmts_，后续会被遍历
+    // Register monomorphized instances (TypeChecker will process them)
+    // Note: Monomorphized functions and types will be processed in subsequent TypeChecker/CodeGen
+    // because they've been added to monomorphized_stmts_, and will be traversed later
     
-    // 记录生成的实例数到context
+    // Record generated instance count to context
     if (!monomorphized_stmts_.empty()) {
         context->cacheAnalysisResult("monomorphized_instances", 
                                      static_cast<int>(monomorphized_stmts_.size()));
     }
     
-    // 调试信息
-    std::string result_msg = "Monomorphization completed, generated " + 
+    // Debug info
+    std::string results_msg = "Monomorphization completed, generated " + 
                              std::to_string(monomorphized_stmts_.size()) + " instances";
     if (!instance_cache_.empty()) {
-        result_msg += " (cache size: " + std::to_string(instance_cache_.size()) + ")";
+        results_msg += " (cache size: " + std::to_string(instance_cache_.size()) + ")";
     }
     
-    return PassResult{true, result_msg};
+    return PassResult{true, results_msg};
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 收集泛型定义
+// Collect generic definitions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void MonomorphizationPass::collectGenericDefinitions(const std::vector<StmtPtr>& ast) {
@@ -77,36 +80,36 @@ void MonomorphizationPass::collectGenericDefinitions(const std::vector<StmtPtr>&
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 辅助函数
+// helper function
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 std::vector<Type*> MonomorphizationPass::inferTypeArgsFromStructLiteral(
     StructLiteral* lit, StructDecl* generic_decl) {
     
-    // 从字段值的类型推导泛型参数
-    // 例如: Box { value: 42 } => T = i32
+    // Infer generic parameters from field value types
+    // Example: Box { value: 42 } => T = i32
     
     std::vector<Type*> type_args;
     const auto& generic_params = generic_decl->getGenericParams();
     const auto& generic_fields = generic_decl->getFields();
     
     if (generic_params.empty()) {
-        return type_args;  // 非泛型结构体
+        return type_args;  // Non-generic struct
     }
     
-    // 建立类型参数映射
+    // Build type parameter map
     std::map<std::string, Type*> type_param_map;
     
-    // 遍历字段，尝试从字面量推导类型
+    // Traverse fields, try to infer types from literals
     for (const auto& field_init : lit->getFields()) {
-        // 找到对应的字段声明
+        // Find corresponding field declaration
         for (const auto& field_decl : generic_fields) {
             if (field_decl.first == field_init.name) {
-                // 从字段值推导类型
+                // Infer type from field value
                 Type* inferred_type = inferTypeFromExpr(field_init.value.get());
                 
                 if (inferred_type && field_decl.second) {
-                    // 如果字段类型是泛型参数，记录推导结果
+                    // If field type is generic parameter, record inference results
                     std::string field_type_name = field_decl.second->toString();
                     
                     if (type_param_map.find(field_type_name) == type_param_map.end()) {
@@ -118,14 +121,14 @@ std::vector<Type*> MonomorphizationPass::inferTypeArgsFromStructLiteral(
         }
     }
     
-    // 按泛型参数顺序构建type_args
+    // Build type_args in generic parameter order
     for (const auto& param : generic_params) {
         auto it = type_param_map.find(param.name);
         if (it != type_param_map.end()) {
             type_args.push_back(it->second);
         } else {
-            // 如果某个泛型参数未能推导，返回空（推导失败）
-            // TODO: 可以考虑默认类型或报错
+            // If a generic parameter cannot be inferred, return empty (inference failure)
+            // TODO: Consider default types or error reporting
             return std::vector<Type*>{};
         }
     }
@@ -136,7 +139,7 @@ std::vector<Type*> MonomorphizationPass::inferTypeArgsFromStructLiteral(
 std::string MonomorphizationPass::generateMonomorphizedName(
     const std::string& base_name, const std::vector<Type*>& type_args) {
     
-    // 生成单态化名称: Box<i32> -> Box_i32
+    // Generate monomorphized name: Box<i32> -> Box_i32
     std::string name = base_name;
     for (auto* type : type_args) {
         name += "_" + type->toString();
@@ -149,13 +152,13 @@ Type* MonomorphizationPass::substituteType(
     
     if (!type) return nullptr;
     
-    // 如果是泛型参数类型（通过名称匹配），替换为具体类型
+    // If it's generic parameter type (by name matching), substitute with concrete type
     auto it = type_mapping.find(type->toString());
     if (it != type_mapping.end()) {
         return it->second;
     }
     
-    // 处理复合类型（递归替换）
+    // Process composite types (recursive substitution)
     auto* type_system = context_->getTypeSystem();
     
     switch (type->getKind()) {
@@ -204,9 +207,9 @@ Type* MonomorphizationPass::substituteType(
         }
         
         case Type::Kind::Result: {
-            auto* result_type = static_cast<ResultType*>(type);
-            Type* new_ok = substituteType(result_type->getOkType(), type_mapping);
-            if (new_ok != result_type->getOkType()) {
+            auto* results_type = static_cast<ResultType*>(type);
+            Type* new_ok = substituteType(results_type->getOkType(), type_mapping);
+            if (new_ok != results_type->getOkType()) {
                 return type_system->getResultType(new_ok);
             }
             break;
@@ -222,8 +225,8 @@ Type* MonomorphizationPass::substituteType(
         }
         
         case Type::Kind::Struct: {
-            // 对于StructType，检查是否是泛型结构体的未单态化版本
-            // 例如：Box<T> 需要递归替换T
+            // For StructType, check if it's unmonomorphized version of generic struct
+            // Example: Box<T> needs recursive substitution of T
             auto* struct_type = static_cast<StructType*>(type);
             std::vector<StructType::Field> new_fields;
             bool changed = false;
@@ -235,14 +238,14 @@ Type* MonomorphizationPass::substituteType(
             }
             
             if (changed) {
-                // 创建新的StructType
+                // Create new StructType
                 return new StructType(struct_type->getName(), new_fields);
             }
             break;
         }
         
         default:
-            // 基础类型，不需要替换
+            // Base types, no substitution needed
             break;
     }
     
@@ -252,8 +255,8 @@ Type* MonomorphizationPass::substituteType(
 std::vector<Type*> MonomorphizationPass::inferTypeArgsFromCallExpr(
     CallExpr* call, FunctionDecl* generic_func) {
     
-    // 从函数调用参数推导类型参数
-    // 例如: identity(42) => T = i32
+    // Infer type parameters from function call arguments
+    // Example: identity(42) => T = i32
     
     std::vector<Type*> type_args;
     const auto& generic_params = generic_func->getGenericParams();
@@ -261,19 +264,19 @@ std::vector<Type*> MonomorphizationPass::inferTypeArgsFromCallExpr(
     const auto& call_args = call->getArgs();
     
     if (generic_params.empty()) {
-        return type_args;  // 非泛型函数
+        return type_args;  // Non-generic function
     }
     
-    // 建立类型参数映射
+    // Build type parameter map
     std::map<std::string, Type*> type_param_map;
     
-    // 遍历参数，推导类型
+    // Traverse parameters, infer types
     for (size_t i = 0; i < func_params.size() && i < call_args.size(); ++i) {
-        // 从调用参数推导类型
+        // Infer type from call argument
         Type* arg_type = inferTypeFromExpr(call_args[i].get());
         
         if (arg_type && func_params[i].type) {
-            // 如果函数参数类型是泛型参数，记录推导结果
+            // If function parameter type is generic parameter, record inference results
             std::string param_type_name = func_params[i].type->toString();
             if (type_param_map.find(param_type_name) == type_param_map.end()) {
                 type_param_map[param_type_name] = arg_type;
@@ -281,13 +284,13 @@ std::vector<Type*> MonomorphizationPass::inferTypeArgsFromCallExpr(
         }
     }
     
-    // 按泛型参数顺序构建type_args
+    // Build type_args in generic parameter order
     for (const auto& param : generic_params) {
         auto it = type_param_map.find(param.name);
         if (it != type_param_map.end()) {
             type_args.push_back(it->second);
         } else {
-            // 推导失败
+            // Inference failure
             return std::vector<Type*>{};
         }
     }
@@ -296,66 +299,66 @@ std::vector<Type*> MonomorphizationPass::inferTypeArgsFromCallExpr(
 }
 
 Type* MonomorphizationPass::inferTypeFromExpr(Expr* expr) {
-    // 从表达式字面量推导类型
+    // fromexpressionliteralinfertypes
     if (!expr) return nullptr;
     
     auto* type_system = context_->getTypeSystem();
     
-    // 整数字面量
+    // Integer literal
     if (auto* int_lit = dynamic_cast<IntLiteral*>(expr)) {
-        return type_system->getI32Type();  // 默认i32
+        return type_system->getI32Type();  // Default i32
     }
     
-    // 浮点字面量
+    // Floating-point literal
     if (auto* float_lit = dynamic_cast<FloatLiteral*>(expr)) {
-        return type_system->getF64Type();  // 默认f64
+        return type_system->getF64Type();  // Default f64
     }
     
-    // 布尔字面量
+    // Boolean literal
     if (auto* bool_lit = dynamic_cast<BoolLiteral*>(expr)) {
         return type_system->getBoolType();
     }
     
-    // 字符字面量
+    // Character literal
     if (auto* char_lit = dynamic_cast<CharLiteral*>(expr)) {
         return type_system->getCharType();
     }
     
-    // 字符串字面量
+    // String literal
     if (auto* str_lit = dynamic_cast<StringLiteral*>(expr)) {
         return type_system->getStringType();
     }
     
-    // 【新增】StructLiteral - 处理嵌套泛型
+    // StructLiteral - process nested generics
     if (auto* struct_lit = dynamic_cast<StructLiteral*>(expr)) {
-        // 先确保内层的StructLiteral被处理
+        // First ensure inner StructLiteral is processed
         struct_lit->accept(this);
         
-        // 检查是否是泛型结构体
+        // Check if it's generic struct
         auto it = generic_structs_.find(struct_lit->getStructName());
         if (it != generic_structs_.end()) {
-            // 推导类型参数
+            // Infer type parameters
             auto type_args = inferTypeArgsFromStructLiteral(struct_lit, it->second);
             if (!type_args.empty()) {
-                // 返回单态化后的StructType
+                // Return monomorphized StructType
                 std::string mono_name = generateMonomorphizedName(
                     struct_lit->getStructName(), type_args);
                 
-                // 查找已注册的单态化类型
+                // Lookup registered monomorphized type
                 return type_system->lookupType(mono_name);
             }
         }
         
-        // 如果已经有类型（被处理过），使用它
+        // If already has type (been processed), use it
         if (expr->getType()) {
             return expr->getType();
         }
         
-        // 查找非泛型结构体类型
+        // Lookup non-generic struct type
         return type_system->lookupType(struct_lit->getStructName());
     }
     
-    // 如果已经有类型（被TypeChecker设置），使用它
+    // If already has type (set by TypeChecker), use it
     if (expr->getType()) {
         return expr->getType();
     }
@@ -366,7 +369,7 @@ Type* MonomorphizationPass::inferTypeFromExpr(Expr* expr) {
 StmtPtr MonomorphizationPass::cloneAndSubstitute(
     StructDecl* generic_decl, const std::vector<Type*>& type_args) {
     
-    // 构建类型映射: T -> i32, U -> string等
+    // Build type map: T -> i32, U -> string, etc.
     std::map<std::string, Type*> type_mapping;
     const auto& generic_params = generic_decl->getGenericParams();
     
@@ -374,17 +377,17 @@ StmtPtr MonomorphizationPass::cloneAndSubstitute(
         type_mapping[generic_params[i].name] = type_args[i];
     }
     
-    // 生成新的名称
+    // Generate new name
     std::string new_name = generateMonomorphizedName(generic_decl->getName(), type_args);
     
-    // 克隆字段并替换类型
+    // Clone fields and substitute types
     std::vector<StructDecl::Field> new_fields;
     for (const auto& field : generic_decl->getFields()) {
         Type* new_type = substituteType(field.second, type_mapping);
         new_fields.push_back({field.first, new_type});
     }
     
-    // 创建StructType并注册到TypeSystem
+    // Create StructType and register to TypeSystem
     auto* type_system = context_->getTypeSystem();
     std::vector<StructType::Field> struct_type_fields;
     for (const auto& field : new_fields) {
@@ -394,10 +397,10 @@ StmtPtr MonomorphizationPass::cloneAndSubstitute(
     auto* struct_type = new StructType(new_name, struct_type_fields);
     type_system->registerStruct(struct_type);
     
-    // 创建新的StructDecl（不带泛型参数）
+    // Create new StructDecl (without generic parameters)
     return std::make_unique<StructDecl>(
         new_name, 
-        std::vector<GenericParam>{},  // 单态化后不再有泛型参数
+        std::vector<GenericParam>{},  // No generic parameters after monomorphization
         std::move(new_fields)
     );
 }
@@ -405,7 +408,7 @@ StmtPtr MonomorphizationPass::cloneAndSubstitute(
 StmtPtr MonomorphizationPass::cloneAndSubstitute(
     EnumDecl* generic_decl, const std::vector<Type*>& type_args) {
     
-    // 构建类型映射
+    // Build type map
     std::map<std::string, Type*> type_mapping;
     const auto& generic_params = generic_decl->getGenericParams();
     
@@ -413,10 +416,10 @@ StmtPtr MonomorphizationPass::cloneAndSubstitute(
         type_mapping[generic_params[i].name] = type_args[i];
     }
     
-    // 生成新的名称
+    // Generate new name
     std::string new_name = generateMonomorphizedName(generic_decl->getName(), type_args);
     
-    // 克隆变体并替换类型
+    // Clone variants and substitute types
     std::vector<EnumVariant> new_variants;
     for (const auto& variant : generic_decl->getVariants()) {
         std::vector<Type*> new_data_types;
@@ -426,10 +429,10 @@ StmtPtr MonomorphizationPass::cloneAndSubstitute(
         new_variants.push_back(EnumVariant(variant.name, new_data_types));
     }
     
-    // 创建新的EnumDecl
+    // Create new EnumDecl
     return std::make_unique<EnumDecl>(
         new_name,
-        std::vector<GenericParam>{},  // 单态化后不再有泛型参数
+        std::vector<GenericParam>{},  // No generic parameters after monomorphization
         std::move(new_variants)
     );
 }
@@ -437,7 +440,7 @@ StmtPtr MonomorphizationPass::cloneAndSubstitute(
 StmtPtr MonomorphizationPass::cloneAndSubstitute(
     FunctionDecl* generic_decl, const std::vector<Type*>& type_args) {
     
-    // 构建类型映射
+    // Build type map
     std::map<std::string, Type*> type_mapping;
     const auto& generic_params = generic_decl->getGenericParams();
     
@@ -445,26 +448,26 @@ StmtPtr MonomorphizationPass::cloneAndSubstitute(
         type_mapping[generic_params[i].name] = type_args[i];
     }
     
-    // 生成新的名称
+    // Generate new name
     std::string new_name = generateMonomorphizedName(generic_decl->getName(), type_args);
     
-    // 克隆参数并替换类型
+    // Clone parameters and substitute types
     std::vector<FunctionDecl::Param> new_params;
     for (const auto& param : generic_decl->getParams()) {
         Type* new_param_type = substituteType(param.type, type_mapping);
         new_params.push_back({param.name, new_param_type, param.is_mutable});
     }
     
-    // 替换返回类型
+    // Substitute return type
     Type* new_return_type = substituteType(generic_decl->getReturnType(), type_mapping);
     
-    // 克隆函数体（深度克隆AST）
+    // Clone function body (deep clone AST)
     StmtPtr new_body = cloneStmt(generic_decl->getBody(), type_mapping);
     
-    // 创建新的FunctionDecl
+    // Create new FunctionDecl
     return std::make_unique<FunctionDecl>(
         new_name,
-        std::vector<GenericParam>{},  // 单态化后不再有泛型参数
+        std::vector<GenericParam>{},  // No generic parameters after monomorphization
         std::move(new_params),
         new_return_type,
         std::move(new_body)
@@ -472,7 +475,7 @@ StmtPtr MonomorphizationPass::cloneAndSubstitute(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// AST克隆（用于函数体克隆）
+// AST cloning (for function body cloning)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 StmtPtr MonomorphizationPass::cloneStmt(Stmt* stmt, const std::map<std::string, Type*>& type_mapping) {
@@ -530,9 +533,9 @@ StmtPtr MonomorphizationPass::cloneStmt(Stmt* stmt, const std::map<std::string, 
         return std::make_unique<ContinueStmt>();
     }
     
-    // ━━━ 其他语句类型 ━━━
+    // ━━━ Other statement types ━━━
     
-    // StructDecl（非泛型或已实例化的）
+    // StructDecl (non-generic or already instantiated)
     if (auto* struct_decl = dynamic_cast<StructDecl*>(stmt)) {
         std::vector<std::pair<std::string, Type*>> new_fields;
         for (const auto& field : struct_decl->getFields()) {
@@ -546,7 +549,7 @@ StmtPtr MonomorphizationPass::cloneStmt(Stmt* stmt, const std::map<std::string, 
         );
     }
     
-    // EnumDecl（非泛型或已实例化的）
+    // EnumDecl (non-generic or already instantiated)
     if (auto* enum_decl = dynamic_cast<EnumDecl*>(stmt)) {
         std::vector<EnumVariant> new_variants;
         for (const auto& variant : enum_decl->getVariants()) {
@@ -563,7 +566,7 @@ StmtPtr MonomorphizationPass::cloneStmt(Stmt* stmt, const std::map<std::string, 
         );
     }
     
-    // InterfaceDecl 和 SupportDecl 暂不需要克隆（它们不会被内联到函数体中）
+    // InterfaceDecl and SupportDecl don't need cloning (they won't be inlined into function body)
     
     return nullptr;
 }
@@ -571,7 +574,7 @@ StmtPtr MonomorphizationPass::cloneStmt(Stmt* stmt, const std::map<std::string, 
 ExprPtr MonomorphizationPass::cloneExpr(Expr* expr, const std::map<std::string, Type*>& type_mapping) {
     if (!expr) return nullptr;
     
-    // 字面量
+    // Literals
     if (auto* int_lit = dynamic_cast<IntLiteral*>(expr)) {
         return std::make_unique<IntLiteral>(int_lit->getValue());
     }
@@ -630,7 +633,7 @@ ExprPtr MonomorphizationPass::cloneExpr(Expr* expr, const std::map<std::string, 
         );
     }
     
-    // ━━━ 其他表达式类型 ━━━
+    // ━━━ Other expression types ━━━
     
     // IndexExpr
     if (auto* index = dynamic_cast<IndexExpr*>(expr)) {
@@ -682,7 +685,7 @@ ExprPtr MonomorphizationPass::cloneExpr(Expr* expr, const std::map<std::string, 
             access->getTypeName(),
             access->getMember()
         );
-        // 复制泛型参数（如果有）
+        // Copy generic parameters (if any)
         if (access->getType()) {
             new_expr->setType(substituteType(access->getType(), type_mapping));
         }
@@ -715,7 +718,7 @@ ExprPtr MonomorphizationPass::cloneExpr(Expr* expr, const std::map<std::string, 
         return std::make_unique<SelfExpr>();
     }
     
-    // StructLiteral（已在上面处理过，这里作为fallback）
+    // StructLiteral (already processed above, this is fallback)
     if (auto* struct_lit = dynamic_cast<StructLiteral*>(expr)) {
         std::vector<FieldInit> new_fields;
         for (const auto& field : struct_lit->getFields()) {
@@ -730,9 +733,9 @@ ExprPtr MonomorphizationPass::cloneExpr(Expr* expr, const std::map<std::string, 
         );
     }
     
-    // ClosureExpr - 闭包克隆比较复杂，暂时简化处理
+    // ClosureExpr - Closure cloning is complex, simplified process for now
     if (auto* closure = dynamic_cast<ClosureExpr*>(expr)) {
-        // 克隆参数
+        // Clone parameters
         std::vector<ClosureExpr::Param> new_params;
         for (const auto& param : closure->getParams()) {
             new_params.push_back(ClosureExpr::Param{
@@ -742,7 +745,7 @@ ExprPtr MonomorphizationPass::cloneExpr(Expr* expr, const std::map<std::string, 
             });
         }
         
-        // 克隆body
+        // Clone body
         ExprPtr new_body = cloneExpr(closure->getBody(), type_mapping);
         Type* new_return_type = closure->getReturnType() ? 
                                 substituteType(closure->getReturnType(), type_mapping) : nullptr;
@@ -754,12 +757,12 @@ ExprPtr MonomorphizationPass::cloneExpr(Expr* expr, const std::map<std::string, 
         );
     }
     
-    // MatchExpr - match表达式克隆
+    // MatchExpr - match expression cloning
     if (auto* match = dynamic_cast<MatchExpr*>(expr)) {
-        // 注：MatchExpr 克隆需要深度复制 arms（包含 unique_ptr）
-        // 这个实现比较复杂，暂时返回 nullptr
-        // 实际使用中，MatchExpr 通常不会出现在需要克隆的泛型函数体中
-        // TODO: 如果需要支持，需要实现完整的 pattern 和 arm 克隆
+        // Note: MatchExpr cloning requires deep copying arms (containing unique_ptr)
+        // This implementation is complex, return nullptr for now
+        // In practice, MatchExpr rarely appears in generic function bodies that need cloning
+        // TODO: If needed, implement complete pattern and arm cloning
         return nullptr;
     }
     
@@ -767,7 +770,7 @@ ExprPtr MonomorphizationPass::cloneExpr(Expr* expr, const std::map<std::string, 
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Visitor实现 - Statements
+// Visitor implementation - Statements
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void MonomorphizationPass::visit(ExprStmt* stmt) {
@@ -795,8 +798,8 @@ void MonomorphizationPass::visit(StructDestructuringDecl* decl) {
 }
 
 void MonomorphizationPass::visit(FunctionDecl* decl) {
-    // 已在collectGenericDefinitions中处理
-    // 遍历函数体
+    // Already processed in collectGenericDefinitions
+    // Traverse function body
     if (decl->getBody()) {
         decl->getBody()->accept(this);
     }
@@ -838,26 +841,26 @@ void MonomorphizationPass::visit(BlockStmt* stmt) {
 }
 
 void MonomorphizationPass::visit(StructDecl*) {
-    // 已在collectGenericDefinitions中处理
+    // Already processed in collectGenericDefinitions
 }
 
 void MonomorphizationPass::visit(EnumDecl*) {
-    // 已在collectGenericDefinitions中处理
+    // Already processed in collectGenericDefinitions
 }
 
 void MonomorphizationPass::visit(InterfaceDecl*) {
-    // 泛型接口暂时不处理
+    // Generic interfaces not processed for now
 }
 
 void MonomorphizationPass::visit(SupportDecl* decl) {
-    // 遍历方法实现
+    // Traverse method implementations
     for (const auto& method : decl->getMethods()) {
         method->accept(this);
     }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Visitor实现 - Expressions
+// Visitor implementation - Expressions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void MonomorphizationPass::visit(IntLiteral*) {}
@@ -874,7 +877,7 @@ void MonomorphizationPass::visit(CastExpr* expr) {
 }
 
 void MonomorphizationPass::visit(ClosureExpr* expr) {
-    // 闭包单态化：处理闭包体中的泛型使用
+    // Closure monomorphization: process generic usage in closure body
     if (expr->getBody()) {
         expr->getBody()->accept(this);
     }
@@ -893,45 +896,45 @@ void MonomorphizationPass::visit(TupleExpr* expr) {
 }
 
 void MonomorphizationPass::visit(StructLiteral* expr) {
-    // 检查是否为泛型结构体的实例化
+    // Check if it's an instantiation of generic struct
     auto it = generic_structs_.find(expr->getStructName());
     if (it != generic_structs_.end()) {
         StructDecl* generic_decl = it->second;
         
-        // 推导类型参数
+        // infertypesparameter
         auto type_args = inferTypeArgsFromStructLiteral(expr, generic_decl);
         
         if (!type_args.empty()) {
-            // 创建实例化请求
+            // Create instantiation request
             InstantiationRequest request{expr->getStructName(), type_args};
             
-            // 获取或生成单态化名称
+            // Get or generate monomorphized name
             std::string mono_name;
             
-            // 检查是否已经实例化
+            // Check if already instantiated
             auto cache_it = instance_cache_.find(request);
             if (cache_it != instance_cache_.end()) {
                 mono_name = cache_it->second;
             } else {
-                // 生成单态化实例
+                // Generate monomorphized instance
                 auto monomorphized = cloneAndSubstitute(generic_decl, type_args);
                 
-                // 获取单态化名称
+                // Get monomorphized name
                 mono_name = generateMonomorphizedName(expr->getStructName(), type_args);
                 
-                // 记录到缓存
+                // Record to cache
                 instance_cache_[request] = mono_name;
                 
-                // 添加到待插入列表
+                // Add to insertion list
                 monomorphized_stmts_.push_back(std::move(monomorphized));
             }
             
-            // 【关键】更新StructLiteral的名称为单态化名称
+            // [Key] Update StructLiteral's name to monomorphized name
             expr->setStructName(mono_name);
         }
     }
     
-    // 递归处理字段值
+    // recursionprocessfieldvalue
     for (const auto& field : expr->getFields()) {
         if (field.value) {
             field.value->accept(this);
@@ -951,7 +954,7 @@ void MonomorphizationPass::visit(UnaryExpr* expr) {
 }
 
 void MonomorphizationPass::visit(CallExpr* expr) {
-    // 检查是否为泛型枚举构造器: Option::Some(42)
+    // Check if it's a generic enum constructor: Option::Some(42)
     if (auto* static_access = dynamic_cast<StaticAccessExpr*>(expr->getCallee())) {
         std::string enum_name = static_access->getTypeName();
         auto it = generic_enums_.find(enum_name);
@@ -959,16 +962,16 @@ void MonomorphizationPass::visit(CallExpr* expr) {
         if (it != generic_enums_.end()) {
             EnumDecl* generic_enum = it->second;
             
-            // 先递归处理参数
+            // First recursively process parameters
             for (const auto& arg : expr->getArgs()) {
                 if (arg) arg->accept(this);
             }
             
-            // 从参数推导枚举类型参数
-            // 假设枚举构造器的参数直接对应类型参数
+            // fromparameterinferenumtypesparameter
+            // Assume enum constructor's parameter directly corresponds to type parameter
             std::vector<Type*> type_args;
             if (!expr->getArgs().empty() && !generic_enum->getGenericParams().empty()) {
-                // 从第一个参数推导类型
+                // Infer type from first parameter
                 auto first_arg = expr->getArgs()[0].get();
                 Type* arg_type = inferTypeFromExpr(first_arg);
                 if (arg_type) {
@@ -977,81 +980,81 @@ void MonomorphizationPass::visit(CallExpr* expr) {
             }
             
             if (!type_args.empty()) {
-                // 创建实例化请求
+                // Create instantiation request
                 InstantiationRequest request{enum_name, type_args};
                 
-                // 获取或生成单态化名称
+                // Get or generate monomorphized name
                 std::string mono_name;
                 
-                // 检查缓存
+                // Check cache first
                 auto cache_it = instance_cache_.find(request);
                 if (cache_it != instance_cache_.end()) {
                     mono_name = cache_it->second;
                 } else {
-                    // 生成单态化枚举
+                    // generationmonomorphizationenum
                     auto monomorphized = cloneAndSubstitute(generic_enum, type_args);
                     mono_name = generateMonomorphizedName(enum_name, type_args);
                     
-                    // 缓存
+                    // cache
                     instance_cache_[request] = mono_name;
                     
-                    // 添加到待插入列表
+                    // Add to insertion list
                     monomorphized_stmts_.push_back(std::move(monomorphized));
                 }
                 
-                // 【关键】更新StaticAccessExpr的类型名为单态化名称
+                // 【Key】UpdateStaticAccessExprof/thetypesnameis/asmonomorphizationname
                 static_access->setTypeName(mono_name);
             }
         }
     }
-    // 检查是否为泛型函数调用（在处理参数之前）
+    // Checkyesnois/asgenericfunctioncall（in/atprocessparameterbefore）
     else if (auto* callee_id = dynamic_cast<IdentifierExpr*>(expr->getCallee())) {
         auto it = generic_functions_.find(callee_id->getName());
         if (it != generic_functions_.end()) {
             FunctionDecl* generic_func = it->second;
             
-            // 先递归处理参数（确保嵌套调用被处理）
+            // First recursively process parameters（ensurenestedcallby/passive markerprocess）
             for (const auto& arg : expr->getArgs()) {
                 if (arg) arg->accept(this);
             }
             
-            // 从参数推导类型参数
+            // fromparameterinfertypesparameter
             auto type_args = inferTypeArgsFromCallExpr(expr, generic_func);
             
             if (!type_args.empty()) {
-                // 创建实例化请求
+                // Create instantiation request
                 InstantiationRequest request{callee_id->getName(), type_args};
                 
-                // 获取或生成单态化名称
+                // Get or generate monomorphized name
                 std::string mono_name;
                 
-                // 检查是否已经实例化
+                // Check if already instantiated
                 auto cache_it = instance_cache_.find(request);
                 if (cache_it != instance_cache_.end()) {
                     mono_name = cache_it->second;
                 } else {
-                    // 生成单态化实例
+                    // Generate monomorphized instance
                     auto monomorphized = cloneAndSubstitute(generic_func, type_args);
                     
-                    // 获取单态化名称
+                    // Get monomorphized name
                     mono_name = generateMonomorphizedName(callee_id->getName(), type_args);
                     
-                    // 记录到缓存
+                    // Record to cache
                     instance_cache_[request] = mono_name;
                     
-                    // 添加到待插入列表
+                    // Add to insertion list
                     monomorphized_stmts_.push_back(std::move(monomorphized));
                 }
                 
-                // 【关键】更新CallExpr的callee名称为单态化名称
+                // 【Key】UpdateCallExprof/thecalleenameis/asmonomorphizationname
                 callee_id->setName(mono_name);
             }
             
-            return;  // 已处理，直接返回
+            return;  // alreadyprocess，directlyreturn
         }
     }
     
-    // 非泛型函数调用，正常处理
+    // notgenericfunctioncall，positivenormallyprocess
     if (expr->getCallee()) expr->getCallee()->accept(this);
     for (const auto& arg : expr->getArgs()) {
         if (arg) arg->accept(this);
@@ -1063,34 +1066,34 @@ void MonomorphizationPass::visit(MemberExpr* expr) {
 }
 
 void MonomorphizationPass::visit(StaticAccessExpr* expr) {
-    // 静态访问: Type::Variant
-    // 检查是否为泛型枚举的构造器
+    // staticvisit: Type::Variant
+    // Checkyesnois/asgenericenumof/theconstructor
     auto it = generic_enums_.find(expr->getTypeName());
     if (it != generic_enums_.end()) {
-        // ━━━ 处理泛型枚举实例化 ━━━
+        // ━━━ processgenericenuminstantiation ━━━
         EnumDecl* generic_enum = it->second;
         
-        // 1. 尝试从表达式类型推导类型参数
-        // 注：这里简化处理，实际需要从上下文或CallExpr的参数推导
+        // 1. tryfromexpressiontypesinfertypesparameter
+        // note：heresimplifyprocess，actualneedfromcontextorCallExprof/theparameterinfer
         std::vector<Type*> type_args;
         
-        // 2. 如果表达式已有类型注解（由TypeChecker设置），尝试提取
+        // 2. ifexpressionalreadyhastypesannotation（byTypeCheckerset），tryextract
         Type* expr_type = expr->getType();
         if (expr_type && expr_type->isEnum()) {
             auto* enum_type = static_cast<EnumType*>(expr_type);
-            // 检查是否是泛型实例化
+            // Checkyesnoyesgenericinstantiation
             if (!enum_type->getName().empty()) {
-                // 简化实现：从类型名推导
-                // 实际应该有 getTypeArgs() 方法
+                // simplifyimplementation：fromtypesnameinfer
+                // actualshouldhas getTypeArgs() method
             }
         }
         
-        // 3. 如果无法推导，暂时跳过
-        // 实际的泛型枚举实例化会在CallExpr中处理（如 Option::Some(42)）
-        // 注：instantiateGenericEnum 在完整实现中会调用，这里简化处理
+        // 3. ifnoway/cannotinfer，temporarilytime/whenskip
+        // actualof/thegenericenuminstantiationwillin/atCallExprmiddle/centerprocess（like/such as Option::Some(42)）
+        // note：instantiateGenericEnum in/atcompleteimplementationmiddle/centerwillcall，heresimplifyprocess
         if (!type_args.empty()) {
             // instantiateGenericEnum(generic_enum, type_args);
-            // 简化实现：类型推导由TypeChecker完成
+            // simplifyimplementation：typesinferbyTypeCheckercomplete
         }
     }
 }
@@ -1123,20 +1126,20 @@ void MonomorphizationPass::visit(TryExpr* expr) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Visitor实现 - Patterns
+// Visitorimplementation - Patterns
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void MonomorphizationPass::visit(MatchExpr* expr) {
     if (expr->getScrutinee()) expr->getScrutinee()->accept(this);
     
-    // ━━━ 处理match arms ━━━
+    // ━━━ processmatch arms ━━━
     for (const auto& arm : expr->getArms()) {
-        // 遍历模式（可能包含泛型结构体/枚举的解构）
+        // traversepattern（possiblycontainsgenericstructbody/struct/enumof/thedestruct）
         if (arm.pattern) {
             arm.pattern->accept(this);
         }
         
-        // 遍历arm表达式（可能包含泛型使用）
+        // traversearmexpression（possiblycontainsgeneric usage）
         if (arm.expression) {
             arm.expression->accept(this);
         }
@@ -1150,7 +1153,7 @@ void MonomorphizationPass::visit(TuplePattern*) {}
 void MonomorphizationPass::visit(EnumPattern*) {}
 
 void MonomorphizationPass::visit(StructPattern* pattern) {
-    // 结构体模式：遍历字段模式
+    // structbody/structpattern：traversefieldpattern
     for (const auto& field : pattern->getFields()) {
         if (field.pattern) {
             field.pattern->accept(this);
@@ -1159,7 +1162,7 @@ void MonomorphizationPass::visit(StructPattern* pattern) {
 }
 
 void MonomorphizationPass::visit(ArrayPattern* pattern) {
-    // 数组模式：遍历元素模式
+    // arraypattern：traverseelementpattern
     for (const auto& elem : pattern->getElements()) {
         if (elem) {
             elem->accept(this);
@@ -1168,7 +1171,7 @@ void MonomorphizationPass::visit(ArrayPattern* pattern) {
 }
 
 void MonomorphizationPass::visit(SlicePattern* pattern) {
-    // Slice模式：遍历前缀、后缀和rest
+    // Slicepattern：traversefront/beforefix、back/afterfixandrest
     for (const auto& prefix : pattern->getPrefix()) {
         if (prefix) {
             prefix->accept(this);
@@ -1185,7 +1188,7 @@ void MonomorphizationPass::visit(SlicePattern* pattern) {
 }
 
 void MonomorphizationPass::visit(RangePattern* pattern) {
-    // Range模式：遍历起始和结束模式
+    // Rangepattern：traversestartstart/beginandendpattern
     if (pattern->getStart()) {
         pattern->getStart()->accept(this);
     }
@@ -1195,7 +1198,7 @@ void MonomorphizationPass::visit(RangePattern* pattern) {
 }
 
 void MonomorphizationPass::visit(OrPattern* pattern) {
-    // OR模式：遍历所有分支
+    // ORpattern：traverseAllbranch
     for (const auto& alt : pattern->getAlternatives()) {
         if (alt) {
             alt->accept(this);

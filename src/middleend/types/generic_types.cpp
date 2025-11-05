@@ -1,4 +1,6 @@
 //===--- generic_types.cpp - Generic Types Implementation -------*- C++ -*-===//
+/// @file generic_types.cpp
+/// @brief Type system and semantic analysis implementation
 
 #include "generic_types.h"
 

@@ -1,4 +1,8 @@
 //===--- symbol_table.cpp - Symbol Table Implementation ----------*- C++ -*-===//
+/// @file symbol_table.cpp
+/// @brief Symbol table implementation with scope management
+///
+/// Manages symbols across nested scopes with shadowing support.
 
 #include "symbol_table.h"
 #include "builtin_symbols.h"
@@ -6,6 +10,7 @@
 
 namespace pawc {
 
+/// Initialize symbol table with global scope
 SymbolTable::SymbolTable(TypeSystem* type_system)
     : type_system_(type_system) {
     global_scope_ = new Scope(nullptr);
@@ -36,7 +41,7 @@ void SymbolTable::defineFunction(const std::string& name, FunctionType* type, bo
     symbols_.emplace_back(symbol);
     current_scope_->define(name, symbol);
     
-    // 添加到重载函数表
+    // addtooverloadfunctiontable
     overloaded_functions_[name].push_back(symbol);
 }
 
@@ -72,7 +77,7 @@ FunctionSymbol* SymbolTable::lookupFunction(const std::string& name, const std::
         return nullptr;
     }
     
-    // 查找匹配的重载
+    // lookupmatchof/theoverload
     for (auto* func : it->second) {
         const auto& param_types = func->getParamTypes();
         if (param_types.size() != arg_types.size()) {

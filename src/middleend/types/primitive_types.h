@@ -1,6 +1,6 @@
 //===--- primitive_types.h - Primitive Types --------------------*- C++ -*-===//
 //
-// 基础类型: i8-i128, u8-u128, f8-f128, bool, char, string, void
+// basetypes: i8-i128, u8-u128, f8-f128, bool, char, string, void
 //
 //===----------------------------------------------------------------------===//
 
@@ -12,7 +12,7 @@
 
 namespace pawc {
 
-/// PrimitiveType - 基础类型
+/// PrimitiveType - basetypes
 class PrimitiveType : public Type {
 public:
     explicit PrimitiveType(Kind kind) : kind_(kind) {}

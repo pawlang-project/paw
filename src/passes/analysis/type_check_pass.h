@@ -1,6 +1,9 @@
 //===--- type_check_pass.h - Type Check Pass --------------------*- C++ -*-===//
+/// @file type_check_pass.h
+/// @brief Code generation utilities
+///
 //
-// 类型检查Pass：验证类型的正确性和一致性
+// Type checking pass: validate type correctness and consistencycy
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,8 +19,8 @@ public:
     static constexpr const char* getName() { return "TypeCheckPass"; }
     
     bool run(PassContext& context) override {
-        // TODO: 实现类型检查逻辑（已在TypeChecker中实现）
-        // 这个Pass是对现有TypeChecker的封装
+        // TODO: implementationtypeschecklogic（alreadyin/atTypeCheckermiddle/centerimplementation）
+        // This pass should only appear when there is TypeChecker wrapping
         return true;
     }
 };

@@ -12,30 +12,30 @@
 
 namespace pawc {
 
-/// Driver - 命令行驱动
+/// Driver - command line driver
 ///
-/// 负责解析命令行参数并调用Compiler
+/// Responsible for parsing command line parameters and calling Compiler
 class Driver {
 public:
     Driver();
     
-    /// 运行编译器
-    /// \param argc 参数个数
-    /// \param argv 参数数组
-    /// \return 退出码（0表示成功）
+    /// runcompiler
+    /// \param argc parameter count
+    /// \param argv parameterarray
+    /// \return exit code (0 indicates success)
     int run(int argc, char** argv);
     
 private:
     CompilerOptions options_;
     
-    /// 解析命令行参数
-    /// \return true表示成功
+    /// Parse command line parameters
+    /// \return true indicates success
     bool parseArguments(int argc, char** argv);
     
-    /// 打印帮助信息
+    /// Print help information
     void printHelp();
     
-    /// 打印版本信息
+    /// Print version information
     void printVersion();
 };
 

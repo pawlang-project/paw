@@ -13,7 +13,7 @@
 
 namespace pawc {
 
-/// TypeChecker - 类型检查和语义分析
+/// TypeChecker - typescheckandsemanticanalysis
 class TypeChecker : public ASTVisitor {
 public:
     TypeChecker(TypeSystem* type_system, SymbolTable* symbol_table,
@@ -21,7 +21,7 @@ public:
     
     void check(const std::vector<StmtPtr>& stmts);
     
-    // 表达式访问
+    // expressionvisit
     void visit(IntLiteral* node) override;
     void visit(FloatLiteral* node) override;
     void visit(BoolLiteral* node) override;
@@ -46,7 +46,7 @@ public:
     void visit(StructLiteral* node) override;
     void visit(TryExpr* node) override;
     
-    // 语句访问
+    // statementvisit
     void visit(ExprStmt* node) override;
     void visit(VarDecl* node) override;
     void visit(DestructuringDecl* node) override;
@@ -66,11 +66,11 @@ public:
     void visit(SupportDecl* node) override;
     void visit(MatchExpr* node) override;
     
-    // match表达式辅助方法
+    // matchexpressionhelpermethod
     void checkPatternType(class Pattern* pattern, Type* expected_type);
     bool isExhaustive(const std::vector<class MatchArm>& arms, Type* scrutinee_type);
     
-    // Pattern访问
+    // Patternvisit
     void visit(LiteralPattern* node) override;
     void visit(WildcardPattern* node) override;
     void visit(VariablePattern* node) override;
@@ -88,34 +88,34 @@ private:
     DiagnosticEngine* diag_;
     
     Type* current_function_return_type_ = nullptr;
-    Type* expected_type_ = nullptr;  // 用于类型推导（向下传播expected type）
+    Type* expected_type_ = nullptr;  // used fortypesinfer（to/towarddown/belowpropagateexpected type）
     bool in_loop_ = false;
-    Type* current_self_type_ = nullptr;  // 当前Self类型（在support上下文中）
-    Type* current_self_param_type_ = nullptr;  // 当前self参数的实际类型（可能是引用）
+    Type* current_self_type_ = nullptr;  // currentSelftypes（in/atsupportcontextmiddle/center）
+    Type* current_self_param_type_ = nullptr;  // currentselfparameterof/theactualtypes（possiblyyesreference）
     
-    // Where约束验证
+    // Whereconstraintvalidate
     void validateWhereConstraints(const std::vector<WhereClause>& where_clauses,
                                   const std::vector<GenericParam>& generic_params);
     
-    // ✅ 检查类型是否实现了接口
+    // ✅ checktypesyesnoimplementationimplementedinterface
     bool typeImplementsInterface(Type* type, Type* interface_type);
     
-    // ✅ 验证where约束是否满足
+    // ✅ validatewhereconstraintyesnosatisfy
     bool checkWhereConstraintsSatisfied(const std::vector<WhereClause>& where_clauses,
                                        const std::map<std::string, Type*>& type_substitution);
     
-    // Self类型解析
+    // Selftypesparse
     Type* resolveSelfType(Type* type);
     
-    // 泛型参数替换
+    // genericparametersubstitution
     Type* substituteGenericType(Type* type, const std::map<std::string, Type*>& substitution);
     
-    // 枚举模式处理辅助方法
-    void handleResultPattern(class EnumPattern* node, class ResultType* result_type);
+    // enumpatternprocesshelpermethod
+    void handleResultPattern(class EnumPattern* node, class ResultType* results_type);
     void handleOptionalPattern(class EnumPattern* node, class OptionalType* opt_type);
     void handleEnumPattern(class EnumPattern* node, class EnumType* enum_type);
     
-    // 泛型函数辅助方法
+    // genericfunctionhelpermethod
     Type* instantiateFunctionReturnType(GenericTemplate* tmpl, const std::vector<Type*>& type_args);
 };
 

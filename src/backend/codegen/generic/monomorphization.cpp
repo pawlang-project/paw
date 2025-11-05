@@ -1,4 +1,6 @@
 //===--- monomorphization.cpp - Generic Monomorphization Impl ----*- C++ -*-===//
+/// @file monomorphization.cpp
+/// @brief Implementation file
 
 #include "monomorphization.h"
 #include "backend/codegen/codegen_context.h"
@@ -15,16 +17,16 @@ llvm::Type* GenericMonomorphization::mapMonomorphizedType(
     Type* paw_type, 
     const std::string& instance_name) {
     
-    // 检查缓存
+    // Check cache first
     auto it = type_cache_.find(instance_name);
     if (it != type_cache_.end()) {
         return it->second;
     }
     
-    // 使用CodeGenContext的类型映射
+    // useCodeGenContextof/thetypesmap
     llvm::Type* llvm_type = context_->getLLVMType(paw_type);
     
-    // 缓存结果
+    // Cache results
     type_cache_[instance_name] = llvm_type;
     
     return llvm_type;
@@ -35,20 +37,20 @@ llvm::Function* GenericMonomorphization::getOrCreateMonomorphizedFunction(
     const std::vector<llvm::Type*>& param_types,
     llvm::Type* return_type) {
     
-    // 检查缓存
+    // Check cache first
     auto it = function_cache_.find(instance_name);
     if (it != function_cache_.end()) {
         return it->second;
     }
     
-    // 创建函数类型
+    // createfunctiontypes
     llvm::FunctionType* func_type = llvm::FunctionType::get(
         return_type,
         param_types,
         false  // not vararg
     );
     
-    // 创建函数
+    // createfunction
     llvm::Function* func = llvm::Function::Create(
         func_type,
         llvm::Function::ExternalLinkage,
@@ -56,7 +58,7 @@ llvm::Function* GenericMonomorphization::getOrCreateMonomorphizedFunction(
         context_->getModule()
     );
     
-    // 缓存
+    // cache
     function_cache_[instance_name] = func;
     
     return func;

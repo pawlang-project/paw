@@ -1,6 +1,9 @@
 //===--- match_codegen.cpp - Match Expression CodeGen -----------*- C++ -*-===//
+/// @file match_codegen.cpp
+/// @brief Implementation file
+///
 //
-// Match表达式代码生成：模式匹配、分支生成
+// Match expression code generation: pattern matching and branch generation
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,142 +20,178 @@
 namespace pawc {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Match表达式主实现
+// Match expression main implementation
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ExprCodeGen::visit(MatchExpr* node) {
-    // match表达式CodeGen - 完整实现
+    // Match expression code generation - complete implementation
     
     auto& context = context_->getLLVMContext();
     auto& builder = context_->getBuilder();
     
-    // 1. 计算被匹配的值
+    // 1. Evaluate the scrutinee value
     node->getScrutinee()->accept(this);
-    llvm::Value* scrutinee_value = result_;
+    llvm::Value* scrutinee_value = results_;
     
     if (!scrutinee_value) {
-        result_ = nullptr;
+        results_ = nullptr;
         return;
     }
     
-    // 2. 获取match表达式的结果类型
-    Type* result_type = node->getType();
-    if (!result_type) {
-        result_ = nullptr;
+    // 2. Get the match expression's results type
+    Type* results_type = node->getType();
+    if (!results_type) {
+        results_ = nullptr;
         return;
     }
     
-    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
-    llvm::Type* llvm_result_type = context_->getLLVMType(result_type);
+    // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
+    llvm::Type* llvm_results_type = context_->getLLVMType(results_type);
     
-    // 3. 创建结果变量（用于存储每个分支的结果）
-    llvm::AllocaInst* result_alloca = builder.CreateAlloca(
-        llvm_result_type, nullptr, "match.result");
+    // 3. Create results variable (to store each branch's results)
+    llvm::AllocaInst* results_alloca = builder.CreateAlloca(
+        llvm_results_type, nullptr, "match.results");
     
-    // 4. 创建基本块
+    // 4. Create basic blocks
     llvm::Function* current_fn = builder.GetInsertBlock()->getParent();
     llvm::BasicBlock* end_bb = llvm::BasicBlock::Create(context, "match.end", current_fn);
     
-    // 5. 为每个分支生成代码
+    // 5. Generate code for each branch
     const auto& arms = node->getArms();
     
     for (size_t i = 0; i < arms.size(); ++i) {
         const auto& arm = arms[i];
         
-        // 创建分支的基本块
+        // Create basic blocks for the branch
         llvm::BasicBlock* arm_bb = llvm::BasicBlock::Create(
             context, "match.arm." + std::to_string(i), current_fn);
         llvm::BasicBlock* next_bb = (i < arms.size() - 1) 
             ? llvm::BasicBlock::Create(context, "match.next." + std::to_string(i), current_fn)
             : end_bb;
         
-        // 生成模式匹配条件
+        // Generate pattern matching condition
         llvm::Value* match_cond = generatePatternMatch(
             arm.pattern.get(), 
             scrutinee_value, 
             node->getScrutinee()->getType()
         );
         
-        // 如果有守卫条件，需要先匹配模式，再检查守卫
+        // Generate code for guard condition (if present)
+        //
+        // Guard conditions add an extra filtering step after pattern matching.
+        // Control flow with guard:
+        //   1. Check pattern match -> if failed, goto next_bb
+        //   2. If matched, goto guard_bb
+        //   3. In guard_bb: bind variables, evaluate guard
+        //   4. If guard true, goto arm_bb (execute body)
+        //   5. If guard false, goto next_bb (try next arm)
+        //
+        // Without guard:
+        //   1. Check pattern match
+        //   2. If matched, goto arm_bb directly
+        //   3. If not matched, goto next_bb
+        //
+        // Note: Variables are bound in the guard block, not the arm block,
+        // because the guard needs access to them. This ensures proper scoping.
         if (arm.guard) {
-            // 创建临时块来绑定变量和检查守卫
+            // Create a separate basic block for guard evaluation
+            // This block sits between pattern matching and the arm body
             llvm::BasicBlock* guard_bb = llvm::BasicBlock::Create(
                 context, "match.guard." + std::to_string(i), current_fn);
             
             if (!match_cond) {
-                // 模式总是匹配，直接跳到守卫检查
+                // Pattern always matches (wildcard or variable binding)
+                // Jump directly to guard check
                 builder.CreateBr(guard_bb);
             } else {
-                // 模式匹配成功才检查守卫
+                // Pattern matching is conditional
+                // Only check guard if pattern matched
                 builder.CreateCondBr(match_cond, guard_bb, next_bb);
             }
             
-            // 在守卫块中绑定变量并检查条件
+            // Generate code in the guard block
             builder.SetInsertPoint(guard_bb);
+            
+            // Bind variables from the pattern first
+            // The guard expression can now reference these variables
             bindPatternVariables(arm.pattern.get(), scrutinee_value, node->getScrutinee()->getType());
             
-            // 计算守卫条件
+            // Evaluate the guard condition
             arm.guard->accept(this);
-            llvm::Value* guard_cond = result_;
+            llvm::Value* guard_cond = results_;
             
             if (guard_cond) {
-                // 守卫为真才执行分支体
+                // Guard evaluated successfully
+                // If true, execute arm body; if false, try next arm
                 builder.CreateCondBr(guard_cond, arm_bb, next_bb);
             } else {
+                // Guard evaluation failed (error)
+                // Skip to next arm
                 builder.CreateBr(next_bb);
             }
         } else {
-            // 无守卫，按原逻辑
+            // No guard condition - standard pattern matching flow
             if (!match_cond) {
-                // 通配符或变量绑定总是匹配
+                // Pattern always matches (wildcard or variable binding)
+                // Jump directly to arm body
                 builder.CreateBr(arm_bb);
             } else {
+                // Conditional pattern match
+                // Jump to arm body if matched, next arm if not
                 builder.CreateCondBr(match_cond, arm_bb, next_bb);
             }
         }
         
-        // 生成分支表达式的代码
+        // Generate code for the arm body
         builder.SetInsertPoint(arm_bb);
         
-        // 处理模式变量绑定（如果没有守卫，在这里绑定；有守卫时已在guard_bb中绑定）
+        // Bind pattern variables (if not already bound in guard block)
+        //
+        // Variable binding location:
+        //   - With guard: variables bound in guard_bb (before guard evaluation)
+        //   - Without guard: variables bound here (before body execution)
+        //
+        // This ensures variables are always in scope when needed:
+        //   - Guard needs them for its condition
+        //   - Body needs them for its expression
         if (!arm.guard) {
             bindPatternVariables(arm.pattern.get(), scrutinee_value, node->getScrutinee()->getType());
         }
         
-        // 计算分支表达式
+        // Evaluate branch expression
         arm.expression->accept(this);
-        llvm::Value* arm_value = result_;
+        llvm::Value* arm_value = results_;
         
         if (arm_value) {
-            builder.CreateStore(arm_value, result_alloca);
+            builder.CreateStore(arm_value, results_alloca);
         }
         
         builder.CreateBr(end_bb);
         
-        // 移动到下一个分支
+        // Move to next branch
         if (i < arms.size() - 1) {
             builder.SetInsertPoint(next_bb);
         }
     }
     
-    // 6. 设置到end块并加载结果
+    // 6. Set to end block and load results
     builder.SetInsertPoint(end_bb);
-    result_ = builder.CreateLoad(llvm_result_type, result_alloca, "match.value");
+    results_ = builder.CreateLoad(llvm_results_type, results_alloca, "match.value");
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 模式匹配条件生成
+// Pattern matching condition generation
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* scrutinee, Type* scrutinee_type) {
     auto& context = context_->getLLVMContext();
     auto& builder = context_->getBuilder();
     
-    // LiteralPattern: 字面量匹配
+    // LiteralPattern: literal matching
     if (auto* lit = dynamic_cast<LiteralPattern*>(pattern)) {
         switch (lit->getKind()) {
             case LiteralPattern::Kind::Int: {
-                // 整数比较
+                // Integer comparison
                 llvm::Value* pattern_val = llvm::ConstantInt::get(
                     scrutinee->getType(),
                     std::stoll(lit->getValue())
@@ -160,7 +199,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
                 return builder.CreateICmpEQ(scrutinee, pattern_val, "match.int.eq");
             }
             case LiteralPattern::Kind::Bool: {
-                // 布尔比较
+                // Boolean comparison
                 llvm::Value* pattern_val = llvm::ConstantInt::get(
                     llvm::Type::getInt1Ty(context),
                     lit->getValue() == "true" ? 1 : 0
@@ -168,31 +207,31 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
                 return builder.CreateICmpEQ(scrutinee, pattern_val, "match.bool.eq");
             }
             case LiteralPattern::Kind::String: {
-                // 字符串比较（调用runtime strcmp）
+                // String comparison (call runtime strcmp)
                 llvm::Function* strcmp_fn = context_->getRuntimeFunction("paw_strcmp");
                 if (!strcmp_fn) {
                     return nullptr;
                 }
                 
-                // 创建字符串字面量
-                llvm::Value* pattern_str = builder.CreateGlobalStringPtr(lit->getValue(), "match.str.literal");
+                // Create string literal
+                llvm::Value* pattern_str = builder.CreateGlobalString(lit->getValue(), "match.str.literal");
                 
-                // 调用strcmp
-                llvm::Value* cmp_result = builder.CreateCall(
+                // Call strcmp
+                llvm::Value* cmp_results = builder.CreateCall(
                     strcmp_fn,
                     {scrutinee, pattern_str},
-                    "strcmp.result"
+                    "strcmp.results"
                 );
                 
-                // strcmp返回0表示相等
+                // strcmp returns 0 for equality
                 llvm::Value* zero = llvm::ConstantInt::get(
                     llvm::Type::getInt32Ty(context),
                     0
                 );
-                return builder.CreateICmpEQ(cmp_result, zero, "match.str.eq");
+                return builder.CreateICmpEQ(cmp_results, zero, "match.str.eq");
             }
             case LiteralPattern::Kind::Char: {
-                // 字符比较
+                // Character comparison
                 llvm::Value* pattern_val = llvm::ConstantInt::get(
                     llvm::Type::getInt8Ty(context),
                     lit->getValue()[0]
@@ -200,7 +239,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
                 return builder.CreateICmpEQ(scrutinee, pattern_val, "match.char.eq");
             }
             case LiteralPattern::Kind::Float: {
-                // 浮点数比较
+                // Floating-point number comparison
                 llvm::APFloat ap_float(std::stod(lit->getValue()));
                 llvm::Value* pattern_val = llvm::ConstantFP::get(context, ap_float);
                 return builder.CreateFCmpOEQ(scrutinee, pattern_val, "match.float.eq");
@@ -210,17 +249,17 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         }
     }
     
-    // WildcardPattern: 总是匹配
+    // WildcardPattern: always matches
     if (dynamic_cast<WildcardPattern*>(pattern)) {
-        return nullptr;  // nullptr表示总是匹配
+        return nullptr;  // nullptr means always matches
     }
     
-    // VariablePattern: 总是匹配（绑定变量）
+    // VariablePattern: always matches (binds variable)
     if (dynamic_cast<VariablePattern*>(pattern)) {
-        return nullptr;  // nullptr表示总是匹配
+        return nullptr;  // nullptr means always matches
     }
     
-    // TuplePattern: 元组匹配
+    // TuplePattern: tuple matching
     if (auto* tuple = dynamic_cast<TuplePattern*>(pattern)) {
         if (!scrutinee_type || scrutinee_type->getKind() != Type::Kind::Tuple) {
             return nullptr;
@@ -231,13 +270,13 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         const auto& patterns = tuple->getElements();
         
         if (patterns.size() != element_types.size()) {
-            return nullptr;  // 元组大小不匹配
+            return nullptr;  // Tuple size mismatch
         }
         
-        // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+        // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
         llvm::Type* llvm_tuple_type = context_->getLLVMType(tuple_type);
         
-        // 确保scrutinee是指针类型
+        // Ensure scrutinee is pointer type
         llvm::Value* tuple_ptr = scrutinee;
         if (!scrutinee->getType()->isPointerTy()) {
             llvm::AllocaInst* temp = builder.CreateAlloca(scrutinee->getType(), nullptr, "tuple.tmp");
@@ -245,11 +284,11 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             tuple_ptr = temp;
         }
         
-        // 生成所有子模式的条件，并用AND连接
-        llvm::Value* result_cond = nullptr;
+        // Generate conditions for all sub-patterns and combine with AND
+        llvm::Value* results_cond = nullptr;
         
         for (size_t i = 0; i < patterns.size(); ++i) {
-            // 提取元组元素
+            // Extract tuple element
             llvm::Value* elem_ptr = builder.CreateStructGEP(
                 llvm_tuple_type,
                 tuple_ptr,
@@ -264,7 +303,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
                 "tuple.elem.val"
             );
             
-            // 递归生成子模式匹配条件
+            // Recursively generate sub-pattern matching condition
             llvm::Value* sub_cond = generatePatternMatch(
                 patterns[i].get(),
                 elem_value,
@@ -272,18 +311,18 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             );
             
             if (sub_cond) {
-                if (!result_cond) {
-                    result_cond = sub_cond;
+                if (!results_cond) {
+                    results_cond = sub_cond;
                 } else {
-                    result_cond = builder.CreateAnd(result_cond, sub_cond, "tuple.match.and");
+                    results_cond = builder.CreateAnd(results_cond, sub_cond, "tuple.match.and");
                 }
             }
         }
         
-        return result_cond;  // nullptr表示所有子模式都是通配符/变量
+        return results_cond;  // nullptr means all sub-patterns are wildcard/variable
     }
     
-    // ArrayPattern: 数组匹配
+    // ArrayPattern: array matching
     if (auto* array = dynamic_cast<ArrayPattern*>(pattern)) {
         if (!scrutinee_type || scrutinee_type->getKind() != Type::Kind::Array) {
             return nullptr;
@@ -294,12 +333,12 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         const auto& patterns = array->getElements();
         
         if (patterns.size() != array_type->getSize()) {
-            return nullptr;  // 数组大小不匹配
+            return nullptr;  // Array size mismatch
         }
         
         llvm::Type* llvm_array_type = context_->getLLVMType(array_type);
         
-        // 确保scrutinee是指针类型
+        // Ensure scrutinee is pointer type
         llvm::Value* array_ptr = scrutinee;
         if (!scrutinee->getType()->isPointerTy()) {
             llvm::AllocaInst* temp = builder.CreateAlloca(scrutinee->getType(), nullptr, "array.tmp");
@@ -307,11 +346,11 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             array_ptr = temp;
         }
         
-        // 生成所有子模式的条件，并用AND连接
-        llvm::Value* result_cond = nullptr;
+        // Generate conditions for all sub-patterns and combine with AND
+        llvm::Value* results_cond = nullptr;
         
         for (size_t i = 0; i < patterns.size(); ++i) {
-            // 提取数组元素: GEP [array_type, array_ptr, 0, i]
+            // Extract array element: GEP [array_type, array_ptr, 0, i]
             llvm::Value* indices[] = {
                 llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
                 llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), i)
@@ -331,7 +370,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
                 "array.elem.val"
             );
             
-            // 递归生成子模式匹配条件
+            // Recursively generate sub-pattern matching condition
             llvm::Value* sub_cond = generatePatternMatch(
                 patterns[i].get(),
                 elem_value,
@@ -339,20 +378,20 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             );
             
             if (sub_cond) {
-                if (!result_cond) {
-                    result_cond = sub_cond;
+                if (!results_cond) {
+                    results_cond = sub_cond;
                 } else {
-                    result_cond = builder.CreateAnd(result_cond, sub_cond, "array.match.and");
+                    results_cond = builder.CreateAnd(results_cond, sub_cond, "array.match.and");
                 }
             }
         }
         
-        return result_cond;  // nullptr表示所有子模式都是通配符/变量
+        return results_cond;  // nullptr means all sub-patterns are wildcard/variable
     }
     
-    // SlicePattern: 切片匹配（支持 Array 和 Slice，包括后缀）
+    // SlicePattern: slice matching (supports Array and Slice, including suffix)
     if (auto* slice_pat = dynamic_cast<SlicePattern*>(pattern)) {
-        // Slice 模式可以匹配 Array 或 Slice 类型
+        // Slice patternmaymatch Array or Slice types
         if (!scrutinee_type) {
             return nullptr;
         }
@@ -365,7 +404,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             elem_type = array_type->getElementType();
             array_size = array_type->getSize();
             
-            // 检查前缀+后缀长度
+            // Checkfront/beforefix+back/afterfixlength
             size_t min_size = slice_pat->getPrefix().size() + slice_pat->getSuffix().size();
             if (min_size > array_size) {
                 return nullptr;
@@ -374,7 +413,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             auto* slice_type = static_cast<SliceType*>(scrutinee_type);
             elem_type = slice_type->getElementType();
         } else {
-            return nullptr;  // 类型不匹配
+            return nullptr;  // Type mismatch
         }
         
         llvm::Type* llvm_scrutinee_type = context_->getLLVMType(scrutinee_type);
@@ -386,10 +425,10 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             scrutinee_ptr = temp;
         }
         
-        // 生成前缀元素的匹配条件
-        llvm::Value* result_cond = nullptr;
+        // Generate matching conditions for prefix elements
+        llvm::Value* results_cond = nullptr;
         
-        // 匹配前缀
+        // Match prefix
         for (size_t i = 0; i < slice_pat->getPrefix().size(); ++i) {
             llvm::Value* elem_value = nullptr;
             
@@ -414,21 +453,21 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
                 );
                 
                 if (sub_cond) {
-                    if (!result_cond) {
-                        result_cond = sub_cond;
+                    if (!results_cond) {
+                        results_cond = sub_cond;
                     } else {
-                        result_cond = builder.CreateAnd(result_cond, sub_cond, "slice.match.and");
+                        results_cond = builder.CreateAnd(results_cond, sub_cond, "slice.match.and");
                     }
                 }
             }
         }
         
-        // 匹配后缀 ([a, .., z] 的 z)
+        // Match suffix ([a, .., z] means z)
         for (size_t i = 0; i < slice_pat->getSuffix().size(); ++i) {
             llvm::Value* elem_value = nullptr;
             
             if (scrutinee_type->getKind() == Type::Kind::Array) {
-                // 后缀索引从数组末尾倒数
+                // Suffix index counts from array end
                 size_t index = array_size - slice_pat->getSuffix().size() + i;
                 llvm::Value* indices[] = {
                     llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
@@ -450,29 +489,45 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
                 );
                 
                 if (sub_cond) {
-                    if (!result_cond) {
-                        result_cond = sub_cond;
+                    if (!results_cond) {
+                        results_cond = sub_cond;
                     } else {
-                        result_cond = builder.CreateAnd(result_cond, sub_cond, "slice.match.and");
+                        results_cond = builder.CreateAnd(results_cond, sub_cond, "slice.match.and");
                     }
                 }
             }
         }
         
-        return result_cond;
+        return results_cond;
     }
     
-    // RangePattern: 范围匹配
+    // RangePattern: Generate range comparison code
+    //
+    // Generates efficient range checking with 2 comparisons:
+    //   Exclusive (..):  (value >= start) && (value < end)
+    //   Inclusive (..=): (value >= start) && (value <= end)
+    //
+    // Supported types:
+    //   - Integers: i8-i128, u8-u128 (signed/unsigned comparison)
+    //   - Characters: char (unsigned byte comparison)
+    //
+    // Code generation strategy:
+    //   1. Extract literal values from start/end patterns
+    //   2. Create LLVM constant integers for bounds
+    //   3. Generate comparison instructions (ICmpSGE, ICmpSLE/SLT)
+    //   4. Combine with AND operation
+    //
+    // Performance: O(1) constant time, 2 CPU comparisons
     if (auto* range_pat = dynamic_cast<RangePattern*>(pattern)) {
-        // 获取范围的起始和结束值
+        // Extract start and end literal patterns
         auto* start_lit = dynamic_cast<LiteralPattern*>(range_pat->getStart());
         auto* end_lit = dynamic_cast<LiteralPattern*>(range_pat->getEnd());
         
         if (!start_lit || !end_lit) {
-            return nullptr;  // 范围边界必须是字面量
+            return nullptr;  // Range bounds must be literals (enforced by parser/type checker)
         }
         
-        // 生成范围检查: value >= start && value <= end (或 value < end)
+        // Generate LLVM constants for range bounds
         llvm::Value* start_val = nullptr;
         llvm::Value* end_val = nullptr;
         
@@ -489,7 +544,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             // value >= start
             llvm::Value* ge_cond = builder.CreateICmpSGE(scrutinee, start_val, "range.ge");
             
-            // value <= end (包含) 或 value < end (排除)
+            // value <= end (inclusive) or value < end (exclusive)
             llvm::Value* le_cond;
             if (range_pat->isInclusive()) {
                 le_cond = builder.CreateICmpSLE(scrutinee, end_val, "range.le");
@@ -497,11 +552,11 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
                 le_cond = builder.CreateICmpSLT(scrutinee, end_val, "range.lt");
             }
             
-            // 合并条件
+            // Combine conditions
             return builder.CreateAnd(ge_cond, le_cond, "range.match");
             
         } else if (start_lit->getKind() == LiteralPattern::Kind::Char) {
-            // 字符范围: 'a'..'z'
+            // Character range: 'a'..'z'
             start_val = llvm::ConstantInt::get(
                 llvm::Type::getInt8Ty(context),
                 static_cast<uint8_t>(start_lit->getValue()[0])
@@ -525,12 +580,32 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         return nullptr;
     }
     
-    // OrPattern: OR匹配
+    // OrPattern: Generate disjunctive pattern matching
+    //
+    // Generates code that matches if ANY alternative pattern matches:
+    //   pattern1 | pattern2 | pattern3
+    //   => cond1 || cond2 || cond3
+    //
+    // Code generation strategy:
+    //   1. Recursively generate match conditions for each alternative
+    //   2. Combine conditions with logical OR (short-circuit evaluation)
+    //   3. Return combined condition
+    //
+    // Short-circuit behavior:
+    //   - LLVM automatically optimizes OR with short-circuit evaluation
+    //   - Evaluation stops at first true condition
+    //   - Efficient for patterns like: 1 | 2 | 3 | ... | 1000
+    //
+    // Performance: O(k) where k is number of alternatives (worst case all checked)
+    //
+    // Note: Variables are bound by whichever alternative matches first.
+    // Type checker ensures all alternatives bind compatible variables.
     if (auto* or_pat = dynamic_cast<OrPattern*>(pattern)) {
-        // 生成所有分支的匹配条件，用 OR 连接
-        llvm::Value* result_cond = nullptr;
+        // Generate match conditions for all alternatives
+        llvm::Value* results_cond = nullptr;
         
         for (const auto& alt : or_pat->getAlternatives()) {
+            // Recursively generate condition for this alternative
             llvm::Value* alt_cond = generatePatternMatch(
                 alt.get(),
                 scrutinee,
@@ -538,30 +613,33 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             );
             
             if (alt_cond) {
-                if (!result_cond) {
-                    result_cond = alt_cond;
+                if (!results_cond) {
+                    // First alternative
+                    results_cond = alt_cond;
                 } else {
-                    result_cond = builder.CreateOr(result_cond, alt_cond, "or.pattern");
+                    // Combine with previous alternatives using OR
+                    // LLVM will optimize this with short-circuit evaluation
+                    results_cond = builder.CreateOr(results_cond, alt_cond, "or.pattern");
                 }
             }
         }
         
-        return result_cond;
+        return results_cond;
     }
     
-    // EnumPattern: 枚举匹配
+    // EnumPattern: enum matching
     if (auto* enum_pat = dynamic_cast<EnumPattern*>(pattern)) {
-        // 特殊处理Result类型
+        // Special handling for Result type
         if (scrutinee_type && scrutinee_type->getKind() == Type::Kind::Result) {
             return generateResultPatternMatch(enum_pat, scrutinee, static_cast<ResultType*>(scrutinee_type));
         }
         
-        // 特殊处理Optional类型
+        // Special handling for Optional type
         if (scrutinee_type && scrutinee_type->getKind() == Type::Kind::Optional) {
             return generateOptionalPatternMatch(enum_pat, scrutinee, static_cast<OptionalType*>(scrutinee_type));
         }
         
-        // 枚举匹配：检查tag是否相等
+        // Enum matching: check if tag is equal
         if (!scrutinee_type || scrutinee_type->getKind() != Type::Kind::Enum) {
             return nullptr;
         }
@@ -569,7 +647,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         auto* enum_type = static_cast<EnumType*>(scrutinee_type);
         const auto& variants = enum_type->getVariants();
         
-        // 查找变体索引
+        // Look up variant index
         int variant_idx = -1;
         for (size_t i = 0; i < variants.size(); ++i) {
             if (variants[i].first == enum_pat->getVariantName()) {
@@ -579,22 +657,22 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         }
         
         if (variant_idx < 0) {
-            return nullptr;  // 变体不存在
+            return nullptr;  // Variant does not exist
         }
         
-        // 提取enum的tag字段（第0个字段）
-        // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+        // Extract enum's tag field (0th field)
+        // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
         llvm::Type* llvm_enum_type = context_->getLLVMType(enum_type);
         
         llvm::Value* enum_ptr = scrutinee;
         if (!scrutinee->getType()->isPointerTy()) {
-            // 如果是值类型，需要先分配到栈上
+            // If it's a value type, allocate on stack first
             llvm::AllocaInst* temp = builder.CreateAlloca(scrutinee->getType(), nullptr, "enum.tmp");
             builder.CreateStore(scrutinee, temp);
             enum_ptr = temp;
         }
         
-        // 提取tag字段
+        // Extract tag field
         llvm::Value* tag_ptr = builder.CreateStructGEP(
             llvm_enum_type,
             enum_ptr,
@@ -607,7 +685,7 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
             "enum.tag"
         );
         
-        // 比较tag
+        // Compare tag
         llvm::Value* expected_tag = llvm::ConstantInt::get(
             llvm::Type::getInt32Ty(context),
             variant_idx
@@ -616,48 +694,48 @@ llvm::Value* ExprCodeGen::generatePatternMatch(Pattern* pattern, llvm::Value* sc
         return builder.CreateICmpEQ(tag_value, expected_tag, "match.enum.eq");
     }
     
-    // StructPattern: 结构体匹配（总是匹配，由TypeChecker保证正确性）
+    // StructPattern: struct matching (always matches, correctness guaranteed by TypeChecker)
     if (dynamic_cast<StructPattern*>(pattern)) {
-        return nullptr;  // 结构体模式总是匹配，类型检查阶段已验证
+        return nullptr;  // Struct pattern always matches, validated at type check stage
     }
     
     return nullptr;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 模式变量绑定
+// Pattern variable binding
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Type* value_type) {
     auto& builder = context_->getBuilder();
     
-    // VariablePattern: 创建变量绑定
+    // VariablePattern: create variable binding
     if (auto* var = dynamic_cast<VariablePattern*>(pattern)) {
-        // 在当前作用域创建变量
-        // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+        // Create variable in current scope
+        // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
         llvm::Type* var_type = context_->getLLVMType(value_type);
         
-        // 创建alloca并存储值
+        // Create alloca and store value
         llvm::AllocaInst* var_alloca = builder.CreateAlloca(
             var_type, nullptr, var->getName());
         builder.CreateStore(value, var_alloca);
         
-        // **重要**: 必须注册到context，否则后续使用时找不到！
+        // **Important**: Must register to context, otherwise it won't be found on subsequent use!
         context_->defineVariable(var->getName(), var_alloca);
         return;
     }
     
-    // WildcardPattern: 不绑定任何变量
+    // WildcardPattern: bind no variables
     if (dynamic_cast<WildcardPattern*>(pattern)) {
         return;
     }
     
-    // LiteralPattern: 不绑定任何变量
+    // LiteralPattern: bind no variables
     if (dynamic_cast<LiteralPattern*>(pattern)) {
         return;
     }
     
-    // TuplePattern: 递归绑定元组元素
+    // TuplePattern: recursively bind tuple elements
     if (auto* tuple = dynamic_cast<TuplePattern*>(pattern)) {
         if (!value_type || value_type->getKind() != Type::Kind::Tuple) {
             return;
@@ -667,10 +745,10 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
         const auto& element_types = tuple_type->getElementTypes();
         const auto& patterns = tuple->getElements();
         
-        // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+        // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
         llvm::Type* llvm_tuple_type = context_->getLLVMType(tuple_type);
         
-        // 确保value是指针类型
+        // Ensure value is pointer type
         llvm::Value* tuple_ptr = value;
         if (!value->getType()->isPointerTy()) {
             llvm::AllocaInst* temp = builder.CreateAlloca(value->getType(), nullptr, "tuple.tmp");
@@ -678,9 +756,9 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
             tuple_ptr = temp;
         }
         
-        // 递归绑定每个元素
+        // Recursively bind each element
         for (size_t i = 0; i < patterns.size() && i < element_types.size(); ++i) {
-            // 提取元组元素
+            // Extract tuple element
             llvm::Value* elem_ptr = builder.CreateStructGEP(
                 llvm_tuple_type,
                 tuple_ptr,
@@ -695,13 +773,13 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
                 "tuple.elem.val"
             );
             
-            // 递归绑定
+            // Recursively bind
             bindPatternVariables(patterns[i].get(), elem_value, element_types[i]);
         }
         return;
     }
     
-    // ArrayPattern: 递归绑定数组元素
+    // ArrayPattern: recursively bind array elements
     if (auto* array = dynamic_cast<ArrayPattern*>(pattern)) {
         if (!value_type || value_type->getKind() != Type::Kind::Array) {
             return;
@@ -713,7 +791,7 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
         
         llvm::Type* llvm_array_type = context_->getLLVMType(array_type);
         
-        // 确保value是指针类型
+        // Ensure value is pointer type
         llvm::Value* array_ptr = value;
         if (!value->getType()->isPointerTy()) {
             llvm::AllocaInst* temp = builder.CreateAlloca(value->getType(), nullptr, "array.tmp");
@@ -721,9 +799,9 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
             array_ptr = temp;
         }
         
-        // 递归绑定每个元素
+        // Recursively bind each element
         for (size_t i = 0; i < patterns.size() && i < array_type->getSize(); ++i) {
-            // 提取数组元素
+            // Extract array element
             llvm::Value* indices[] = {
                 llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), 0),
                 llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), i)
@@ -743,13 +821,13 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
                 "array.elem.val"
             );
             
-            // 递归绑定
+            // Recursively bind
             bindPatternVariables(patterns[i].get(), elem_value, elem_type);
         }
         return;
     }
     
-    // SlicePattern: 递归绑定切片元素
+    // SlicePattern: recursively bind slice elements
     if (auto* slice_pat = dynamic_cast<SlicePattern*>(pattern)) {
         if (!value_type) {
             return;
@@ -761,7 +839,7 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
         if (value_type->getKind() == Type::Kind::Array) {
             auto* array_type = static_cast<ArrayType*>(value_type);
             elem_type = array_type->getElementType();
-            // rest 部分是 Slice 类型
+            // rest part is Slice type
             rest_type = new SliceType(elem_type);
         } else if (value_type->getKind() == Type::Kind::Slice) {
             auto* slice_type = static_cast<SliceType*>(value_type);
@@ -773,7 +851,7 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
         
         llvm::Type* llvm_value_type = context_->getLLVMType(value_type);
         
-        // 确保value是指针类型
+        // Ensure value is pointer type
         llvm::Value* value_ptr = value;
         if (!value->getType()->isPointerTy()) {
             llvm::AllocaInst* temp = builder.CreateAlloca(value->getType(), nullptr, "slice.tmp");
@@ -781,10 +859,10 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
             value_ptr = temp;
         }
         
-        // 绑定前缀元素
+        // Bind prefix elements
         for (size_t i = 0; i < slice_pat->getPrefix().size(); ++i) {
             if (value_type->getKind() == Type::Kind::Array) {
-                // Array: 使用 GEP 提取
+                // Array: use GEP to extract
                 llvm::Value* indices[] = {
                     llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), 0),
                     llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), i)
@@ -797,21 +875,21 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
                 
                 llvm::Type* elem_llvm_type = context_->getLLVMType(elem_type);
                 llvm::Value* elem_value = builder.CreateLoad(
-                    elem_llvm_type, elem_ptr, "slice.prefix.val"
+                    elem_llvm_type, elem_ptr,                     "slice.prefix.val"
                 );
                 
-                // 递归绑定
+                // Recursively bind
                 bindPatternVariables(slice_pat->getPrefix()[i].get(), elem_value, elem_type);
             }
         }
         
-        // 绑定后缀元素 ([a, .., z] 的 z)
+        // Bind suffix elements ([a, .., z] means z)
         if (value_type->getKind() == Type::Kind::Array) {
             auto* array_type = static_cast<ArrayType*>(value_type);
             size_t array_size = array_type->getSize();
             
             for (size_t i = 0; i < slice_pat->getSuffix().size(); ++i) {
-                // 后缀索引从数组末尾倒数
+                // Suffix index counts from array end
                 size_t index = array_size - slice_pat->getSuffix().size() + i;
                 llvm::Value* indices[] = {
                     llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), 0),
@@ -825,17 +903,17 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
                 
                 llvm::Type* elem_llvm_type = context_->getLLVMType(elem_type);
                 llvm::Value* elem_value = builder.CreateLoad(
-                    elem_llvm_type, elem_ptr, "slice.suffix.val"
+                    elem_llvm_type, elem_ptr,                     "slice.suffix.val"
                 );
                 
-                // 递归绑定
+                // Recursively bind
                 bindPatternVariables(slice_pat->getSuffix()[i].get(), elem_value, elem_type);
             }
         }
         
-        // 绑定 rest 部分（如果有名字）
+        // Bind rest part (if it has a name)
         if (slice_pat->hasRest() && slice_pat->getRest()) {
-            // 创建 Slice 结构体 {ptr, len} 并绑定到 rest 变量
+            // Create Slice struct {ptr, len} and bind to rest variable
             
             if (value_type->getKind() == Type::Kind::Array) {
                 auto* array_type = static_cast<ArrayType*>(value_type);
@@ -843,16 +921,16 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
                 size_t suffix_size = slice_pat->getSuffix().size();
                 size_t rest_size = array_type->getSize() - prefix_size - suffix_size;
                 
-                // 创建 Slice 类型的 LLVM 表示: { ptr, i64 }
+                // Create LLVM representation of Slice type: { ptr, i64 }
                 llvm::StructType* slice_struct_type = llvm::StructType::get(
                     context_->getLLVMContext(),
                     {
-                        llvm::PointerType::getUnqual(context_->getLLVMContext()),  // data指针
-                        llvm::Type::getInt64Ty(context_->getLLVMContext())         // 长度
+                        llvm::PointerType::getUnqual(context_->getLLVMContext()),  // data pointer
+                        llvm::Type::getInt64Ty(context_->getLLVMContext())         // length
                     }
                 );
                 
-                // 计算 rest 数组的起始指针
+                // Calculate rest array's starting pointer
                 llvm::Value* indices[] = {
                     llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), 0),
                     llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_->getLLVMContext()), prefix_size)
@@ -862,18 +940,18 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
                     llvm_value_type, value_ptr, indices, "slice.rest.ptr"
                 );
                 
-                // 创建 Slice 结构体 {ptr, len}
+                // Create Slice struct {ptr, len}
                 llvm::AllocaInst* slice_alloca = builder.CreateAlloca(
                     slice_struct_type, nullptr, "slice.rest"
                 );
                 
-                // 设置 data 字段 (index 0)
+                // Set data field (index 0)
                 llvm::Value* data_field_ptr = builder.CreateStructGEP(
                     slice_struct_type, slice_alloca, 0, "slice.data.ptr"
                 );
                 builder.CreateStore(rest_ptr, data_field_ptr);
                 
-                // 设置 len 字段 (index 1)
+                // Set len field (index 1)
                 llvm::Value* len_field_ptr = builder.CreateStructGEP(
                     slice_struct_type, slice_alloca, 1, "slice.len.ptr"
                 );
@@ -882,32 +960,32 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
                 );
                 builder.CreateStore(len_value, len_field_ptr);
                 
-                // 加载 Slice 值并绑定到 rest 变量
+                // Load Slice value and bind to rest variable
                 llvm::Value* slice_value = builder.CreateLoad(
                     slice_struct_type, slice_alloca, "slice.rest.val"
                 );
                 
                 bindPatternVariables(slice_pat->getRest(), slice_value, rest_type);
             } else if (value_type->getKind() == Type::Kind::Slice) {
-                // 对于 Slice 类型，需要动态计算 rest 部分
-                // 提取 data 和 len 字段
-                // TODO: 实现 Slice 的 rest 绑定
-                // 当前暂不实现，因为需要运行时计算
+                // For Slice type, need to dynamically calculate rest part
+                // Extract data and len fields
+                // TODO: implement Slice rest binding
+                // Currently not implemented, requires runtime calculation
             }
         }
         
         return;
     }
     
-    // EnumPattern: 绑定枚举数据
+    // EnumPattern: bind enum data
     if (auto* enum_pat = dynamic_cast<EnumPattern*>(pattern)) {
-        // 特殊处理Result类型
+        // Special handling for Result type
         if (value_type && value_type->getKind() == Type::Kind::Result) {
             bindResultPatternVariables(enum_pat, value, static_cast<ResultType*>(value_type));
             return;
         }
         
-        // 特殊处理Optional类型
+        // Special handling for Optional type
         if (value_type && value_type->getKind() == Type::Kind::Optional) {
             bindOptionalPatternVariables(enum_pat, value, static_cast<OptionalType*>(value_type));
             return;
@@ -920,7 +998,7 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
         auto* enum_type = static_cast<EnumType*>(value_type);
         const auto& variants = enum_type->getVariants();
         
-        // 查找变体
+        // Look up variant
         int variant_idx = -1;
         Type* data_type = nullptr;
         for (size_t i = 0; i < variants.size(); ++i) {
@@ -932,11 +1010,11 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
         }
         
         if (variant_idx < 0 || !data_type) {
-            return;  // 无数据的变体，或变体不存在
+            return;  // Variant has no data, or variant does not exist
         }
         
-        // 提取enum的数据字段（第1个字段）
-        // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+        // Extract enum's data field (1st field)
+        // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
         llvm::Type* llvm_enum_type = context_->getLLVMType(enum_type);
         
         llvm::Value* enum_ptr = value;
@@ -946,7 +1024,7 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
             enum_ptr = temp;
         }
         
-        // 提取data字段
+        // Extract data field
         llvm::Value* data_ptr = builder.CreateStructGEP(
             llvm_enum_type,
             enum_ptr,
@@ -961,26 +1039,26 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
             "enum.data"
         );
         
-        // 🔧 多参数支持：检查是否需要解包元组
+        // 🔧 Multi-parameter support: check if tuple unpacking is needed
         auto& inner_patterns = enum_pat->getInnerPatterns();
         
         if (inner_patterns.empty()) {
-            return;  // 无内部模式
+            return;  // No inner patterns
         }
         
         if (data_type->isTuple()) {
-            // 多参数：从元组中提取每个元素并绑定
+            // Multi-parameter: extract each element from tuple and bind
             TupleType* tuple_type = static_cast<TupleType*>(data_type);
             const auto& element_types = tuple_type->getElementTypes();
             
-            // 将元组值存到临时变量（用于GEP）
+            // Store tuple value to temporary variable (for GEP)
             llvm::AllocaInst* tuple_tmp = builder.CreateAlloca(
                 data_llvm_type, nullptr, "enum.tuple.tmp");
             builder.CreateStore(data_value, tuple_tmp);
             
-            // 为每个内部pattern提取元组元素并绑定
+            // Extract tuple element for each inner pattern and bind
             for (size_t i = 0; i < inner_patterns.size() && i < element_types.size(); ++i) {
-                // 提取元组元素
+                // Extract tuple element
                 llvm::Value* elem_ptr = builder.CreateStructGEP(
                     data_llvm_type,
                     tuple_tmp,
@@ -995,17 +1073,17 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
                     "tuple.elem." + std::to_string(i)
                 );
                 
-                // 递归绑定变量
+                // Recursively bind variable
                 bindPatternVariables(inner_patterns[i].get(), elem_value, element_types[i]);
             }
         } else {
-            // 单参数：直接绑定
+            // Single parameter: bind directly
             bindPatternVariables(inner_patterns[0].get(), data_value, data_type);
         }
         return;
     }
     
-    // StructPattern: 提取字段并绑定变量
+    // StructPattern: extract fields and bind variables
     if (auto* struct_pat = dynamic_cast<StructPattern*>(pattern)) {
         if (value_type && value_type->getKind() == Type::Kind::Struct) {
             bindStructPatternVariables(struct_pat, value, static_cast<StructType*>(value_type));
@@ -1015,52 +1093,52 @@ void ExprCodeGen::bindPatternVariables(Pattern* pattern, llvm::Value* value, Typ
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Result类型模式匹配
+// Result type pattern matching
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 llvm::Value* ExprCodeGen::generateResultPatternMatch(
     EnumPattern* pattern,
     llvm::Value* scrutinee,
-    ResultType* result_type
+    ResultType* results_type
 ) {
     auto& ctx = context_->getLLVMContext();
     auto& builder = context_->getBuilder();
     std::string variant = pattern->getVariantName();
     
-    // Result的内存布局: { i1 is_ok, T value, i8* error }
+    // Result memory layout: { i1 is_ok, T value, i8* error }
     // Ok => is_ok == true
     // Err => is_ok == false
     
-    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
-    llvm::Type* llvm_result_type = context_->getLLVMType(result_type);
+    // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
+    llvm::Type* llvm_results_type = context_->getLLVMType(results_type);
     
-    // 如果scrutinee不是指针，先存到栈上
-    llvm::Value* result_ptr = scrutinee;
+    // If scrutinee is not a pointer, store on stack first
+    llvm::Value* results_ptr = scrutinee;
     if (!scrutinee->getType()->isPointerTy()) {
-        llvm::AllocaInst* temp = builder.CreateAlloca(scrutinee->getType(), nullptr, "result.tmp");
+        llvm::AllocaInst* temp = builder.CreateAlloca(scrutinee->getType(), nullptr, "results.tmp");
         builder.CreateStore(scrutinee, temp);
-        result_ptr = temp;
+        results_ptr = temp;
     }
     
-    // 提取is_ok字段（第0个字段）
+    // Extract is_ok field (0th field)
     llvm::Value* is_ok_ptr = builder.CreateStructGEP(
-        llvm_result_type,
-        result_ptr,
+        llvm_results_type,
+        results_ptr,
         0,
-        "result.is_ok.ptr"
+        "results.is_ok.ptr"
     );
     llvm::Value* is_ok = builder.CreateLoad(
         llvm::Type::getInt1Ty(ctx),
         is_ok_ptr,
-        "result.is_ok"
+        "results.is_ok"
     );
     
     if (variant == "Ok") {
-        // Ok变体：is_ok == true
+        // Ok variant: is_ok == true
         return is_ok;
     } else if (variant == "Err") {
-        // Err变体：is_ok == false
-        return builder.CreateNot(is_ok, "result.is_err");
+        // Err variant: is_ok == false
+        return builder.CreateNot(is_ok, "results.is_err");
     }
     
     return nullptr;
@@ -1075,11 +1153,11 @@ llvm::Value* ExprCodeGen::generateOptionalPatternMatch(
     auto& builder = context_->getBuilder();
     std::string variant = pattern->getVariantName();
     
-    // Optional的内存布局: { i1 has_value, T value }
+    // Optional memory layout: { i1 has_value, T value }
     // Some => has_value == true
     // None => has_value == false
     
-    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+    // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
     llvm::Type* llvm_opt_type = context_->getLLVMType(opt_type);
     
     llvm::Value* opt_ptr = scrutinee;
@@ -1089,7 +1167,7 @@ llvm::Value* ExprCodeGen::generateOptionalPatternMatch(
         opt_ptr = temp;
     }
     
-    // 提取has_value字段（第0个字段）
+    // Extract has_value field (0th field)
     llvm::Value* has_value_ptr = builder.CreateStructGEP(
         llvm_opt_type,
         opt_ptr,
@@ -1114,7 +1192,7 @@ llvm::Value* ExprCodeGen::generateOptionalPatternMatch(
 void ExprCodeGen::bindResultPatternVariables(
     EnumPattern* pattern,
     llvm::Value* value,
-    ResultType* result_type
+    ResultType* results_type
 ) {
     auto& ctx = context_->getLLVMContext();
     auto& builder = context_->getBuilder();
@@ -1122,55 +1200,55 @@ void ExprCodeGen::bindResultPatternVariables(
     auto& inner_patterns = pattern->getInnerPatterns();
     
     if (inner_patterns.empty()) {
-        return;  // 没有变量需要绑定
+        return;  // No variables need binding
     }
     
-    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
-    llvm::Type* llvm_result_type = context_->getLLVMType(result_type);
+    // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
+    llvm::Type* llvm_results_type = context_->getLLVMType(results_type);
     
-    llvm::Value* result_ptr = value;
+    llvm::Value* results_ptr = value;
     if (!value->getType()->isPointerTy()) {
-        llvm::AllocaInst* temp = builder.CreateAlloca(value->getType(), nullptr, "result.tmp");
+        llvm::AllocaInst* temp = builder.CreateAlloca(value->getType(), nullptr, "results.tmp");
         builder.CreateStore(value, temp);
-        result_ptr = temp;
+        results_ptr = temp;
     }
     
     if (variant == "Ok") {
-        // 提取value字段（第1个字段）
+        // Extract value field (1st field)
         llvm::Value* value_ptr = builder.CreateStructGEP(
-            llvm_result_type,
-            result_ptr,
+            llvm_results_type,
+            results_ptr,
             1,
-            "result.value.ptr"
+            "results.value.ptr"
         );
         
-        llvm::Type* ok_llvm_type = context_->getLLVMType(result_type->getOkType());
+        llvm::Type* ok_llvm_type = context_->getLLVMType(results_type->getOkType());
         llvm::Value* ok_value = builder.CreateLoad(
             ok_llvm_type,
             value_ptr,
-            "result.value"
+            "results.value"
         );
         
-        // 递归绑定内部模式变量
-        bindPatternVariables(inner_patterns[0].get(), ok_value, result_type->getOkType());
+        // Recursively bind inner pattern variable
+        bindPatternVariables(inner_patterns[0].get(), ok_value, results_type->getOkType());
     }
     else if (variant == "Err") {
-        // 提取error字段（第2个字段）
+        // Extract error field (2nd field)
         llvm::Value* error_ptr = builder.CreateStructGEP(
-            llvm_result_type,
-            result_ptr,
+            llvm_results_type,
+            results_ptr,
             2,
-            "result.error.ptr"
+            "results.error.ptr"
         );
         
         llvm::Type* string_llvm_type = context_->getStringType();
         llvm::Value* error_value = builder.CreateLoad(
             string_llvm_type,
             error_ptr,
-            "result.error"
+            "results.error"
         );
         
-        // 递归绑定内部模式变量（error是string类型）
+        // Recursively bind inner pattern variable (error is string type)
         bindPatternVariables(inner_patterns[0].get(), error_value, nullptr);
     }
 }
@@ -1186,10 +1264,10 @@ void ExprCodeGen::bindOptionalPatternVariables(
     auto& inner_patterns = pattern->getInnerPatterns();
     
     if (inner_patterns.empty() || variant == "None") {
-        return;  // None没有值需要绑定
+        return;  // None has no value to bind
     }
     
-    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+    // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
     llvm::Type* llvm_opt_type = context_->getLLVMType(opt_type);
     
     llvm::Value* opt_ptr = value;
@@ -1200,7 +1278,7 @@ void ExprCodeGen::bindOptionalPatternVariables(
     }
     
     if (variant == "Some") {
-        // 提取value字段（第1个字段）
+        // Extract value field (1st field)
         llvm::Value* value_ptr = builder.CreateStructGEP(
             llvm_opt_type,
             opt_ptr,
@@ -1215,7 +1293,7 @@ void ExprCodeGen::bindOptionalPatternVariables(
             "opt.value"
         );
         
-        // 递归绑定内部模式变量
+        // Recursively bind inner pattern variable
         bindPatternVariables(inner_patterns[0].get(), inner_value, opt_type->getInnerType());
     }
 }
@@ -1228,10 +1306,10 @@ void ExprCodeGen::bindStructPatternVariables(
     auto& ctx = context_->getLLVMContext();
     auto& builder = context_->getBuilder();
     
-    // TypeCodeGen统一使用CodeGenContext::getLLVMType()
+    // TypeCodeGen uniformly uses CodeGenContext::getLLVMType()
     llvm::Type* llvm_struct_type = context_->getLLVMType(struct_type);
     
-    // 确保value是指针类型
+    // Ensure value is pointer type
     llvm::Value* struct_ptr = value;
     if (!value->getType()->isPointerTy()) {
         llvm::AllocaInst* temp = builder.CreateAlloca(value->getType(), nullptr, "struct.tmp");
@@ -1239,11 +1317,11 @@ void ExprCodeGen::bindStructPatternVariables(
         struct_ptr = temp;
     }
     
-    // 遍历每个字段模式
+    // Traverse each field pattern
     for (const auto& field_pattern : pattern->getFields()) {
         const std::string& field_name = field_pattern.field_name;
         
-        // 查找字段在结构体中的索引
+        // Look up field index in struct
         const auto& fields = struct_type->getFields();
         int field_idx = -1;
         Type* field_type = nullptr;
@@ -1257,10 +1335,10 @@ void ExprCodeGen::bindStructPatternVariables(
         }
         
         if (field_idx < 0 || !field_type) {
-            continue;  // 字段不存在（TypeChecker应该已经报错）
+            continue;  // Field does not exist (TypeChecker should have reported error)
         }
         
-        // 提取字段值
+        // Extract field value
         llvm::Value* field_ptr = builder.CreateStructGEP(
             llvm_struct_type,
             struct_ptr,
@@ -1275,7 +1353,7 @@ void ExprCodeGen::bindStructPatternVariables(
             "struct." + field_name
         );
         
-        // 递归绑定字段模式变量
+        // Recursively bind field pattern variable
         bindPatternVariables(field_pattern.pattern.get(), field_value, field_type);
     }
 }

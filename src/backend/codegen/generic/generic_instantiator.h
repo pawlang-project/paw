@@ -1,7 +1,7 @@
 //===--- generic_instantiator.h - Generic Instantiation ---------*- C++ -*-===//
 //
-// 泛型实例化器 - 协调AST单态化和CodeGen
-// 桥接MonomorphizationPass和GenericMonomorphization
+// genericinstantiationlinker/er - coordinateASTmonomorphizationandCodeGen
+// Bridge between MonomorphizationPass and GenericMonomorphization
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,38 +17,38 @@ namespace pawc {
 class Type;
 class CodeGenContext;
 
-/// GenericInstantiator - 泛型实例化器
+/// GenericInstantiator - genericinstantiationlinker/er
 ///
-/// 职责：
-/// 1. 协调AST级别的单态化（MonomorphizationPass）
-/// 2. 协调LLVM级别的类型映射（GenericMonomorphization）
-/// 3. 提供统一的泛型实例化接口
+/// responsibilities：
+/// 1. coordinateASTlevelof/themonomorphization（MonomorphizationPass）
+/// 2. coordinateLLVMlevelof/thetypesmap（GenericMonomorphization）
+/// 3. Provide unified generic instantiation interface
 class GenericInstantiator {
     CodeGenContext* context_;
     
 public:
     explicit GenericInstantiator(CodeGenContext* context);
     
-    /// 实例化泛型结构体
-    /// @param base_name 基础名称
-    /// @param type_args 类型参数
-    /// @return 实例化后的类型名称
+    /// instantiationgenericstructbody/struct
+    /// @param base_name basename
+    /// @param type_args typesparameter
+    /// @return instantiationback/afterof/thetypesname
     std::string instantiateStruct(
         const std::string& base_name,
         const std::vector<Type*>& type_args);
     
-    /// 实例化泛型函数
-    /// @param base_name 基础名称
-    /// @param type_args 类型参数
-    /// @return 实例化后的函数名称
+    /// instantiationgenericfunction
+    /// @param base_name basename
+    /// @param type_args typesparameter
+    /// @return Instantiated function name
     std::string instantiateFunction(
         const std::string& base_name,
         const std::vector<Type*>& type_args);
     
-    /// 实例化泛型枚举
-    /// @param base_name 基础名称
-    /// @param type_args 类型参数
-    /// @return 实例化后的枚举名称
+    /// instantiationgenericenum
+    /// @param base_name basename
+    /// @param type_args typesparameter
+    /// @return instantiationback/afterof/theenumname
     std::string instantiateEnum(
         const std::string& base_name,
         const std::vector<Type*>& type_args);

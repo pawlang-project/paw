@@ -1,6 +1,9 @@
 //===--- dead_code_elimination_pass.h - Dead Code Elimination ---*- C++ -*-===//
+/// @file dead_code_elimination_pass.h
+/// @brief Code generation utilities
+///
 //
-// 死代码消除Pass：删除不可达和无用的代码
+// Dead code elimination pass: remove unreachable and unused code
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,10 +19,10 @@ public:
     static constexpr const char* getName() { return "DeadCodeEliminationPass"; }
     
     bool run(PassContext& context) override {
-        // TODO: 实现死代码消除
-        // 1. 识别不可达代码
-        // 2. 识别无用变量
-        // 3. 删除死代码
+        // TODO: implement dead code elimination
+        // 1. Identify unreachable code
+        // 2. identifynousevariable
+        // 3. Remove dead code
         return true;
     }
 };

@@ -15,51 +15,51 @@
 
 namespace pawc {
 
-/// LLVMIRGenPass - LLVM IR生成Pass
+/// LLVMIRGenPass - LLVM IRgeneratePass
 ///
-/// 遍历AST并生成LLVM IR
+/// Traverse AST and generate LLVM IR
 class LLVMIRGenPass : public PassBase<LLVMIRGenPass> {
 public:
     static std::string name() { return "LLVMIRGenPass"; }
     
     PassResult runImpl(PassContext* context) {
-        // 获取AST
+        // getAST
         auto* ast = context->getAST();
         if (!ast || ast->empty()) {
             return PassResult{false, "No AST available for code generation"};
         }
         
-        // 创建CodeGenContext
+        // createCodeGenContext
         auto codegen_ctx = std::make_shared<CodeGenContext>(
             "main_module",
             context->getTypeSystem(),
             context->getSymbolTable()
         );
         
-        // 声明基础runtime函数
+        // declarebaseruntimefunction
         codegen_ctx->declareRuntimeFunctions();
         
-        // 注册所有builtin函数（print, println, to_string等，共58个）
-        // codegen_ctx->registerAllBuiltinFunctions(); // 暂时注释掉测试
+        // Register all builtin functions (print, println, to_string, etc., total 58)individual/piece）
+        // codegen_ctx->registerAllBuiltinFunctions(); // Temporarily commented outcommentouttest
         
-        // 创建表达式和语句代码生成器
+        // createexpressionandstatementcodegenerator
         ExprCodeGen expr_gen(codegen_ctx.get());
         StmtCodeGen stmt_gen(codegen_ctx.get(), &expr_gen);
         
-        // 🔧 两遍扫描：支持函数前向引用
-        // 第一遍：生成所有函数声明（只生成签名，不生成函数体）
+        // 🔧 Two-pass scan: support function forward references
+        // First pass: generate all function declarations (only signature, no body)notgeneratefunctionbody/struct）
         for (const auto& stmt : *ast) {
             if (auto* func = dynamic_cast<FunctionDecl*>(stmt.get())) {
                 stmt_gen.generateFunctionDeclaration(func);
             }
         }
         
-        // 第二遍：生成所有语句（包括函数体）
+        // Second pass: generate all statements (including function bodies)
         for (const auto& stmt : *ast) {
             stmt_gen.generate(stmt.get());
         }
         
-        // 验证生成的模块
+        // Validate generated module
         std::string error_msg;
         llvm::raw_string_ostream error_stream(error_msg);
         
@@ -67,16 +67,16 @@ public:
             return PassResult{false, "Invalid LLVM IR: " + error_msg};
         }
         
-        // 输出LLVM IR（如果verbose）
+        // outputLLVM IR（ifverbose）
         if (context->isVerbose()) {
             codegen_ctx->dump();
         }
         
-        // 🔧 Bug Fix: 必须缓存shared_ptr以保持CodeGenContext的生命周期
-        // 否则runImpl结束后CodeGenContext会被销毁，Module指针会失效
+        // 🔧 Bug Fix: must cache shared_ptr to maintain CodeGenContext lifetimenContextof/thelifetimeperiod
+        // Otherwise CodeGenContext will be destroyed after runImpl ends, Module pointer will become invalidnt/effective
         context->cacheAnalysisResult("codegen_context", codegen_ctx);
         
-        // 同时缓存Module裸指针供快速访问
+        // Also cache Module raw pointer for fast access
         context->cacheAnalysisResult("llvm_module", codegen_ctx->getModule());
         
         return PassResult{true, "LLVM IR generated and verified successfully"};

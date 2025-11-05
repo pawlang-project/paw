@@ -15,41 +15,41 @@
 
 namespace pawc {
 
-/// Lexer - 词法分析器
+/// Lexer - Lexical analyzer for PawLang
 class Lexer {
 public:
     Lexer(const std::string& source, const std::string& filename, 
           DiagnosticEngine* diag_engine);
     
-    // 词法分析主入口
+    /// Main entry point for lexical analysis
     std::vector<Token> tokenize();
     
 private:
-    // 扫描单个token
+    /// Scan a single token
     Token scanToken();
     
-    // 字符处理
+    /// Character processing utilities
     char advance();
     char peek() const;
     char peekNext() const;
     bool match(char expected);
     bool isAtEnd() const;
     
-    // 跳过空白和注释
+    /// Skip whitespace and comments
     void skipWhitespace();
     void skipLineComment();
     void skipBlockComment();
     
-    // 扫描不同类型的token
+    /// Scan different token types
     Token scanIdentifierOrKeyword();
     Token scanNumber();
     Token scanString();
     Token scanChar();
     
-    // 关键字查找
+    /// Keyword lookup
     TokenType identifierType(const std::string& text);
     
-    // 创建token
+    /// Create token
     Token makeToken(TokenType type);
     Token makeToken(TokenType type, const std::string& lexeme);
     Token errorToken(const std::string& message);
@@ -61,12 +61,12 @@ private:
     std::string filename_;
     DiagnosticEngine* diag_engine_;
     
-    size_t start_;      // 当前token起始位置
-    size_t current_;    // 当前扫描位置
-    size_t line_;       // 当前行号
-    size_t column_;     // 当前列号
+     size_t start_;      // Current token start position
+     size_t current_;    // Current scanning position
+     size_t line_;       // Current line number
+     size_t column_;     // Current column number
     
-    // 关键字表
+    // Keyword table
     static const std::unordered_map<std::string, TokenType> keywords_;
 };
 

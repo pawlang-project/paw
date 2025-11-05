@@ -1,14 +1,16 @@
 //===--- array_builtins.cpp - Array Builtin Functions -----------*- C++ -*-===//
+/// @file array_builtins.cpp
+/// @brief Implementation file
 //
-// len等数组操作builtin函数
-// 从builtin_codegen中提取
+// lenetcarrayoperationbuiltinfunction
+// frombuiltin_codegenmiddle/centerextract
 //
 //===----------------------------------------------------------------------===//
 
 namespace pawc {
 
-// 数组builtin逻辑保留在builtin_codegen.cpp中
-// 框架文件，待未来详细实现
+// arraybuiltinlogickeep/reservein/atbuiltin_codegen.cppmiddle/center
+// frameworkfile，to benot yetfuturedetailedimplementation
 
 } // namespace pawc
 

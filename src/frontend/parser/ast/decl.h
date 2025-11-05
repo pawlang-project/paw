@@ -1,6 +1,6 @@
 //===--- decl.h - Declaration AST Nodes -------------------------*- C++ -*-===//
 //
-// 声明节点：函数、类型、接口等声明
+// Declaration nodes: function, type, interface, etc.
 //
 //===----------------------------------------------------------------------===//
 
@@ -14,17 +14,17 @@
 
 namespace pawc {
 
-// 前向声明
+// Forward declaration
 class BlockStmt;
 
-/// GenericParam - 泛型参数 <T, U>
+/// GenericParam - genericparameter <T, U>
 struct GenericParam {
     std::string name;
     
     GenericParam(std::string n) : name(std::move(n)) {}
 };
 
-/// WhereClause - Where约束 where T: Display
+/// WhereClause - Whereconstraint where T: Display
 struct WhereClause {
     std::string type_param;     // T
     std::string interface_name; // Display
@@ -33,7 +33,7 @@ struct WhereClause {
         : type_param(std::move(tp)), interface_name(std::move(iface)) {}
 };
 
-/// FunctionDecl - 函数声明
+/// FunctionDecl - functiondeclaration
 class FunctionDecl : public Stmt {
 public:
     struct Param {
@@ -59,7 +59,7 @@ public:
     const std::vector<Param>& getParams() const { return params_; }
     Type* getReturnType() const { return return_type_; }
     BlockStmt* getBody() const { return body_.get(); }
-    const std::vector<GenericParam>& getGenericParams() const { return generic_params_; }
+    const std::vector<GenericParam>& getGenericParams() const { return generic_params_; } return generic_params_; }
     const std::vector<WhereClause>& getWhereClauses() const { return where_clauses_; }
     
     bool isGeneric() const { return !generic_params_.empty(); }
@@ -75,7 +75,7 @@ private:
     std::vector<WhereClause> where_clauses_;
 };
 
-/// StructDecl - 结构体定义
+/// StructDecl - struct definition
 class StructDecl : public Stmt {
 public:
     struct Field {
@@ -95,7 +95,7 @@ public:
     
     const std::string& getName() const { return name_; }
     const std::vector<Field>& getFields() const { return fields_; }
-    const std::vector<GenericParam>& getGenericParams() const { return generic_params_; }
+    const std::vector<GenericParam>& getGenericParams() const { return generic_params_; } return generic_params_; }
     const std::vector<WhereClause>& getWhereClauses() const { return where_clauses_; }
     
     bool isGeneric() const { return !generic_params_.empty(); }
@@ -109,12 +109,12 @@ private:
     std::vector<WhereClause> where_clauses_;
 };
 
-/// EnumDecl - 枚举定义
+/// EnumDecl - enumdefinition
 class EnumDecl : public Stmt {
 public:
     struct Variant {
         std::string name;
-        std::vector<Type*> types;  // 关联数据
+        std::vector<Type*> types;  // associationdata
         
         Variant(std::string n, std::vector<Type*> t = {})
             : name(std::move(n)), types(std::move(t)) {}
@@ -130,7 +130,7 @@ public:
     
     const std::string& getName() const { return name_; }
     const std::vector<Variant>& getVariants() const { return variants_; }
-    const std::vector<GenericParam>& getGenericParams() const { return generic_params_; }
+    const std::vector<GenericParam>& getGenericParams() const { return generic_params_; } return generic_params_; }
     const std::vector<WhereClause>& getWhereClauses() const { return where_clauses_; }
     
     bool isGeneric() const { return !generic_params_.empty(); }
@@ -144,7 +144,7 @@ private:
     std::vector<WhereClause> where_clauses_;
 };
 
-/// InterfaceMethod - 接口方法签名
+/// InterfaceMethod - interfacemethodsignature
 struct InterfaceMethod {
     std::string name;
     std::vector<FunctionDecl::Param> params;
@@ -154,7 +154,7 @@ struct InterfaceMethod {
         : name(std::move(n)), params(std::move(p)), return_type(r) {}
 };
 
-/// InterfaceDecl - 接口定义
+/// InterfaceDecl - interfacedefinition
 class InterfaceDecl : public Stmt {
 public:
     InterfaceDecl(std::string name, 
@@ -167,7 +167,7 @@ public:
     
     const std::string& getName() const { return name_; }
     const std::vector<InterfaceMethod>& getMethods() const { return methods_; }
-    const std::vector<GenericParam>& getGenericParams() const { return generic_params_; }
+    const std::vector<GenericParam>& getGenericParams() const { return generic_params_; } return generic_params_; }
     const std::vector<WhereClause>& getWhereClauses() const { return where_clauses_; }
     
     bool isGeneric() const { return !generic_params_.empty(); }
@@ -181,7 +181,7 @@ private:
     std::vector<WhereClause> where_clauses_;
 };
 
-/// SupportDecl - 接口实现 support Point with Display { methods }
+/// SupportDecl - interfaceimplementation support Point with Display { methods }
 class SupportDecl : public Stmt {
 public:
     SupportDecl(std::string type_name,
@@ -200,7 +200,7 @@ public:
     const std::string& getTypeName() const { return type_name_; }
     const std::string& getInterfaceName() const { return interface_name_; }
     const std::vector<std::unique_ptr<FunctionDecl>>& getMethods() const { return methods_; }
-    const std::vector<GenericParam>& getGenericParams() const { return type_generic_params_; }  // 向后兼容
+    const std::vector<GenericParam>& getGenericParams() const { return generic_params_; } return type_generic_params_; }  // Backward compatible
     const std::vector<GenericParam>& getTypeGenericParams() const { return type_generic_params_; }
     const std::vector<GenericParam>& getInterfaceGenericParams() const { return interface_generic_params_; }
     const std::vector<WhereClause>& getWhereClauses() const { return where_clauses_; }
@@ -212,9 +212,9 @@ public:
     
 private:
     std::string type_name_;
-    std::vector<GenericParam> type_generic_params_;        // 类型的泛型参数: support Box<T>
+    std::vector<GenericParam> type_generic_params_;        // typeof/thegenericparameter: support Box<T>
     std::string interface_name_;
-    std::vector<GenericParam> interface_generic_params_;   // 接口的泛型参数: with Comparable<T>
+    std::vector<GenericParam> interface_generic_params_;   // interfaceof/thegenericparameter: with Comparable<T>
     std::vector<std::unique_ptr<FunctionDecl>> methods_;
     std::vector<WhereClause> where_clauses_;
 };

@@ -1,4 +1,6 @@
 //===--- builtin_runtime.cpp - Runtime Implementation ------------*- C++ -*-===//
+/// @file builtin_runtime.cpp
+/// @brief Implementation file
 
 #include "builtin_runtime.h"
 #include <cstdio>
@@ -33,7 +35,7 @@ void paw_bounds_check(size_t index, size_t length) {
     }
 }
 
-// 字符串比较 (用于match表达式)
+// String comparison (used for match expression)
 extern "C" int32_t paw_strcmp(const char* s1, const char* s2) {
     if (!s1 || !s2) {
         return (s1 == s2) ? 0 : (s1 ? 1 : -1);
@@ -93,7 +95,7 @@ void paw_print_i16(int16_t value) { std::printf("%d", value); }
 void paw_print_i32(int32_t value) { std::printf("%d", value); }
 void paw_print_i64(int64_t value) { std::printf("%lld", (long long)value); }
 void paw_print_i128(__int128 value) {
-    // 完整的i128打印实现
+    // completeof/thei128printimplementation
     char buf[64];
     char* p = buf + sizeof(buf) - 1;
     *p = '\0';
@@ -104,10 +106,10 @@ void paw_print_i128(__int128 value) {
     }
     
     bool negative = value < 0;
-    // 处理负数时转换为unsigned避免溢出
+    // Process negative numbers when converting to unsigned to avoid overflow
     unsigned __int128 v = negative ? (unsigned __int128)(-value) : (unsigned __int128)value;
     
-    // 从后向前填充数字
+    // Fill digits from back to front
     while (v > 0) {
         *--p = '0' + (v % 10);
         v /= 10;
@@ -139,35 +141,35 @@ void paw_print_u128(unsigned __int128 value) {
     std::printf("%s", &buf[i]);
 }
 
-// f8 (bfloat16): 1+8+7位格式
-// bfloat16精度: 约2.4位十进制
+// f8 (bfloat16): 1+8+7 bit format
+// bfloat16 precision: ~2.4 decimal digits
 void paw_print_f8(bfloat_t value) {
-    // bfloat16直接转float（保持精度）
+    // bfloat16 converts directly to float (maintains precision)
     float f_value = (float)value;
-    std::printf("%.3g", f_value);  // 3位有效数字（bfloat16精度）
+    std::printf("%.3g", f_value);  // 3 significant digits (bfloat16 precision)sion）
 }
 
-// f16 (IEEE 754 half): 1+5+10位格式
-// half精度: 约3.31位十进制
+// f16 (IEEE 754 half): 1+5+10 bit format
+// Half precision: ~3.31 decimal digits
 void paw_print_f16(half_t value) {
-    // IEEE half转float（保持精度）
+    // IEEE half converts to float (maintains precision)
     float f_value = (float)value;
-    std::printf("%.4g", f_value);  // 4位有效数字（half精度）
+    std::printf("%.4g", f_value);  // 4 significant digits (half precision)）
 }
 
 void paw_print_f32(float value) { std::printf("%g", value); }
-void paw_print_f64(double value) { std::printf("%.15g", value); }  // 15位精度
+void paw_print_f64(double value) { std::printf("%.15g", value); }  // 15 digitse); }  // 15bit/digitprecision
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 软件f128打印实现 - 高性能优化
+// Software f128 print implementation - high performance optimizable
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// 256位大整数（用于转换）
+// 256-bit big integer (used for conversion)
 struct big_int256 {
     uint64_t words[4];
 };
 
-// IEEE 754 fp128解析
+// IEEE 754 fp128parse
 static void parse_f128_bits(struct paw_f128_data bits,
                               bool* sign, uint16_t* exponent,
                               uint64_t* mant_high, uint64_t* mant_low) {
@@ -177,25 +179,25 @@ static void parse_f128_bits(struct paw_f128_data bits,
     *mant_low = bits.low;
 }
 
-// 检查特殊值
+// Check special value
 static int check_f128_special(bool sign, uint16_t exp,
                                 uint64_t mh, uint64_t ml, char* buf) {
     if (exp == 0x7FFF && mh == 0 && ml == 0) {
-        std::sprintf(buf, "%s", sign ? "-inf" : "inf");
+        std::snprintf(buf, 64, "%s", sign ? "-inf" : "inf");
         return 1;
     }
     if (exp == 0x7FFF) {
-        std::sprintf(buf, "nan");
+        std::snprintf(buf, 64, "nan");
         return 1;
     }
     if (exp == 0 && mh == 0 && ml == 0) {
-        std::sprintf(buf, "%s0", sign ? "-" : "");
+        std::snprintf(buf, 64, "%s0", sign ? "-" : "");
         return 1;
     }
     return 0;
 }
 
-// 大整数运算（优化版）
+// Big integer operations (optimized version)
 static inline bool big_int256_is_zero(const struct big_int256* v) {
     return v->words[0] == 0 && v->words[1] == 0 && 
            v->words[2] == 0 && v->words[3] == 0;
@@ -217,7 +219,7 @@ static uint64_t big_int256_div_10(struct big_int256* v) {
     return rem;
 }
 
-// 声明software_f128.cpp中的转换函数
+// declaresoftware_f128.cppinconvertfunction
 extern "C" void paw_f128_to_string_decimal(uint64_t low, uint64_t high, char* buffer, size_t buf_size);
 
 void paw_print_f128(struct paw_f128_data value) {
@@ -261,10 +263,10 @@ char* paw_bool_to_string(int value) {
     return buf;
 }
 
-// 其他to_string实现省略...
+// Other type to_string implementations omitted...
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Length Operations (支持所有可迭代类型)
+// Length Operations (supportAllcaniterationtypes)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 size_t paw_string_len(const char* str) {
@@ -272,14 +274,14 @@ size_t paw_string_len(const char* str) {
 }
 
 size_t paw_array_len(void* array) {
-    // Array长度是编译时常量，实际上不需要runtime函数
-    // 这里只是占位，实际会被编译器直接替换为常量
+    // Arraylengthyescompile timeconstant，actualup/abovenotneedruntimefunction
+    // Placeholder only, actual implementation will be inlined by compiler directlysubstitutionis/asconstant
     return 0;
 }
 
 size_t paw_slice_len(void* slice) {
-    // Slice结构: { ptr: *T, len: u64 }
-    // 读取len字段（第二个字段）
+    // Slicestruct: { ptr: *T, len: u64 }
+    // Read len field (second field)
     struct Slice {
         void* ptr;
         size_t len;
@@ -295,10 +297,10 @@ size_t paw_slice_len(void* slice) {
 char* paw_string_concat(const char* a, const char* b) {
     size_t len_a = std::strlen(a);
     size_t len_b = std::strlen(b);
-    char* result = (char*)paw_malloc(len_a + len_b + 1);
-    std::strcpy(result, a);
-    std::strcat(result, b);
-    return result;
+    char* results = (char*)paw_malloc(len_a + len_b + 1);
+    std::strcpy(results, a);
+    std::strcat(results, b);
+    return results;
 }
 
 } // extern "C"

@@ -1,4 +1,7 @@
 //===--- builtin_runtime.h - Builtin Runtime Functions -----------*- C++ -*-===//
+/// @file builtin_runtime.h
+/// @brief Built-in functions and runtime support
+///
 //
 // PawLang Compiler - Runtime Library (No GC)
 //
@@ -47,22 +50,22 @@ void paw_debug_assert(int condition, const char* message, const char* file, int 
 // I/O Functions (18 type overloads)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// 有符号整数 (5)
+// Signed integers (5)
 void paw_print_i8(int8_t value);
 void paw_print_i16(int16_t value);
 void paw_print_i32(int32_t value);
 void paw_print_i64(int64_t value);
 void paw_print_i128(__int128 value);
 
-// 无符号整数 (5)
+// Unsigned integers (5)
 void paw_print_u8(uint8_t value);
 void paw_print_u16(uint16_t value);
 void paw_print_u32(uint32_t value);
 void paw_print_u64(uint64_t value);
 void paw_print_u128(unsigned __int128 value);
 
-// 浮点数 (5) - 完整精度
-// 注意：在LLVM中，f8/f16使用特殊的浮点类型（bfloat/half），需要转换
+// Floating-point numbers (5) - completeprecision
+// Note：in/atLLVMmiddle/center，f8/f16usespecialof/thefloating-pointtypes（bfloat/half），needconvert
 #ifdef __clang__
 typedef _Float16 half_t;
 typedef __bf16 bfloat_t;
@@ -76,16 +79,16 @@ void paw_print_f16(half_t value);      // half
 void paw_print_f32(float value);
 void paw_print_f64(double value);
 
-// f128: 软件实现（100%跨平台）
-// 通过struct传递fp128数据（避免ABI不匹配）
+// f128: software implementation (100% cross-platform)
+// through/viastructpassfp128data（avoidABImismatch）
 struct paw_f128_data {
-    uint64_t low;   // 低64位
-    uint64_t high;  // 高64位
+    uint64_t low;   // Low 64 bits
+    uint64_t high;  // High 64 bits
 };
 
 void paw_print_f128(struct paw_f128_data value);
 
-// 其他 (3)
+// Other types (3)
 void paw_print_bool(int value);
 void paw_print_char(char value);
 void paw_print_string(const char* value);
@@ -118,13 +121,13 @@ char* paw_char_to_string(char value);
 char* paw_string_to_string(const char* value);
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Length Operations (支持所有可迭代类型)
+// Length Operations (supportAllcaniterationtypes)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// len函数 - 根据类型返回长度
-size_t paw_string_len(const char* str);    // string长度
-size_t paw_array_len(void* array);         // array长度 (编译时常量，这里占位)
-size_t paw_slice_len(void* slice);         // slice长度 (运行时获取)
+// lenfunction - according totypesreturnlength
+size_t paw_string_len(const char* str);    // stringlength
+size_t paw_array_len(void* array);         // Array length (placeholder)ompile timeconstant，hereplaceholder)
+size_t paw_slice_len(void* slice);         // slicelength (runtime/whenget)
 
 // String Operations
 char* paw_string_concat(const char* a, const char* b);

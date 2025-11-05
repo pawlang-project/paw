@@ -1,6 +1,6 @@
 //===--- composite_types.h - Composite Types --------------------*- C++ -*-===//
 //
-// 复合类型: Array, Slice, Tuple, Struct, Enum
+// compositetypes: Array, Slice, Tuple, Struct, Enum
 //
 //===----------------------------------------------------------------------===//
 
@@ -13,7 +13,7 @@
 
 namespace pawc {
 
-/// ArrayType - 数组类型 [T; N]
+/// ArrayType - arraytypes [T; N]
 class ArrayType : public Type {
 public:
     ArrayType(Type* element, size_t size)
@@ -31,7 +31,7 @@ private:
     size_t size_;
 };
 
-/// SliceType - 切片类型 [T]
+/// SliceType - slicetypes [T]
 class SliceType : public Type {
 public:
     explicit SliceType(Type* element) : element_(element) {}
@@ -46,7 +46,7 @@ private:
     Type* element_;
 };
 
-/// TupleType - 元组类型 (T1, T2, ...)
+/// TupleType - tupletypes (T1, T2, ...)
 class TupleType : public Type {
 public:
     explicit TupleType(std::vector<Type*> elements)
@@ -62,7 +62,7 @@ private:
     std::vector<Type*> elements_;
 };
 
-/// StructType - 结构体类型
+/// StructType - structbody/structtypes
 class StructType : public Type {
 public:
     using Field = std::pair<std::string, Type*>;
@@ -83,7 +83,7 @@ private:
     std::vector<Field> fields_;
 };
 
-/// EnumType - 枚举类型
+/// EnumType - enumtypes
 class EnumType : public Type {
 public:
     using Variant = std::pair<std::string, Type*>;

@@ -1,11 +1,41 @@
 //===--- type.h - Type System Base (Refactored) -----------------*- C++ -*-===//
 //
-// PawLang Compiler - Type System Base Classes Only
-// 
-// 具体类型实现已拆分到：
-// - primitive_types.h/cpp - 基础类型
-// - composite_types.h/cpp - 复合类型  
-// - generic_types.h/cpp - 泛型和特殊类型
+// PawLang Compiler - Type System Base Classes
+//
+// This file defines the abstract Type base class and the Kind enumeration
+// for all 28 type kinds in PawLang.
+//
+// Type Hierarchy:
+//   Type (abstract base)
+//   ├── Primitive Types (19 kinds) - primitive_types.h
+//   │   ├── Integers: i8, i16, i32, i64, i128, u8, u16, u32, u64, u128
+//   │   ├── Floats: f8, f16, f32, f64, f128
+//   │   └── Others: bool, char, string, void
+//   ├── Composite Types (5 kinds) - composite_types.h
+//   │   ├── Array: [T; N]
+//   │   ├── Slice: [T]
+//   │   ├── Tuple: (T1, T2, ...)
+//   │   ├── Struct: User-defined structs
+//   │   └── Enum: User-defined enums
+//   └── Special Types (7 kinds) - generic_types.h
+//       ├── Optional: T?
+//       ├── Result: T!
+//       ├── Reference: &T, &~T
+//       ├── Function: fn(T1, T2) -> R
+//       ├── Generic: Type parameters (T, U, V)
+//       ├── Interface: Interface types
+//       └── SelfType: Self keyword
+//
+// Design Principles:
+//   - Zero-cost abstractions: Types compile to efficient machine code
+//   - Compile-time type checking: All type errors caught before runtime
+//   - Type inference: Types deduced from context where possible
+//   - Generics: Monomorphization for zero runtime overhead
+//
+// Memory Management:
+//   - All Type instances owned by TypeSystem
+//   - Never manually delete Type pointers
+//   - Type interning: Identical types share same instance
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,38 +46,57 @@
 
 namespace pawc {
 
-/// Type - 所有类型的基类
+/// Type - Abstract base class for all types in PawLang
 ///
-/// PawLang支持28种类型：
-/// - 基础类型：i8-i128, u8-u128, f8-f128, bool, char, string, void (19种)
-/// - 复合类型：Array, Slice, Tuple, Struct, Enum (5种)
-/// - 特殊类型：Optional(T?), Result(T!), Reference, Function, Generic, Interface, SelfType (7种)
+/// The Type class is the foundation of PawLang's type system, representing
+/// all possible types that values can have.
+///
+/// Type Categories (28 total):
+///   - Primitive types: i8-i128, u8-u128, f8-f128, bool, char, string, void (19)
+///   - Composite types: Array, Slice, Tuple, Struct, Enum (5)
+///   - Special types: Optional, Result, Reference, Function, Generic, Interface, SelfType (7)
+///
+/// Key Operations:
+///   - getKind(): Identifies which concrete type this is
+///   - equals(): Structural type equality
+///   - toString(): Human-readable type representation
+///
+/// Type Checking:
+///   - isPrimitive(), isInteger(), isFloat(): Type category checks
+///   - equals(): Used for type compatibility
+///   - Subtype relationships handled by TypeChecker
+///
+/// Ownership:
+///   - All Type instances owned by TypeSystem (singleton pattern)
+///   - Never manually delete Type*
+///   - Use raw pointers everywhere (managed lifetime)
 class Type {
 public:
+    /// Type kind enumeration - all 28 type kinds
     enum class Kind {
-        // 基础类型 (19种)
-        I8, I16, I32, I64, I128,        // 有符号整数 (5)
-        U8, U16, U32, U64, U128,        // 无符号整数 (5)
-        F8, F16, F32, F64, F128,        // 浮点数 (5)
-        Bool, Char, String, Void,       // 其他 (4)
+        // Primitive types (19 kinds)
+        I8, I16, I32, I64, I128,        ///< Signed integers (5)
+        U8, U16, U32, U64, U128,        ///< Unsigned integers (5)
+        F8, F16, F32, F64, F128,        ///< Floating-point (5)
+        Bool, Char, String, Void,       ///< Other primitives (4)
         
-        // 复合类型 (5种)
-        Array,        // [T; N]
-        Slice,        // [T]
-        Tuple,        // (T1, T2, ...)
-        Struct,       // 用户定义结构体
-        Enum,         // 用户定义枚举
+        // Composite types (5 kinds)
+        Array,        ///< Fixed-size array [T; N]
+        Slice,        ///< Dynamic slice [T]
+        Tuple,        ///< Tuple (T1, T2, ...)
+        Struct,       ///< User-defined struct
+        Enum,         ///< User-defined enum
         
-        // 特殊类型 (4种)
-        Optional,     // T? - 可选值
-        Result,       // T! - 错误处理
-        Reference,    // &T, &~T
-        Function,     // fn(T1, T2) -> T3
+        // Special types (4 kinds)
+        Optional,     ///< Optional value T?
+        Result,       ///< Result type T! (error handling)
+        Reference,    ///< Reference &T or &~T
+        Function,     ///< Function type fn(T1, T2) -> R
         
-        // 泛型和接口 (3种)
-        Generic,      // T (泛型参数)
-        Interface,    // 接口类型
-        SelfType,     // Self
+        // Generic and interface types (3 kinds)
+        Generic,      ///< Generic type parameter (T, U, V)
+        Interface,    ///< Interface type
+        SelfType,     ///< Self keyword (in interface methods)
     };
     
     virtual ~Type() = default;
@@ -56,7 +105,7 @@ public:
     virtual bool equals(const Type* other) const = 0;
     virtual std::string toString() const = 0;
     
-    // 类型判断辅助方法
+    // typedeterminehelpermethod
     bool isPrimitive() const {
         Kind k = getKind();
         return k >= Kind::I8 && k <= Kind::Void;

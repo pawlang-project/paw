@@ -15,17 +15,17 @@ namespace pawc {
 // Forward declaration
 class StmtCodeGen;
 
-/// ExprCodeGen - 表达式代码生成器
+/// ExprCodeGen - expressioncodegenerator
 class ExprCodeGen : public CodeGenBase, public ASTVisitor {
 public:
     explicit ExprCodeGen(CodeGenContext* context);
     
-    /// 设置StmtCodeGen（用于BlockExpr）
+    /// setStmtCodeGen（used forBlockExpr）
     void setStmtCodeGen(StmtCodeGen* stmt_codegen) { stmt_codegen_ = stmt_codegen; }
     
     llvm::Value* generate(ASTNode* node) override;
     
-    // 表达式访问
+    // expressionvisit
     void visit(IntLiteral* node) override;
     void visit(FloatLiteral* node) override;
     void visit(BoolLiteral* node) override;
@@ -51,18 +51,18 @@ public:
     void visit(MatchExpr* node) override;
     void visit(TryExpr* node) override;
     
-    // match表达式辅助方法
+    // matchexpressionhelpermethod
     llvm::Value* generatePatternMatch(class Pattern* pattern, llvm::Value* scrutinee, Type* scrutinee_type);
     void bindPatternVariables(class Pattern* pattern, llvm::Value* value, Type* value_type);
     
-    // Result和Optional模式匹配辅助方法
+    // ResultandOptionalpattern matchinghelpermethod
     llvm::Value* generateResultPatternMatch(class EnumPattern* pattern, llvm::Value* scrutinee, class ResultType* type);
     llvm::Value* generateOptionalPatternMatch(class EnumPattern* pattern, llvm::Value* scrutinee, class OptionalType* type);
     void bindResultPatternVariables(class EnumPattern* pattern, llvm::Value* value, class ResultType* type);
     void bindOptionalPatternVariables(class EnumPattern* pattern, llvm::Value* value, class OptionalType* type);
     void bindStructPatternVariables(class StructPattern* pattern, llvm::Value* value, class StructType* type);
     
-    // 泛型函数CodeGen
+    // genericfunctionCodeGen
     llvm::Value* generateGenericFunctionCall(const std::string& func_name,
                                             const std::vector<Type*>& type_args,
                                             const std::vector<std::unique_ptr<Expr>>& args);
@@ -70,7 +70,7 @@ public:
                                                     const std::vector<Type*>& type_args,
                                                     GenericTemplate* tmpl);
     
-    // 语句访问（未使用）
+    // statementvisit（not yetuse）
     void visit(ExprStmt*) override {}
     void visit(VarDecl*) override {}
     void visit(DestructuringDecl*) override {}
@@ -89,7 +89,7 @@ public:
     void visit(InterfaceDecl*) override {}
     void visit(SupportDecl*) override {}
     
-    // Pattern访问（不应该在表达式代码生成中使用）
+    // Patternvisit（notshouldin/atexpressioncode generationmiddle/centeruse）
     void visit(LiteralPattern*) override {}
     void visit(WildcardPattern*) override {}
     void visit(VariablePattern*) override {}
@@ -101,14 +101,14 @@ public:
     void visit(RangePattern*) override {}
     void visit(OrPattern*) override {}
     
-    // 🔧 获取上次表达式的结果（供StmtCodeGen使用）
-    llvm::Value* getResult() const { return result_; }
+    // 🔧 getup/abovepower/timesexpressionof/theresults（for/provideStmtCodeGenuse）
+    llvm::Value* getResult() const { return results_; }
     
 private:
-    llvm::Value* result_;
+    llvm::Value* results_;
     StmtCodeGen* stmt_codegen_ = nullptr;
     
-    // 辅助方法
+    // helpermethod
     llvm::Value* generateBinaryOp(TokenType op, llvm::Value* left,
                                   llvm::Value* right, Type* type);
     llvm::Value* generateUnaryOp(TokenType op, llvm::Value* operand, Type* type);

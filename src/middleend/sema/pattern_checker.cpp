@@ -1,4 +1,6 @@
 //===--- pattern_checker.cpp - Pattern Checker Implementation ---*- C++ -*-===//
+/// @file pattern_checker.cpp
+/// @brief Type system and semantic analysis implementation
 
 #include "pattern_checker.h"
 #include "frontend/parser/ast/pattern.h"
@@ -13,15 +15,15 @@ PatternChecker::PatternChecker(SemanticContext* context)
     : context_(context) {}
 
 bool PatternChecker::checkExhaustiveness(MatchExpr* match_expr) {
-    // 获取被匹配的表达式类型
+    // getby/passive markermatchof/theexpressiontypes
     Expr* scrutinee = match_expr->getScrutinee();
     if (!scrutinee || !scrutinee->getType()) {
-        return true; // 类型未知，跳过检查
+        return true; // typenot yetknown，skipcheck
     }
     
     Type* scrutinee_type = scrutinee->getType();
     
-    // 收集所有模式
+    // collectAllpattern
     std::vector<Pattern*> patterns;
     for (const auto& arm : match_expr->getArms()) {
         patterns.push_back(arm.pattern.get());
@@ -31,34 +33,34 @@ bool PatternChecker::checkExhaustiveness(MatchExpr* match_expr) {
 }
 
 bool PatternChecker::isExhaustive(const std::vector<Pattern*>& patterns, Type* type) {
-    // 检查是否有通配符模式
+    // Checkyesnohaswildcardpattern
     for (Pattern* pattern : patterns) {
         if (auto* wildcard = dynamic_cast<WildcardPattern*>(pattern)) {
-            return true; // 通配符覆盖所有情况
+            return true; // wildcardoverride/coverAllcase/situation
         }
         if (auto* var = dynamic_cast<VariablePattern*>(pattern)) {
-            // 纯变量模式也覆盖所有情况（如 x => ...）
+            // purevariablepatternalsooverride/coverAllcase/situation（like/such as x => ...）
             return true;
         }
     }
     
-    // 对于枚举类型，检查是否覆盖所有变体
+    // right/correctat/inenumtypes，checkyesnooverride/coverAllvariablebody/struct
     if (type->isEnum()) {
         EnumType* enum_type = static_cast<EnumType*>(type);
         return checkEnumExhaustiveness(patterns, enum_type);
     }
     
-    // 对于布尔类型，检查 true 和 false
+    // right/correctat/inbooleantypes，check true and false
     if (type->isBool()) {
         return checkBoolExhaustiveness(patterns);
     }
     
-    // 对于Optional类型，检查 some 和 none
+    // right/correctat/inOptionaltypes，check some and none
     if (type->isOptional()) {
         return checkOptionalExhaustiveness(patterns);
     }
     
-    // 其他类型：如果没有通配符，报警告（但不视为错误）
+    // Other typestypes：ifnohaswildcard，reportwarning（butnottreat/viewis/aserror）
     std::cerr << "[PatternChecker] Warning: Match may not be exhaustive for type: " 
               << type->toString() << std::endl;
     return true;
@@ -69,14 +71,14 @@ bool PatternChecker::checkEnumExhaustiveness(const std::vector<Pattern*>& patter
     const auto& variants = enum_type->getVariants();
     std::unordered_set<std::string> covered_variants;
     
-    // 收集已覆盖的变体
+    // collectalreadyoverride/coverof/thevariablebody/struct
     for (Pattern* pattern : patterns) {
         if (auto* enum_pattern = dynamic_cast<EnumPattern*>(pattern)) {
             covered_variants.insert(enum_pattern->getVariantName());
         }
     }
     
-    // 检查是否所有变体都被覆盖
+    // CheckyesnoAllvariablebody/structallby/passive markeroverride/cover
     bool exhaustive = true;
     for (const auto& variant : variants) {
         if (covered_variants.find(variant.first) == covered_variants.end()) {
@@ -95,9 +97,9 @@ bool PatternChecker::checkBoolExhaustiveness(const std::vector<Pattern*>& patter
     
     for (Pattern* pattern : patterns) {
         if (auto* lit = dynamic_cast<LiteralPattern*>(pattern)) {
-            // 简化：检查是否有字面量模式覆盖
-            // 详细实现需要访问literal的值
-            // TODO: 实现完整的字面量检查
+            // simplify：checkyesnohasliteralpatternoverride/cover
+            // detailedimplementationneedvisitliteralof/thevalue
+            // TODO: implementationcompleteof/theliteralcheck
             has_true = true;
             has_false = true;
         }
@@ -105,7 +107,7 @@ bool PatternChecker::checkBoolExhaustiveness(const std::vector<Pattern*>& patter
     
     if (!has_true || !has_false) {
         std::cerr << "[PatternChecker] Warning: Match may not be exhaustive for bool type" << std::endl;
-        return true; // 警告但不阻止编译
+        return true; // warningbutnotblock compilation
     }
     
     return true;
@@ -135,8 +137,8 @@ bool PatternChecker::checkOptionalExhaustiveness(const std::vector<Pattern*>& pa
 }
 
 bool PatternChecker::checkPatternType(Pattern* pattern, Type* expected_type) {
-    // 具体实现从TypeChecker中提取
-    // TODO: 检查模式类型
+    // concreteimplementationfromTypeCheckermiddle/centerextract
+    // TODO: checkpatterntypes
     return true;
 }
 
@@ -144,8 +146,8 @@ void PatternChecker::collectPatternVariables(
     Pattern* pattern, 
     std::vector<std::pair<std::string, Type*>>& variables) {
     
-    // 具体实现从TypeChecker中提取
-    // TODO: 收集模式变量
+    // concreteimplementationfromTypeCheckermiddle/centerextract
+    // TODO: collectpatternvariable
 }
 
 } // namespace pawc

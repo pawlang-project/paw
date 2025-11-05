@@ -1,7 +1,9 @@
-//===--- result_codegen.cpp - Result Type CodeGen ---------------*- C++ -*-===//
+//===--- results_codegen.cpp - Result Type CodeGen ---------------*- C++ -*-===//
+/// @file results_codegen.cpp
+/// @brief Code generation implementation
 //
-// Result类型映射和代码生成
-// 从type_codegen.cpp中提取
+// Resulttypesmapandcode generation
+// fromtype_codegen.cppmiddle/centerextract
 //
 //===----------------------------------------------------------------------===//
 
@@ -10,8 +12,8 @@
 
 namespace pawc {
 
-// Result类型映射逻辑保留在type_codegen.cpp中
-// 框架文件，待未来详细实现
+// Resulttypesmaplogickeep/reservein/attype_codegen.cppmiddle/center
+// frameworkfile，to benot yetfuturedetailedimplementation
 
 } // namespace pawc
 

@@ -1,7 +1,9 @@
 //===--- function_codegen.cpp - Function Declaration CodeGen ----*- C++ -*-===//
+/// @file function_codegen.cpp
+/// @brief Code generation implementation
 //
-// 函数声明代码生成：FunctionDecl
-// 从stmt_codegen.cpp中提取
+// functiondeclarationcode generation：FunctionDecl
+// fromstmt_codegen.cppmiddle/centerextract
 //
 //===----------------------------------------------------------------------===//
 
@@ -14,9 +16,9 @@
 namespace pawc {
 
 void StmtCodeGen::visit(FunctionDecl* node) {
-    // 函数声明代码生成逻辑保留在stmt_codegen.cpp中
-    // 由于涉及复杂的scope和context管理，暂时不拆分
-    result_ = nullptr;
+    // functiondeclarationcode generationlogickeep/reservein/atstmt_codegen.cppmiddle/center
+    // due toinvolve complexityof/thescopeandcontextmanage，temporarilytime/whennotsplit
+    results_ = nullptr;
 }
 
 } // namespace pawc

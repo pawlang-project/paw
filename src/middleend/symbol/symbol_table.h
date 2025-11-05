@@ -18,7 +18,7 @@ namespace pawc {
 
 class TypeSystem;
 
-/// Symbol - 符号基类
+/// Symbol - symbolbaseclass
 class Symbol {
 public:
     enum class Kind {
@@ -41,7 +41,7 @@ private:
     std::string name_;
 };
 
-/// VariableSymbol - 变量符号
+/// VariableSymbol - variablesymbol
 class VariableSymbol : public Symbol {
 public:
     VariableSymbol(const std::string& name, Type* type, bool is_mutable)
@@ -55,7 +55,7 @@ private:
     bool is_mutable_;
 };
 
-/// FunctionSymbol - 函数符号
+/// FunctionSymbol - functionsymbol
 class FunctionSymbol : public Symbol {
 public:
     FunctionSymbol(const std::string& name, FunctionType* type, bool is_builtin = false)
@@ -77,7 +77,7 @@ private:
     bool is_builtin_;
 };
 
-/// TypeSymbol - 类型符号
+/// TypeSymbol - typessymbol
 class TypeSymbol : public Symbol {
 public:
     TypeSymbol(const std::string& name, Type* type)
@@ -89,7 +89,7 @@ private:
     Type* type_;
 };
 
-/// Scope - 作用域
+/// Scope - scope
 class Scope {
 public:
     explicit Scope(Scope* parent = nullptr) : parent_(parent) {}
@@ -116,31 +116,31 @@ private:
     std::unordered_map<std::string, Symbol*> symbols_;
 };
 
-/// SymbolTable - 符号表
+/// SymbolTable - symboltable
 class SymbolTable {
 public:
     explicit SymbolTable(TypeSystem* type_system);
     ~SymbolTable() = default;
     
-    // 作用域管理
+    // scopemanage
     void enterScope();
     void exitScope();
     Scope* getCurrentScope() { return current_scope_; }
     
-    // 符号定义
+    // symboldefinition
     void defineVariable(const std::string& name, Type* type, bool is_mutable);
     void defineFunction(const std::string& name, FunctionType* type, bool is_builtin = false);
     void defineType(const std::string& name, Type* type);
     
-    // 符号查找
+    // symbollookup
     Symbol* lookup(const std::string& name);
     VariableSymbol* lookupVariable(const std::string& name);
     FunctionSymbol* lookupFunction(const std::string& name);
     
-    // 重载函数查找
+    // overloadfunctionlookup
     FunctionSymbol* lookupFunction(const std::string& name, const std::vector<Type*>& arg_types);
     
-    // Builtin初始化
+    // Builtininitialize
     void initializeBuiltins();
     
 private:
@@ -150,7 +150,7 @@ private:
     std::vector<std::unique_ptr<Scope>> scopes_;
     std::vector<std::unique_ptr<Symbol>> symbols_;
     
-    // 重载函数表：name -> vector of FunctionSymbol*
+    // overloadfunctiontable：name -> vector of FunctionSymbol*
     std::unordered_map<std::string, std::vector<FunctionSymbol*>> overloaded_functions_;
 };
 

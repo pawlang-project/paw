@@ -1,4 +1,7 @@
 //===--- diagnostic.h - Diagnostic Messages ----------------------*- C++ -*-===//
+/// @file diagnostic.h
+/// @brief Compiler infrastructure
+///
 
 #ifndef PAW_DIAGNOSTIC_H
 #define PAW_DIAGNOSTIC_H

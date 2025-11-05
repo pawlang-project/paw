@@ -12,35 +12,35 @@
 
 namespace pawc {
 
-/// CompilerOptions - 编译选项
+/// CompilerOptions - compile/compilationoption
 struct CompilerOptions {
-    // 输入/输出
+    // input/output
     std::string input_file;
     std::string output_file = "a.out";
     
-    // 优化级别 (0-3)
+    // optimizationlevel (0-3)
     int opt_level = 0;
     
-    // 编译模式
-    bool compile_only = false;      // -c: 仅编译到对象文件
-    bool emit_llvm_ir = false;      // -S: 输出LLVM IR
-    bool emit_llvm_file = false;    // -emit-llvm: 输出.ll文件
-    bool emit_ast = false;          // -ast-dump: 输出AST
+    // compile/compilationpattern
+    bool compile_only = false;      // -c: compile only to object fileoobjectfile
+    bool emit_llvm_ir = false;      // -S: outputLLVM IR
+    bool emit_llvm_file = false;    // -emit-llvm: output.llfile
+    bool emit_ast = false;          // -ast-dump: outputAST
     
-    // 调试选项
-    bool verbose = false;           // -v: 详细输出
-    bool debug_info = false;        // -g: 生成调试信息
+    // debugoption
+    bool verbose = false;           // -v: detailedoutput
+    bool debug_info = false;        // -g: generatedebuginfo
     
-    // 库和路径
+    // libraryandpath
     std::vector<std::string> library_paths;  // -L
     std::vector<std::string> libraries;      // -l
     std::vector<std::string> include_paths;  // -I
     
-    // 警告和错误
+    // warninganderror
     bool warnings_as_errors = false;  // -Werror
     bool no_warnings = false;         // -w
     
-    // 目标平台
+    // Target platform
     std::string target_triple;  // -target
 };
 

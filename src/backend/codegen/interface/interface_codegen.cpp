@@ -1,4 +1,6 @@
 //===--- interface_codegen.cpp - Interface CodeGen Implementation -*- C++ -*-===//
+/// @file interface_codegen.cpp
+/// @brief Implementation file
 
 #include "interface_codegen.h"
 #include "backend/codegen/codegen_context.h"
@@ -19,13 +21,13 @@ llvm::Value* InterfaceCodeGen::generateInterfaceMethodCall(
     llvm::Value* receiver,
     const std::vector<llvm::Value*>& args) {
     
-    // 当前实现：静态分发
-    // 未来可以扩展支持vtable动态分发
+    // currentimplementation：staticfractionaldispatch
+    // not yetfuturemayextendsupportvtabledynamicfractionaldispatch
     
-    // 获取receiver的实际类型（通过Sema阶段的类型推断）
-    // 注意：当前实现使用静态分发（编译时确定）
-    // receiver的类型信息已在Sema阶段解析并附加到AST节点
-    Type* impl_type = nullptr;  // 从Sema获取（已在TypeChecker中验证）
+    // getreceiverof/theactualtypes（through/viaSemastageof/thetypesinference）
+    // Note：currentimplementationusestaticfractionaldispatch（compile timecertain/sure）
+    // receiverof/thetypesinfoalreadyin/atSemastageparseand attachaddtoASTnode
+    Type* impl_type = nullptr;  // fromSemaget（alreadyin/atTypeCheckermiddle/centervalidate）
     
     return generateStaticDispatch(impl_type, method_name, receiver, args);
 }
@@ -36,20 +38,20 @@ llvm::Value* InterfaceCodeGen::generateStaticDispatch(
     llvm::Value* receiver,
     const std::vector<llvm::Value*>& args) {
     
-    // 查找实现的方法
+    // lookupimplementationof/themethod
     llvm::Function* impl_func = findImplementationMethod(impl_type, method_name);
     
     if (!impl_func) {
-        // 错误：找不到方法实现
+        // error：findnottomethodimplementation
         return nullptr;
     }
     
-    // 构建参数列表（包括self）
+    // build/constructparameterlist（packageincludingself）
     std::vector<llvm::Value*> call_args;
     call_args.push_back(receiver);
     call_args.insert(call_args.end(), args.begin(), args.end());
     
-    // 生成调用
+    // generationcall
     return context_->getBuilder().CreateCall(impl_func, call_args);
 }
 
@@ -57,25 +59,25 @@ bool InterfaceCodeGen::verifyInterfaceImplementation(
     Type* impl_type, 
     InterfaceType* interface_type) {
     
-    // 接口实现验证已在Sema阶段完成（InterfaceValidator）
-    // 优点：
-    //   1. 早期错误检测（编译时而非链接时）
-    //   2. 分离关注点（类型检查 vs 代码生成）
-    //   3. 更清晰的错误消息
+    // interface implementationvalidatealreadydone at Sema stage（InterfaceValidator）
+    // Advantage：
+    //   1. earlyearlyerrordetect（compile timewhilenotlinktime/when）
+    //   2. separation of concerns（typescheck vs code generation）
+    //   3. moreclearof/theerrormessage
     // 
-    // CodeGen阶段可以安全假设所有接口都已正确实现
-    return true;  // Sema已验证，此处无需重复检查
+    // CodeGenstagemaysafeassumptionAllinterfaceallalreadycorrectimplementation
+    return true;  // Semaalreadyvalidate，herenoneedduplicatecheck
 }
 
 llvm::Function* InterfaceCodeGen::findImplementationMethod(
     Type* impl_type,
     const std::string& method_name) {
     
-    // 构建方法的完整名称
-    // 例如: Point_show (类型名_方法名)
+    // build/constructmethodof/thecompletename
+    // e.g./for example: Point_show (typename_methodname)
     std::string full_name = impl_type->toString() + "_" + method_name;
     
-    // 从Module中查找函数
+    // fromModulemiddle/centerlookupfunction
     llvm::Module* module = context_->getModule();
     return module->getFunction(full_name);
 }

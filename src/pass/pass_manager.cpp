@@ -1,4 +1,6 @@
 //===--- pass_manager.cpp - Pass Manager Implementation ---------*- C++ -*-===//
+/// @file pass_manager.cpp
+/// @brief Implementation file
 
 #include "pass_manager.h"
 #include <iostream>

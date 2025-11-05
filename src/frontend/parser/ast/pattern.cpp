@@ -1,4 +1,6 @@
 //===--- pattern.cpp - Pattern AST Implementation ---------------*- C++ -*-===//
+/// @file pattern.cpp
+/// @brief AST node implementation
 
 #include "pattern.h"
 #include "frontend/parser/visitor.h"
@@ -6,7 +8,7 @@
 namespace pawc {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 模式Visitor接受方法
+// Pattern visitor accept method
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void LiteralPattern::accept(ASTVisitor* visitor) { visitor->visit(this); }

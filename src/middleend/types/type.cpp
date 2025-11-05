@@ -1,4 +1,6 @@
 //===--- type.cpp - Type System Base Implementation -------------*- C++ -*-===//
+/// @file type.cpp
+/// @brief Type system and semantic analysis implementation
 
 #include "type.h"
 #include "primitive_types.h"
@@ -7,6 +9,6 @@
 
 namespace pawc {
 
-// Type基类不需要实现，所有逻辑已移至子类
+// Typebaseclassnotneedimplementation，Alllogicmoved tosubclass
 
 } // namespace pawc

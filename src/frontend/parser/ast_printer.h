@@ -16,18 +16,18 @@
 
 namespace pawc {
 
-/// ASTPrinter - AST结构打印器（调试工具）
+/// ASTPrinter - AST structure printer (debug utility)
 ///
-/// 用于-ast-dump选项，以可读格式输出AST结构
+/// Used for -ast-dump option, outputs AST structure in readable format
 class ASTPrinter : public ASTVisitor {
 public:
     explicit ASTPrinter(std::ostream& os) : os_(os), indent_(0) {}
     
-    /// 打印AST节点
+    /// printASTnode
     void print(ASTNode* node);
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 表达式访问
+    // expressionvisit
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     void visit(IntLiteral* node) override;
@@ -56,7 +56,7 @@ public:
     void visit(TryExpr* node) override;
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 语句访问
+    // statementvisit
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     
     void visit(ExprStmt* node) override;
@@ -77,7 +77,7 @@ public:
     void visit(InterfaceDecl* node) override;
     void visit(SupportDecl* node) override;
     
-    // Pattern访问
+    // Patternvisit
     void visit(LiteralPattern* node) override;
     void visit(WildcardPattern* node) override;
     void visit(VariablePattern* node) override;
@@ -93,16 +93,16 @@ private:
     std::ostream& os_;
     int indent_;
     
-    /// 打印缩进
+    /// Print indentation
     void printIndent();
     
-    /// 打印带缩进的行
+    /// Print line with indentation
     void printLine(const std::string& text);
     
-    /// 获取类型字符串
+    /// Get type string
     std::string getTypeString(Type* type);
     
-    /// 获取操作符字符串
+    /// Get operator string
     std::string getOpString(TokenType op);
 };
 
