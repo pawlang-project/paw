@@ -126,9 +126,12 @@ std::vector<std::string> Linker::buildLinkCommand(
     // Specify machine type (X64 for x86_64)
     args.push_back("/MACHINE:X64");
     
-    // Use /ENTRY:main to directly use our main function
-    // This avoids needing mainCRTStartup and C runtime initialization
-    args.push_back("/ENTRY:main");
+    // Use console subsystem (for console applications)
+    args.push_back("/SUBSYSTEM:CONSOLE");
+    
+    // Use standard mainCRTStartup entry point (calls main after C runtime init)
+    // This is the standard approach when using Windows SDK and UCRT
+    args.push_back("/ENTRY:mainCRTStartup");
     
     // Object files
     for (const auto& obj : object_files) {
@@ -152,145 +155,77 @@ std::vector<std::string> Linker::buildLinkCommand(
         args.push_back(lib + ".lib");
     }
     
-    // Windows: Try to link MinGW libraries if available (for atexit, etc.)
-    // Try to find MinGW libraries in common locations
-    std::vector<std::string> mingw_lib_paths = {
-        "C:/msys64/mingw64/lib",
-        "C:/mingw64/lib",
-        "C:/msys64/ucrt64/lib"
-    };
-    
-    std::string found_mingw_path;
-    for (const auto& path : mingw_lib_paths) {
-        if (std::filesystem::exists(path)) {
-            found_mingw_path = path;
-            args.push_back("/LIBPATH:" + path);
-            break;
-        }
-    }
-    
-    // Link MinGW libraries for runtime support
-    // Note: Since we use /ENTRY:main and provide our own __main,
-    // we don't need libmingw32 (which requires C runtime initialization)
-    // But we need libgcc, libmingwex, and libmsvcrt for runtime functions
-    // IMPORTANT: Link order matters! libgcc must come before libstdc++
-    if (!found_mingw_path.empty()) {
-        // 1. Link libmingw32 FIRST - provides low-level functions like ___chkstk_ms
-        // This must come before other libraries that depend on it
-        std::filesystem::path libmingw32 = std::filesystem::path(found_mingw_path) / "libmingw32.a";
-        if (std::filesystem::exists(libmingw32)) {
-            args.push_back(libmingw32.string());
-        }
-        
-        // 2. Link libgcc - provides exception handling (_Unwind_* symbols)
-        // libstdc++ depends on libgcc, so it must be linked before libstdc++
-        // Try different possible names for libgcc
-        std::vector<std::string> libgcc_names = {
-            "libgcc.a",
-            "libgcc_s.a",
-            "libgcc_s_seh-1.dll.a",  // SEH version (for 64-bit)
-            "libgcc_s_dw2-1.dll.a"   // DWARF version (for 32-bit)
-        };
-        bool libgcc_found = false;
-        for (const auto& name : libgcc_names) {
-            std::filesystem::path libgcc = std::filesystem::path(found_mingw_path) / name;
-            if (std::filesystem::exists(libgcc)) {
-                args.push_back(libgcc.string());
-                libgcc_found = true;
-                break;
-            }
-        }
-        // If not found as .a, try to use /DEFAULTLIB to link libgcc
-        if (!libgcc_found) {
-            args.push_back("/DEFAULTLIB:libgcc");
-        }
-        
-        // 3. Link pthread library (for mutex support in C++ standard library)
-        std::filesystem::path libpthread = std::filesystem::path(found_mingw_path) / "libpthread.a";
-        if (std::filesystem::exists(libpthread)) {
-            args.push_back(libpthread.string());
-        }
-        
-        // 4. Link C++ standard library (libstdc++) - depends on libgcc
-        std::filesystem::path libstdcxx = std::filesystem::path(found_mingw_path) / "libstdc++.a";
-        if (std::filesystem::exists(libstdcxx)) {
-            args.push_back(libstdcxx.string());
-        }
-        
-        // 4.5. Link libgcc again after libstdc++ to resolve any remaining symbols
-        // Some symbols may only be needed after libstdc++ is linked
-        if (libgcc_found) {
-            // Link libgcc again - use the same name we found earlier
-            for (const auto& name : libgcc_names) {
-                std::filesystem::path libgcc = std::filesystem::path(found_mingw_path) / name;
-                if (std::filesystem::exists(libgcc)) {
-                    args.push_back(libgcc.string());
-                    break;
-                }
-            }
-        }
-        
-        // 5. Link libmingwex for MinGW-specific functions (__mingw_printf, etc.)
-        std::filesystem::path libmingwex = std::filesystem::path(found_mingw_path) / "libmingwex.a";
-        if (std::filesystem::exists(libmingwex)) {
-            args.push_back(libmingwex.string());
-        }
-        
-        // 6. Link libmsvcrt.a (MinGW's C runtime wrapper)
-        std::filesystem::path libmsvcrt = std::filesystem::path(found_mingw_path) / "libmsvcrt.a";
-        if (std::filesystem::exists(libmsvcrt)) {
-            args.push_back(libmsvcrt.string());
-        }
-        
-    }
-    
     // Link Windows system libraries using Windows SDK
     // lld-link can automatically detect Windows SDK, but we'll also try to find it manually
     // Windows SDK provides kernel32.lib and other system libraries
     
     // Try to find Windows SDK in common locations
+    // Use a more targeted approach to avoid slow directory scanning
+    std::vector<std::string> common_sdk_versions = {
+        "10.0.26100.0",  // Latest Windows 11
+        "10.0.22621.0",  // Windows 11 22H2
+        "10.0.22000.0",  // Windows 11 21H2
+        "10.0.20348.0",  // Windows Server 2022
+        "10.0.19041.0",  // Windows 10 2004
+        "10.0.18362.0",  // Windows 10 1903
+        "10.0.17763.0",  // Windows 10 1809
+    };
+    
     std::vector<std::string> windows_sdk_paths = {
         "C:/Program Files (x86)/Windows Kits/10/Lib",
         "C:/Program Files/Windows Kits/10/Lib"
     };
     
     std::string found_windows_sdk_path;
-    // Look for the latest version in the Windows SDK directory
+    std::string found_sdk_version;
+    
+    // Try common SDK versions first (faster than scanning)
     for (const auto& base_path : windows_sdk_paths) {
-        if (std::filesystem::exists(base_path)) {
-            // Try to find the latest version (e.g., 10.0.22621.0)
-            std::vector<std::string> versions;
-            try {
-                for (const auto& entry : std::filesystem::directory_iterator(base_path)) {
-                    if (entry.is_directory()) {
-                        std::string version = entry.path().filename().string();
-                        // Check if it looks like a version number (e.g., 10.0.xxxxx.x)
-                        if (version.find("10.0") == 0) {
-                            versions.push_back(version);
-                        }
+        try {
+            if (!std::filesystem::exists(base_path)) continue;
+            
+            for (const auto& version : common_sdk_versions) {
+                std::string um_path = base_path + "/" + version + "/um/x64";
+                std::string ucrt_path = base_path + "/" + version + "/ucrt/x64";
+                
+                if (std::filesystem::exists(um_path)) {
+                    found_windows_sdk_path = um_path;
+                    found_sdk_version = version;
+                    
+                    // Add UM (User Mode) library path
+                    if (um_path.find(' ') != std::string::npos) {
+                        args.push_back("/LIBPATH:\"" + um_path + "\"");
+                    } else {
+                        args.push_back("/LIBPATH:" + um_path);
                     }
-                }
-                // Sort versions in descending order to get the latest
-                std::sort(versions.rbegin(), versions.rend());
-                if (!versions.empty()) {
-                    std::string latest_version = versions[0];
-                    std::string um_path = base_path + "/" + latest_version + "/um/x64";
-                    if (std::filesystem::exists(um_path)) {
-                        found_windows_sdk_path = um_path;
-                        // Quote the path if it contains spaces
-                        if (found_windows_sdk_path.find(' ') != std::string::npos) {
-                            args.push_back("/LIBPATH:\"" + found_windows_sdk_path + "\"");
+                    
+                    // Add UCRT (Universal C Runtime) library path if exists
+                    if (std::filesystem::exists(ucrt_path)) {
+                        if (ucrt_path.find(' ') != std::string::npos) {
+                            args.push_back("/LIBPATH:\"" + ucrt_path + "\"");
                         } else {
-                            args.push_back("/LIBPATH:" + found_windows_sdk_path);
+                            args.push_back("/LIBPATH:" + ucrt_path);
                         }
-                        break;
                     }
+                    
+                    if (verbose_) {
+                        std::cout << "   Found Windows SDK: " << version << "\n";
+                        std::cout << "   UM path: " << um_path << "\n";
+                        if (std::filesystem::exists(ucrt_path)) {
+                            std::cout << "   UCRT path: " << ucrt_path << "\n";
+                        }
+                    }
+                    goto sdk_found;  // Break out of nested loops
                 }
-            } catch (...) {
-                // Ignore errors when scanning directories
+            }
+        } catch (const std::exception& e) {
+            // Ignore filesystem errors and try next path
+            if (verbose_) {
+                std::cout << "   Warning: Could not access Windows SDK at " << base_path << ": " << e.what() << "\n";
             }
         }
     }
+    sdk_found:
     
     // Also check LIB environment variable (set by Visual Studio or Windows SDK)
     const char* lib_env = std::getenv("LIB");
@@ -322,15 +257,22 @@ std::vector<std::string> Linker::buildLinkCommand(
         }
     }
     
-    // Now we can safely link kernel32 and other Windows system libraries
-    // lld-link will find them in the Windows SDK paths we added
-    args.push_back("/DEFAULTLIB:kernel32");
+    // Link essential Windows system libraries
+    // These are found in the Windows SDK paths we added above
+    args.push_back("/DEFAULTLIB:kernel32");  // Core Windows API
+    args.push_back("/DEFAULTLIB:user32");    // User interface functions
+    args.push_back("/DEFAULTLIB:shell32");   // Shell API
     
-    // Allow multiple definitions for C++ runtime symbols
-    // This is needed because libstdc++ may define symbols that are also referenced
-    // in other libraries. The linker will use the first definition found.
-    // Note: This is safe for C++ runtime symbols like __cxa_pure_virtual
-    args.push_back("/FORCE:MULTIPLE");
+    // Link Universal C Runtime (UCRT)
+    // This provides standard C library functions (printf, malloc, etc.)
+    args.push_back("/DEFAULTLIB:ucrt");      // Universal C Runtime
+    args.push_back("/DEFAULTLIB:libcmt");    // C runtime library (static)
+    
+    // Suppress warnings about missing PDB files
+    args.push_back("/IGNORE:4099");
+    
+    // Disable incremental linking for simpler output
+    args.push_back("/INCREMENTAL:NO");
 #else
     // Unix-like systems (macOS, Linux)
     // Output file
@@ -379,13 +321,33 @@ bool Linker::invokeSystemLinker(const std::vector<std::string>& args) {
     std::stringstream cmd;
     for (size_t i = 0; i < args.size(); ++i) {
         if (i > 0) cmd << " ";
-        cmd << args[i];
+        // Quote arguments with spaces
+        std::string arg = args[i];
+        if (arg.find(' ') != std::string::npos && 
+            arg.find('"') == std::string::npos &&
+            !arg.empty() && arg[0] != '"') {
+            cmd << "\"" << arg << "\"";
+        } else {
+            cmd << arg;
+        }
     }
     
     std::string command = cmd.str();
     
     if (verbose_) {
-        std::cout << "   Linking command: " << command << "\n";
+        std::cout << "   Linking command length: " << command.length() << " characters\n";
+        std::cout << "   Linker: " << args[0] << "\n";
+        std::cout << "   Arguments count: " << (args.size() - 1) << "\n";
+        
+        // Print full command for debugging (truncate if too long)
+        if (command.length() > 1000) {
+            std::cout << "   Command (first 1000 chars): " 
+                      << command.substr(0, 1000) << "...\n";
+        } else {
+            std::cout << "   Full command: " << command << "\n";
+        }
+        std::cout << "   Executing linker...\n";
+        std::cout.flush();  // Ensure output is displayed immediately
     }
     
     // executelinkcommand
@@ -394,13 +356,14 @@ bool Linker::invokeSystemLinker(const std::vector<std::string>& args) {
     if (results != 0) {
         error_ = "Linker failed with exit code: " + std::to_string(results);
         if (verbose_) {
-            std::cerr << "   Link command: " << command << "\n";
+            std::cerr << "   ❌ Linking failed!\n";
+            std::cerr << "   Exit code: " << results << "\n";
         }
         return false;
     }
     
     if (verbose_) {
-        std::cout << "   Linking successful\n";
+        std::cout << "   ✅ Linking successful\n";
     }
     
     return true;
