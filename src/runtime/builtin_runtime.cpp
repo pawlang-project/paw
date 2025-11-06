@@ -6,8 +6,84 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
+#include <mutex>
 
 extern "C" {
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// atexit implementation
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Maximum number of atexit handlers (C standard requires at least 32)
+#define ATEXIT_MAX_HANDLERS 128
+
+// Static storage for atexit handlers
+static std::vector<void (*)(void)> atexit_handlers;
+static std::mutex atexit_mutex;
+static bool atexit_initialized = false;
+
+// Initialize atexit system
+static void init_atexit() {
+    if (!atexit_initialized) {
+        atexit_handlers.reserve(ATEXIT_MAX_HANDLERS);
+        atexit_initialized = true;
+    }
+}
+
+// Register a function to be called on program exit
+// Functions are called in reverse order of registration (LIFO)
+// Note: This is only used when linking user programs with /ENTRY:main
+// When compiling the compiler itself, MinGW's C runtime provides atexit
+#ifdef __GNUC__
+__attribute__((weak))
+#endif
+int atexit(void (*func)(void)) {
+    if (!func) {
+        return 1;  // Invalid function pointer
+    }
+    
+    std::lock_guard<std::mutex> lock(atexit_mutex);
+    init_atexit();
+    
+    if (atexit_handlers.size() >= ATEXIT_MAX_HANDLERS) {
+        return 1;  // Too many handlers
+    }
+    
+    atexit_handlers.push_back(func);
+    return 0;  // Success
+}
+
+// Call all registered atexit handlers (in reverse order)
+// This should be called before main returns
+void paw_call_atexit_handlers() {
+    std::lock_guard<std::mutex> lock(atexit_mutex);
+    
+    // Call handlers in reverse order (LIFO)
+    for (auto it = atexit_handlers.rbegin(); it != atexit_handlers.rend(); ++it) {
+        if (*it) {
+            (*it)();
+        }
+    }
+    
+    // Clear handlers after calling
+    atexit_handlers.clear();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Windows/MinGW low-level function stubs
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#ifdef _WIN32
+// ___chkstk_ms - Stack checking function used by MinGW
+// This is called by functions that allocate large stack frames
+// We provide a minimal implementation that does nothing
+// (stack checking is not critical for basic functionality)
+extern "C" void ___chkstk_ms(void) {
+    // Minimal stub - do nothing
+    // In a full implementation, this would check stack overflow
+}
+#endif
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Memory Management

@@ -64,13 +64,22 @@ public:
         
         module->setDataLayout(target_machine->createDataLayout());
         
-        // generationobjectfile（useTemporaryfile）
-        std::string output_file = "/tmp/paw_output.o";
+        // Generate object file path based on output file
+        std::string output_file = context->getOutputFile();
+        // Replace extension with .o, or append .o if no extension
+        size_t last_dot = output_file.find_last_of('.');
+        size_t last_slash = output_file.find_last_of("/\\");
+        if (last_dot != std::string::npos && (last_slash == std::string::npos || last_dot > last_slash)) {
+            output_file = output_file.substr(0, last_dot) + ".o";
+        } else {
+            output_file = output_file + ".o";
+        }
+        
         std::error_code ec;
         llvm::raw_fd_ostream dest(output_file, ec, llvm::sys::fs::OF_None);
         
         if (ec) {
-            return PassResult{false, "Failed to open output file: " + ec.message()};
+            return PassResult{false, "Failed to open output file: " + output_file + " - " + ec.message()};
         }
         
         // Configure pass to generate object file

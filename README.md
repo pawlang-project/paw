@@ -3,7 +3,7 @@
 **现代、类型安全、高性能的系统编程语言**
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Version](https://img.shields.io/badge/version-1.4.0-blue)]()
+[![Version](https://img.shields.io/badge/version-0.2.2-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 [![Progress](https://img.shields.io/badge/progress-100%25-success)]()
 

@@ -646,10 +646,10 @@ double f128_to_double_correct(f128_t v) {
 f128_t double_to_f128_correct(double d) {
     // Special values
     if (d == 0.0) {
-        return {0, signbit(d) ? (1ULL << 63) : 0};
+        return {0, std::signbit(d) ? (1ULL << 63) : 0};
     }
     if (std::isinf(d)) {
-        uint64_t sign = signbit(d) ? (1ULL << 63) : 0;
+        uint64_t sign = std::signbit(d) ? (1ULL << 63) : 0;
         return {0, sign | (0x7FFFULL << 48)};
     }
     if (std::isnan(d)) {

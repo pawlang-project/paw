@@ -64,6 +64,7 @@ void Compiler::initialize() {
     // configurePasscontext
     pass_context_->setOptLevel(options_.opt_level);
     pass_context_->setVerbose(options_.verbose);
+    pass_context_->setOutputFile(options_.output_file);
     
     // createPassManager
     pass_manager_ = std::make_unique<PassManager>(pass_context_.get());
@@ -271,6 +272,9 @@ bool Compiler::processResults() {
         // Create linker
         Linker linker;
         linker.setVerbose(options_.verbose);
+        
+        // Bundled lld path is auto-detected in Linker constructor
+        // If needed, can be manually set here with absolute path
         
         // Set runtime library path (relative to current working directory)ry）
         // from build/ directoryruntime/when，pathshouldyes src/runtime

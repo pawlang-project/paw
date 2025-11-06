@@ -321,7 +321,23 @@ void StmtCodeGen::generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_
     // Generate C ABI-compatible main function: int main() { ... return 0/results; }
     auto& builder = context_->getBuilder();
     auto* i32_type = llvm::Type::getInt32Ty(context_->getLLVMContext());
+    auto* void_type = llvm::Type::getVoidTy(context_->getLLVMContext());
     auto* main_type = llvm::FunctionType::get(i32_type, {}, false);
+    
+    // On Windows/MinGW, provide a simple __main function (called by mainCRTStartup)
+    // This is needed when linking with MinGW libraries
+    #ifdef _WIN32
+    llvm::Function* dunder_main = llvm::Function::Create(
+        llvm::FunctionType::get(void_type, {}, false),
+        llvm::Function::ExternalLinkage,
+        "__main",
+        context_->getModule()
+    );
+    llvm::BasicBlock* dunder_entry = llvm::BasicBlock::Create(
+        context_->getLLVMContext(), "entry", dunder_main);
+    builder.SetInsertPoint(dunder_entry);
+    builder.CreateRetVoid();
+    #endif
     
     llvm::Function* c_main = llvm::Function::Create(
         main_type,
@@ -340,16 +356,37 @@ void StmtCodeGen::generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_
     // Switch to C main
     builder.SetInsertPoint(entry);
     
+    // Create a return block that calls atexit handlers before returning
+    llvm::BasicBlock* return_block = llvm::BasicBlock::Create(
+        context_->getLLVMContext(), "return", c_main);
+    
+    // Declare paw_call_atexit_handlers function (for calling atexit handlers)
+    llvm::FunctionType* atexit_cleanup_type = llvm::FunctionType::get(void_type, {}, false);
+    llvm::Function* atexit_cleanup = llvm::Function::Create(
+        atexit_cleanup_type,
+        llvm::Function::ExternalLinkage,
+        "paw_call_atexit_handlers",
+        context_->getModule()
+    );
+    
+    // Allocate space for return value in entry block (before any branches)
+    llvm::AllocaInst* return_value_alloca = llvm::IRBuilder<>(
+        &c_main->getEntryBlock(),
+        c_main->getEntryBlock().begin()
+    ).CreateAlloca(i32_type, nullptr, "return_value");
+    
     // Call PawLang's main
     llvm::Value* paw_results = builder.CreateCall(paw_main, {});
     
-    // Process return value based on return type
+    // Process return value based on return type and store in return_value_alloca
     if (paw_return_type->isVoidTy()) {
         // void main() -> return 0
-        builder.CreateRet(llvm::ConstantInt::get(i32_type, 0));
+        builder.CreateStore(llvm::ConstantInt::get(i32_type, 0), return_value_alloca);
+        builder.CreateBr(return_block);
     } else if (paw_return_type->isIntegerTy(32)) {
         // i32 main() -> return results
-        builder.CreateRet(paw_results);
+        builder.CreateStore(paw_results, return_value_alloca);
+        builder.CreateBr(return_block);
     } else if (paw_return_type->isStructTy()) {
         // Result<i32> main() -> extract value and return
         // Result struct: { i1 is_ok, T value, ptr error_message }
@@ -395,20 +432,29 @@ void StmtCodeGen::generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_
         llvm::Type* value_type = paw_return_type->getStructElementType(1);
         llvm::Value* value = builder.CreateLoad(value_type, value_ptr, "value");
         
-        // If value is i32, return directly; otherwise return 0
+        // If value is i32, store directly; otherwise store 0
         if (value_type->isIntegerTy(32)) {
-            builder.CreateRet(value);
+            builder.CreateStore(value, return_value_alloca);
         } else {
-            builder.CreateRet(llvm::ConstantInt::get(i32_type, 0));
+            builder.CreateStore(llvm::ConstantInt::get(i32_type, 0), return_value_alloca);
         }
+        builder.CreateBr(return_block);
         
-        // ERR branch: Return 1 (error code)
+        // ERR branch: Store 1 (error code)
         builder.SetInsertPoint(err_bb);
-        builder.CreateRet(llvm::ConstantInt::get(i32_type, 1));
+        builder.CreateStore(llvm::ConstantInt::get(i32_type, 1), return_value_alloca);
+        builder.CreateBr(return_block);
     } else {
         // Other types -> return 0
-        builder.CreateRet(llvm::ConstantInt::get(i32_type, 0));
+        builder.CreateStore(llvm::ConstantInt::get(i32_type, 0), return_value_alloca);
+        builder.CreateBr(return_block);
     }
+    
+    // Return block: Call atexit handlers, then return
+    builder.SetInsertPoint(return_block);
+    builder.CreateCall(atexit_cleanup, {});
+    llvm::Value* final_return_value = builder.CreateLoad(i32_type, return_value_alloca, "final_return");
+    builder.CreateRet(final_return_value);
     
     // Restore insertion point
     if (saved_block) {

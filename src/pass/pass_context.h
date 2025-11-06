@@ -8,8 +8,10 @@
 #define PAW_PASS_CONTEXT_H
 
 #include <any>
+#include <memory>
 #include <unordered_map>
 #include <string>
+#include <vector>
 
 namespace pawc {
 
@@ -90,6 +92,9 @@ public:
     void setVerbose(bool v) { verbose_ = v; }
     bool isVerbose() const { return verbose_; }
     
+    void setOutputFile(const std::string& file) { output_file_ = file; }
+    const std::string& getOutputFile() const { return output_file_; }
+    
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // AST access (used for CodeGen and other passes)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -111,6 +116,7 @@ private:
     // compile/compilationoption
     int opt_level_ = 0;
     bool verbose_ = false;
+    std::string output_file_ = "a.out";
 };
 
 } // namespace pawc

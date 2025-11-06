@@ -18,6 +18,25 @@ extern "C" {
 #endif
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Exit Handlers
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// C standard atexit function
+int atexit(void (*func)(void));
+
+// Call all registered atexit handlers (called automatically before main returns)
+void paw_call_atexit_handlers(void);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Windows/MinGW low-level functions
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#ifdef _WIN32
+// Stack checking function (used by MinGW)
+void ___chkstk_ms(void);
+#endif
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Memory Management (No GC)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

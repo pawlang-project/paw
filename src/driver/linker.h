@@ -34,6 +34,9 @@ public:
     /// setruntimelibrarypath
     void setRuntimePath(const std::string& path) { runtime_path_ = path; }
     
+    /// setlldpath (for using bundled lld)
+    void setLldPath(const std::string& path) { lld_path_ = path; }
+    
     /// setdetailedoutput
     void setVerbose(bool v) { verbose_ = v; }
     
@@ -42,6 +45,7 @@ public:
     
 private:
     std::string runtime_path_;
+    std::string lld_path_;  // Path to bundled lld
     std::string error_;
     bool verbose_ = false;
     

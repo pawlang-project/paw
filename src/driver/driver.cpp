@@ -4,6 +4,7 @@
 
 #include "driver.h"
 #include "compiler.h"
+#include "utils/platform_utils.h"
 
 #include <iostream>
 #include <cstring>
@@ -158,6 +159,14 @@ bool Driver::parseArguments(int argc, char** argv) {
             std::cerr << "Error: Multiple input files not supported\n";
             return false;
         }
+    }
+    
+    // If output file not specified, generate from input file
+    if (options_.output_file == "a.out") {
+        options_.output_file = getDefaultOutputFile(options_.input_file);
+    } else {
+        // Ensure output file has correct extension for the platform
+        options_.output_file = ensureExecutableExtension(options_.output_file);
     }
     
     return true;
