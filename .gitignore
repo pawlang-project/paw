@@ -29,6 +29,7 @@ CPackSourceConfig.cmake
 # IDE
 .vscode/
 .idea/
+.vs/
 *.swp
 *.swo
 *~

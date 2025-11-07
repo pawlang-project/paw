@@ -377,7 +377,7 @@ bool Linker::invokeSystemLinker(const std::vector<std::string>& args) {
     if (results != 0) {
         error_ = "Linker failed with exit code: " + std::to_string(results);
         if (verbose_) {
-            std::cerr << "   ❌ Linking failed!\n";
+            std::cerr << "   [ERROR] Linking failed!\n";
             std::cerr << "   Exit code: " << results << "\n";
         }
         return false;

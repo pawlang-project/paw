@@ -1,0 +1,5 @@
+fn main() {
+    // Just call newline, no string/int involved
+}
+
+
