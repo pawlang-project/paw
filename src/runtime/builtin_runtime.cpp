@@ -9,8 +9,6 @@
 #include <vector>
 #include <mutex>
 
-extern "C" {
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // atexit implementation
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -33,12 +31,13 @@ static void init_atexit() {
 
 // Register a function to be called on program exit
 // Functions are called in reverse order of registration (LIFO)
-// Note: This is only used when linking user programs with /ENTRY:main
-// When compiling the compiler itself, MinGW's C runtime provides atexit
+// Note: MSVC's CRT already provides atexit, so we don't redefine it
+// On GCC/Clang, we provide a weak symbol that can be overridden
+#ifndef _MSC_VER
 #ifdef __GNUC__
 __attribute__((weak))
 #endif
-int atexit(void (*func)(void)) {
+extern "C" int atexit(void (*func)(void)) {
     if (!func) {
         return 1;  // Invalid function pointer
     }
@@ -53,10 +52,11 @@ int atexit(void (*func)(void)) {
     atexit_handlers.push_back(func);
     return 0;  // Success
 }
+#endif
 
 // Call all registered atexit handlers (in reverse order)
 // This should be called before main returns
-void paw_call_atexit_handlers() {
+extern "C" void paw_call_atexit_handlers() {
     std::lock_guard<std::mutex> lock(atexit_mutex);
     
     // Call handlers in reverse order (LIFO)
@@ -88,6 +88,8 @@ extern "C" void ___chkstk_ms(void) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Memory Management
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+extern "C" {
 
 void* paw_malloc(size_t size) {
     void* ptr = std::malloc(size);
@@ -170,6 +172,8 @@ void paw_print_i8(int8_t value) { std::printf("%d", value); }
 void paw_print_i16(int16_t value) { std::printf("%d", value); }
 void paw_print_i32(int32_t value) { std::printf("%d", value); }
 void paw_print_i64(int64_t value) { std::printf("%lld", (long long)value); }
+
+#ifndef _MSC_VER
 void paw_print_i128(__int128 value) {
     // completeof/thei128printimplementation
     char buf[64];
@@ -197,11 +201,29 @@ void paw_print_i128(__int128 value) {
     
     std::printf("%s", p);
 }
+#else
+void paw_print_i128(struct paw_i128 value) {
+    // MSVC: Simple implementation - print as two 64-bit parts
+    if (value.high == 0 && value.low == 0) {
+        std::printf("0");
+        return;
+    }
+    
+    // For simplicity, just print high:low in hex for MSVC
+    if (value.high != 0) {
+        std::printf("0x%llx%016llx", (long long)value.high, (unsigned long long)value.low);
+    } else {
+        std::printf("%llu", (unsigned long long)value.low);
+    }
+}
+#endif
 
 void paw_print_u8(uint8_t value) { std::printf("%u", value); }
 void paw_print_u16(uint16_t value) { std::printf("%u", value); }
 void paw_print_u32(uint32_t value) { std::printf("%u", value); }
 void paw_print_u64(uint64_t value) { std::printf("%llu", (unsigned long long)value); }
+
+#ifndef _MSC_VER
 void paw_print_u128(unsigned __int128 value) {
     char buf[64];
     int i = 63;
@@ -216,6 +238,21 @@ void paw_print_u128(unsigned __int128 value) {
     }
     std::printf("%s", &buf[i]);
 }
+#else
+void paw_print_u128(struct paw_u128 value) {
+    if (value.high == 0 && value.low == 0) {
+        std::printf("0");
+        return;
+    }
+    
+    // For simplicity, just print high:low in hex for MSVC
+    if (value.high != 0) {
+        std::printf("0x%llx%016llx", (unsigned long long)value.high, (unsigned long long)value.low);
+    } else {
+        std::printf("%llu", (unsigned long long)value.low);
+    }
+}
+#endif
 
 // f8 (bfloat16): 1+8+7 bit format
 // bfloat16 precision: ~2.4 decimal digits
@@ -306,8 +343,17 @@ void paw_print_f128(struct paw_f128_data value) {
 
 void paw_print_bool(int value) { std::printf("%s", value ? "true" : "false"); }
 void paw_print_char(char value) { std::printf("%c", value); }
-void paw_print_string(const char* value) { std::printf("%s", value); }
-void paw_print_newline() { std::printf("\n"); }
+void paw_print_string(const char* value) { 
+    if (value == nullptr) {
+        std::printf("(null)");
+    } else {
+        std::printf("%s", value);
+    }
+}
+void paw_print_newline() { 
+    std::printf("\n"); 
+    std::fflush(stdout);
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // to_string Functions

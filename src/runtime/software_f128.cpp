@@ -19,6 +19,16 @@
 #include <cmath>
 #include <cstdio>
 
+// MSVC doesn't have __builtin_clzll, provide replacement
+#ifdef _MSC_VER
+    #include <intrin.h>
+    static inline int __builtin_clzll(unsigned long long x) {
+        unsigned long index;
+        _BitScanReverse64(&index, x);
+        return 63 - (int)index;
+    }
+#endif
+
 // SIMD support detection
 #if defined(__ARM_NEON) || defined(__aarch64__)
     #include <arm_neon.h>

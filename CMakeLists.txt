@@ -22,7 +22,7 @@ message(STATUS "╚════════════════════�
 message(STATUS "")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# LLVM Integration - zig-bootstrap style
+# LLVM Integration
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # 启用Clang和LLD项目
@@ -241,6 +241,26 @@ target_include_directories(pawc PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}/include
 )
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 运行时库路径配置 - 优雅的自动检测方案
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# 根据不同的生成器和平台构建运行时库路径
+if(MSVC OR CMAKE_GENERATOR MATCHES "Visual Studio")
+    # Visual Studio multi-config generator: 运行时库在 ${CMAKE_BUILD_TYPE} 子目录中
+    set(PAWC_RUNTIME_RELATIVE_PATH "src/runtime/$<CONFIG>")
+else()
+    # Unix Makefiles / Ninja single-config generator: 运行时库直接在 src/runtime 目录中
+    set(PAWC_RUNTIME_RELATIVE_PATH "src/runtime")
+endif()
+
+# 将运行时库路径传递给编译器（相对于构建目录）
+target_compile_definitions(pawc_driver PRIVATE
+    PAWC_RUNTIME_PATH_HINT="${CMAKE_BINARY_DIR}/${PAWC_RUNTIME_RELATIVE_PATH}"
+)
+
+message(STATUS "Runtime library path hint: ${CMAKE_BINARY_DIR}/${PAWC_RUNTIME_RELATIVE_PATH}")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 安装配置

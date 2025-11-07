@@ -9,7 +9,9 @@ namespace pawc {
 
 void PassManager::runAll() {
     for (auto& pass : passes_) {
-        std::cout << "Running pass: " << pass->getName() << "..." << std::endl;
+        if (context_->isVerbose()) {
+            std::cout << "Running pass: " << pass->getName() << "..." << std::endl;
+        }
         auto result = pass->run(context_);
         
         if (!result.success) {

@@ -141,8 +141,19 @@ std::vector<std::string> Linker::buildLinkCommand(
     // Runtime library (link early, before C++ standard library)
     // This ensures our runtime symbols are available, but C++ stdlib symbols take precedence
     if (!runtime_path_.empty()) {
+#ifdef _WIN32
+        std::filesystem::path runtime_lib = std::filesystem::path(runtime_path_) / "pawc_runtime.lib";
+#else
         std::filesystem::path runtime_lib = std::filesystem::path(runtime_path_) / "libpawc_runtime.a";
+#endif
+        if (verbose_) {
+            std::cout << "   Runtime library: " << runtime_lib.string() << "\n";
+        }
         args.push_back(runtime_lib.string());
+    } else {
+        if (verbose_) {
+            std::cout << "   WARNING: Runtime path is empty!\n";
+        }
     }
     
     // Library search paths
@@ -257,18 +268,28 @@ std::vector<std::string> Linker::buildLinkCommand(
         }
     }
     
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Pure MSVC Runtime Libraries Configuration
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
     // Link essential Windows system libraries
-    // These are found in the Windows SDK paths we added above
-    args.push_back("/DEFAULTLIB:kernel32");  // Core Windows API
-    args.push_back("/DEFAULTLIB:user32");    // User interface functions
-    args.push_back("/DEFAULTLIB:shell32");   // Shell API
+    args.push_back("/DEFAULTLIB:kernel32");   // Core Windows API
+    args.push_back("/DEFAULTLIB:user32");     // User interface functions
     
-    // Link Universal C Runtime (UCRT)
-    // This provides standard C library functions (printf, malloc, etc.)
-    args.push_back("/DEFAULTLIB:ucrt");      // Universal C Runtime
-    args.push_back("/DEFAULTLIB:libcmt");    // C runtime library (static)
+    // Use /NODEFAULTLIB to prevent automatic linking of conflicting CRT versions
+    args.push_back("/NODEFAULTLIB:msvcrt");   // Exclude dynamic CRT
+    args.push_back("/NODEFAULTLIB:libcmtd");  // Exclude debug static CRT
+    args.push_back("/NODEFAULTLIB:msvcrtd");  // Exclude debug dynamic CRT
     
-    // Suppress warnings about missing PDB files
+    // Explicitly link static CRT (Release, Multi-threaded)
+    args.push_back("/DEFAULTLIB:libcmt");     // Static C Runtime (legacy CRT functions)
+    args.push_back("/DEFAULTLIB:libucrt");    // Universal CRT (printf, fflush, etc.)
+    args.push_back("/DEFAULTLIB:libvcruntime"); // C++ runtime support
+    
+    // Additional MSVC runtime libraries
+    args.push_back("/DEFAULTLIB:oldnames");   // POSIX function name mapping
+    
+    // Suppress warnings about missing PDB files (common in Release builds)
     args.push_back("/IGNORE:4099");
     
     // Disable incremental linking for simpler output
@@ -363,7 +384,7 @@ bool Linker::invokeSystemLinker(const std::vector<std::string>& args) {
     }
     
     if (verbose_) {
-        std::cout << "   ✅ Linking successful\n";
+        std::cout << "   [OK] Linking successful\n";
     }
     
     return true;

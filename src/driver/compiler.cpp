@@ -17,6 +17,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <filesystem>
 
 namespace pawc {
 
@@ -31,13 +32,13 @@ Compiler::~Compiler() {
     // 1. First cleanup PassManager
     pass_manager_.reset();
     
-    // 2. cleanupPassContext（containsCodeGenContext）
+    // 2. Cleanup PassContext (contains CodeGenContext)
     if (pass_context_) {
         pass_context_->clearCache();
     }
     pass_context_.reset();
     
-    // 3. cleanupsymboltableandtypessystem
+    // 3. Cleanup symbol table and types system
     symbol_table_.reset();
     type_system_.reset();
     
@@ -76,10 +77,10 @@ void Compiler::initialize() {
 void Compiler::setupPasses() {
     // According to architecture, add passes sequentially
     
-    // 1. LLVM IRgeneratePass
+    // 1. LLVM IR generation pass
     pass_manager_->addPass<LLVMIRGenPass>();
     
-    // 2. optimizationPass（ifoptimizationlevel>0）
+    // 2. Optimization pass (if optimization level > 0)
     if (options_.opt_level > 0) {
         pass_manager_->addPass<LLVMOptimizationPass>();
     }
@@ -104,16 +105,16 @@ std::string Compiler::readSourceFile(const std::string& filename) {
 
 bool Compiler::compile(const std::string& source_file) {
     if (options_.verbose) {
-        std::cout << "╔════════════════════════════════════════╗\n";
-        std::cout << "║   PawLang Compiler v1.4.0              ║\n";
-        std::cout << "║   Pass-Based Architecture              ║\n";
-        std::cout << "╚════════════════════════════════════════╝\n\n";
+        std::cout << "+----------------------------------------+\n";
+        std::cout << "|   PawLang Compiler v1.4.0              |\n";
+        std::cout << "|   Pass-Based Architecture              |\n";
+        std::cout << "+----------------------------------------+\n\n";
         std::cout << "Compiling: " << source_file << "\n";
         std::cout << "Optimization level: O" << options_.opt_level << "\n\n";
     }
     
     // === Phase 1: Lexical Analysis ===
-    if (options_.verbose) std::cout << "📝 Phase 1: Lexical Analysis\n";
+    if (options_.verbose) std::cout << "[*] Phase 1: Lexical Analysis\n";
     
     std::string source = readSourceFile(source_file);
     if (source.empty() && diagnostics_->hasErrors()) {
@@ -124,7 +125,7 @@ bool Compiler::compile(const std::string& source_file) {
     auto tokens = lexer.tokenize();
     
     if (options_.verbose) {
-        std::cout << "   ✅ " << tokens.size() << " tokens generated\n\n";
+        std::cout << "   [OK] " << tokens.size() << " tokens generated\n\n";
     }
     
     if (diagnostics_->hasErrors()) {
@@ -133,19 +134,19 @@ bool Compiler::compile(const std::string& source_file) {
     }
     
     // === Phase 2: Syntax Analysis ===
-    if (options_.verbose) std::cout << "📝 Phase 2: Syntax Analysis\n";
+    if (options_.verbose) std::cout << "[*] Phase 2: Syntax Analysis\n";
     
     Parser parser(tokens, diagnostics_.get(), type_system_.get());
     auto ast = parser.parse();
     
     if (options_.verbose) {
-        std::cout << "   ✅ " << ast.size() << " statements parsed\n\n";
+        std::cout << "   [OK] " << ast.size() << " statements parsed\n\n";
     }
     
     if (options_.emit_ast) {
-        std::cout << "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        std::cout << "\n========================================\n";
         std::cout << "AST Dump:\n";
-        std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        std::cout << "========================================\n\n";
         
         ASTPrinter printer(std::cout);
         for (const auto& stmt : ast) {
@@ -153,7 +154,7 @@ bool Compiler::compile(const std::string& source_file) {
             std::cout << "\n";
         }
         
-        std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        std::cout << "========================================\n\n";
     }
     
     if (diagnostics_->hasErrors()) {
@@ -162,7 +163,7 @@ bool Compiler::compile(const std::string& source_file) {
     }
     
     // === Phase 2.5: Monomorphization (genericmonomorphization) ===
-    if (options_.verbose) std::cout << "📝 Phase 2.5: Generic Monomorphization\n";
+    if (options_.verbose) std::cout << "[*] Phase 2.5: Generic Monomorphization\n";
     
     // setASTtoPassContext
     pass_context_->setAST(&ast);
@@ -179,11 +180,11 @@ bool Compiler::compile(const std::string& source_file) {
     }
     
     if (options_.verbose) {
-        std::cout << "   ✅ " << mono_results.message << "\n";
+        std::cout << "   [OK] " << mono_results.message << "\n";
         if (mono_count > 0) {
-            std::cout << "   📦 Merged " << mono_count << " monomorphized instances into AST\n";
+            std::cout << "   [+] Merged " << mono_count << " monomorphized instances into AST\n";
         }
-        std::cout << "   ⏱️  Execution time: " << mono_results.execution_time_ms << " ms\n\n";
+        std::cout << "   [TIME] Execution time: " << mono_results.execution_time_ms << " ms\n\n";
     }
     
     if (!mono_results.success) {
@@ -192,14 +193,14 @@ bool Compiler::compile(const std::string& source_file) {
         return false;
     }
     
-    // UpdatePassContextinAST（containsmonomorphizationinstance）
+    // Update PassContext with AST (contains monomorphization instances)
     pass_context_->setAST(&ast);
     
     // Debug: monomorphizationback/afterof/theAST dump
     if (options_.emit_ast && mono_count > 0) {
-        std::cout << "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        std::cout << "\n========================================\n";
         std::cout << "Post-Monomorphization AST:\n";
-        std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        std::cout << "========================================\n\n";
         
         ASTPrinter printer(std::cout);
         for (const auto& stmt : ast) {
@@ -207,17 +208,17 @@ bool Compiler::compile(const std::string& source_file) {
             std::cout << "\n";
         }
         
-        std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        std::cout << "========================================\n\n";
     }
     
     // === Phase 3: Semantic Analysis ===
-    if (options_.verbose) std::cout << "📝 Phase 3: Semantic Analysis\n";
+    if (options_.verbose) std::cout << "[*] Phase 3: Semantic Analysis\n";
     
     TypeChecker type_checker(type_system_.get(), symbol_table_.get(), diagnostics_.get());
     type_checker.check(ast);
     
     if (options_.verbose) {
-        std::cout << "   ✅ Type checking complete\n\n";
+        std::cout << "   [OK] Type checking complete\n\n";
     }
     
     if (diagnostics_->hasErrors()) {
@@ -226,7 +227,7 @@ bool Compiler::compile(const std::string& source_file) {
     }
     
     // === Phase 4: Code Generation (through/viaPassManager) ===
-    if (options_.verbose) std::cout << "📝 Phase 4: Code Generation\n";
+    if (options_.verbose) std::cout << "[*] Phase 4: Code Generation\n";
     
     // Pass AST to PassContext
     pass_context_->setAST(&ast);
@@ -240,16 +241,16 @@ bool Compiler::compile(const std::string& source_file) {
     }
     
     if (options_.verbose) {
-        std::cout << "   ✅ Code generation complete\n\n";
+        std::cout << "   [OK] Code generation complete\n\n";
     }
     
-    // === Phase 5: link（ifneed） ===
+    // === Phase 5: Linking (if needed) ===
     if (!options_.compile_only && !options_.emit_llvm_ir) {
         return processResults();
     }
     
     if (options_.verbose) {
-        std::cout << "✨ Compilation successful!\n";
+        std::cout << "[SUCCESS] Compilation successful!\n";
     }
     
     return true;
@@ -265,7 +266,7 @@ bool Compiler::processResults() {
         }
         
         if (options_.verbose) {
-            std::cout << "📝 Phase 5: Linking\n";
+            std::cout << "[*] Phase 5: Linking\n";
             std::cout << "   Object file: " << object_file << "\n";
         }
         
@@ -276,9 +277,63 @@ bool Compiler::processResults() {
         // Bundled lld path is auto-detected in Linker constructor
         // If needed, can be manually set here with absolute path
         
-        // Set runtime library path (relative to current working directory)ry）
-        // from build/ directoryruntime/when，pathshouldyes src/runtime
-        linker.setRuntimePath("build/src/runtime");
+        // =================================================================
+        // Elegant runtime library path detection
+        // =================================================================
+        
+        std::string runtime_path;
+        
+        // Strategy 1: Use CMake-provided path hint (highest priority)
+#ifdef PAWC_RUNTIME_PATH_HINT
+        std::string hint_path = PAWC_RUNTIME_PATH_HINT;
+        if (std::filesystem::exists(hint_path)) {
+#ifdef _WIN32
+            std::string lib_file = hint_path + "/pawc_runtime.lib";
+#else
+            std::string lib_file = hint_path + "/libpawc_runtime.a";
+#endif
+            if (std::filesystem::exists(lib_file)) {
+                runtime_path = hint_path;
+                if (options_.verbose) {
+                    std::cout << "   Found runtime library (via CMake hint): " << runtime_path << "\n";
+                }
+            }
+        }
+#endif
+        
+        // Strategy 2: Fallback to relative path search
+        if (runtime_path.empty()) {
+            std::vector<std::string> relative_search_paths = {
+                "../build-msvc/src/runtime/Release",
+                "../build-msvc/src/runtime/Debug",
+                "../build/src/runtime",
+                "../cmake-build-release/src/runtime",
+                "../cmake-build-debug/src/runtime"
+            };
+            
+            for (const auto& path : relative_search_paths) {
+#ifdef _WIN32
+                std::string lib_file = path + "/pawc_runtime.lib";
+#else
+                std::string lib_file = path + "/libpawc_runtime.a";
+#endif
+                if (std::filesystem::exists(lib_file)) {
+                    runtime_path = path;
+                    if (options_.verbose) {
+                        std::cout << "   Found runtime library (via fallback): " << runtime_path << "\n";
+                    }
+                    break;
+                }
+            }
+        }
+        
+        if (runtime_path.empty()) {
+            diagnostics_->reportWarning(
+                "Runtime library not found. Please ensure pawc_runtime is compiled.",
+                SourceLocation());
+        }
+        
+        linker.setRuntimePath(runtime_path);
         
         // executelink
         if (!linker.link({object_file}, options_.output_file, 
@@ -289,10 +344,10 @@ bool Compiler::processResults() {
         }
         
         if (options_.verbose) {
-            std::cout << "   ✅ Executable generated: " << options_.output_file << "\n\n";
+            std::cout << "   [OK] Executable generated: " << options_.output_file << "\n\n";
         }
         
-        std::cout << "✨ Compilation successful!\n";
+        std::cout << "[SUCCESS] Compilation successful!\n";
         std::cout << "   Executable: " << options_.output_file << "\n";
         
         return true;

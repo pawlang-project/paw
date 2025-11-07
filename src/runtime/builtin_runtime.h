@@ -21,8 +21,10 @@ extern "C" {
 // Exit Handlers
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// C standard atexit function
+// C standard atexit function (MSVC CRT provides this, so we only declare it for non-MSVC)
+#ifndef _MSC_VER
 int atexit(void (*func)(void));
+#endif
 
 // Call all registered atexit handlers (called automatically before main returns)
 void paw_call_atexit_handlers(void);
@@ -69,19 +71,39 @@ void paw_debug_assert(int condition, const char* message, const char* file, int 
 // I/O Functions (18 type overloads)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// MSVC doesn't support __int128, use struct for i128/u128
+#ifdef _MSC_VER
+struct paw_i128 {
+    uint64_t low;
+    int64_t high;
+};
+struct paw_u128 {
+    uint64_t low;
+    uint64_t high;
+};
+#endif
+
 // Signed integers (5)
 void paw_print_i8(int8_t value);
 void paw_print_i16(int16_t value);
 void paw_print_i32(int32_t value);
 void paw_print_i64(int64_t value);
+#ifndef _MSC_VER
 void paw_print_i128(__int128 value);
+#else
+void paw_print_i128(struct paw_i128 value);
+#endif
 
 // Unsigned integers (5)
 void paw_print_u8(uint8_t value);
 void paw_print_u16(uint16_t value);
 void paw_print_u32(uint32_t value);
 void paw_print_u64(uint64_t value);
+#ifndef _MSC_VER
 void paw_print_u128(unsigned __int128 value);
+#else
+void paw_print_u128(struct paw_u128 value);
+#endif
 
 // Floating-point numbers (5) - completeprecision
 // Note：in/atLLVMmiddle/center，f8/f16usespecialof/thefloating-pointtypes（bfloat/half），needconvert
@@ -121,13 +143,21 @@ char* paw_i8_to_string(int8_t value);
 char* paw_i16_to_string(int16_t value);
 char* paw_i32_to_string(int32_t value);
 char* paw_i64_to_string(int64_t value);
+#ifndef _MSC_VER
 char* paw_i128_to_string(__int128 value);
+#else
+char* paw_i128_to_string(struct paw_i128 value);
+#endif
 
 char* paw_u8_to_string(uint8_t value);
 char* paw_u16_to_string(uint16_t value);
 char* paw_u32_to_string(uint32_t value);
 char* paw_u64_to_string(uint64_t value);
+#ifndef _MSC_VER
 char* paw_u128_to_string(unsigned __int128 value);
+#else
+char* paw_u128_to_string(struct paw_u128 value);
+#endif
 
 char* paw_f8_to_string(uint8_t value);
 char* paw_f16_to_string(uint16_t value);

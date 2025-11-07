@@ -23,25 +23,10 @@ ExprCodeGen::ExprCodeGen(CodeGenContext* context)
 
 llvm::Value* ExprCodeGen::generate(ASTNode* node) {
     if (auto* expr = dynamic_cast<Expr*>(node)) {
-        // Debug: Print expression type
-        if (dynamic_cast<BinaryExpr*>(expr)) {
-            std::cerr << "[ExprCodeGen::generate] BinaryExpr" << std::endl;
-        } else if (dynamic_cast<MemberExpr*>(expr)) {
-            std::cerr << "[ExprCodeGen::generate] MemberExpr" << std::endl;
-        } else if (dynamic_cast<SelfExpr*>(expr)) {
-            std::cerr << "[ExprCodeGen::generate] SelfExpr" << std::endl;
-        } else if (dynamic_cast<IntLiteral*>(expr)) {
-            std::cerr << "[ExprCodeGen::generate] IntLiteral" << std::endl;
-        } else {
-            std::cerr << "[ExprCodeGen::generate] Other expression type" << std::endl;
-        }
-        
         results_ = nullptr;  // Reset
         expr->accept(this);
-        std::cerr << "[ExprCodeGen::generate] Result: " << (results_ ? "valid" : "null") << std::endl;
         return results_;
     }
-    std::cerr << "[ExprCodeGen::generate] Not an expression!" << std::endl;
     return nullptr;
 }
 

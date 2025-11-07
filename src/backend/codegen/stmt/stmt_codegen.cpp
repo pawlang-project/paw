@@ -40,9 +40,7 @@ llvm::Value* StmtCodeGen::generate(ASTNode* node) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 void StmtCodeGen::visit(ExprStmt* node) {
-    std::cerr << "[ExprStmt] Generating expression statement" << std::endl;
     results_ = expr_codegen_->generate(node->getExpr());
-    std::cerr << "[ExprStmt] Result: " << (results_ ? "valid" : "null") << std::endl;
 }
 
 void StmtCodeGen::visit(VarDecl* node) {
@@ -324,20 +322,9 @@ void StmtCodeGen::generateMainWrapper(llvm::Function* paw_main, llvm::Type* paw_
     auto* void_type = llvm::Type::getVoidTy(context_->getLLVMContext());
     auto* main_type = llvm::FunctionType::get(i32_type, {}, false);
     
-    // On Windows/MinGW, provide a simple __main function (called by mainCRTStartup)
-    // This is needed when linking with MinGW libraries
-    #ifdef _WIN32
-    llvm::Function* dunder_main = llvm::Function::Create(
-        llvm::FunctionType::get(void_type, {}, false),
-        llvm::Function::ExternalLinkage,
-        "__main",
-        context_->getModule()
-    );
-    llvm::BasicBlock* dunder_entry = llvm::BasicBlock::Create(
-        context_->getLLVMContext(), "entry", dunder_main);
-    builder.SetInsertPoint(dunder_entry);
-    builder.CreateRetVoid();
-    #endif
+    // Note: __main is MinGW-specific and should NOT be generated for pure MSVC builds
+    // It's only needed when linking with MinGW's libgcc
+    // For MSVC, mainCRTStartup handles all initialization automatically
     
     llvm::Function* c_main = llvm::Function::Create(
         main_type,
